@@ -167,7 +167,7 @@ jobs:
           # never over a newer pin: the router's (or, before the router is on the cluster, the kernel's) pinned build
           for f in "$RF" "$KF"; do
             [ -f "$f" ] || continue
-            cur="$(grep -hoE 'jarvis4-(router|kernel):sha-[0-9a-f]{12}' "$f" | head -1 | grep -oE '[0-9a-f]{12}$')"
+            cur="$(grep -hoE 'jarvis4-(router|kernel):sha-[0-9a-f]{12}' "$f" | head -1 | grep -oE '[0-9a-f]{12}$' || true)"
             if [ -n "$cur" ] && full="$(git rev-parse -q --verify "$cur^{commit}")" && [ "$full" != "$GITHUB_SHA" ] \
                && git merge-base --is-ancestor "$GITHUB_SHA" "$full"; then echo "main already pins a newer build ($cur)"; exit 0; fi
             break
@@ -189,7 +189,7 @@ jobs:
           # the kernel: its components move when kernel/ changed since the image it pins, every one but the secrets that
           # serves (active-secrets.txt): a secrets restart empties it, so a release goes only into the next colour
           if [ -f "$KF" ]; then
-            kcur="$(grep -hoE 'jarvis4-kernel:sha-[0-9a-f]{12}' "$KF" | head -1 | grep -oE '[0-9a-f]{12}$')"
+            kcur="$(grep -hoE 'jarvis4-kernel:sha-[0-9a-f]{12}' "$KF" | head -1 | grep -oE '[0-9a-f]{12}$' || true)"
             if [ -z "$kcur" ] || ! kfull="$(git rev-parse -q --verify "$kcur^{commit}")" || ! git diff --quiet "$kfull" "$GITHUB_SHA" -- kernel/; then
               K="$(infra/image-digest.sh "ghcr.io/de0ch/jarvis4-kernel:$T")"
               python3 - "$KF" "$(tr -d '[:space:]' < k8s/cluster/kernel/active-secrets.txt)" "$K" <<'PY'
