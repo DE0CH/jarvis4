@@ -8,11 +8,10 @@ on:
   push:
     paths: [ios/**, core/**, kernel/**, router/**, tasks/**, infra/setup.py, infra/fly-token.sh, infra/fly-read-token.sh, infra/run-volumes.py, infra/run_volumes_test.py, infra/test-postgres.sh, e2e/testdata/**, policy/**, tools/**, .github/workflows/ios.yml, .github/actions/ios-simulator/**]
   workflow_dispatch:
-# on main every commit is its own group: a newer push never replaces a run waiting to start (agent pushes to router/
-# and kernel/ come minutes apart, and GitHub keeps only the newest pending run of a group); the phone replica still
-# runs one at a time (its own job group below)
+# one group per ref: a newer push replaces the run still waiting to start (only the newest queued run is kept), and
+# never cancels one in progress
 concurrency:
-  group: ios-${{ github.ref }}-${{ github.event_name }}${{ github.ref == 'refs/heads/main' && format('-{0}', github.sha) || '' }}
+  group: ios-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: false
 jobs:
   compile:
@@ -245,13 +244,13 @@ jobs:
       - name: The keys branch (the Release build reads the throwaway box and setup keys from it)
         run: |
           B="replica-keys-$REPLICA_RUN"
-          # on main's tip, not this run's commit: only keys/ is read from it, and a branch whose workflows differ from
-          # main's counts as a workflow update, which the job's token may not push
-          git fetch -q --depth 1 origin main
-          git worktree add -q -b "$B" "$RUNNER_TEMP/keys-wt" FETCH_HEAD
+          # an orphan branch with keys/ only: the Release build reads nothing else from it, and a branch carrying
+          # .github/workflows is refused to the job's token whenever they differ from main's
+          git worktree add -q --orphan -b "$B" "$RUNNER_TEMP/keys-wt"
+          cp -R keys "$RUNNER_TEMP/keys-wt/keys"
           cp "$RUNNER_TEMP/stack/keys/box.pub" "$RUNNER_TEMP/stack/keys/setup.pub" "$RUNNER_TEMP/keys-wt/keys/"
           cd "$RUNNER_TEMP/keys-wt"
-          git -c user.name=jarvis4-replica -c user.email=replica@invalid commit -qam "phone replica $REPLICA_RUN: the throwaway box and setup keys [skip ci]"
+          git -c user.name=jarvis4-replica -c user.email=replica@invalid add keys && git -c user.name=jarvis4-replica -c user.email=replica@invalid commit -qm "phone replica $REPLICA_RUN: the throwaway box and setup keys [skip ci]"
           git push -q origin "HEAD:refs/heads/$B"
           echo "KEYS_REF=$B" >> "$GITHUB_ENV"
           for _ in $(seq 30); do
