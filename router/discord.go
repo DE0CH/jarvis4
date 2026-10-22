@@ -38,7 +38,7 @@ import (
 
 const (
 	discordAPI         = "https://discord.com/api/v10"
-	discordUA          = "jarvis2-router (https://github.com/DE0CH/jarvis2, 1.0)"
+	discordUA          = "jarvis4-router (https://github.com/DE0CH/jarvis4, 1.0)"
 	discordEditWindow  = 10 * time.Minute // Discord: 2 name/topic edits per 10 min per channel
 	discordEditsPerWin = 2
 	discordMsgLimit    = 2000

@@ -18,9 +18,9 @@ import (
 const img = "ghcr.io/de0ch/jarvis4-session@sha256:" + "2222222222222222222222222222222222222222222222222222222222222222"
 
 type fakeM struct {
-	image, state, volume string
-	keys                 *sig.Signer
-	enc                  *sig.Signer
+	image, state, volume, spawn string
+	keys                        *sig.Signer
+	enc                         *sig.Signer
 }
 
 type fakeFly struct {
@@ -30,6 +30,8 @@ type fakeFly struct {
 	vols     map[string]bool
 	swap     string // report this image instead
 	slowStop bool
+	creates  int
+	lose     bool // Create makes the machine but answers an error (a lost answer)
 }
 
 func newFly() *fakeFly { return &fakeFly{ms: map[string]*fakeM{}, vols: map[string]bool{}} }
@@ -43,15 +45,30 @@ func (f *fakeFly) CreateVolume(string, int) (string, error) {
 	f.vols[v] = true
 	return v, nil
 }
-func (f *fakeFly) Create(image, region string, guest map[string]any, env map[string]string, volume string) (string, error) {
+func (f *fakeFly) Create(image, region string, guest map[string]any, env map[string]string, volume, spawnKey string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.n++
+	f.creates++
 	id := fmt.Sprintf("%014x", f.n)
 	s, _ := sig.NewSigner()
 	e, _ := sig.NewSigner()
-	f.ms[id] = &fakeM{image: image, state: "created", volume: volume, keys: s, enc: e}
+	f.ms[id] = &fakeM{image: image, state: "created", volume: volume, keys: s, enc: e, spawn: spawnKey}
+	if f.lose {
+		return "", fmt.Errorf("connection reset")
+	}
 	return id, nil
+}
+func (f *fakeFly) Find(spawnKey string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ids := []string{}
+	for id, m := range f.ms {
+		if m.spawn == spawnKey && m.state != "destroyed" {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }
 func (f *fakeFly) start(id string) { f.mu.Lock(); f.ms[id].state = "started"; f.mu.Unlock() }
 func (f *fakeFly) Inspect(id string) (FlyMachine, error) {
@@ -282,5 +299,76 @@ func TestKillWaitsForFly(t *testing.T) {
 	d, err := r.sp.Kill(id, nil)
 	if err != nil || !strings.Contains(d.Payload, `"up":false`) {
 		t.Fatal(err, d.Payload)
+	}
+}
+
+// a spawn is idempotent per notarized cert: ✱ a repeat answers the machine already made; ✱ a crash between Fly's
+// create and the state write finds that machine in Fly after the restart; ✱ a lost create answer is found the same
+// way; ✱ once the machine is killed, the same cert spawns a new one
+func TestSpawnIsIdempotent(t *testing.T) {
+	r := newRig(t)
+	cert, nz := r.source()
+	in := SpawnInput{Cert: cert, Notarized: nz, Notarizer: r.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"}
+	a, err := r.sp.Spawn(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := r.sp.Spawn(in)
+	if err != nil || fmt.Sprint(a) != fmt.Sprint(b) || r.fly.creates != 1 || len(r.fly.vols) != 1 {
+		t.Fatalf("repeat: %v %v creates=%d vols=%d", b, err, r.fly.creates, len(r.fly.vols))
+	}
+	sp2, _ := Open(r.path, r.w.C["spawner"], r.w.Trust, r.fly, map[string]string{"JARVIS2_URL": "http://router"})
+	if c, err := sp2.Spawn(in); err != nil || fmt.Sprint(a) != fmt.Sprint(c) || r.fly.creates != 1 {
+		t.Fatalf("repeat after a restart: %v %v creates=%d", c, err, r.fly.creates)
+	}
+
+	// killed: the same cert spawns again (a failed start retried)
+	id := a.(map[string]any)["id"].(string)
+	if _, err := sp2.Kill(id, nil); err != nil {
+		t.Fatal(err)
+	}
+	d, err := sp2.Spawn(in)
+	if err != nil || d.(map[string]any)["id"] == id || r.fly.creates != 2 {
+		t.Fatalf("after the kill: %v %v creates=%d", d, err, r.fly.creates)
+	}
+}
+
+func TestSpawnAfterACrashFindsItsMachine(t *testing.T) {
+	r := newRig(t)
+	cert, nz := r.source()
+	in := SpawnInput{Cert: cert, Notarized: nz, Notarizer: r.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"}
+	crashAfterCreate = func() { panic("crash") }
+	func() {
+		defer func() { recover() }()
+		r.sp.Spawn(in)
+	}()
+	crashAfterCreate = nil
+	if r.fly.creates != 1 {
+		t.Fatalf("creates: %d", r.fly.creates)
+	}
+	sp2, err := Open(r.path, r.w.C["spawner"], r.w.Trust, r.fly, map[string]string{"JARVIS2_URL": "http://router"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := sp2.Spawn(in)
+	if err != nil || r.fly.creates != 1 || len(r.fly.vols) != 1 {
+		t.Fatalf("after the crash: %v %v creates=%d vols=%d", out, err, r.fly.creates, len(r.fly.vols))
+	}
+	id := out.(map[string]any)["id"].(string)
+	if out.(map[string]any)["volume"] != r.fly.ms[id].volume {
+		t.Fatalf("volume: %v vs %s", out, r.fly.ms[id].volume)
+	}
+	r.fly.start(id)
+	if _, err := sp2.Init(id); err != nil {
+		t.Fatalf("the adopted machine's init: %v", err)
+	}
+
+	// a lost answer: Fly made it, the spawner heard an error; it is found, not made again or its volume deleted
+	r2 := newRig(t)
+	cert2, nz2 := r2.source()
+	r2.fly.lose = true
+	out, err = r2.sp.Spawn(SpawnInput{Cert: cert2, Notarized: nz2, Notarizer: r2.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"})
+	if err != nil || r2.fly.creates != 1 || len(r2.fly.vols) != 1 {
+		t.Fatalf("lost answer: %v %v creates=%d vols=%d", out, err, r2.fly.creates, len(r2.fly.vols))
 	}
 }

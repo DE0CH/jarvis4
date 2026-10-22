@@ -79,17 +79,33 @@ type Spawner struct {
 	path      string
 	machines  map[string]*Machine
 	orphans   map[string]bool // volumes whose delete failed: tried again at every kill
+	spawns    map[string]*Spawn
+	inflight  map[string]bool // spawn keys a Spawn call is working on now
+}
+
+// Spawn: one spawn, keyed by the id of the notarized cert into the source, written before Fly is asked for anything.
+// A repeated spawn of the same cert answers the machine it made (while that one isn't killed); one whose machine
+// never got recorded (a crash or a lost answer between Fly's create and the state write) finds it in Fly by the
+// metadata naming the key (Fly.Find), so a retry never makes a second machine.
+type Spawn struct {
+	Volume  string `json:"volume,omitempty"`
+	DiskGB  int    `json:"diskGb,omitempty"`
+	Machine string `json:"machine,omitempty"`
 }
 
 type state struct {
 	Machines map[string]*Machine `json:"machines"`
 	Orphans  []string            `json:"orphans"`
+	Spawns   map[string]*Spawn   `json:"spawns,omitempty"`
 }
+
+// crashAfterCreate: tests stop Spawn here, between Fly's create and the state write, as a crash would
+var crashAfterCreate func()
 
 // Open: the state at path (made if missing). env: the machines' Fly config env.
 func Open(path string, c *sig.Component, t *sig.Trust, fly Fly, env map[string]string) (*Spawner, error) {
 	sp := &Spawner{s: c.Signer, agreement: c.Agreement, trust: t, fly: fly, env: env, path: path,
-		machines: map[string]*Machine{}, orphans: map[string]bool{}}
+		machines: map[string]*Machine{}, orphans: map[string]bool{}, spawns: map[string]*Spawn{}, inflight: map[string]bool{}}
 	b, err := os.ReadFile(path)
 	if err == nil {
 		var st state
@@ -98,6 +114,9 @@ func Open(path string, c *sig.Component, t *sig.Trust, fly Fly, env map[string]s
 		}
 		if st.Machines != nil {
 			sp.machines = st.Machines
+		}
+		if st.Spawns != nil {
+			sp.spawns = st.Spawns
 		}
 		for _, o := range st.Orphans {
 			sp.orphans[o] = true
@@ -110,7 +129,7 @@ func Open(path string, c *sig.Component, t *sig.Trust, fly Fly, env map[string]s
 
 // save: the state, atomically (callers hold mu)
 func (sp *Spawner) save() error {
-	st := state{Machines: sp.machines, Orphans: []string{}}
+	st := state{Machines: sp.machines, Orphans: []string{}, Spawns: sp.spawns}
 	for o := range sp.orphans {
 		st.Orphans = append(st.Orphans, o)
 	}
@@ -189,13 +208,77 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 	if sp.env == nil {
 		return nil, serve.Fail(503, "the spawner has no router address for its machines (KERNEL_MACHINE_URL)")
 	}
-	vid, err := sp.fly.CreateVolume(in.Region, gb)
-	if err != nil {
-		return nil, serve.Fail(502, "fly volume: %v", err)
-	}
 	rd := sp.trust.Doc()
 	if rd == nil {
 		return nil, serve.Fail(503, "%v", sig.ErrNoRoster)
+	}
+	key := in.Cert.ID()
+	created := func(m *Machine) map[string]any {
+		return map[string]any{"kind": "created", "id": m.ID, "source": m.Source, "volume": m.Volume, "diskGb": m.DiskGB}
+	}
+	// adopt: the machine Fly made for this spawn, recorded (callers hold mu)
+	adopt := func(sw *Spawn, id string) (any, error) {
+		m := &Machine{ID: id, Source: c.Succ, Content: *c.Source, Volume: sw.Volume, DiskGB: sw.DiskGB}
+		sp.machines[id], sw.Machine = m, id
+		if err := sp.save(); err != nil {
+			return nil, err
+		}
+		log.Printf("machine %s created from %s (%s)", id, c.Succ, c.Source.Image)
+		return created(m), nil
+	}
+
+	sp.mu.Lock()
+	if sp.inflight[key] {
+		sp.mu.Unlock()
+		return nil, serve.Fail(409, "this source's spawn is under way: try again")
+	}
+	sw := sp.spawns[key]
+	if sw != nil && sw.Machine != "" {
+		if m := sp.machines[sw.Machine]; m != nil && !m.Killed {
+			sp.mu.Unlock()
+			return created(m), nil // a repeat: the machine already made
+		}
+		sw = nil // that machine was killed: a new spawn
+	}
+	if sw != nil { // recorded but no machine: Fly may have made it before the answer was lost
+		ids, err := sp.fly.Find(key)
+		if err != nil {
+			sp.mu.Unlock()
+			return nil, serve.Fail(502, "fly: %v", err)
+		}
+		if len(ids) > 0 {
+			defer sp.mu.Unlock()
+			return adopt(sw, ids[0])
+		}
+	} else {
+		sw = &Spawn{DiskGB: gb}
+		sp.spawns[key] = sw
+		if err := sp.save(); err != nil {
+			delete(sp.spawns, key)
+			sp.mu.Unlock()
+			return nil, err
+		}
+	}
+	sp.inflight[key] = true
+	sp.mu.Unlock()
+	defer func() {
+		sp.mu.Lock()
+		delete(sp.inflight, key)
+		sp.mu.Unlock()
+	}()
+
+	if sw.Volume == "" {
+		vid, err := sp.fly.CreateVolume(in.Region, gb)
+		if err != nil {
+			return nil, serve.Fail(502, "fly volume: %v", err)
+		}
+		sp.mu.Lock()
+		sw.Volume, sw.DiskGB = vid, gb
+		err = sp.save()
+		sp.mu.Unlock()
+		if err != nil {
+			return nil, err
+		}
 	}
 	rj, _ := json.Marshal(rd)
 	// the machine checks the kernel's identities against the root key's roster (machine/kernelboot.go)
@@ -203,22 +286,27 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 	for k, v := range sp.env {
 		env[k] = v
 	}
-	id, err := sp.fly.Create(c.Source.Image, in.Region, map[string]any{"cpu_kind": kind, "cpus": cpus, "memory_mb": mem}, env, vid)
+	id, err := sp.fly.Create(c.Source.Image, in.Region, map[string]any{"cpu_kind": kind, "cpus": cpus, "memory_mb": mem}, env, sw.Volume, key)
+	if err == nil && crashAfterCreate != nil {
+		crashAfterCreate()
+	}
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	if err != nil {
-		if sp.fly.DeleteVolume(vid) != nil {
-			sp.orphans[vid] = true
-			sp.save()
+		// a lost answer may still have made it
+		if ids, ferr := sp.fly.Find(key); ferr == nil && len(ids) > 0 {
+			return adopt(sw, ids[0])
+		} else if ferr != nil {
+			return nil, serve.Fail(502, "fly create: %v (and the lookup for it: %v; the next try looks again)", err, ferr)
 		}
+		if sp.fly.DeleteVolume(sw.Volume) != nil {
+			sp.orphans[sw.Volume] = true
+		}
+		delete(sp.spawns, key)
+		sp.save()
 		return nil, serve.Fail(502, "fly create: %v", err)
 	}
-	sp.machines[id] = &Machine{ID: id, Source: c.Succ, Content: *c.Source, Volume: vid, DiskGB: gb}
-	if err := sp.save(); err != nil {
-		return nil, err
-	}
-	log.Printf("machine %s created from %s (%s)", id, c.Succ, c.Source.Image)
-	return map[string]any{"kind": "created", "id": id, "source": c.Succ, "volume": vid, "diskGb": gb}, nil
+	return adopt(sw, id)
 }
 
 // Init: one try at reading a created machine's keys (409 while it isn't up yet: the router retries) → its cert

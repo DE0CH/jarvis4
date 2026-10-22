@@ -207,6 +207,7 @@ func (k *Kernel) RootTop() sig.Doc {
 // FakeMachine: one machine, with the key pairs its image made
 type FakeMachine struct {
 	ID, Image, State string
+	Spawn            string // the spawn key in its Fly metadata
 	Env              map[string]string
 	Sig              *sig.Signer
 	Enc              *ecdh.PrivateKey
@@ -236,7 +237,19 @@ func (f *FakeFly) CreateVolume(string, int) (string, error) {
 	return v, nil
 }
 
-func (f *FakeFly) Create(image, region string, guest map[string]any, env map[string]string, volume string) (string, error) {
+func (f *FakeFly) Find(spawnKey string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ids := []string{}
+	for id, m := range f.Machines {
+		if m.Spawn == spawnKey && m.State != "destroyed" {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
+func (f *FakeFly) Create(image, region string, guest map[string]any, env map[string]string, volume, spawnKey string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.n++
@@ -247,7 +260,7 @@ func (f *FakeFly) Create(image, region string, guest map[string]any, env map[str
 	if f.Booting {
 		st = "starting"
 	}
-	f.Machines[id] = &FakeMachine{ID: id, Image: image, State: st, Env: env, Sig: s, Enc: e}
+	f.Machines[id] = &FakeMachine{ID: id, Image: image, State: st, Env: env, Sig: s, Enc: e, Spawn: spawnKey}
 	return id, nil
 }
 

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,7 +34,11 @@ type FlyMachine struct {
 type Fly interface {
 	Configure(token string)
 	CreateVolume(region string, sizeGB int) (string, error)
-	Create(image, region string, guest map[string]any, env map[string]string, volume string) (string, error)
+	// Create: a machine whose Fly metadata names the spawn it is for (spawnKey: the cert's id), so a spawn whose
+	// answer was lost (a crash, a timeout) finds it again with Find instead of making a second one
+	Create(image, region string, guest map[string]any, env map[string]string, volume, spawnKey string) (string, error)
+	// Find: the machines (not destroyed) whose metadata names spawnKey
+	Find(spawnKey string) ([]string, error)
 	Inspect(id string) (FlyMachine, error)
 	Init(id string) (MachineKeys, error)
 	Destroy(id string) error
@@ -46,6 +51,9 @@ const initPath = "/usr/local/bin/jarvis2-init"
 
 // FlyApp: the one Fly app the spawner makes machines in
 const FlyApp = "jarvis4-sessions"
+
+// spawnMeta: the Fly metadata key naming the spawn a machine is for
+const spawnMeta = "jarvis4_spawn"
 
 const (
 	volumePath = "/data" // where the machine finds its volume (machine/volume.go)
@@ -175,11 +183,12 @@ func (f *FlyAPI) CreateVolume(region string, sizeGB int) (string, error) {
 	return v.ID, nil
 }
 
-func (f *FlyAPI) Create(image, region string, guest map[string]any, env map[string]string, volume string) (string, error) {
+func (f *FlyAPI) Create(image, region string, guest map[string]any, env map[string]string, volume, spawnKey string) (string, error) {
 	var m struct {
 		ID string `json:"id"`
 	}
-	config := map[string]any{"image": image, "guest": guest, "env": env, "restart": map[string]any{"policy": "no"}}
+	config := map[string]any{"image": image, "guest": guest, "env": env, "restart": map[string]any{"policy": "no"},
+		"metadata": map[string]string{spawnMeta: spawnKey}}
 	if volume != "" {
 		config["mounts"] = []map[string]any{{"volume": volume, "path": volumePath}}
 	}
@@ -187,6 +196,26 @@ func (f *FlyAPI) Create(image, region string, guest map[string]any, env map[stri
 		return "", err
 	}
 	return m.ID, nil
+}
+
+func (f *FlyAPI) Find(spawnKey string) ([]string, error) {
+	var ms []struct {
+		ID     string `json:"id"`
+		State  string `json:"state"`
+		Config struct {
+			Metadata map[string]string `json:"metadata"`
+		} `json:"config"`
+	}
+	if err := f.call("GET", "/machines?metadata."+spawnMeta+"="+url.QueryEscape(spawnKey), nil, &ms); err != nil {
+		return nil, err
+	}
+	ids := []string{}
+	for _, m := range ms { // the filter is Fly's; checked again here
+		if m.Config.Metadata[spawnMeta] == spawnKey && m.State != "destroyed" && m.State != "destroying" {
+			ids = append(ids, m.ID)
+		}
+	}
+	return ids, nil
 }
 
 func (f *FlyAPI) Inspect(id string) (FlyMachine, error) {

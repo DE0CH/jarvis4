@@ -61,15 +61,18 @@ import (
 
 const (
 	dir         = "/run/jarvis2"
-	keysPath    = dir + "/keys.json"    // public halves, printed by init for the core (through Fly exec)
-	privPath    = dir + "/private.json" // private halves, never leave the machine
-	coreKeyPath = dir + "/core-key"     // the core's key, from the machine's Fly config (the core set it)
-	coreKeyEnv  = "JARVIS2_CORE_KEY"    // the core that created this machine puts its signing key here
+	keysPath    = dir + "/keys.json" // public halves, printed by init for the core (through Fly exec)
+	coreKeyPath = dir + "/core-key"  // the core's key, from the machine's Fly config (the core set it)
+	coreKeyEnv  = "JARVIS2_CORE_KEY" // the core that created this machine puts its signing key here
 	goPath      = dir + "/init-requested"
 	certPath    = dir + "/cert.json"
 	bootedPath  = dir + "/booted"      // written once the boot is done (cert, snapshot, secrets, repos): the harness starts next
 	clientPath  = dir + "/client.json" // the router URL + this machine's id, for later commands
 )
+
+// privPath: the private halves, never leave the machine (a var: tests point it away from a host that is itself a
+// session machine, whose real key the client would otherwise sign with)
+var privPath = dir + "/private.json"
 
 var baseEntry = "/usr/local/bin/entrypoint.sh" // Jarvis 1's entrypoint: the harness (a var: the keeper's tests)
 
