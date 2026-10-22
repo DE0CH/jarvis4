@@ -423,7 +423,7 @@ Each step ships alone, keeps the router working, and is a clean cut for what it 
    existing peer jarvis4-box and passing every request on to the router Service's :8081; the router no longer mounts
    wg.conf (a standby passes its :8081 to the leader's). Still to do: the second peer (jarvis4-gw-b, its own
    Deployment) and the machines trying the other address on a failed dial, so a gateway's rollout is no gap.
-10. **Stateless replicas**: the router Deployment becomes 2 replicas, RollingUpdate `maxUnavailable: 0`, readiness on
+10. **Stateless replicas** (prepared on branch `step10-replicas`, waiting for the second node): the router Deployment becomes 2 replicas, RollingUpdate `maxUnavailable: 0`, readiness on
     the database, a PodDisruptionBudget, no volume (scratch is an emptyDir). This is the step that deletes the old
     machinery (section 7).
 

@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -175,25 +174,6 @@ func TestCoreForNext(t *testing.T) {
 	if c := r.coreFor(httptest.NewRequest("GET", "/api/core/identity", nil)); c.URL() != "http://cur" {
 		t.Fatal("default")
 	}
-}
-
-// The box move carries the core along: the old box's core hands off in the freeze, the new box's standby takes over
-// before the new router serves.
-func TestMoveCarriesTheCore(t *testing.T) {
-	g := newMoveRig(t)
-	cur, next := newHandoffCore(t, "serving", 3), newHandoffCore(t, "standby", 3)
-	g.r.core = &CoreClient{base: cur.srv.URL, http: http.DefaultClient}
-	g.sender.handoff = httpHandoff{}
-	g.joiner.handoff, g.joiner.core = httpHandoff{}, &CoreClient{base: next.srv.URL, http: http.DefaultClient}
-	g.joiner.at = time.Now()
-	if !g.joiner.candidate(g.lockB, g.srvB.URL, g.pubB, make(chan os.Signal)) {
-		t.Fatal("no move")
-	}
-	if cur.state() != "handed-off" || next.state() != "serving" || len(next.takeovers) != 1 {
-		t.Fatalf("old core %s, new core %s", cur.state(), next.state())
-	}
-	g.pubB.set(g.serveB)
-	g.joiner.finish()
 }
 
 func (f *handoffCore) set(fn func(f *handoffCore)) {

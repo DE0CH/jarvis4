@@ -113,7 +113,8 @@ func rowsOf(d *persisted) (rows, error) {
 // stateDB: the database side of State
 type stateDB struct {
 	db      *DB
-	written rows // what the database holds, as last written or read
+	written rows  // what the database holds, as last written or read
+	ver     int64 // the state_version that copy is of (-1: none yet, reload)
 	mu      sync.Mutex
 	lastErr error
 	errAt   time.Time
@@ -135,29 +136,16 @@ func OpenState(ctx context.Context, db *DB, dir string, seal *Sealer) (*State, e
 	if err := importLogFiles(ctx, db, dir); err != nil {
 		return nil, err
 	}
-	s := &State{dir: dir, sdb: &stateDB{db: db}, seal: seal}
+	s := &State{dir: dir, sdb: &stateDB{db: db, ver: -1}, seal: seal}
 	if err := s.importSealedFiles(dir); err != nil {
 		return nil, err
 	}
 	if err := s.resealOld(ctx); err != nil {
 		return nil, err
 	}
-	if err := s.sdb.load(ctx, &s.data); err != nil {
+	if err := s.reload(ctx, db.pool); err != nil {
 		return nil, err
 	}
-	d := &s.data
-	initMaps(d)
-	for id, c := range d.SessCerts {
-		if x := d.Sessions[id]; x != nil {
-			x.Cert = c
-		}
-	}
-	w, err := rowsOf(d)
-	if err != nil {
-		return nil, err
-	}
-	s.sdb.written = w // as Go marshals what was read (jsonb doesn't keep the text)
-	go s.retryLoop()
 	return s, nil
 }
 
@@ -171,10 +159,15 @@ func initMaps(d *persisted) {
 	}
 }
 
-func (sd *stateDB) load(ctx context.Context, d *persisted) error {
+// querier: the pool, or a transaction
+type querier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+func (sd *stateDB) load(ctx context.Context, q querier, d *persisted) error {
 	v := reflect.ValueOf(d).Elem()
 	settings := map[string][]byte{}
-	rs, err := sd.db.pool.Query(ctx, "SELECT key, value FROM settings WHERE key LIKE 'state.%'")
+	rs, err := q.Query(ctx, "SELECT key, value FROM settings WHERE key LIKE 'state.%'")
 	if err != nil {
 		return err
 	}
@@ -192,7 +185,7 @@ func (sd *stateDB) load(ctx context.Context, d *persisted) error {
 		fv := v.Field(f.index)
 		switch {
 		case f.key == "records":
-			rs, err := sd.db.pool.Query(ctx, "SELECT doc FROM records ORDER BY ord")
+			rs, err := q.Query(ctx, "SELECT doc FROM records ORDER BY ord")
 			if err != nil {
 				return err
 			}
@@ -216,7 +209,7 @@ func (sd *stateDB) load(ctx context.Context, d *persisted) error {
 			}
 			fv.Set(sl)
 		case f.table != "":
-			rs, err := sd.db.pool.Query(ctx, "SELECT id, doc FROM "+f.table)
+			rs, err := q.Query(ctx, "SELECT id, doc FROM "+f.table)
 			if err != nil {
 				return err
 			}
@@ -253,66 +246,74 @@ func (sd *stateDB) load(ctx context.Context, d *persisted) error {
 	return nil
 }
 
-// write: the differences between now and what the database holds, in one transaction (callers hold State.mu)
-func (sd *stateDB) write(d *persisted) error {
+// writeTx: the differences between d and what the database holds, queued on tx → the rows as they are now, and whether
+// anything changed
+func (sd *stateDB) writeTx(ctx context.Context, tx pgx.Tx, d *persisted) (rows, bool, error) {
 	now, err := rowsOf(d)
 	if err != nil {
-		return err
+		return nil, false, err
 	}
-	type up struct{ table, id, doc string }
-	var ups []up
-	dels := map[string][]string{}
+	b := &pgx.Batch{}
 	for table, m := range now {
 		old := sd.written[table]
-		for id, doc := range m {
-			if old[id] != doc {
-				ups = append(ups, up{table, id, doc})
-			}
-		}
+		var dels []string
 		for id := range old {
 			if _, ok := m[id]; !ok {
-				dels[table] = append(dels[table], id)
+				dels = append(dels, id)
 			}
 		}
-	}
-	if len(ups) == 0 && len(dels) == 0 {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	err = pgx.BeginFunc(ctx, sd.db.pool, func(tx pgx.Tx) error {
-		b := &pgx.Batch{}
-		for table, ids := range dels {
+		if len(dels) > 0 {
 			switch table {
 			case "":
-				b.Queue("DELETE FROM settings WHERE key = ANY($1)", ids)
+				b.Queue("DELETE FROM settings WHERE key = ANY($1)", dels)
 			case "records":
-				ords := make([]int, len(ids))
-				for i, id := range ids {
+				ords := make([]int, len(dels))
+				for i, id := range dels {
 					ords[i], _ = strconv.Atoi(id)
 				}
 				b.Queue("DELETE FROM records WHERE ord = ANY($1)", ords)
 			default:
-				b.Queue("DELETE FROM "+table+" WHERE id = ANY($1)", ids)
+				b.Queue("DELETE FROM "+table+" WHERE id = ANY($1)", dels)
 			}
 		}
-		for _, u := range ups {
-			switch u.table {
+		for id, doc := range m {
+			if old[id] == doc {
+				continue
+			}
+			switch table {
 			case "":
-				b.Queue("INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, now()) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()", u.id, u.doc)
+				b.Queue("INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, now()) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()", id, doc)
 			case "records":
-				ord, _ := strconv.Atoi(u.id)
-				b.Queue("INSERT INTO records (ord, doc) VALUES ($1, $2) ON CONFLICT (ord) DO UPDATE SET doc = excluded.doc", ord, u.doc)
+				ord, _ := strconv.Atoi(id)
+				b.Queue("INSERT INTO records (ord, doc) VALUES ($1, $2) ON CONFLICT (ord) DO UPDATE SET doc = excluded.doc", ord, doc)
 			default:
-				b.Queue("INSERT INTO "+u.table+" (id, doc) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET doc = excluded.doc", u.id, u.doc)
+				b.Queue("INSERT INTO "+table+" (id, doc) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET doc = excluded.doc", id, doc)
 			}
 		}
-		return tx.SendBatch(ctx, b).Close()
-	})
+	}
+	if b.Len() == 0 {
+		return now, false, nil
+	}
+	return now, true, tx.SendBatch(ctx, b).Close()
+}
+
+// reload: the records as the database has them now (another replica changed them)
+func (s *State) reload(ctx context.Context, q querier) error {
+	var d persisted
+	if err := s.sdb.load(ctx, q, &d); err != nil {
+		return err
+	}
+	initMaps(&d)
+	for id, c := range d.SessCerts {
+		if x := d.Sessions[id]; x != nil {
+			x.Cert = c
+		}
+	}
+	w, err := rowsOf(&d)
 	if err != nil {
 		return err
 	}
-	sd.written = now
+	s.data, s.sdb.written = d, w
 	return nil
 }
 
@@ -384,28 +385,6 @@ func renameImported(dir string) {
 	p := filepath.Join(dir, "state.json")
 	if _, err := os.Stat(p); err == nil {
 		os.Rename(p, p+".imported")
-	}
-}
-
-// retryLoop: a write that failed is tried again every few seconds, so a database blip doesn't wait for the next Do
-func (s *State) retryLoop() {
-	for {
-		select {
-		case <-s.sdb.db.done:
-			return
-		case <-time.After(3 * time.Second):
-		}
-		s.sdb.mu.Lock()
-		failed := s.sdb.lastErr != nil
-		s.sdb.mu.Unlock()
-		if !failed {
-			continue
-		}
-		if !s.mu.TryLock() {
-			continue
-		}
-		s.save()
-		s.mu.Unlock()
 	}
 }
 

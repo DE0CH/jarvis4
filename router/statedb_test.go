@@ -49,12 +49,12 @@ func TestStateInPostgres(t *testing.T) {
 	if hot != "started" {
 		t.Fatalf("hot column: %q", hot)
 	}
+	var a, b persisted
+	st.Do(func(d *persisted) { a = *d })
 	db.Close()
 
 	st2, db2 := open()
 	defer db2.Close()
-	var a, b persisted
-	st.Do(func(d *persisted) { a = *d })
 	st2.Do(func(d *persisted) { b = *d })
 	if !reflect.DeepEqual(a.Sessions["s1"], b.Sessions["s1"]) || b.Sessions["s1"].Cert == nil || b.Sessions["s2"] != nil {
 		t.Fatalf("sessions: %+v", b.Sessions)
@@ -104,8 +104,9 @@ func TestStateImport(t *testing.T) {
 	}
 }
 
-// a write the database refuses is kept and written again once it can be; the status says so meanwhile
-func TestStateWriteRetried(t *testing.T) {
+// a change the database refuses isn't half-kept: the copy is read again from the database, the status says so until
+// a write goes through again
+func TestStateWriteRefused(t *testing.T) {
 	url := testDBURL(t)
 	ctx := context.Background()
 	db, err := OpenDB(ctx, url)
@@ -122,15 +123,66 @@ func TestStateWriteRetried(t *testing.T) {
 	db.pool.Exec(ctx, "ALTER TABLE sessions RENAME TO sessions_away")
 	st.Do(func(d *persisted) { d.Sessions["s1"] = &Session{ID: "s1", State: "started"} })
 	if err, _ := st.StoreError(); err == nil || r.dbStatus(ctx).OK {
-		t.Fatal("a failed write isn't reported")
+		t.Fatal("a refused write isn't reported")
 	}
 	db.pool.Exec(ctx, "ALTER TABLE sessions_away RENAME TO sessions")
-	waitFor(t, "the retry", func() bool { err, _ := st.StoreError(); return err == nil })
-	var n int
-	db.pool.QueryRow(ctx, "SELECT count(*) FROM sessions WHERE id = 's1'").Scan(&n)
-	if n != 1 || !r.dbStatus(ctx).OK {
-		t.Fatalf("after the retry: %d rows, %+v", n, r.dbStatus(ctx))
+	st.Do(func(d *persisted) {
+		if d.Sessions["s1"] != nil {
+			t.Fatal("the refused change stayed in the copy")
+		}
+		d.Sessions["s2"] = &Session{ID: "s2"}
+	})
+	if err, _ := st.StoreError(); err != nil || !r.dbStatus(ctx).OK {
+		t.Fatalf("after a write went through: %v", err)
 	}
+}
+
+// two replicas: a change one makes is what the other's next Do sees
+func TestStateAcrossReplicas(t *testing.T) {
+	url := testDBURL(t)
+	ctx := context.Background()
+	open := func() *State {
+		db, err := OpenDB(ctx, url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(db.Close)
+		st, err := OpenState(ctx, db, t.TempDir(), testSeal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st
+	}
+	a, b := open(), open()
+	a.Do(func(d *persisted) { d.Sessions["s1"] = &Session{ID: "s1", State: "started"} })
+	b.Do(func(d *persisted) {
+		if d.Sessions["s1"] == nil {
+			t.Fatal("the other replica's change isn't seen")
+		}
+		d.Sessions["s1"].State = "pausing"
+	})
+	a.Do(func(d *persisted) {
+		if d.Sessions["s1"].State != "pausing" {
+			t.Fatal("a stale copy was used")
+		}
+	})
+	// concurrent Do's on both: none is lost
+	done := make(chan bool)
+	for _, st := range []*State{a, b} {
+		go func(st *State) {
+			for i := 0; i < 20; i++ {
+				st.Do(func(d *persisted) { d.Sessions["s1"].DiskGB++ })
+			}
+			done <- true
+		}(st)
+	}
+	<-done
+	<-done
+	a.Do(func(d *persisted) {
+		if d.Sessions["s1"].DiskGB != 40 {
+			t.Fatalf("%d increments of 40 survived", d.Sessions["s1"].DiskGB)
+		}
+	})
 }
 
 // the small documents: read and written in the database; a file of one on the volume is imported once and set aside

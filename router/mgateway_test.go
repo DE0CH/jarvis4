@@ -40,9 +40,3 @@ func TestMGatewayPassesRequestsOn(t *testing.T) {
 		t.Fatalf("router gone: %v %v", err, resp)
 	}
 }
-
-func TestWithPort(t *testing.T) {
-	if got := withPort("http://10.42.0.5:8080", ":8081"); got != "http://10.42.0.5:8081" {
-		t.Fatal(got)
-	}
-}

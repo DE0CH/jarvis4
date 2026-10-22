@@ -190,3 +190,12 @@ func (r *Router) jobUnlock(session, kind string, end func(string, string)) func(
 		})
 	}
 }
+
+// myRunningJobs: the jobs this replica holds now
+func (r *Router) myRunningJobs() int {
+	ctx, cancel := r.jobCtx()
+	defer cancel()
+	var n int
+	r.pool().pool.QueryRow(ctx, "SELECT count(*) FROM jobs WHERE owner = $1 AND state = 'running'", routerID).Scan(&n)
+	return n
+}

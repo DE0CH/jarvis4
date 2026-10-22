@@ -4,9 +4,11 @@ package main
 // trusted by anyone else: the certs are core-signed and the snapshots machine-signed.
 
 import (
+	"context"
 	"log"
 
 	"github.com/DE0CH/jarvis4/kernel/gv"
+	"github.com/jackc/pgx/v5"
 
 	"sync"
 	"time"
@@ -157,37 +159,65 @@ type State struct {
 	seal *Sealer // sealed.go: the router's secrets in the database
 }
 
-// Do runs fn under the lock and writes what it changed to the database afterwards
+// Do runs fn on the records under the lock of every replica (the state_version row, taken FOR UPDATE: Do's are
+// serialised across the replicas) and writes what it changed in the same transaction; a replica whose copy is older
+// than the database's reloads it first. A failed transaction leaves the database as it was: the copy here is thrown
+// away (reloaded next time) and the error is shown in /healthz and /setup/status.
 func (s *State) Do(fn func(d *persisted)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	fn(&s.data)
-	s.save()
-}
-
-// save: the changed records to the database (callers hold mu); a failure is kept and tried again (statedb.go)
-func (s *State) save() {
-	d := &s.data
-	d.SessCerts = map[string]*Doc{}
-	for id, ss := range d.Sessions {
-		if ss.Cert != nil {
-			d.SessCerts[id] = ss.Cert
-		}
-	}
 	if s.sdb == nil {
-		return // a State that was never opened (a test's frozen stand-in)
+		fn(&s.data) // a State that was never opened (a test's frozen stand-in)
+		return
 	}
-	err := s.sdb.write(d)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var written rows
+	var ver int64
+	err := pgx.BeginFunc(ctx, s.sdb.db.pool, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, "SELECT v FROM state_version WHERE id = 1 FOR UPDATE").Scan(&ver); err != nil {
+			return err
+		}
+		if ver != s.sdb.ver {
+			if err := s.reload(ctx, tx); err != nil {
+				return err
+			}
+			s.sdb.ver = ver
+		}
+		fn(&s.data)
+		d := &s.data
+		d.SessCerts = map[string]*Doc{}
+		for id, ss := range d.Sessions {
+			if ss.Cert != nil {
+				d.SessCerts[id] = ss.Cert
+			}
+		}
+		now, changed, err := s.sdb.writeTx(ctx, tx, d)
+		if err != nil {
+			return err
+		}
+		if changed {
+			if err := tx.QueryRow(ctx, "UPDATE state_version SET v = v + 1 WHERE id = 1 RETURNING v").Scan(&ver); err != nil {
+				return err
+			}
+		}
+		written = now
+		return nil
+	})
 	s.sdb.mu.Lock()
 	defer s.sdb.mu.Unlock()
-	switch {
-	case err != nil && s.sdb.lastErr == nil:
-		s.sdb.lastErr, s.sdb.errAt = err, time.Now()
-		log.Printf("state: writing to the database failed (kept, tried again): %v", err)
-	case err != nil:
+	if err != nil {
+		s.sdb.ver = -1 // the copy here may hold what the database refused: read again next time
+		if s.sdb.lastErr == nil {
+			s.sdb.errAt = time.Now()
+		}
 		s.sdb.lastErr = err
-	case s.sdb.lastErr != nil:
-		log.Printf("state: the database has every record again (it failed since %s)", s.sdb.errAt.Format(time.RFC3339))
+		log.Printf("state: a change wasn't written (the database refused it; the records are read again): %v", err)
+		return
+	}
+	s.sdb.written, s.sdb.ver = written, ver
+	if s.sdb.lastErr != nil {
+		log.Printf("state: writes go through again (they failed since %s)", s.sdb.errAt.Format(time.RFC3339))
 		s.sdb.lastErr = nil
 	}
 }

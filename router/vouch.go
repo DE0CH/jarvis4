@@ -404,11 +404,6 @@ func handedOver(err error) error {
 // deliverVouchedOpts: o is who is told when a held message is denied, lapses or fails (messages.go messageOrigin
 // covers the session's own wakeups, crons and watches); errAwaitingApproval = held for Deyao
 func (r *Router) deliverVouchedOpts(sid string, d Delivery, boot bool, o *Origin) error {
-	done, err := r.beginDelivery() // movegate.go: none begins once a handover started; the next leader makes it
-	if err != nil {
-		return err
-	}
-	defer done()
 	// messages.go: into a session holding a sensitive store (and any resume prompt) only as the phone approved it
 	gated := d.Approval == nil && r.needsApproval(sid, d)
 	if gated {
