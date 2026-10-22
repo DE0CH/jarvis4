@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/internal/serve"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/internal/serve"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 type Notary struct {

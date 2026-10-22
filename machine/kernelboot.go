@@ -1,17 +1,18 @@
 package main
 
 // A machine the kernel's spawner started (DESIGN "Target design", docs/PLAN-grants.md §4): its Fly config carries the
-// box public key (JARVIS2_KERNEL_BOX) and its source (JARVIS2_SOURCE) instead of the old core's key. At boot it reads
-// its documents from the router (GET /m/kernel/boot) and believes them only as far as they check:
+// root key's public half (JARVIS2_KERNEL_ROOT), the root key's roster of the kernel's components
+// (JARVIS2_KERNEL_ROSTER) and its source (JARVIS2_SOURCE) instead of the old core's key. At boot it reads its documents
+// from the router (GET /m/kernel/boot) and believes them only as far as they check:
 //
-//   - every component identity is the box key's for its role;
+//   - every component identity is the roster's for its role, and the root key signed the roster;
 //   - the spawner's cert (source, fly-<this machine>, ⊤) names this machine's own keys and its source, and the
 //     notarizer notarized it;
 //   - the cert into the source is notarized too: the source's image, settings and snapshot hash are what the
 //     notarizer's table let through (the phone signed a new one; the spawner, at its machine's kill, the snapshot);
 //   - the grant, signed by the mover or the merger, is on this machine and its keys.
 //
-// From them it builds the Cert the rest of boot reads (settings, stores, the snapshot to restore), and keeps the box
+// From them it builds the Cert the rest of boot reads (settings, stores, the snapshot to restore), and keeps the roster
 // and secrets' keys for its pulls. The snapshot is restored by its hash alone: the spawner checked the predecessor's
 // signature over it before it named it.
 
@@ -27,13 +28,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/gv"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/gv"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 const (
-	kernelBoxEnv    = "JARVIS2_KERNEL_BOX"
+	kernelRootEnv   = "JARVIS2_KERNEL_ROOT"
+	kernelRosterEnv = "JARVIS2_KERNEL_ROSTER"
 	kernelSourceEnv = "JARVIS2_SOURCE"
 )
 
@@ -41,16 +43,17 @@ var kernelTrustPath = dir + "/kernel.json"
 
 // kernelTrust: what a kernel machine checks later answers with
 type kernelTrust struct {
-	Box     string `json:"box"`
-	Secrets string `json:"secrets"` // secrets' signing key (its pull answers)
-	Notary  string `json:"notary"`  // the log notary's signing key (every delivered input's challenge)
-	Machine string `json:"machine"` // "fly-<id>": the object its grant and pulls name
+	Root    string  `json:"root"`    // the root key's public half
+	Roster  sig.Doc `json:"roster"`  // the root key's roster
+	Secrets string  `json:"secrets"` // secrets' signing key (its pull answers)
+	Notary  string  `json:"notary"`  // the log notary's signing key (every delivered input's challenge)
+	Machine string  `json:"machine"` // "fly-<id>": the object its grant and pulls name
 }
 
 func readKernelTrust() (kernelTrust, bool) {
 	var t kernelTrust
 	b, err := os.ReadFile(kernelTrustPath)
-	return t, err == nil && json.Unmarshal(b, &t) == nil && t.Box != ""
+	return t, err == nil && json.Unmarshal(b, &t) == nil && t.Root != ""
 }
 
 type kernelBootDocs struct {
@@ -78,7 +81,17 @@ type kernelSettings struct {
 }
 
 // checkKernelBoot: the documents → the Cert boot reads, and what later pulls are checked with
-func checkKernelBoot(b kernelBootDocs, box, source, me string, keys map[string]string) (Cert, kernelTrust, error) {
+// kernelTrustFromEnv: the root key and its roster from the machine's Fly config, the roster checked
+func kernelTrustFromEnv() (*sig.Trust, error) {
+	t := sig.NewTrust(strings.TrimSpace(os.Getenv(kernelRootEnv)))
+	var d sig.Doc
+	if err := json.Unmarshal([]byte(os.Getenv(kernelRosterEnv)), &d); err != nil {
+		return nil, fmt.Errorf("the kernel's roster (%s): %v", kernelRosterEnv, err)
+	}
+	return t, t.Set(d, nil)
+}
+
+func checkKernelBoot(b kernelBootDocs, box *sig.Trust, source, me string, keys map[string]string) (Cert, kernelTrust, error) {
 	var cert Cert
 	for role, id := range map[string]sig.Identity{"notary": b.Notary, "notarizer": b.Notarizer, "mover": b.Mover,
 		"merger": b.Merger, "spawner": b.Spawner, "secrets": b.Secrets} {
@@ -183,7 +196,7 @@ func checkKernelBoot(b kernelBootDocs, box, source, me string, keys map[string]s
 			cert.Sensitive = true // a store secrets doesn't list: counted sensitive, as every store secrets didn't make otherwise
 		}
 	}
-	return cert, kernelTrust{Box: box, Secrets: b.Secrets.SigningKey, Notary: b.Notary.SigningKey, Machine: string(self)}, nil
+	return cert, kernelTrust{Root: box.Root(), Roster: *box.Doc(), Secrets: b.Secrets.SigningKey, Notary: b.Notary.SigningKey, Machine: string(self)}, nil
 }
 
 func reportedDigestOf(ref string) string {
@@ -195,9 +208,12 @@ func reportedDigestOf(ref string) string {
 
 // kernelBootCert: boot's step 1 for a kernel machine (prepare)
 func kernelBootCert(c *client, me string, keys map[string]string) (Cert, error) {
-	box, source := strings.TrimSpace(os.Getenv(kernelBoxEnv)), strings.TrimSpace(os.Getenv(kernelSourceEnv))
+	source := strings.TrimSpace(os.Getenv(kernelSourceEnv))
+	box, err := kernelTrustFromEnv()
+	if err != nil {
+		return Cert{}, err
+	}
 	var b kernelBootDocs
-	var err error
 	for i := 0; ; i++ {
 		if err = c.json("GET", "/m/kernel/boot", nil, &b); err == nil {
 			break
@@ -287,7 +303,11 @@ func (h *heldSecrets) reloadKernel(c *client, drop, lockHeld bool) (int, error) 
 		if err := c.json("GET", "/m/kernel/boot", nil, &b); err != nil {
 			return err
 		}
-		cert, trust, err := checkKernelBoot(b, strings.TrimSpace(os.Getenv(kernelBoxEnv)), strings.TrimSpace(os.Getenv(kernelSourceEnv)), c.me, keys)
+		box, err := kernelTrustFromEnv()
+		if err != nil {
+			return err
+		}
+		cert, trust, err := checkKernelBoot(b, box, strings.TrimSpace(os.Getenv(kernelSourceEnv)), c.me, keys)
 		if err != nil {
 			return err
 		}

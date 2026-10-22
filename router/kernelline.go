@@ -30,10 +30,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/gv"
-	"github.com/DE0CH/jarvis2/kernel/perm"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/gv"
+	"github.com/DE0CH/jarvis4/kernel/perm"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 // KernelLine: where a kernel line is, as documents

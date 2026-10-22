@@ -1,4 +1,4 @@
-module github.com/DE0CH/jarvis2/machine
+module github.com/DE0CH/jarvis4/machine
 
 go 1.25.1
 
@@ -9,6 +9,6 @@ require (
 	golang.org/x/sys v0.37.0 // indirect
 )
 
-require github.com/DE0CH/jarvis2/kernel v0.0.0
+require github.com/DE0CH/jarvis4/kernel v0.0.0
 
-replace github.com/DE0CH/jarvis2/kernel => ../kernel
+replace github.com/DE0CH/jarvis4/kernel => ../kernel

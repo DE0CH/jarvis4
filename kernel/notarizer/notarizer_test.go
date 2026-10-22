@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/internal/kt"
-	"github.com/DE0CH/jarvis2/kernel/perm"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/internal/kt"
+	"github.com/DE0CH/jarvis4/kernel/perm"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 type rig struct {
@@ -21,7 +21,7 @@ type rig struct {
 func newRig(t *testing.T) *rig {
 	w := kt.New(t)
 	path := filepath.Join(t.TempDir(), "state")
-	n, err := Open(path, w.C["notarizer"].Signer, w.Box.PublicKey())
+	n, err := Open(path, w.C["notarizer"].Signer, w.Trust)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestALifeAlongTheTable(t *testing.T) {
 	r.ok(w.Cert(doc.BySpawner, y, "fly-aaaaaaaa02", perm.Top(), nil, m2))
 	// the state survives a restart: y has its successor, so a second spawn from it is refused
 	r.n.f.Close()
-	n2, err := Open(r.path, w.C["notarizer"].Signer, w.Box.PublicKey())
+	n2, err := Open(r.path, w.C["notarizer"].Signer, w.Trust)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,12 +128,11 @@ func TestSignerKeysAreChecked(t *testing.T) {
 	in := r.input(w.Cert(doc.BySpawner, x, "fly-aaaaaaaa01", perm.Top(), nil, m))
 	in.Signer = r.w.ID("identity")
 	r.refused(in, "not a spawner identity")
-	// an identity the box key never signed
-	other, _ := sig.NewSigner()
-	fake, _ := sig.NewComponent("spawner", other)
+	// an identity the roster doesn't name
+	fake, _ := sig.NewComponent("spawner")
 	in = r.input(w.Cert(doc.BySpawner, x, "fly-aaaaaaaa01", perm.Top(), nil, m))
 	in.Signer = &fake.Identity
-	r.refused(in, "isn't signed by the box key")
+	r.refused(in, "isn't the roster's")
 	// the phone's cert checked against keys secrets didn't sign
 	y := kt.Source()
 	in = r.input(w.Cert(doc.ByIPhone, doc.Sink, y, store, kt.SourceContent("t"), nil))

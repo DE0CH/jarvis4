@@ -24,9 +24,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/gv"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/gv"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 type Err struct {
@@ -51,10 +51,8 @@ type Secrets struct {
 	signer    *Signer
 	agreement *ecdh.PrivateKey // secrets' share K of every store's key
 	nonceKey  []byte
-	MasterKey string // the master public key it was claimed with ("" = empty)
-	BoxSig    string // the box key's signature over this identity
-	box       Boxer  // the box key, to vouch for the derived keys a claim brings
-	boxPub    string // the box public key: the other components' identities are checked with it
+	MasterKey string     // the master public key it was claimed with ("" = empty)
+	trust     *sig.Trust // the root key's roster: the other components' identities (and its own) are checked with it
 	exit      func()
 
 	phoneSigning, phoneAgreement string
@@ -90,14 +88,9 @@ type pendingUnlock struct {
 	t       *ecdh.PrivateKey
 }
 
-// Boxer: the box key
-type Boxer interface {
-	Sign(payload []byte) (string, error)
-	PublicKey() string
-}
-
-// New: an empty secrets whose fresh keys the box key vouches for
-func New(box Boxer, github GitHub) (*Secrets, error) {
+// New: an empty secrets with fresh keys; rootPub is the root key's public half (keys/root.pub), which the roster is
+// checked against
+func New(rootPub string, github GitHub) (*Secrets, error) {
 	s, err := NewSigner()
 	if err != nil {
 		return nil, err
@@ -108,24 +101,29 @@ func New(box Boxer, github GitHub) (*Secrets, error) {
 	}
 	nk := make([]byte, 32)
 	rand.Read(nk)
-	c := &Secrets{signer: s, agreement: a, nonceKey: nk, box: box, boxPub: box.PublicKey(),
+	c := &Secrets{signer: s, agreement: a, nonceKey: nk, trust: sig.NewTrust(rootPub),
 		stores: map[string]map[string]*KeyEntry{}, notSensitive: map[string]bool{}, pending: map[string]pendingUnlock{},
 		unlocked: map[string]*unlocked{}, pendingKeys: map[string]pendingDeployKey{}, repoOwner: map[string]string{},
 		github: github, now: time.Now}
-	c.vouch()
 	return c, nil
 }
 
 // SetExit: what a wipe calls (the process exits)
 func (c *Secrets) SetExit(f func()) { c.exit = f }
 
-// vouch: the box key's signature over the current keys (callers hold mu, or own c)
-func (c *Secrets) vouch() {
-	k := c.Key()
-	if b, err := c.box.Sign([]byte(sig.IdentityText("secrets", k["signingKey"], k["agreementKey"]))); err == nil {
-		c.BoxSig = b
+// SetRoster: the root key's roster, which must name the keys secrets serves with now (after a claim with a seed: the
+// derived ones)
+func (c *Secrets) SetRoster(d SignedDoc) (map[string]string, error) {
+	self := c.componentIdentity()
+	if err := c.trust.Set(d, &self); err != nil {
+		return nil, fail(403, "%v", err)
 	}
+	c.logf("the root key's roster taken")
+	return map[string]string{"kind": "roster-taken", "roster": d.ID()}, nil
 }
+
+// Roster: the roster held (nil: none yet)
+func (c *Secrets) Roster() *SignedDoc { return c.trust.Doc() }
 
 func (c *Secrets) logf(f string, a ...any) { log.Printf(f, a...) }
 
@@ -156,7 +154,7 @@ func (c *Secrets) Key() map[string]string {
 	return map[string]string{"signingKey": c.signer.PublicKey(), "agreementKey": b64.EncodeToString(c.agreement.PublicKey().Bytes())}
 }
 
-// Identity: the keys with the box key's signature (role "secrets", sig.IdentityText), and the signed state: the
+// Identity: the keys (role "secrets"; the roster vouches for them), and the signed state: the
 // master key it was claimed with, the phone's keys and the root key
 func (c *Secrets) Identity() (map[string]any, error) {
 	c.mu.Lock()
@@ -171,7 +169,7 @@ func (c *Secrets) Identity() (map[string]any, error) {
 		return nil, err
 	}
 	k := c.Key()
-	return map[string]any{"role": "secrets", "signingKey": k["signingKey"], "agreementKey": k["agreementKey"], "boxSig": c.BoxSig,
+	return map[string]any{"role": "secrets", "signingKey": k["signingKey"], "agreementKey": k["agreementKey"],
 		"state": d, "bundle": "keys", "continuity": 1}, nil
 }
 
@@ -332,7 +330,6 @@ func (c *Secrets) Claim(statement, masterSig string, bundle Sealed) (SignedDoc, 
 	restored := []string{}
 	if dk != nil {
 		c.signer, c.agreement, c.nonceKey, c.lineKey = dk.signer, dk.agreement, dk.nonce, dk.state
-		c.vouch()
 		if line != nil {
 			restored = c.restoreLine(*line, line.Final)
 		}
@@ -635,7 +632,7 @@ func (c *Secrets) Pull(in gv.Signed) (SignedDoc, error) {
 		id := c.componentIdentity()
 		in.Keys, in.Secrets = &k, &id
 	}
-	g, err := gv.Open(in, c.boxPub)
+	g, err := gv.Open(in, c.trust)
 	if err != nil {
 		return SignedDoc{}, fail(403, "%v", err)
 	}
@@ -688,7 +685,7 @@ func (c *Secrets) componentIdentity() sig.Identity {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	k := c.Key()
-	return sig.Identity{Role: "secrets", SigningKey: k["signingKey"], AgreementKey: k["agreementKey"], BoxSig: c.BoxSig}
+	return sig.Identity{Role: "secrets", SigningKey: k["signingKey"], AgreementKey: k["agreementKey"]}
 }
 
 // ---- helpers -----------------------------------------------------------------------------------------------------

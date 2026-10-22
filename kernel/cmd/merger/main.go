@@ -2,13 +2,13 @@
 package main
 
 import (
-	"github.com/DE0CH/jarvis2/kernel/internal/serve"
-	"github.com/DE0CH/jarvis2/kernel/merger"
+	"github.com/DE0CH/jarvis4/kernel/internal/serve"
+	"github.com/DE0CH/jarvis4/kernel/merger"
 )
 
 func main() {
 	serve.Main("merger", func(s *serve.Server) error {
-		merger.Register(s, merger.New(s.C.Signer, s.Box))
+		merger.Register(s, merger.New(s.C.Signer, s.Trust))
 		return nil
 	})
 }

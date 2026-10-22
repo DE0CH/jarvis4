@@ -685,8 +685,6 @@ func (h *loginHub) finishLoginTo(pasted string) (*loginHub, string, error) {
 	return target, accountEmail(account), nil
 }
 
-
-
 // offerLocked: offer for a Re-login, with refreshMu already held (force, any account)
 func (h *loginHub) offerLocked(credentials, account, source string) (bool, error) {
 	return h.offer(credentials, account, source, true, true)

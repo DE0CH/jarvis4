@@ -50,7 +50,7 @@ jobs:
         with:
           context: services/${{ matrix.name }}
           push: true
-          labels: org.opencontainers.image.source=https://github.com/DE0CH/jarvis2
+          labels: org.opencontainers.image.source=https://github.com/DE0CH/jarvis4
           tags: |
             ghcr.io/de0ch/jarvis2-${{ matrix.name }}:${{ steps.tag.outputs.sha }}
             ghcr.io/de0ch/jarvis2-${{ matrix.name }}:latest

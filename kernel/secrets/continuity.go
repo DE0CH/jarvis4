@@ -402,7 +402,7 @@ func (c *Secrets) Takeover(d *LineStateDoc) (SignedDoc, error) {
 // allowedIn: what a core that doesn't serve still answers
 func allowedIn(mode, pattern string) bool {
 	switch pattern {
-	case "GET /identity", "GET /line-state", "POST /wipe":
+	case "GET /identity", "GET /line-state", "POST /wipe", "GET /roster", "POST /roster":
 		return true
 	case "POST /handoff":
 		return mode == modeHandedOff

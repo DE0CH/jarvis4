@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/gv"
-	"github.com/DE0CH/jarvis2/kernel/internal/kt"
-	"github.com/DE0CH/jarvis2/kernel/perm"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/gv"
+	"github.com/DE0CH/jarvis4/kernel/internal/kt"
+	"github.com/DE0CH/jarvis4/kernel/perm"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 // kernel: secrets Recovered in a kernel test world (same box key), with a machine to pull for
@@ -26,16 +26,35 @@ type kernel struct {
 
 func newKernel(t *testing.T) *kernel {
 	w := kt.New(t)
-	c, err := New(w.Box, nil)
+	c, err := New(w.Root.PublicKey(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	master, p, root := newPhone(), newPhone(), newPhone()
 	s, sg, b := claimFor(c, master, p, root, recoverBundle(t, c, p))
 	pl(t)(c.Claim(s, sg, b))
+	rosterFor(t, w, c)
 	enc, _ := ecdh.P256().GenerateKey(rand.Reader)
 	ms, _ := sig.NewSigner()
 	return &kernel{t, w, c, p, root, enc, ms}
+}
+
+// rosterFor: the world's roster with c as its secrets, taken by c and by the world's trust
+func rosterFor(t *testing.T, w *kt.World, c *Secrets) {
+	t.Helper()
+	ids := []sig.Identity{c.componentIdentity()}
+	for _, r := range kt.Roles {
+		if r != "secrets" {
+			ids = append(ids, w.C[r].Identity)
+		}
+	}
+	d := kt.SignRoster(t, w.Root, "blue", ids)
+	if _, err := c.SetRoster(d); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Trust.Set(d, nil); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // grant: a mover-signed grant with this allowed set on the machine
@@ -103,13 +122,12 @@ func TestPullRefusesOtherGrants(t *testing.T) {
 	if _, err := k.c.Pull(bad); err == nil {
 		t.Fatal("a notary identity passed as the mover's")
 	}
-	box2, _ := sig.NewSigner()
-	m2, _ := sig.NewComponent("mover", box2)
+	m2, _ := sig.NewComponent("mover")
 	var gr doc.Grant
 	json.Unmarshal([]byte(g.Grant.Payload), &gr)
 	d, _ := m2.Signer.SignJSON(gr)
 	if _, err := k.c.Pull(gv.Signed{Grant: d, By: "mover", Signer: &m2.Identity}); err == nil {
-		t.Fatal("a mover the box never vouched for")
+		t.Fatal("a mover the roster doesn't name")
 	}
 	rd, _ := k.w.Root.SignJSON(gr)
 	if _, err := k.c.Pull(gv.Signed{Grant: rd, By: "root"}); err == nil {
@@ -205,7 +223,7 @@ func TestTheRootKey(t *testing.T) {
 	if err := d.Open(k.c.Key()["signingKey"], &ks); err != nil || ks.Phone != k.p.signingKey() || ks.Root != k.root.signingKey() {
 		t.Fatal(err, ks)
 	}
-	if _, err := gv.RootKey(&d, &sig.Identity{Role: "secrets", SigningKey: k.c.Key()["signingKey"], AgreementKey: k.c.Key()["agreementKey"], BoxSig: k.c.BoxSig}, k.w.Box.PublicKey()); err != nil {
+	if _, err := gv.RootKey(&d, &sig.Identity{Role: "secrets", SigningKey: k.c.Key()["signingKey"], AgreementKey: k.c.Key()["agreementKey"]}, k.w.Trust); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -251,11 +269,13 @@ func TestAHandoffKeepsTheOpenUnlocks(t *testing.T) {
 	master, p, root := newPhone(), newPhone(), newPhone()
 	seed := make([]byte, 32)
 	rand.Read(seed)
-	a, _ := New(w.Box, nil)
+	a, _ := New(w.Root.PublicKey(), nil)
 	seededClaim(t, a, master, p, root, seed, false, nil)
+	rosterFor(t, w, a)
 	unlock(t, a, p, "default")
-	b, _ := New(w.Box, nil)
+	b, _ := New(w.Root.PublicKey(), nil)
 	seededClaim(t, b, master, p, root, seed, true, nil)
+	rosterFor(t, w, b)
 	if b.Mode() != modeStandby || a.Key()["signingKey"] != b.Key()["signingKey"] {
 		t.Fatal("the same kit didn't derive the same secrets, or b serves")
 	}

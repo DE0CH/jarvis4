@@ -22,7 +22,7 @@ import (
 	"crypto/sha256"
 
 	"encoding/hex"
-	"github.com/DE0CH/jarvis2/kernel/gv"
+	"github.com/DE0CH/jarvis4/kernel/gv"
 	"regexp"
 	"sort"
 	"strings"
@@ -154,7 +154,7 @@ func (c *Secrets) WriteKey(in WriteKeyInput) (SignedDoc, error) {
 		if in.Grant == nil {
 			return SignedDoc{}, fail(400, "a machine write carries the grant the machine holds")
 		}
-		g, err := gv.Open(*in.Grant, c.boxPub)
+		g, err := gv.Open(*in.Grant, c.trust)
 		if err != nil || g.Machine.Kind() != "fly" {
 			return SignedDoc{}, fail(403, "a machine write's grant: %v", err)
 		}

@@ -4,34 +4,36 @@
 package kerneltest
 
 import (
+	"bytes"
 	"crypto/ecdh"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/internal/serve"
-	"github.com/DE0CH/jarvis2/kernel/merger"
-	"github.com/DE0CH/jarvis2/kernel/mover"
-	"github.com/DE0CH/jarvis2/kernel/notarizer"
-	"github.com/DE0CH/jarvis2/kernel/notary"
-	"github.com/DE0CH/jarvis2/kernel/perm"
-	"github.com/DE0CH/jarvis2/kernel/secrets"
-	"github.com/DE0CH/jarvis2/kernel/sig"
-	"github.com/DE0CH/jarvis2/kernel/signers"
-	"github.com/DE0CH/jarvis2/kernel/spawner"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/internal/serve"
+	"github.com/DE0CH/jarvis4/kernel/merger"
+	"github.com/DE0CH/jarvis4/kernel/mover"
+	"github.com/DE0CH/jarvis4/kernel/notarizer"
+	"github.com/DE0CH/jarvis4/kernel/notary"
+	"github.com/DE0CH/jarvis4/kernel/perm"
+	"github.com/DE0CH/jarvis4/kernel/secrets"
+	"github.com/DE0CH/jarvis4/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/signers"
+	"github.com/DE0CH/jarvis4/kernel/spawner"
 )
 
 // Kernel: the running components and the keys a test signs with
 type Kernel struct {
-	Box         *sig.Signer
 	Phone, Root *sig.Signer
 	PhoneAgree  *ecdh.PrivateKey
 	URL         map[string]string // role → base URL
@@ -53,18 +55,18 @@ func (k *Kernel) Close() {
 
 // Start: every component; machineEnv is what spawned machines' Fly config env gets
 func Start(t testing.TB, machineEnv map[string]string) *Kernel {
-	box, _ := sig.NewSigner()
 	phone, _ := sig.NewSigner()
 	root, _ := sig.NewSigner()
 	pa, _ := ecdh.P256().GenerateKey(rand.Reader)
-	k := &Kernel{Box: box, Phone: phone, Root: root, PhoneAgree: pa, URL: map[string]string{}, Fly: NewFakeFly()}
+	k := &Kernel{Phone: phone, Root: root, PhoneAgree: pa, URL: map[string]string{}, Fly: NewFakeFly()}
 	dir := t.TempDir()
 	for _, role := range []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible"} {
-		c, err := sig.NewComponent(role, box)
+		c, err := sig.NewComponent(role)
 		if err != nil {
 			t.Fatal(err)
 		}
-		s := serve.New(c, box.PublicKey())
+		trust := sig.NewTrust(root.PublicKey())
+		s := serve.New(c, trust)
 		switch role {
 		case "notary":
 			n, err := notary.Open(filepath.Join(dir, "notary"), c.Signer)
@@ -73,17 +75,17 @@ func Start(t testing.TB, machineEnv map[string]string) *Kernel {
 			}
 			notary.Register(s, n)
 		case "notarizer":
-			n, err := notarizer.Open(filepath.Join(dir, "notarizer"), c.Signer, box.PublicKey())
+			n, err := notarizer.Open(filepath.Join(dir, "notarizer"), c.Signer, trust)
 			if err != nil {
 				t.Fatal(err)
 			}
 			notarizer.Register(s, n)
 		case "mover":
-			mover.Register(s, mover.New(c.Signer, box.PublicKey()))
+			mover.Register(s, mover.New(c.Signer, trust))
 		case "merger":
-			merger.Register(s, merger.New(c.Signer, box.PublicKey()))
+			merger.Register(s, merger.New(c.Signer, trust))
 		case "spawner":
-			sp, err := spawner.Open(filepath.Join(dir, "spawner"), c, box.PublicKey(), k.Fly, machineEnv)
+			sp, err := spawner.Open(filepath.Join(dir, "spawner"), c, trust, k.Fly, machineEnv)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -97,7 +99,7 @@ func Start(t testing.TB, machineEnv map[string]string) *Kernel {
 		k.servers = append(k.servers, srv)
 		k.URL[role] = srv.URL
 	}
-	sc, err := secrets.New(box, nil)
+	sc, err := secrets.New(root.PublicKey(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,8 +110,66 @@ func Start(t testing.TB, machineEnv map[string]string) *Kernel {
 	if err := k.claim(); err != nil {
 		t.Fatal(err)
 	}
+	if err := k.PostRoster(""); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(k.Close)
 	return k
+}
+
+// Roster: the root key's roster of the components as they answer now (secrets' claimed keys included)
+func (k *Kernel) Roster() (sig.Doc, error) {
+	ids := []sig.Identity{}
+	for _, role := range []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "secrets"} {
+		ids = append(ids, k.Identity(role))
+	}
+	p, err := sig.RosterPayload("blue", ids)
+	if err != nil {
+		return sig.Doc{}, err
+	}
+	s, err := k.Root.Sign([]byte(p))
+	return sig.Doc{Payload: p, Sig: s}, err
+}
+
+// Trust: the root key's roster as a machine (or a test) holds it
+func (k *Kernel) Trust() *sig.Trust {
+	d, err := k.Roster()
+	if err != nil {
+		panic(err)
+	}
+	t := sig.NewTrust(k.Root.PublicKey())
+	if err := t.Set(d, nil); err != nil {
+		panic(err)
+	}
+	return t
+}
+
+// PostRoster: the roster to every component (and to extra, another secrets' URL, if not "")
+func (k *Kernel) PostRoster(extra string) error {
+	d, err := k.Roster()
+	if err != nil {
+		return err
+	}
+	b, _ := json.Marshal(map[string]sig.Doc{"roster": d})
+	urls := []string{}
+	for _, u := range k.URL {
+		urls = append(urls, u)
+	}
+	if extra != "" {
+		urls = append(urls, extra)
+	}
+	for _, u := range urls {
+		resp, err := http.Post(u+"/roster", "application/json", bytes.NewReader(b))
+		if err != nil {
+			return err
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			return fmt.Errorf("%s/roster: %d %s", u, resp.StatusCode, body)
+		}
+	}
+	return nil
 }
 
 // claim: secrets Reset by a fresh master key, naming the test's phone and root keys
@@ -247,7 +307,7 @@ func (f *FakeFly) ExtendVolume(string, int) (bool, error) { return false, nil }
 
 // Secrets: one more secrets on its own server (the next colour, blue/green), and its URL
 func (k *Kernel) Secrets2(t testing.TB) (*secrets.Secrets, string) {
-	sc, err := secrets.New(k.Box, nil)
+	sc, err := secrets.New(k.Root.PublicKey(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"os"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/perm"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/perm"
 )
 
 func cert(c doc.Cert) string {

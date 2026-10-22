@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/internal/kt"
-	"github.com/DE0CH/jarvis2/kernel/notarizer"
-	"github.com/DE0CH/jarvis2/kernel/perm"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/internal/kt"
+	"github.com/DE0CH/jarvis4/kernel/notarizer"
+	"github.com/DE0CH/jarvis4/kernel/perm"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 const img = "ghcr.io/de0ch/jarvis2-session@sha256:" + "2222222222222222222222222222222222222222222222222222222222222222"
@@ -104,11 +104,11 @@ func newRig(t *testing.T) *rig {
 	w := kt.New(t)
 	dir := t.TempDir()
 	fly := newFly()
-	sp, err := Open(filepath.Join(dir, "sp.json"), w.C["spawner"], w.Box.PublicKey(), fly, map[string]string{"JARVIS2_URL": "http://router"})
+	sp, err := Open(filepath.Join(dir, "sp.json"), w.C["spawner"], w.Trust, fly, map[string]string{"JARVIS2_URL": "http://router"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	nz, err := notarizer.Open(filepath.Join(dir, "nz"), w.C["notarizer"].Signer, w.Box.PublicKey())
+	nz, err := notarizer.Open(filepath.Join(dir, "nz"), w.C["notarizer"].Signer, w.Trust)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestSpawnAndKill(t *testing.T) {
 	if len(r.fly.vols) != 0 {
 		t.Fatalf("volumes left: %v", r.fly.vols)
 	}
-	sp2, err := Open(r.path, r.w.C["spawner"], r.w.Box.PublicKey(), r.fly, nil)
+	sp2, err := Open(r.path, r.w.C["spawner"], r.w.Trust, r.fly, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

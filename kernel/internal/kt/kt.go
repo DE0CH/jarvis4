@@ -1,4 +1,4 @@
-// Package kt: a kernel for tests — a box key, every component's identity, the phone and root keys, secrets' signed
+// Package kt: a kernel for tests — every component's identity and the root key's roster of them, the phone and root keys, secrets' signed
 // keys statement, and certs made and signed as each signer would.
 package kt
 
@@ -8,14 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/perm"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/perm"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 type World struct {
 	T           *testing.T
-	Box         *sig.Signer
+	Trust       *sig.Trust // holds the root key's roster of C
+	Roster      sig.Doc
 	C           map[string]*sig.Component // by role
 	Phone, Root *sig.Signer
 	KeysDoc     sig.Doc
@@ -24,23 +25,42 @@ type World struct {
 var Roles = []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "secrets"}
 
 func New(t *testing.T) *World {
-	box, _ := sig.NewSigner()
-	w := &World{T: t, Box: box, C: map[string]*sig.Component{}}
+	w := &World{T: t, C: map[string]*sig.Component{}}
+	ids := []sig.Identity{}
 	for _, r := range Roles {
-		c, err := sig.NewComponent(r, box)
+		c, err := sig.NewComponent(r)
 		if err != nil {
 			t.Fatal(err)
 		}
 		w.C[r] = c
+		ids = append(ids, c.Identity)
 	}
 	w.Phone, _ = sig.NewSigner()
 	w.Root, _ = sig.NewSigner()
+	w.Roster = SignRoster(t, w.Root, "blue", ids)
+	w.Trust = sig.NewTrust(w.Root.PublicKey())
+	if err := w.Trust.Set(w.Roster, nil); err != nil {
+		t.Fatal(err)
+	}
 	d, err := w.C["secrets"].Signer.SignJSON(map[string]string{"kind": "keys", "phone": w.Phone.PublicKey(), "root": w.Root.PublicKey()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	w.KeysDoc = d
 	return w
+}
+
+// SignRoster: the root key's roster of members for copy
+func SignRoster(t testing.TB, root *sig.Signer, copy string, members []sig.Identity) sig.Doc {
+	p, err := sig.RosterPayload(copy, members)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := root.Sign([]byte(p))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sig.Doc{Payload: p, Sig: s}
 }
 
 func (w *World) ID(role string) *sig.Identity { id := w.C[role].Identity; return &id }

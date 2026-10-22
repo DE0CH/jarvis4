@@ -3,10 +3,10 @@
 package merger
 
 import (
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/gv"
-	"github.com/DE0CH/jarvis2/kernel/internal/serve"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/gv"
+	"github.com/DE0CH/jarvis4/kernel/internal/serve"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 type Input struct {
@@ -15,18 +15,18 @@ type Input struct {
 }
 
 type Merger struct {
-	s   *sig.Signer
-	box string
+	s     *sig.Signer
+	trust *sig.Trust
 }
 
-func New(s *sig.Signer, boxPub string) *Merger { return &Merger{s, boxPub} }
+func New(s *sig.Signer, t *sig.Trust) *Merger { return &Merger{s, t} }
 
 func (m *Merger) Merge(in Input) (sig.Doc, error) {
-	a, err := gv.Open(in.A, m.box)
+	a, err := gv.Open(in.A, m.trust)
 	if err != nil {
 		return sig.Doc{}, serve.Fail(403, "a: %v", err)
 	}
-	b, err := gv.Open(in.B, m.box)
+	b, err := gv.Open(in.B, m.trust)
 	if err != nil {
 		return sig.Doc{}, serve.Fail(403, "b: %v", err)
 	}

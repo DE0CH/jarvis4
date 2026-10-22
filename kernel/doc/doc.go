@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DE0CH/jarvis2/kernel/h2c"
-	"github.com/DE0CH/jarvis2/kernel/perm"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/h2c"
+	"github.com/DE0CH/jarvis4/kernel/perm"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 // ---- objects ---------------------------------------------------------------------------------------------------

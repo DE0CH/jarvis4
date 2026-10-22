@@ -1,4 +1,5 @@
 // Secrets' process (kernel/secrets): empty until the app claims it (Reset or Recover); a wipe ends the process.
+// KERNEL_ROOT: the root key's public half (keys/root.pub), which its roster is checked against.
 package main
 
 import (
@@ -7,19 +8,15 @@ import (
 	"os"
 	"time"
 
-	"github.com/DE0CH/jarvis2/kernel/secrets"
+	"github.com/DE0CH/jarvis4/kernel/secrets"
 )
 
 func main() {
-	b, err := os.ReadFile(os.Getenv("KERNEL_BOX_KEY"))
-	if err != nil {
-		log.Fatalf("KERNEL_BOX_KEY: %v", err)
+	root := os.Getenv("KERNEL_ROOT")
+	if root == "" {
+		log.Fatal("KERNEL_ROOT (the root key's public half, keys/root.pub) isn't set")
 	}
-	box, err := secrets.SignerFromPEM(b)
-	if err != nil {
-		log.Fatalf("KERNEL_BOX_KEY: %v", err)
-	}
-	c, err := secrets.New(box, secrets.NewGitHubAPI())
+	c, err := secrets.New(root, secrets.NewGitHubAPI())
 	if err != nil {
 		log.Fatal(err)
 	}

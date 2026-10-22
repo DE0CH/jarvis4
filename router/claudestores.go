@@ -200,4 +200,3 @@ func gcmSealKey(key, plain, aad []byte) []byte {
 	rand.Read(nonce)
 	return append(nonce, g.Seal(nil, nonce, plain, aad)...)
 }
-

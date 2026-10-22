@@ -198,7 +198,7 @@ kind: GitRepository
 metadata: { name: jarvis2, namespace: flux-system }
 spec:
   interval: 1m
-  url: https://github.com/DE0CH/jarvis2
+  url: https://github.com/DE0CH/jarvis4
   ref: { commit: $REF }
 EOF
     ks edge

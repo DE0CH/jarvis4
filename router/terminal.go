@@ -16,7 +16,7 @@ const snapCmd = `tmux capture-pane -p -e -t claude; printf '\n__CUR__%s\n' "$(tm
 
 type TermSnap struct {
 	Screen string `json:"screen"`
-	Cursor string `json:"cursor"` // x,y,width,height,visible
+	Cursor string `json:"cursor"`       // x,y,width,height,visible
 	At     string `json:"at,omitempty"` // when the machine pushed it (a pushed screen; empty = read just now by the holder)
 }
 

@@ -46,20 +46,46 @@ func TestSealOpen(t *testing.T) {
 	}
 }
 
-func TestIdentity(t *testing.T) {
-	box, _ := NewSigner()
-	c, err := NewComponent("notary", box)
+func TestRoster(t *testing.T) {
+	root, _ := NewSigner()
+	c, err := NewComponent("notary")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := CheckIdentity(c.Identity, "notary", box.PublicKey()); err != nil {
-		t.Fatal(err)
+	sp, _ := NewComponent("spawner")
+	signed := func(by *Signer, copy string, m ...Identity) Doc {
+		p, err := RosterPayload(copy, m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s, _ := by.Sign([]byte(p))
+		return Doc{Payload: p, Sig: s}
 	}
-	if CheckIdentity(c.Identity, "spawner", box.PublicKey()) == nil {
-		t.Fatal("one role's identity passed as another's")
+	tr := NewTrust(root.PublicKey())
+	if CheckIdentity(c.Identity, "notary", tr) != ErrNoRoster {
+		t.Fatal("an identity passed before any roster")
 	}
 	other, _ := NewSigner()
-	if CheckIdentity(c.Identity, "notary", other.PublicKey()) == nil {
-		t.Fatal("another box key")
+	if tr.Set(signed(other, "blue", sp.Identity, c.Identity), &c.Identity) == nil {
+		t.Fatal("a roster another key signed")
+	}
+	if tr.Set(signed(root, "blue", sp.Identity), &c.Identity) == nil {
+		t.Fatal("a roster without this component's keys")
+	}
+	if tr.Set(signed(root, "purple", sp.Identity, c.Identity), &c.Identity) == nil {
+		t.Fatal("a roster of no copy")
+	}
+	if err := tr.Set(signed(root, "blue", sp.Identity, c.Identity), &c.Identity); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckIdentity(c.Identity, "notary", tr); err != nil {
+		t.Fatal(err)
+	}
+	if CheckIdentity(c.Identity, "spawner", tr) == nil {
+		t.Fatal("one role's identity passed as another's")
+	}
+	c2, _ := NewComponent("notary")
+	if CheckIdentity(c2.Identity, "notary", tr) == nil {
+		t.Fatal("keys the roster doesn't name")
 	}
 }

@@ -18,9 +18,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/gv"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/gv"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 type KernelClient struct {
@@ -120,7 +120,7 @@ func (k *KernelClient) Doc(role, path string, body any) (sig.Doc, error) {
 	return d, nil
 }
 
-// Identity: a component's box-vouched identity (cached; refetched when a call says it changed: forget)
+// Identity: a component's identity (the root key's roster vouches for it) (cached; refetched when a call says it changed: forget)
 func (k *KernelClient) Identity(role string) (sig.Identity, error) {
 	k.mu.Lock()
 	id, ok := k.ids[role]
@@ -134,12 +134,12 @@ func (k *KernelClient) Identity(role string) (sig.Identity, error) {
 	}
 	if role == "secrets" || role == "secrets-next" {
 		var m struct {
-			SigningKey, AgreementKey, BoxSig string
+			SigningKey, AgreementKey string
 		}
 		if err := json.Unmarshal(b, &m); err != nil {
 			return sig.Identity{}, err
 		}
-		id = sig.Identity{Role: role, SigningKey: m.SigningKey, AgreementKey: m.AgreementKey, BoxSig: m.BoxSig}
+		id = sig.Identity{Role: "secrets", SigningKey: m.SigningKey, AgreementKey: m.AgreementKey}
 	} else {
 		var d sig.Doc
 		if err := json.Unmarshal(b, &d); err != nil || json.Unmarshal([]byte(d.Payload), &id) != nil {

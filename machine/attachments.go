@@ -134,6 +134,7 @@ func hexSum256(b []byte) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
 }
+
 // plainName: one path segment (the router's safeName output)
 func plainName(n string) bool {
 	return n != "" && n != "." && n != ".." && !strings.ContainsAny(n, "/\\\x00") && len(n) <= 200

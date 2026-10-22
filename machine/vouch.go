@@ -75,15 +75,16 @@ func cleanEnv(started []string, imageEnv []string) ([]string, error) {
 			m[k] = v
 		}
 	}
-	key, box := strings.TrimSpace(got[coreKeyEnv]), strings.TrimSpace(got[kernelBoxEnv])
+	key, root := strings.TrimSpace(got[coreKeyEnv]), strings.TrimSpace(got[kernelRootEnv])
 	switch {
 	case b64KeyRE.MatchString(key):
 		m[coreKeyEnv] = key
-	case b64KeyRE.MatchString(box) && sourceRE.MatchString(strings.TrimSpace(got[kernelSourceEnv])):
-		// kernelboot.go: the kernel's spawner started it: the box key and its source, from its Fly config
-		m[kernelBoxEnv], m[kernelSourceEnv] = box, strings.TrimSpace(got[kernelSourceEnv])
+	case b64KeyRE.MatchString(root) && json.Valid([]byte(got[kernelRosterEnv])) && sourceRE.MatchString(strings.TrimSpace(got[kernelSourceEnv])):
+		// kernelboot.go: the kernel's spawner started it: the root key, its roster and the source, from its Fly config
+		// (the roster is checked against the root key at boot)
+		m[kernelRootEnv], m[kernelRosterEnv], m[kernelSourceEnv] = root, got[kernelRosterEnv], strings.TrimSpace(got[kernelSourceEnv])
 	default:
-		return nil, errors.New("no core key (" + coreKeyEnv + ") or kernel box key and source (" + kernelBoxEnv + ", " + kernelSourceEnv + ") in the machine's config")
+		return nil, errors.New("no core key (" + coreKeyEnv + ") or kernel root key, roster and source (" + kernelRootEnv + ", " + kernelRosterEnv + ", " + kernelSourceEnv + ") in the machine's config")
 	}
 	if u := strings.TrimSpace(got["JARVIS2_URL"]); routerRE.MatchString(u) {
 		m["JARVIS2_URL"] = u

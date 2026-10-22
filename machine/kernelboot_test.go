@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DE0CH/jarvis2/kernel/gv"
-	"github.com/DE0CH/jarvis2/kernel/kerneltest"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/gv"
+	"github.com/DE0CH/jarvis4/kernel/kerneltest"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 const kImage = "ghcr.io/de0ch/jarvis2-session:sha-aaaaaaaaaaaa@sha256:1111111111111111111111111111111111111111111111111111111111111111"
@@ -31,7 +31,7 @@ func fmKeys(fm *kerneltest.FakeMachine) map[string]string {
 func TestAKernelMachineReadsItsDocuments(t *testing.T) {
 	k := kerneltest.Start(t, map[string]string{"JARVIS2_URL": "http://router"})
 	b, fm := bootDocs(t, k)
-	cert, trust, err := checkKernelBoot(b, k.Box.PublicKey(), fm.Env["JARVIS2_SOURCE"], fm.ID, fmKeys(fm))
+	cert, trust, err := checkKernelBoot(b, k.Trust(), fm.Env["JARVIS2_SOURCE"], fm.ID, fmKeys(fm))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,19 +45,19 @@ func TestAKernelMachineReadsItsDocuments(t *testing.T) {
 	if cert.Phone != k.Phone.PublicKey() || !cert.Sensitive { // no store secrets lists: counted sensitive
 		t.Fatalf("phone %q sensitive %v", cert.Phone, cert.Sensitive)
 	}
-	if trust.Machine != "fly-"+fm.ID || trust.Box != k.Box.PublicKey() {
+	if trust.Machine != "fly-"+fm.ID || trust.Root != k.Root.PublicKey() {
 		t.Fatalf("%+v", trust)
 	}
 }
 
-// ✱ what a router could hand a kernel machine instead: another machine's documents, another source, another box,
+// ✱ what a router could hand a kernel machine instead: another machine's documents, another source, another roster,
 // a grant from elsewhere, a cert not notarized
 func TestAKernelMachineRefusesOtherDocuments(t *testing.T) {
 	k := kerneltest.Start(t, map[string]string{"JARVIS2_URL": "http://router"})
 	b, fm := bootDocs(t, k)
 	b2, fm2 := bootDocs(t, k)
-	box, src, keys := k.Box.PublicKey(), fm.Env["JARVIS2_SOURCE"], fmKeys(fm)
-	refuse := func(name string, d kernelBootDocs, box, src, me string, keys map[string]string) {
+	box, src, keys := k.Trust(), fm.Env["JARVIS2_SOURCE"], fmKeys(fm)
+	refuse := func(name string, d kernelBootDocs, box *sig.Trust, src, me string, keys map[string]string) {
 		t.Helper()
 		if _, _, err := checkKernelBoot(d, box, src, me, keys); err == nil {
 			t.Fatalf("%s: accepted", name)
@@ -66,7 +66,21 @@ func TestAKernelMachineRefusesOtherDocuments(t *testing.T) {
 	refuse("another machine's documents", b2, box, src, fm.ID, keys)
 	refuse("another source", b, box, fm2.Env["JARVIS2_SOURCE"], fm.ID, keys)
 	other, _ := sig.NewSigner()
-	refuse("another box", b, other.PublicKey(), src, fm.ID, keys)
+	strangers := []sig.Identity{}
+	for _, r := range []string{"notary", "notarizer", "mover", "merger", "spawner", "secrets"} {
+		c, _ := sig.NewComponent(r)
+		strangers = append(strangers, c.Identity)
+	}
+	p, _ := sig.RosterPayload("blue", strangers)
+	ps, _ := other.Sign([]byte(p))
+	otherTrust := sig.NewTrust(other.PublicKey())
+	if err := otherTrust.Set(sig.Doc{Payload: p, Sig: ps}, nil); err != nil {
+		t.Fatal(err)
+	}
+	refuse("another roster", b, otherTrust, src, fm.ID, keys)
+	if sig.NewTrust(k.Root.PublicKey()).Set(sig.Doc{Payload: p, Sig: ps}, nil) == nil {
+		t.Fatal("a roster another key signed, taken as the root key's")
+	}
 	refuse("other keys", b, box, src, fm.ID, fmKeys(fm2))
 	x := b
 	x.Grant = b2.Grant
@@ -78,24 +92,24 @@ func TestAKernelMachineRefusesOtherDocuments(t *testing.T) {
 	x.SourceCert, x.SourceNotarized = b2.SourceCert, b2.SourceNotarized
 	refuse("another source's cert", x, box, src, fm.ID, keys)
 	x = b
-	fake, _ := sig.NewComponent("mover", other)
+	fake, _ := sig.NewComponent("mover")
 	g := b.Grant
 	g.Signer = &fake.Identity
 	x.Grant = gv.Signed(g)
-	refuse("a mover the box never vouched for", x, box, src, fm.ID, keys)
+	refuse("a mover the roster doesn't name", x, box, src, fm.ID, keys)
 	if _, _, err := checkKernelBoot(b, box, src, fm.ID, keys); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// the clean env keeps a kernel machine's box key and source, and refuses a machine with neither
+// the clean env keeps a kernel machine's root key, roster and source, and refuses a machine with neither
 func TestCleanEnvKeepsTheKernelsKeys(t *testing.T) {
 	key := strings.Repeat("A", 87) + "="
-	env, err := cleanEnv([]string{"JARVIS2_KERNEL_BOX=" + key, "JARVIS2_SOURCE=source-" + strings.Repeat("ab", 16), "EVIL=1"}, nil)
+	env, err := cleanEnv([]string{"JARVIS2_KERNEL_ROOT=" + key, `JARVIS2_KERNEL_ROSTER={"payload":"{}","sig":"x"}`, "JARVIS2_SOURCE=source-" + strings.Repeat("ab", 16), "EVIL=1"}, nil)
 	if err != nil || !strings.Contains(strings.Join(env, "\n"), "JARVIS2_SOURCE=source-") || strings.Contains(strings.Join(env, "\n"), "EVIL") {
 		t.Fatal(err, env)
 	}
-	if _, err := cleanEnv([]string{"JARVIS2_KERNEL_BOX=" + key, "JARVIS2_SOURCE=nope"}, nil); err == nil {
+	if _, err := cleanEnv([]string{"JARVIS2_KERNEL_ROOT=" + key, `JARVIS2_KERNEL_ROSTER={}`, "JARVIS2_SOURCE=nope"}, nil); err == nil {
 		t.Fatal("a bad source accepted")
 	}
 }
@@ -105,7 +119,7 @@ func TestCleanEnvKeepsTheKernelsKeys(t *testing.T) {
 func TestAKernelMachineChecksTheNotarysLog(t *testing.T) {
 	k := kerneltest.Start(t, map[string]string{"JARVIS2_URL": "http://router"})
 	b, fm := bootDocs(t, k)
-	_, trust, err := checkKernelBoot(b, k.Box.PublicKey(), fm.Env["JARVIS2_SOURCE"], fm.ID, fmKeys(fm))
+	_, trust, err := checkKernelBoot(b, k.Trust(), fm.Env["JARVIS2_SOURCE"], fm.ID, fmKeys(fm))
 	if err != nil {
 		t.Fatal(err)
 	}

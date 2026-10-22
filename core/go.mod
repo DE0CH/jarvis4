@@ -1,4 +1,4 @@
-module github.com/DE0CH/jarvis2/core
+module github.com/DE0CH/jarvis4/core
 
 go 1.25.1
 

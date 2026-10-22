@@ -1,4 +1,4 @@
-module github.com/DE0CH/jarvis2/router
+module github.com/DE0CH/jarvis4/router
 
 go 1.25.1
 
@@ -17,7 +17,7 @@ require (
 
 require (
 	filippo.io/age v1.2.1
-	github.com/DE0CH/jarvis2/kernel v0.0.0
+	github.com/DE0CH/jarvis4/kernel v0.0.0
 )
 
-replace github.com/DE0CH/jarvis2/kernel => ../kernel
+replace github.com/DE0CH/jarvis4/kernel => ../kernel

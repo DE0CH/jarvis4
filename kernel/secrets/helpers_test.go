@@ -157,8 +157,8 @@ func appWrap(t *testing.T, c *Secrets, p *phone, name string, vals map[string]st
 // newSecrets: an empty secrets, and the master key
 func newSecrets(t *testing.T) (*Secrets, *phone) {
 	t.Helper()
-	box, _ := NewSigner()
-	c, err := New(box, nil)
+	root, _ := NewSigner()
+	c, err := New(root.PublicKey(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

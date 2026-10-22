@@ -13,10 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/internal/serve"
-	"github.com/DE0CH/jarvis2/kernel/perm"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/internal/serve"
+	"github.com/DE0CH/jarvis4/kernel/perm"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 // ChallengeSkew: how far a challenge's time may be from the notarizer's clock
@@ -34,7 +34,7 @@ type Input struct {
 	Cert      sig.Doc       `json:"cert"`
 	Challenge sig.Doc       `json:"challenge"`
 	Notary    sig.Identity  `json:"notary"`
-	Signer    *sig.Identity `json:"signer,omitempty"`  // spawner, identity or gullible: its box-vouched identity
+	Signer    *sig.Identity `json:"signer,omitempty"`  // spawner, identity or gullible: its identity, checked against the roster
 	Keys      *sig.Doc      `json:"keys,omitempty"`    // iphone or root: secrets' signed Keys
 	Secrets   *sig.Identity `json:"secrets,omitempty"` // … and secrets' identity
 }
@@ -47,7 +47,7 @@ type entry struct {
 type Notarizer struct {
 	mu        sync.Mutex
 	s         *sig.Signer
-	box       string
+	trust     *sig.Trust
 	f         *os.File
 	defined   map[doc.Object]bool
 	succeeded map[doc.Object]bool
@@ -55,12 +55,12 @@ type Notarizer struct {
 }
 
 // Open: the state at path (made if missing)
-func Open(path string, s *sig.Signer, boxPub string) (*Notarizer, error) {
+func Open(path string, s *sig.Signer, t *sig.Trust) (*Notarizer, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, err
 	}
-	n := &Notarizer{s: s, box: boxPub, f: f, defined: map[doc.Object]bool{}, succeeded: map[doc.Object]bool{}, now: time.Now}
+	n := &Notarizer{s: s, trust: t, f: f, defined: map[doc.Object]bool{}, succeeded: map[doc.Object]bool{}, now: time.Now}
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		var e entry
@@ -111,7 +111,7 @@ func (n *Notarizer) signerKey(c doc.Cert, in Input) (string, error) {
 		if in.Keys == nil || in.Secrets == nil {
 			return "", fmt.Errorf("a %s cert needs secrets' signed keys", c.Signer)
 		}
-		if err := sig.CheckIdentity(*in.Secrets, "secrets", n.box); err != nil {
+		if err := sig.CheckIdentity(*in.Secrets, "secrets", n.trust); err != nil {
 			return "", err
 		}
 		var k Keys
@@ -126,7 +126,7 @@ func (n *Notarizer) signerKey(c doc.Cert, in Input) (string, error) {
 	if in.Signer == nil {
 		return "", fmt.Errorf("a %s cert needs the %s's identity", c.Signer, c.Signer)
 	}
-	if err := sig.CheckIdentity(*in.Signer, c.Signer, n.box); err != nil {
+	if err := sig.CheckIdentity(*in.Signer, c.Signer, n.trust); err != nil {
 		return "", err
 	}
 	return in.Signer.SigningKey, nil
@@ -148,7 +148,7 @@ func (n *Notarizer) Notarize(in Input) (sig.Doc, error) {
 	if !sig.Verify(key, []byte(in.Cert.Payload), in.Cert.Sig) {
 		return sig.Doc{}, serve.Fail(403, "the cert isn't signed by the %s's key", c.Signer)
 	}
-	if err := sig.CheckIdentity(in.Notary, "notary", n.box); err != nil {
+	if err := sig.CheckIdentity(in.Notary, "notary", n.trust); err != nil {
 		return sig.Doc{}, serve.Fail(403, "%v", err)
 	}
 	var ch doc.Challenge

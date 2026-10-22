@@ -23,10 +23,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/internal/serve"
-	"github.com/DE0CH/jarvis2/kernel/perm"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/internal/serve"
+	"github.com/DE0CH/jarvis4/kernel/perm"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 // SessionRepo: the only image the spawner starts, pinned by digest
@@ -73,9 +73,9 @@ type Spawner struct {
 	mu        sync.Mutex
 	s         *sig.Signer
 	agreement *ecdh.PrivateKey
-	box       string
+	trust     *sig.Trust
 	fly       Fly
-	env       map[string]string // what every machine's Fly config env gets (the box key, the router's address)
+	env       map[string]string // what every machine's Fly config env gets (the router's address); the roster and the root key are added per spawn
 	path      string
 	machines  map[string]*Machine
 	orphans   map[string]bool // volumes whose delete failed: tried again at every kill
@@ -87,8 +87,8 @@ type state struct {
 }
 
 // Open: the state at path (made if missing). env: the machines' Fly config env.
-func Open(path string, c *sig.Component, boxPub string, fly Fly, env map[string]string) (*Spawner, error) {
-	sp := &Spawner{s: c.Signer, agreement: c.Agreement, box: boxPub, fly: fly, env: env, path: path,
+func Open(path string, c *sig.Component, t *sig.Trust, fly Fly, env map[string]string) (*Spawner, error) {
+	sp := &Spawner{s: c.Signer, agreement: c.Agreement, trust: t, fly: fly, env: env, path: path,
 		machines: map[string]*Machine{}, orphans: map[string]bool{}}
 	b, err := os.ReadFile(path)
 	if err == nil {
@@ -161,7 +161,7 @@ type SpawnInput struct {
 
 // Spawn: one Fly create (with a new empty volume) from a notarized source → {kind: "created", id, source, volume}
 func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
-	if err := sig.CheckIdentity(in.Notarizer, "notarizer", sp.box); err != nil {
+	if err := sig.CheckIdentity(in.Notarizer, "notarizer", sp.trust); err != nil {
 		return nil, serve.Fail(403, "%v", err)
 	}
 	var nz doc.Notarized
@@ -193,7 +193,13 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 	if err != nil {
 		return nil, serve.Fail(502, "fly volume: %v", err)
 	}
-	env := map[string]string{"JARVIS2_SOURCE": string(c.Succ)}
+	rd := sp.trust.Doc()
+	if rd == nil {
+		return nil, serve.Fail(503, "%v", sig.ErrNoRoster)
+	}
+	rj, _ := json.Marshal(rd)
+	// the machine checks the kernel's identities against the root key's roster (machine/kernelboot.go)
+	env := map[string]string{"JARVIS2_SOURCE": string(c.Succ), "JARVIS2_KERNEL_ROSTER": string(rj), "JARVIS2_KERNEL_ROOT": sp.trust.Root()}
 	for k, v := range sp.env {
 		env[k] = v
 	}

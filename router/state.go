@@ -4,7 +4,7 @@ package main
 // trusted by anyone else: the certs are core-signed and the snapshots machine-signed.
 
 import (
-	"github.com/DE0CH/jarvis2/kernel/gv"
+	"github.com/DE0CH/jarvis4/kernel/gv"
 
 	"encoding/json"
 	"os"

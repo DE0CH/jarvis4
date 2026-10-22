@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/gv"
-	"github.com/DE0CH/jarvis2/kernel/perm"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/gv"
+	"github.com/DE0CH/jarvis4/kernel/perm"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 // post: a component's answer (a signed document), or the error it gave
@@ -42,9 +42,9 @@ func (k *Kernel) Identity(role string) sig.Identity {
 	b, _ := io.ReadAll(resp.Body)
 	var id sig.Identity
 	if role == "secrets" {
-		var m struct{ SigningKey, AgreementKey, BoxSig string }
+		var m struct{ SigningKey, AgreementKey string }
 		json.Unmarshal(b, &m)
-		return sig.Identity{Role: role, SigningKey: m.SigningKey, AgreementKey: m.AgreementKey, BoxSig: m.BoxSig}
+		return sig.Identity{Role: role, SigningKey: m.SigningKey, AgreementKey: m.AgreementKey}
 	}
 	var d sig.Doc
 	json.Unmarshal(b, &d)

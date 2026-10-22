@@ -1,4 +1,4 @@
-module github.com/DE0CH/jarvis2/kernel
+module github.com/DE0CH/jarvis4/kernel
 
 go 1.25.1
 

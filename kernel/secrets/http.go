@@ -11,7 +11,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/DE0CH/jarvis2/kernel/gv"
+	"github.com/DE0CH/jarvis4/kernel/gv"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 func Handler(c *Secrets) http.Handler {
@@ -69,6 +70,21 @@ func Handler(c *Secrets) http.Handler {
 	}
 
 	h("GET /identity", func(b body) (any, error) { return c.Identity() })
+	h("GET /roster", func(b body) (any, error) {
+		if d := c.Roster(); d != nil {
+			return d, nil
+		}
+		return nil, fail(404, "%v", sig.ErrNoRoster)
+	})
+	h("POST /roster", func(b body) (any, error) {
+		var in struct {
+			Roster SignedDoc `json:"roster"`
+		}
+		if err := into(b, &in); err != nil {
+			return nil, err
+		}
+		return c.SetRoster(in.Roster)
+	})
 	h("POST /keys", func(b body) (any, error) { return c.KeysStatement() })
 	h("POST /claim", func(b body) (any, error) {
 		s, err := sealed(b, "bundle")

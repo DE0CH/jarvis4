@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/gv"
-	"github.com/DE0CH/jarvis2/kernel/kerneltest"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/gv"
+	"github.com/DE0CH/jarvis4/kernel/kerneltest"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 const kernelImage = "ghcr.io/de0ch/jarvis2-session:sha-aaaaaaaaaaaa@sha256:1111111111111111111111111111111111111111111111111111111111111111"
@@ -111,7 +111,7 @@ func TestAKernelLinesLife(t *testing.T) {
 	if code != 200 || json.Unmarshal(body, &boot) != nil {
 		t.Fatal(code, string(body))
 	}
-	g, err := gv.Open(boot.Grant, k.Box.PublicKey())
+	g, err := gv.Open(boot.Grant, k.Trust())
 	if err != nil || g.Machine != doc.Object("fly-"+m1.ID) || g.Keys.SigningKey != m1.Sig.PublicKey() {
 		t.Fatal(err, g)
 	}
@@ -136,7 +136,7 @@ func TestAKernelLinesLife(t *testing.T) {
 	if _, _, err := rg.r.Respond(aid, s1+"\n"+s2); err != nil {
 		t.Fatal(err)
 	}
-	g, err = gv.Open(*kernelSession(rg, sid).Kernel.Grant, k.Box.PublicKey())
+	g, err = gv.Open(*kernelSession(rg, sid).Kernel.Grant, k.Trust())
 	if err != nil || !g.Pair.Allowed.Contains("store:extra") || g.Machine != doc.Object("fly-"+m1.ID) {
 		t.Fatal(err, g)
 	}
@@ -144,7 +144,7 @@ func TestAKernelLinesLife(t *testing.T) {
 	if code, body := kdo(t, h, m1, "POST", "/m/kernel/downgrade", `{"keep":[]}`); code != 200 {
 		t.Fatal(code, string(body))
 	}
-	g, err = gv.Open(*kernelSession(rg, sid).Kernel.Grant, k.Box.PublicKey())
+	g, err = gv.Open(*kernelSession(rg, sid).Kernel.Grant, k.Trust())
 	if err != nil || g.Pair.Allowed.Contains("store:extra") || g.Machine != doc.Object("fly-"+m1.ID) {
 		t.Fatal(err, g)
 	}

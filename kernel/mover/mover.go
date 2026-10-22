@@ -6,10 +6,10 @@ package mover
 import (
 	"time"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/gv"
-	"github.com/DE0CH/jarvis2/kernel/internal/serve"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/gv"
+	"github.com/DE0CH/jarvis4/kernel/internal/serve"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 type Input struct {
@@ -21,25 +21,25 @@ type Input struct {
 }
 
 type Mover struct {
-	s   *sig.Signer
-	box string
+	s     *sig.Signer
+	trust *sig.Trust
 }
 
-func New(s *sig.Signer, boxPub string) *Mover { return &Mover{s, boxPub} }
+func New(s *sig.Signer, t *sig.Trust) *Mover { return &Mover{s, t} }
 
 func (m *Mover) Move(in Input) (sig.Doc, error) {
-	g, err := gv.Open(in.Signed, m.box)
+	g, err := gv.Open(in.Signed, m.trust)
 	if err != nil {
 		return sig.Doc{}, serve.Fail(403, "%v", err)
 	}
-	if err := sig.CheckIdentity(in.Notarizer, "notarizer", m.box); err != nil {
+	if err := sig.CheckIdentity(in.Notarizer, "notarizer", m.trust); err != nil {
 		return sig.Doc{}, serve.Fail(403, "%v", err)
 	}
 	var nz doc.Notarized
 	if err := in.Notarized.Open(in.Notarizer.SigningKey, &nz); err != nil || nz.Kind != "notarized" || nz.Cert != in.Cert.ID() {
 		return sig.Doc{}, serve.Fail(403, "the cert isn't notarized")
 	}
-	if err := sig.CheckIdentity(in.Notary, "notary", m.box); err != nil {
+	if err := sig.CheckIdentity(in.Notary, "notary", m.trust); err != nil {
 		return sig.Doc{}, serve.Fail(403, "%v", err)
 	}
 	var ch doc.Challenge

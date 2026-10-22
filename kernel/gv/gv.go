@@ -1,14 +1,14 @@
 // Package gv: checking a grant as everyone who takes one does (the mover, the merger, secrets, the guard). A grant is
-// signed by the mover or the merger (their box-vouched identities), or is the root key's ⊤ on the sink.
+// signed by the mover or the merger (their identities, checked against the root key's roster), or is the root key's ⊤ on the sink.
 package gv
 
 import (
 	"fmt"
 	"time"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/perm"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/perm"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 // Signed: a grant and what vouches for its signer
@@ -21,11 +21,11 @@ type Signed struct {
 }
 
 // RootKey: the root key from secrets' signed keys statement
-func RootKey(keys *sig.Doc, secrets *sig.Identity, boxPub string) (string, error) {
+func RootKey(keys *sig.Doc, secrets *sig.Identity, t *sig.Trust) (string, error) {
 	if keys == nil || secrets == nil {
 		return "", fmt.Errorf("the root key needs secrets' signed keys")
 	}
-	if err := sig.CheckIdentity(*secrets, "secrets", boxPub); err != nil {
+	if err := sig.CheckIdentity(*secrets, "secrets", t); err != nil {
 		return "", err
 	}
 	var k struct {
@@ -40,19 +40,19 @@ func RootKey(keys *sig.Doc, secrets *sig.Identity, boxPub string) (string, error
 }
 
 // Open: the grant, checked
-func Open(s Signed, boxPub string) (doc.Grant, error) {
+func Open(s Signed, t *sig.Trust) (doc.Grant, error) {
 	var key string
 	switch s.By {
 	case "mover", "merger":
 		if s.Signer == nil {
 			return doc.Grant{}, fmt.Errorf("a %s grant needs the %s's identity", s.By, s.By)
 		}
-		if err := sig.CheckIdentity(*s.Signer, s.By, boxPub); err != nil {
+		if err := sig.CheckIdentity(*s.Signer, s.By, t); err != nil {
 			return doc.Grant{}, err
 		}
 		key = s.Signer.SigningKey
 	case "root":
-		k, err := RootKey(s.Keys, s.Secrets, boxPub)
+		k, err := RootKey(s.Keys, s.Secrets, t)
 		if err != nil {
 			return doc.Grant{}, err
 		}

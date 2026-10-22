@@ -24,9 +24,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/secrets"
-	"github.com/DE0CH/jarvis2/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/secrets"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 var router = os.Getenv("E2E_ROUTER")

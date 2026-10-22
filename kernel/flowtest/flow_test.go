@@ -7,15 +7,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DE0CH/jarvis2/kernel/doc"
-	"github.com/DE0CH/jarvis2/kernel/gv"
-	"github.com/DE0CH/jarvis2/kernel/internal/kt"
-	"github.com/DE0CH/jarvis2/kernel/merger"
-	"github.com/DE0CH/jarvis2/kernel/mover"
-	"github.com/DE0CH/jarvis2/kernel/notarizer"
-	"github.com/DE0CH/jarvis2/kernel/perm"
-	"github.com/DE0CH/jarvis2/kernel/sig"
-	"github.com/DE0CH/jarvis2/kernel/signers"
+	"github.com/DE0CH/jarvis4/kernel/doc"
+	"github.com/DE0CH/jarvis4/kernel/gv"
+	"github.com/DE0CH/jarvis4/kernel/internal/kt"
+	"github.com/DE0CH/jarvis4/kernel/merger"
+	"github.com/DE0CH/jarvis4/kernel/mover"
+	"github.com/DE0CH/jarvis4/kernel/notarizer"
+	"github.com/DE0CH/jarvis4/kernel/perm"
+	"github.com/DE0CH/jarvis4/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/signers"
 )
 
 type k struct {
@@ -28,11 +28,11 @@ type k struct {
 
 func newK(t *testing.T) *k {
 	w := kt.New(t)
-	nz, err := notarizer.Open(filepath.Join(t.TempDir(), "s"), w.C["notarizer"].Signer, w.Box.PublicKey())
+	nz, err := notarizer.Open(filepath.Join(t.TempDir(), "s"), w.C["notarizer"].Signer, w.Trust)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &k{t, w, nz, mover.New(w.C["mover"].Signer, w.Box.PublicKey()), merger.New(w.C["merger"].Signer, w.Box.PublicKey())}
+	return &k{t, w, nz, mover.New(w.C["mover"].Signer, w.Trust), merger.New(w.C["merger"].Signer, w.Trust)}
 }
 
 // notarize: the cert with a fresh challenge
@@ -70,7 +70,7 @@ func (k *k) move(g gv.Signed, cert sig.Doc) (gv.Signed, doc.Grant) {
 		k.t.Fatal(err)
 	}
 	s := gv.Signed{Grant: d, By: "mover", Signer: k.w.ID("mover")}
-	out, err := gv.Open(s, k.w.Box.PublicKey())
+	out, err := gv.Open(s, k.w.Trust)
 	if err != nil {
 		k.t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestASessionsChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	merged, err := gv.Open(gv.Signed{Grant: md, By: "merger", Signer: w.ID("merger")}, w.Box.PublicKey())
+	merged, err := gv.Open(gv.Signed{Grant: md, By: "merger", Signer: w.ID("merger")}, w.Trust)
 	if err != nil || !merged.Pair.Allowed.Contains("shell") || !merged.Pair.Allowed.Contains("store:default") {
 		t.Fatal(err, merged)
 	}
@@ -159,12 +159,11 @@ func TestTheMoverRefuses(t *testing.T) {
 	fake, _ := sig.NewSigner()
 	fakeNz, _ := fake.SignJSON(doc.Notarized{Kind: "notarized", Cert: cert.ID()})
 	refuse(k.moveIn(k.rootTop(), cert, fakeNz), "isn't notarized")
-	// a grant signed by a mover the box never vouched for
-	box2, _ := sig.NewSigner()
-	m2, _ := sig.NewComponent("mover", box2)
+	// a grant signed by a mover the roster doesn't name
+	m2, _ := sig.NewComponent("mover")
 	ik, _ := doc.IdealKeys(doc.Sink)
 	gd, _ := m2.Signer.SignJSON(doc.Grant{Kind: "grant", Machine: doc.Sink, Keys: ik, Pair: perm.Top(), From: []string{}, At: doc.Now()})
-	refuse(k.moveIn(gv.Signed{Grant: gd, By: "mover", Signer: &m2.Identity}, cert, nz), "box key")
+	refuse(k.moveIn(gv.Signed{Grant: gd, By: "mover", Signer: &m2.Identity}, cert, nz), "isn't the roster's")
 	// the root key's grant on anything but ⊤ on the sink
 	rd, _ := w.Root.SignJSON(doc.Grant{Kind: "grant", Machine: doc.Sink, Keys: ik, Pair: p, From: []string{}, At: doc.Now()})
 	refuse(k.moveIn(gv.Signed{Grant: rd, By: "root", Keys: &w.KeysDoc, Secrets: w.ID("secrets")}, cert, nz), "⊤ on the sink only")
@@ -185,7 +184,7 @@ func TestAMoveOnlyNarrows(t *testing.T) {
 	small := perm.Pair{Allowed: perm.Only("store:a"), Conditions: []string{"session:s1"}}
 	gX, _ := k.move(k.rootTop(), w.Cert(doc.ByIPhone, doc.Sink, kt.Source(), small, kt.SourceContent("t"), nil))
 	_, mk := kt.MachineKeys()
-	x, _ := gv.Open(gX, w.Box.PublicKey())
+	x, _ := gv.Open(gX, w.Trust)
 	_, on := k.move(gX, w.Cert(doc.ByRoot, x.Machine, "fly-aaaaaaaa01", perm.Top(), nil, mk))
 	if !on.Pair.Leq(small) || on.Pair.Allowed.Contains("shell") {
 		t.Fatal(on)

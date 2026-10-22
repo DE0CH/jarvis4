@@ -251,7 +251,7 @@ func prepare() (spec harnessSpec, err error) {
 	// the core's Fly token (besides the setup session's org token) can create or change machines in this app —
 	// the router's is read-only — so the key comes from the core through Fly, never from the router.
 	coreKey := strings.TrimSpace(os.Getenv(coreKeyEnv))
-	kernel := strings.TrimSpace(os.Getenv(kernelBoxEnv)) != "" // kernelboot.go: the kernel's spawner started it
+	kernel := strings.TrimSpace(os.Getenv(kernelRootEnv)) != "" // kernelboot.go: the kernel's spawner started it
 	if coreKey == "" && !kernel {
 		return spec, errors.New("no core key in the machine's config (" + coreKeyEnv + ")")
 	}
