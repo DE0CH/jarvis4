@@ -263,6 +263,7 @@ func (r *Router) outcomeLoop() {
 	t := time.NewTicker(outcomeTickEvery)
 	defer t.Stop()
 	for {
+		awaitLead() // leaderlease.go
 		r.outcomeTick()
 		select {
 		case <-t.C:

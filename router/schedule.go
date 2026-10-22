@@ -641,6 +641,7 @@ var errSkip = errors.New("busy")
 
 func (r *Router) scheduleLoop() {
 	for {
+		awaitLead()                // leaderlease.go
 		r.scheduleTick(time.Now()) // at once at start: what came due during a handover fires right after it
 		time.Sleep(r.untilNextDue(time.Now(), scheduleTick))
 	}

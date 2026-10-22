@@ -793,6 +793,7 @@ func (r *Router) messageTickOnce(now time.Time) {
 func (r *Router) messageLoop() {
 	for {
 		time.Sleep(messageTick)
+		awaitLead() // leaderlease.go
 		r.messageTickOnce(time.Now().UTC())
 	}
 }

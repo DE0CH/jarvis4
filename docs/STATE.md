@@ -415,7 +415,9 @@ Each step ships alone, keeps the router working, and is a clean cut for what it 
    effects is safe to repeat: the machine signs one snapshot, the kill answers the same cert, the archive skips what it
    holds); start, resume, the switches and the approved flows are still cut off as before (endCutOff, now only for a
    session no live job holds) until they are split into steps of their own.
-8. **The scheduler lease** (section 4) replaces "the leader runs the loops".
+8. **The scheduler lease** (section 4) replaces "the leader runs the loops". Done: leaderlease.go, migrations/0009: the row `scheduler` of `leader`, taken for 30 s and
+   renewed every 10 s; every periodic loop waits at the top of each round until this replica leads (a replica stops
+   leading 5 s before its row runs out); jobs and the machines' polls run everywhere.
 9. **m-gateway** (section 5): the WireGuard peer leaves the router; the router listens on :8081 in the pod network.
 10. **Stateless replicas**: the router Deployment becomes 2 replicas, RollingUpdate `maxUnavailable: 0`, readiness on
     the database, a PodDisruptionBudget, no volume (scratch is an emptyDir). This is the step that deletes the old

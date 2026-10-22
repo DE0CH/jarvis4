@@ -631,6 +631,7 @@ func (r *Router) startDiscord() {
 	go func() {
 		for {
 			time.Sleep(discordTickEvery)
+			awaitLead() // leaderlease.go
 			r.discordTick()
 		}
 	}()

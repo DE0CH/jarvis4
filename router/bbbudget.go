@@ -202,6 +202,7 @@ func (r *Router) bbBudgetLoop() {
 		return
 	}
 	for {
+		awaitLead() // leaderlease.go
 		if ss, err := bbListSessions(key); err != nil {
 			log.Printf("[bb-budget] %v", err)
 		} else {

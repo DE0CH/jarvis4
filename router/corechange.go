@@ -31,6 +31,7 @@ var (
 
 func (r *Router) coreChangeLoop() {
 	for {
+		awaitLead() // leaderlease.go
 		r.coreChangeTick()
 		time.Sleep(coreChangeEvery)
 	}

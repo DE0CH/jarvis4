@@ -221,6 +221,7 @@ func lastLineOf(s string) string {
 func (r *Router) watchLoop() {
 	for {
 		time.Sleep(watchTickEvery)
+		awaitLead() // leaderlease.go
 		r.watchTick(time.Now())
 	}
 }

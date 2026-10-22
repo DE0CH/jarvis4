@@ -563,6 +563,7 @@ func (r *Router) expireApprovals(now time.Time) {
 func (r *Router) inboxLoop() {
 	for {
 		time.Sleep(time.Minute)
+		awaitLead() // leaderlease.go
 		now := time.Now().UTC()
 		r.expireApprovals(now)
 		r.st.Do(func(d *persisted) { pruneRequests(d, now); pruneBatches(d, now) })

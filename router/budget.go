@@ -503,6 +503,7 @@ func (r *Router) budgetLoop() {
 	fly := &flyAPI{base: "https://api.machines.dev", app: sessionsApp, token: token, http: &http.Client{Timeout: 30 * time.Second}}
 	capUSD, warnUSD := budgetThresholds(os.Getenv)
 	for {
+		awaitLead() // leaderlease.go
 		if _, _, err := r.budgetTick(fly, time.Now(), capUSD, warnUSD); err != nil {
 			log.Printf("[budget] %v", err)
 		}

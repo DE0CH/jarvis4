@@ -994,6 +994,7 @@ func sha256hex(p string) (string, error) {
 
 func (r *Router) archiveLoop() {
 	for {
+		awaitLead() // leaderlease.go
 		r.tidyRestores()
 		r.tidyImports() // jarvis1import.go
 		time.Sleep(time.Minute)

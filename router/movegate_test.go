@@ -191,6 +191,7 @@ func TestScheduleTicksAtStart(t *testing.T) {
 		s := sched(d, "s1")
 		s.Wakeups["w"] = &Wakeup{Name: "w", At: time.Now().Add(-2 * time.Second).UnixMilli(), ArmedAt: 1, Signed: &SignedRequest{}}
 	})
+	r.leaseOnce() // leaderlease.go: this replica leads
 	go r.scheduleLoop()
 	deadline := time.Now().Add(3 * time.Second)
 	for delivered.Load() == 0 && time.Now().Before(deadline) {

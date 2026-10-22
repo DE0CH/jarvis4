@@ -199,6 +199,8 @@ func main() {
 	r.startFeatures()
 	r.startStateBackups()
 	drainMax, _ := strconv.Atoi(env("DRAIN_SECONDS", "1740"))
+	r.leaseOnce()                  // leaderlease.go: the scheduler's lease, before the loops look
+	go r.leaseLoopScheduler()      // and kept
 	go r.mqSweepLoop()             // mq.go: the machines' queue rows older than a day
 	go r.jobsLoop(5 * time.Second) // jobs.go: a job whose holder died is carried on here
 	go r.rosterLoop(time.Minute)   // roster.go: a restarted component gets the roster again, or it is stale

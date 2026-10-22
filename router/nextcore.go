@@ -340,6 +340,7 @@ func (r *Router) switchCores(n *nextCores) {
 // nextCoreLoop: FLIP_AUTO=1 flips once the next core is a standby, and finishes a flip whose takeover already happened
 func (r *Router) nextCoreLoop(every, drainMax time.Duration) {
 	for {
+		awaitLead() // leaderlease.go
 		r.nextCoreTick(drainMax)
 		time.Sleep(every)
 	}

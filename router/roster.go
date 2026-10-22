@@ -167,6 +167,7 @@ func (r *Router) rosterStatus() map[string]any {
 func (r *Router) rosterLoop(every time.Duration) {
 	for {
 		time.Sleep(every)
+		awaitLead() // leaderlease.go
 		r.rosterCheck()
 	}
 }

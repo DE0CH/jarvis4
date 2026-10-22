@@ -983,6 +983,7 @@ var leaseRun = struct {
 
 func (r *Router) leaseLoop() {
 	for {
+		awaitLead() // leaderlease.go
 		r.leaseTick()
 		time.Sleep(leaseTickEvery)
 	}

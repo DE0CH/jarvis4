@@ -249,6 +249,7 @@ func (r *Router) mqForget(ref string) {
 func (r *Router) mqSweepLoop() {
 	for {
 		time.Sleep(time.Hour)
+		awaitLead() // leaderlease.go
 		ctx, cancel := r.mqCtx()
 		r.pool().pool.Exec(ctx, "DELETE FROM machine_queue WHERE created_at < now() - interval '1 day'")
 		cancel()

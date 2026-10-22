@@ -303,7 +303,9 @@ type pilotAction struct {
 func (r *Router) startAutopilot() {
 	go func() {
 		for range time.Tick(pilotTick) {
-			r.autopilotTick()
+			if leads() { // leaderlease.go
+				r.autopilotTick()
+			}
 		}
 	}()
 }

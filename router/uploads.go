@@ -342,6 +342,7 @@ func writeUpload(w http.ResponseWriter, af AttachFile, err error) {
 func (r *Router) uploadsLoop() {
 	for {
 		time.Sleep(time.Hour)
+		awaitLead() // leaderlease.go
 		r.sweepUploads(time.Now())
 	}
 }

@@ -734,6 +734,7 @@ func (r *Router) registerVouch(app appRoute, m machineRoute) {
 
 func (r *Router) inputLogLoop() {
 	for {
+		awaitLead() // leaderlease.go
 		r.inputLogTick()
 		time.Sleep(time.Minute)
 	}

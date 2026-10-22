@@ -850,6 +850,7 @@ func (r *Router) drainLogins(d time.Duration) {
 // loginLoop: refresh every account's login when due (checked every minute)
 func (r *Router) loginLoop() {
 	for {
+		awaitLead() // leaderlease.go
 		for _, h := range r.accounts().all() {
 			if _, err := h.refresh(false); err != nil && !errors.Is(err, errNoPair) {
 				log.Printf("[login] %s: %v", h.store, err)

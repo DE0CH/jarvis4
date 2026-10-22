@@ -1588,6 +1588,7 @@ var taskKick func(r *Router)
 func (r *Router) tasksLoop() {
 	for {
 		time.Sleep(taskTickEvery)
+		awaitLead() // leaderlease.go
 		r.tasksTick(time.Now())
 	}
 }

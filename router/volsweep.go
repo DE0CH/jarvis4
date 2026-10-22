@@ -227,6 +227,7 @@ func (r *Router) volSweepLoop() {
 	}
 	time.Sleep(volSweepFirst)
 	for {
+		awaitLead() // leaderlease.go
 		if _, err := r.volumeSweep(token, time.Now()); err != nil {
 			log.Printf("[volsweep] %v (tried again in %s)", err, volSweepEvery)
 			volSweepStatus.Lock()

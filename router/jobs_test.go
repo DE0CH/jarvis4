@@ -58,3 +58,22 @@ func TestAJobWhoseHolderDiedIsCarriedOn(t *testing.T) {
 		t.Fatalf("%+v", s)
 	}
 }
+
+// one replica leads at a time: a second takes the lease only once the first's has run out
+func TestSchedulerLease(t *testing.T) {
+	r := newTestRouter(t)
+	old := routerID
+	t.Cleanup(func() { routerID = old; leadUntil.Store(0) })
+	routerID = "replica-a"
+	if !r.leaseOnce() {
+		t.Fatal("the first replica didn't take the lease")
+	}
+	routerID, _ = "replica-b", leadUntil.Swap(0)
+	if r.leaseOnce() {
+		t.Fatal("a second replica took a lease the first holds")
+	}
+	r.pool().pool.Exec(context.Background(), "UPDATE leader SET until = now() - interval '1 second'")
+	if !r.leaseOnce() {
+		t.Fatal("the second replica didn't take the lapsed lease")
+	}
+}
