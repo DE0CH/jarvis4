@@ -152,7 +152,7 @@ spec:
   minReadySeconds: 10
   selector: { matchLabels: { app: m-gateway } }
   template:
-    metadata: { labels: { app: m-gateway }, annotations: { jarvis2/secrets-rev-wg-b: "73e3aa9dc695" } }
+    metadata: { labels: { app: m-gateway }, annotations: { jarvis4/rollout-check: "1", jarvis2/secrets-rev-wg-b: "73e3aa9dc695" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
