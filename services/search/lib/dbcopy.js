@@ -1,6 +1,6 @@
-// The index's copy on the Storage Box (claude-records/.jarvis2-services/<name>.gz): the volume is seeded from it
+// The index's copy on the Storage Box (claude-records/.jarvis4-services/<name>.gz): the volume is seeded from it
 // when it has no database yet (a new box, a lost volume, the move from Jarvis 1's box), and a fresh copy is
-// written there every BACKUP_INTERVAL_H hours. The ".jarvis2-services" dir starts with a dot, so the crawl skips it.
+// written there every BACKUP_INTERVAL_H hours. The ".jarvis4-services" dir starts with a dot, so the crawl skips it.
 //   seed(dbFile, env)          before the database is opened; a no-op when the file exists
 //   backupLoop(db, name, env)  better-sqlite3's online backup -> gzip -> PUT <name>.gz.part -> MOVE <name>.gz
 const fs = require("fs");
@@ -9,7 +9,7 @@ const zlib = require("zlib");
 const { pipeline } = require("stream/promises");
 const { Readable } = require("stream");
 
-const DIR = "claude-records/.jarvis2-services";
+const DIR = "claude-records/.jarvis4-services";
 
 function dav(env) {
   const { STORAGEBOX_HOST: host, STORAGEBOX_USER: user, STORAGEBOX_PASSWORD: pass } = env;

@@ -1,4 +1,4 @@
-// Transcript search service (Jarvis 4: k8s/services/apps/search, namespace jarvis2-services). The router forwards
+// Transcript search service (Jarvis 4: k8s/cluster/services/search, namespace jarvis4-services). The router forwards
 // /api/search* (the app) and /m/api/search* (sessions) here; it is never exposed on its own. Hybrid keyword +
 // semantic search over every session transcript of both Jarvises on the Storage Box (archives, Jarvis 1's
 // .paused/ snapshots, .live/ copies of running sessions) and the task records. API: docs/API.md "Transcript search".

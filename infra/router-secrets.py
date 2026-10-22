@@ -24,6 +24,13 @@ manifest so it restarts with the new Secret. SRC is `env:VAR` (default `env:KEY`
   --part devices router-devices.enc.yaml — CF_DEVICE_TOKENS_API only (router/devices.go)
   --part alloy   alloy.enc.yaml, Secret alloy in jarvis2-obs — GRAFANA_LOGS_URL/USER, GRAFANA_METRICS_URL/USER,
                  GRAFANA_WRITE_TOKEN: the host's Grafana Alloy reads it (infra/alloy/; no pod uses it)
+  --part search  (k8s/cluster/services/secrets) search.enc.yaml, Secret search-secrets in jarvis4-services —
+                 STORAGEBOX_HOST/USER/PASSWORD and OPENROUTER_API for transcript search
+  --part icloud-index  (k8s/cluster/services/secrets) icloud-index.enc.yaml, Secret icloud-index-secrets — OPENROUTER_API,
+                 LOBSTER_TOKEN, STORAGEBOX_HOST/USER/PASSWORD, BACKUP_AGE_KEY (the private half of the index copy's
+                 age key, ICLOUD_BACKUP_AGE_KEY in the infra store)
+  --part icloud-session  (k8s/cluster/services/secrets) icloud-session.enc.yaml, Secret icloud-index-session —
+                 ICLOUD_RCLONE_CONF only (the saved iCloud login)
   --part tunnel  tunnel.enc.yaml, Secret tunnel-token in jarvis2-edge — token=TUNNEL_TOKEN (infra/cloudflare.py --cluster)
   --part postgres  postgres.enc.yaml, Secret postgres-s3 in jarvis4-db — ACCESS_KEY_ID, ACCESS_SECRET_KEY: the Object
                  Storage credential of the database's WAL archive and base backups (bucket jarvis4-db-de0ch,
@@ -44,6 +51,8 @@ BOXES = {  # box → (age recipient file, secrets dir, {part: manifest path unde
     "cluster": ("keys/cluster-age.pub", "k8s/cluster/secrets", {
         "": RT, "wg": RT, "backup": RT, "github": RT, "flyorgs": RT, "flypersonal": RT, "flyvolumes": RT,
         "browserbase": RT, "devices": RT, "alloy": None, "tunnel": None, "postgres": None, "postgres-app": None,
+        "search": "services/search/search.yaml", "icloud-index": "services/icloud-index/icloud-index.yaml",
+        "icloud-session": "services/icloud-index/icloud-index.yaml",
         "db": RT}),
 }
 RNS = "jarvis4-router"
@@ -63,6 +72,13 @@ PARTS = {  # part → (file, Secret name, annotation, namespace)
     "postgres": ("postgres.enc.yaml", "postgres-s3", None, "jarvis4-db"),  # the database's backups (docs/STATE.md)
     "postgres-app": ("postgres-app.enc.yaml", "jarvis4-db-router", None, "jarvis4-db"),  # the database owner's login
 }
+SVC = "jarvis4-services"
+PARTS |= {  # the services' parts live next to them (k8s/cluster/services/secrets), applied only once that tree is listed
+    "search": ("search.enc.yaml", "search-secrets", "jarvis2/secrets-rev-search", SVC),
+    "icloud-index": ("icloud-index.enc.yaml", "icloud-index-secrets", "jarvis2/secrets-rev-icloud-index", SVC),
+    "icloud-session": ("icloud-session.enc.yaml", "icloud-index-session", "jarvis2/secrets-rev-icloud-session", SVC),
+}
+PART_DIRS = {p: "k8s/cluster/services/secrets" for p in ("search", "icloud-index", "icloud-session")}
 SECRET_TYPES = {"postgres-app": "kubernetes.io/basic-auth"}  # CloudNativePG's initdb secret is basic-auth
 
 
@@ -80,6 +96,7 @@ def main():
     if part not in manifests:
         sys.exit(f"part {part or '(default)'} doesn't belong on the {box} box")
     manifest = manifests[part] and os.path.join("k8s", box, manifests[part])
+    secdir = PART_DIRS.get(part, secdir)
     out = os.path.join(ROOT, secdir, fname)
     data = {}
     for arg in args:

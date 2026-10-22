@@ -1,6 +1,6 @@
 // This replica's own pod as Kubernetes sees it: restart count and the last termination (reason such as OOMKilled,
-// exit code, times). Read with the pod's service account (k8s/services/apps/search: Role search-self, get on pods in
-// jarvis2-services); outside a cluster it reports that it can't. Cached for 30 s.
+// exit code, times). Read with the pod's service account (k8s/cluster/services/search: Role search-self, get on pods in
+// jarvis4-services); outside a cluster it reports that it can't. Cached for 30 s.
 const fs = require("fs");
 const https = require("https");
 const os = require("os");

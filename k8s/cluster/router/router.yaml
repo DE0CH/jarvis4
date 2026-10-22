@@ -25,7 +25,7 @@ spec:
   selector: { matchLabels: { app: router } }
   template:
     # secrets-rev*: bumped by infra/router-secrets.py so a changed Secret restarts the pod (envFrom is read at start)
-    metadata: { labels: { app: router }, annotations: { jarvis2/secrets-rev: "7e99c39a0a2c", jarvis2/secrets-rev-wg: "ec3a90144137", jarvis2/secrets-rev-backup: "97ba541b62b5", jarvis2/secrets-rev-github: "000000000000", jarvis2/secrets-rev-flyorgs: "000000000000", jarvis2/secrets-rev-flypersonal: "000000000000", jarvis2/secrets-rev-flyvolumes: "cdd49966c8fa", jarvis2/secrets-rev-browserbase: "000000000000", jarvis2/secrets-rev-devices: "000000000000", jarvis2/secrets-rev-db: "b74deeb37161" } }
+    metadata: { labels: { app: router }, annotations: { jarvis2/secrets-rev: "7e99c39a0a2c", jarvis2/secrets-rev-wg: "ec3a90144137", jarvis2/secrets-rev-backup: "97ba541b62b5", jarvis2/secrets-rev-github: "8f78d40c37d3", jarvis2/secrets-rev-flyorgs: "000000000000", jarvis2/secrets-rev-flypersonal: "000000000000", jarvis2/secrets-rev-flyvolumes: "cdd49966c8fa", jarvis2/secrets-rev-browserbase: "000000000000", jarvis2/secrets-rev-devices: "000000000000", jarvis2/secrets-rev-db: "b74deeb37161" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -40,6 +40,11 @@ spec:
             # the kernel's components (k8s/cluster/kernel): %s is the component's Service name
             - { name: KERNEL_URL, value: "http://%s.jarvis4-kernel.svc.cluster.local:8080" }
             # no old core in Jarvis 4: nothing answers here
+            # the shared services (k8s/cluster/services, not yet on the cluster: until they are, these names don't
+            # resolve and the router answers search/iCloud with a 502 and keeps retrying watches until they give up)
+            - { name: SEARCH_URL, value: "http://search.jarvis4-services.svc.cluster.local:8090" }
+            - { name: ICLOUD_INDEX_URL, value: "http://icloud-index.jarvis4-services.svc.cluster.local:8091" }
+            - { name: WATCH_URL, value: "http://watch.jarvis4-services.svc.cluster.local:8095" }
             - { name: CORE_URL, value: "http://core.invalid:8090" }
             # its /data, age-encrypted to this key (the same key as Jarvis 2's router backups: the private half is
             # ROUTER_BACKUP_AGE_KEY in the infra store), to the Storage Box claude-records/.jarvis4-router (router/backup.go)
@@ -112,6 +117,9 @@ spec:
     # Postgres (k8s/cluster/postgres, step 6)
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis4-db } } }]
       ports: [{ port: 5432 }]
+    # transcript search, the iCloud index and the watch runner (k8s/cluster/services)
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis4-services } } }]
+      ports: [{ port: 8090 }, { port: 8091 }, { port: 8095 }]
     # the standby's proxy to the leader
     - to: [{ podSelector: { matchLabels: { app: router } } }]
       ports: [{ port: 8080 }]

@@ -1,0 +1,113 @@
+# The iCloud Drive index (services/icloud-index): every file in Deyao's iCloud Drive searchable by name, folder and
+# content (document text, OCR of scans and photos, video frames, speech). Identity-level (Deyao, 2026-10-13): the
+# router forwards Deyao's app (/api/icloud/*) and only sessions holding the identity store (/m/api/icloud/*,
+# router/searchsvc.go) here; nothing else can reach it (NetworkPolicy below: only the router's pods). It parses untrusted
+# files (PDF, office, images, ffmpeg) and uses up to 2 GiB, so it runs only on the services node (nodeSelector).
+# Only ONE iCloud index may run against the Drive and its AI budget: Jarvis 2's (on its services box) stops before this
+# one starts, or the ledger in each copy lets both spend the rest of the budget.
+#
+# The index is ONE SQLite file on the PVC and expensive to rebuild (weeks of reading iCloud plus the AI spend, whose
+# lifetime ledger `ai_spent` lives in it), so a new volume is seeded from its copy on the Storage Box
+# (claude-records/.jarvis4-services/icloud-index.db.gz.age, age-encrypted, written weekly; infra/services-seed.sh copies Jarvis 2's there once) and SEED_REQUIRED=1 makes a missing copy an
+# error rather than a fresh start that would spend the budget again.
+# Secrets: k8s/cluster/services/secrets/icloud-index.enc.yaml (infra/router-secrets.py --box cluster --part icloud-index: OPENROUTER_API,
+# LOBSTER_TOKEN, STORAGEBOX_HOST/USER/PASSWORD, BACKUP_AGE_KEY) and k8s/cluster/services/secrets/icloud-session.enc.yaml (--part icloud-session:
+# ICLOUD_RCLONE_CONF, the saved iCloud login; a new login = write that part again, the pod picks it up by itself).
+apiVersion: v1
+kind: PersistentVolumeClaim
+# never pruned by Flux: a commit that drops this file by mistake must not delete the index (2026-10-13: one did)
+metadata: { name: icloud-index-data, namespace: jarvis4-services, annotations: { kustomize.toolkit.fluxcd.io/prune: disabled } }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 20Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: icloud-index, namespace: jarvis4-services }
+spec:
+  # Zero-downtime like search: two replicas on the one volume (single node), a writer lease in the database
+  # (icloud_index/lease.py): only the holder lists iCloud, reads files, spends the AI budget, embeds and backs up; the
+  # other serves reads and takes the lease on SIGTERM (released) or 45 s after a kill (DECISIONS 171). Back on
+  # (Deyao, 2026-10-15), capped.
+  replicas: 2
+  minReadySeconds: 5
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  selector: { matchLabels: { app: icloud-index } }
+  template:
+    metadata: { labels: { app: icloud-index }, annotations: { jarvis2/secrets-rev-icloud-index: "97176ac703c2", jarvis2/secrets-rev-icloud-session: "c583dde8b0e8" } }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector: { jarvis4/pool: services }  # the node infra/cluster-node.sh adds, never the control plane's
+      terminationGracePeriodSeconds: 60  # DRAIN_MS + the indexer's stop + in-flight requests
+      securityContext: { fsGroup: 1001 }
+      containers:
+        - name: icloud-index
+          image: ghcr.io/de0ch/jarvis4-icloud-index:sha-000000000000
+          ports: [{ containerPort: 8091 }]
+          env:
+            - { name: PORT, value: "8091" }
+            - { name: POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+            - { name: DRAIN_MS, value: "6000" }  # > readiness period × failureThreshold
+            - { name: INDEX_DB, value: /data/index.db }
+            - { name: SEED_NAME, value: icloud-index.db }
+            - { name: SEED_REQUIRED, value: "1" }
+            # the copy on the Storage Box is age-encrypted to this key (its private half, BACKUP_AGE_KEY, is only in this
+            # pod's SOPS part): the index is identity-level (Deyao, 2026-10-13)
+            - { name: BACKUP_AGE_RECIPIENT, value: "age1y8ujp2vpp4hdkny6gllpa3tffns7zkyulghvcr4d0rsd03w8t4pqxky6kn" }
+            - { name: BACKUP_INTERVAL_H, value: "168" }  # weekly: a backup stages an 8 GB copy (+ its gzip) in /data/tmp
+            - { name: WORK_DIR, value: /data/work }
+            - { name: TMPDIR, value: /data/tmp }
+            - { name: HOME, value: /data }
+            - { name: RCLONE_CONFIG, value: /data/rclone.conf }   # rclone's own copy: it rewrites cookies here
+            - { name: ICLOUD_CONF_FILE, value: /secrets/icloud.conf }
+            - { name: XDG_CACHE_HOME, value: /data/cache }
+            - { name: PYTHONDONTWRITEBYTECODE, value: "1" }
+            # Total, lifetime cap on OpenRouter spend for images, scans, video frames and speech (USD). Raise it to
+            # let more of the Drive be read; names and text documents are free.
+            - { name: AI_BUDGET_USD, value: "25" }  # Deyao, 2026-10-01
+            - { name: VISION_MODEL, value: google/gemini-2.5-flash-lite }
+            - { name: AUDIO_MODEL, value: google/gemini-2.5-flash-lite }
+            - { name: LIST_INTERVAL_H, value: "24" }
+          envFrom: [{ secretRef: { name: icloud-index-secrets } }]
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: session, mountPath: /secrets, readOnly: true }
+          readinessProbe: { httpGet: { path: /ready, port: 8091 }, periodSeconds: 2, failureThreshold: 1 }
+          livenessProbe: { httpGet: { path: /healthz, port: 8091 }, initialDelaySeconds: 60, periodSeconds: 10, failureThreshold: 6 }
+          resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: "1", memory: 2Gi } }  # hard cap: each replica loads the vectors, only the holder runs ffmpeg
+          securityContext: { runAsNonRoot: true, runAsUser: 1001, runAsGroup: 1001, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] }, seccompProfile: { type: RuntimeDefault } }
+      volumes:
+        - { name: data, persistentVolumeClaim: { claimName: icloud-index-data } }
+        - { name: session, secret: { secretName: icloud-index-session, items: [{ key: ICLOUD_RCLONE_CONF, path: icloud.conf }], defaultMode: 0400 } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: icloud-index, namespace: jarvis4-services }
+spec:
+  selector: { app: icloud-index }
+  ports: [{ port: 8091, targetPort: 8091 }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: icloud-index, namespace: jarvis4-services }
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app: icloud-index } }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: icloud-index, namespace: jarvis4-services }
+spec:
+  podSelector: { matchLabels: { app: icloud-index } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # the router only
+    - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis4-router } }, podSelector: { matchLabels: { app: router } } }]
+      ports: [{ port: 8091 }]
+  egress:
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }, podSelector: { matchLabels: { k8s-app: kube-dns } } }]
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+    # iCloud, OpenRouter, Discord (lobster's DMs) and the Storage Box
+    - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16] } }]
+      ports: [{ port: 443, protocol: TCP }]

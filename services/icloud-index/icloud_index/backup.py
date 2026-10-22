@@ -1,4 +1,4 @@
-"""The index's copy on the Storage Box (claude-records/.jarvis2-services/<name>.gz).
+"""The index's copy on the Storage Box (claude-records/.jarvis4-services/<name>.gz).
 
 The index is expensive to rebuild (weeks of reading iCloud and the AI budget, whose ledger `ai_spent` lives in
 it), so:
@@ -15,7 +15,7 @@ env: STORAGEBOX_HOST/USER/PASSWORD (STORAGEBOX_SCHEME for tests), SEED_NAME (def
      BACKUP_AGE_RECIPIENT, BACKUP_AGE_KEY, SEED_PLAIN_OK."""
 import base64, gzip, os, shutil, sqlite3, subprocess, tempfile, threading, time, urllib.error, urllib.parse, urllib.request
 
-DIR = "claude-records/.jarvis2-services"
+DIR = "claude-records/.jarvis4-services"
 
 
 class NoSeed(Exception):
