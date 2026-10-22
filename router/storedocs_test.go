@@ -286,19 +286,14 @@ func TestAnUnlockPullsAgain(t *testing.T) {
 	})
 	ans, _ := json.Marshal(c.key.doc(map[string]any{"kind": "unlocked", "for": "N1", "store": "yyc"}))
 	r.unlockArrived(ans)
-	select {
-	case cmd := <-r.queue("mA"):
-		if cmd != "refresh-secrets" {
-			t.Fatalf("got %s", cmd)
-		}
-	case <-time.After(time.Second):
+	if cmd, ok := waitCmd(r, "mA", time.Second); !ok {
 		t.Fatal("the machine wasn't told to pull again")
+	} else if cmd != "refresh-secrets" {
+		t.Fatalf("got %s", cmd)
 	}
 	other, _ := json.Marshal(c.key.doc(map[string]any{"kind": "unlocked", "for": "N2", "store": "yyc"}))
 	r.unlockArrived(other)
-	select {
-	case cmd := <-r.queue("mA"):
+	if cmd, ok := takeCmd(r, "mA"); ok {
 		t.Fatalf("an unlock for another cert sent %s", cmd)
-	default:
 	}
 }

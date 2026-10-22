@@ -35,17 +35,14 @@ type Router struct {
 	// kernelTokenDMed: the spawner's missing Fly token was DMed (once, until a token comes)
 	kernelTokenDMed atomic.Bool
 
-	cmdMu    sync.Mutex
-	commands map[string]chan string     // machine id → pending commands (snapshot)
-	execs    map[string]chan execItem   // machine id → holder-signed shell commands (grants.go)
-	results  map[string]chan ExecResult // exec request id → its waiting caller
-	hk       holders
-	snapped  map[string]*snapWait // snapwait.go: machine id → the final snapshot a pause or destroy waits for
-	locksMu  sync.Mutex
-	locks    map[string]bool // session id → a lifecycle action holds it (lock): one at a time
-	drain    drainState      // drain.go: the lifecycle goroutines running, refused once SIGTERM came
-	gate     moveGate        // movegate.go: deliveries and requests in flight at a handover
-	ops      opsState        // sessionops.go: busy marks, permission-mode/restart jobs, uploads, repos
+	cmdMu   sync.Mutex
+	notes   *broker // mq.go: this replica's waiters on the machines' queue, woken by the database
+	hk      holders
+	locksMu sync.Mutex
+	locks   map[string]bool // session id → a lifecycle action holds it (lock): one at a time
+	drain   drainState      // drain.go: the lifecycle goroutines running, refused once SIGTERM came
+	gate    moveGate        // movegate.go: deliveries and requests in flight at a handover
+	ops     opsState        // sessionops.go: busy marks, permission-mode/restart jobs, uploads, repos
 
 	policy Policy
 
@@ -66,7 +63,11 @@ type Router struct {
 }
 
 func NewRouter(cfg Config, st *State, core *CoreClient, policy Policy) *Router {
-	r := &Router{cfg: cfg, st: st, core: core, policy: policy, setupSeen: map[string]time.Time{}, commands: map[string]chan string{}, execs: map[string]chan execItem{}, results: map[string]chan ExecResult{}, snapped: map[string]*snapWait{}, sup: &supLogs{next: map[string]int64{}}, lc: newLifecycle()}
+	r := &Router{cfg: cfg, st: st, core: core, policy: policy, setupSeen: map[string]time.Time{}, sup: &supLogs{next: map[string]int64{}}, lc: newLifecycle()}
+	r.notes = &broker{}
+	if st != nil && st.sdb != nil {
+		go st.sdb.db.listenLoop(r.notes) // mq.go
+	}
 	r.wireKernel(newKernelClient(cfg.KernelURL))
 	if o, err := objectsFromEnv(); err != nil {
 		log.Fatal("objects: ", err)
@@ -1484,21 +1485,10 @@ func (r *Router) DowngradeFinish(machine string, challenge *Doc, signature strin
 
 // ---- commands to machines ---------------------------------------------------------------------------------
 
-func (r *Router) queue(machine string) chan string {
-	r.cmdMu.Lock()
-	defer r.cmdMu.Unlock()
-	q := r.commands[machine]
-	if q == nil {
-		q = make(chan string, 8)
-		r.commands[machine] = q
-	}
-	return q
-}
-
+// send: a supervisor command into the machine's queue (mq.go; at most 8 waiting, as before: more are dropped)
 func (r *Router) send(machine, cmd string) {
-	select {
-	case r.queue(machine) <- cmd:
-	default:
+	if _, err := r.mqPut(machine, "command", "", cmd, 8); err != nil {
+		log.Printf("machine %s: command %s: %v", machine, cmd, err)
 	}
 }
 

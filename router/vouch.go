@@ -314,21 +314,19 @@ type DeliveryResult struct {
 	NeedsApproval bool `json:"needsApproval,omitempty"`
 }
 
-var deliveries = struct {
-	sync.Mutex
-	queues  map[string]chan Delivery
-	results map[string]chan DeliveryResult
-}{queues: map[string]chan Delivery{}, results: map[string]chan DeliveryResult{}}
-
-func deliveryQueue(machine string) chan Delivery {
-	deliveries.Lock()
-	defer deliveries.Unlock()
-	q := deliveries.queues[machine]
-	if q == nil {
-		q = make(chan Delivery, 16)
-		deliveries.queues[machine] = q
+// deliverAwait: d into the machine's queue (mq.go), and its answer within wait (ok false: none came)
+func (r *Router) deliverAwait(machine string, d Delivery, wait time.Duration) (DeliveryResult, bool, error) {
+	if _, err := r.mqPut(machine, "delivery", d.ID, d, 0); err != nil {
+		return DeliveryResult{}, false, err
 	}
-	return q
+	ans, err := r.mqAwait(d.ID, wait, nil)
+	if err != nil || ans == nil {
+		r.mqForget(d.ID)
+		return DeliveryResult{}, false, err
+	}
+	var out DeliveryResult
+	json.Unmarshal(ans, &out)
+	return out, true, nil
 }
 
 // attested: what the core attests for a delivery (the machine recomputes it the same way)
@@ -493,20 +491,13 @@ func (r *Router) deliverVouchedOpts(sid string, d Delivery, boot bool, o *Origin
 			return err
 		}
 		d.ID, d.Attest = randID(), a
-		res := make(chan DeliveryResult, 1)
-		deliveries.Lock()
-		deliveries.results[d.ID] = res
-		deliveries.Unlock()
-		deliveryQueue(machine) <- d
-		var out DeliveryResult
-		select {
-		case out = <-res:
-		case <-time.After(60 * time.Second):
+		out, ok, err := r.deliverAwait(machine, d, 60*time.Second)
+		if err != nil {
+			return err
+		}
+		if !ok {
 			out = DeliveryResult{ID: d.ID, Error: "the machine didn't answer within 60 s"}
 		}
-		deliveries.Lock()
-		delete(deliveries.results, d.ID)
-		deliveries.Unlock()
 		if out.OK {
 			return nil
 		}
@@ -718,14 +709,8 @@ func (r *Router) registerVouch(app appRoute, m machineRoute) {
 	m("POST /m/delivery-result", func(w http.ResponseWriter, req *http.Request, machine string, body []byte) {
 		var res DeliveryResult
 		json.Unmarshal(body, &res)
-		deliveries.Lock()
-		ch := deliveries.results[res.ID]
-		deliveries.Unlock()
-		if ch != nil {
-			select {
-			case ch <- res:
-			default:
-			}
+		if err := r.mqAnswer(res.ID, res); err != nil { // mq.go: to whichever replica waits for it
+			log.Printf("delivery %s: its answer: %v", res.ID, err)
 		}
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	})

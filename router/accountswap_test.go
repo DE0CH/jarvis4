@@ -84,7 +84,7 @@ func TestAccountSwitchOlderImage(t *testing.T) {
 			t.Fatal("the account didn't change")
 		}
 	})
-	if q := r.queue("mA"); len(q) == 0 || <-q != "claude-account" {
+	if c, ok := takeCmd(r, "mA"); !ok || c != "claude-account" {
 		t.Fatal("the machine wasn't told")
 	}
 	if code, _ := appDo(t, r, "POST", "/api/sessions/sA/account", `{"account":"claude-a"}`); code != 409 {

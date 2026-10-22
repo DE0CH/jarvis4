@@ -228,12 +228,11 @@ func TestDeliveriesToAVouchingMachine(t *testing.T) {
 	r.st.Do(func(d *persisted) { sched(d, "s1").Wakeups["w"].Signed = signed })
 	got := make(chan Delivery, 1)
 	go func() {
-		d := <-deliveryQueue("m1")
+		b, _ := mqWaitKind(r, "m1", "delivery", 10*time.Second)
+		var d Delivery
+		json.Unmarshal(b, &d)
 		got <- d
-		deliveries.Lock()
-		ch := deliveries.results[d.ID]
-		deliveries.Unlock()
-		ch <- DeliveryResult{ID: d.ID, OK: true}
+		r.mqAnswer(d.ID, DeliveryResult{ID: d.ID, OK: true})
 	}()
 	if err := r.fireWakeup("s1", "w", 7); err != nil {
 		t.Fatal(err)

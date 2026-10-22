@@ -19,13 +19,13 @@ package main
 // POST /m/snapshot (a whole file signed over its hash) stays for older images.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"regexp"
 	"strconv"
-	"sync"
 	"time"
 )
 
@@ -33,24 +33,18 @@ const streamMarker = "stream"
 
 var hex64 = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-var (
-	snapErrMu sync.Mutex
-	snapErrs  = map[string]string{} // machine → what its last snapshot attempt reported failing
-)
-
+// setSnapshotError: the failure the machine reported for its snapshot, kept on its wait (snapwait.go) for the waiter
 func (r *Router) setSnapshotError(machine, msg string) {
-	snapErrMu.Lock()
-	snapErrs[machine] = msg
-	snapErrMu.Unlock()
+	r.swExec(`INSERT INTO snapshot_waits (machine_id, token, moved_at, error) VALUES ($1, '', now(), $2)
+		ON CONFLICT (machine_id) DO UPDATE SET error = $2`, machine, msg)
 }
 
 // snapshotError: the failure the machine reported for its snapshot (taken: read once)
 func (r *Router) snapshotError(machine string) error {
-	snapErrMu.Lock()
-	defer snapErrMu.Unlock()
-	msg, ok := snapErrs[machine]
-	delete(snapErrs, machine)
-	if !ok {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var msg string
+	if err := r.pool().pool.QueryRow(ctx, "UPDATE snapshot_waits w SET error = '' FROM (SELECT error FROM snapshot_waits WHERE machine_id = $1 FOR UPDATE) old WHERE w.machine_id = $1 RETURNING old.error", machine).Scan(&msg); err != nil || msg == "" {
 		return nil
 	}
 	return fmt.Errorf("the machine's snapshot failed: %s", msg)

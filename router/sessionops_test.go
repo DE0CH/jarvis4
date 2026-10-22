@@ -39,19 +39,20 @@ func answerExecs(r *Router, machine string, code int, stop chan struct{}) *[]str
 	cmds := &[]string{}
 	go func() {
 		for {
-			r.cmdMu.Lock()
-			q := r.execQueue(machine)
-			r.cmdMu.Unlock()
 			select {
-			case it := <-q:
+			case <-stop:
+				return
+			default:
+			}
+			if b, ok := mqWaitKind(r, machine, "exec", 50*time.Millisecond); ok {
+				var it execItem
+				json.Unmarshal(b, &it)
 				var req struct{ ID, Cmd string }
 				json.Unmarshal([]byte(it.Request), &req)
 				mu.Lock()
 				*cmds = append(*cmds, req.Cmd)
 				mu.Unlock()
 				r.execResult(ExecResult{ID: req.ID, Code: code})
-			case <-stop:
-				return
 			}
 		}
 	}()

@@ -41,19 +41,20 @@ func newMsgRig(t *testing.T, machine string, sensitive bool, answer func(d Deliv
 			select {
 			case <-stop:
 				return
-			case d := <-deliveryQueue(machine):
-				m.mu.Lock()
-				m.got = append(m.got, d)
-				m.mu.Unlock()
-				res := answer(d)
-				res.ID = d.ID
-				deliveries.Lock()
-				ch := deliveries.results[d.ID]
-				deliveries.Unlock()
-				if ch != nil {
-					ch <- res
-				}
+			default:
 			}
+			b, ok := mqWaitKind(m.r, machine, "delivery", 50*time.Millisecond)
+			if !ok {
+				continue
+			}
+			var d Delivery
+			json.Unmarshal(b, &d)
+			m.mu.Lock()
+			m.got = append(m.got, d)
+			m.mu.Unlock()
+			res := answer(d)
+			res.ID = d.ID
+			m.r.mqAnswer(d.ID, res)
 		}
 	}()
 	t.Cleanup(func() { messageWG.Wait(); close(stop) })

@@ -199,6 +199,7 @@ func main() {
 	r.startFeatures()
 	r.startStateBackups()
 	drainMax, _ := strconv.Atoi(env("DRAIN_SECONDS", "1740"))
+	go r.mqSweepLoop()           // mq.go: the machines' queue rows older than a day
 	go r.rosterLoop(time.Minute) // roster.go: a restarted component gets the roster again, or it is stale
 	go r.nextCoreLoop(30*time.Second, time.Duration(drainMax)*time.Second)
 	ld := &leadership{lock: lock, self: self, handler: public}

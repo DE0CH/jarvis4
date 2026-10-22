@@ -331,19 +331,16 @@ func TestHarnessPauseQueuesTheCommand(t *testing.T) {
 	if code, v := appDo(t, r, "POST", "/api/sessions/sA/harness", `{"action":"pause"}`); code != 200 || v["command"] != "pause-harness" {
 		t.Fatalf("%d %v", code, v)
 	}
-	select {
-	case c := <-r.queue("mA"):
-		if c != "pause-harness" {
-			t.Fatal(c)
-		}
-	default:
+	if c, ok := takeCmd(r, "mA"); !ok {
 		t.Fatal("nothing queued")
+	} else if c != "pause-harness" {
+		t.Fatal(c)
 	}
 	if code, _ := appDo(t, r, "POST", "/api/sessions/sA/harness", `{"action":"stop"}`); code != 400 {
 		t.Fatal(code)
 	}
 	appDo(t, r, "POST", "/api/sessions/sA/harness", `{"action":"resume"}`)
-	if c := <-r.queue("mA"); c != "resume-harness" {
+	if c, _ := waitCmd(r, "mA", 5*time.Second); c != "resume-harness" {
 		t.Fatal(c)
 	}
 	op, es := opEntries(t, r, "sA")

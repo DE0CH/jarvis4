@@ -403,7 +403,10 @@ Each step ships alone, keeps the router working, and is a clean cut for what it 
    and the old core's final state are `router_docs` rows. The volume now holds only the flock, a moved router's
    `wg.conf` and scratch (`tmp/`).
 6. **The machine queue** (section 5) replaces the `commands`/`execs`/`deliveries`/`results` channels and the
-   `snapped` waits, still on one replica.
+   `snapped` waits, still on one replica. Done: mq.go, snapwait.go, migrations/0007: `machine_queue` (taken with `FOR UPDATE SKIP LOCKED`,
+   answered on the row) and `snapshot_waits` (progress written at most every 100 ms from the stream); one `LISTEN mq`
+   connection per replica wakes the waiters (payload `m:<machine>`, `a:<ref>`, `w:<machine>`), with a 2 s recheck
+   beside it. Rows older than a day are swept.
 7. **Durable jobs** (section 3), one action at a time: pause, destroy, start/resume, upgrade/restart/disk, the switches,
    approved flows, task runs. Each action's goroutine and its `lock`/`begin` go as it moves. Prerequisite for start:
    the spawner's idempotent spawn.

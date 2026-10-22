@@ -89,7 +89,9 @@ func TestStreamedBytesKeepTheWaitGoing(t *testing.T) {
 		t.Fatalf("quiet for %s while bytes arrived", quietMax)
 	}
 	r.snapshotArrived("m9")
-	<-done
+	if err := r.waitSnapshot("m9", done); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // a machine that stops reporting during its snapshot (gone) ends the wait after silentAfter, not the stall window

@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"sync"
 	"time"
@@ -321,48 +322,32 @@ func (r *Router) execWith(session, holder, cmd string, timeout time.Duration, ph
 	if err != nil {
 		return ExecResult{}, err
 	}
-	ch := make(chan ExecResult, 1)
-	r.cmdMu.Lock()
-	r.results[id.ID] = ch
-	q := r.execQueue(machine)
-	r.cmdMu.Unlock()
-	defer func() { r.cmdMu.Lock(); delete(r.results, id.ID); r.cmdMu.Unlock() }()
-	select {
-	case q <- execItem{Request: string(req), Sig: sig, Grant: grant}:
-	default:
+	// mq.go: a row of the machine's queue; its answer comes back on the row, to whichever replica waits
+	ok, err := r.mqPut(machine, "exec", id.ID, execItem{Request: string(req), Sig: sig, Grant: grant}, 16)
+	if err != nil {
+		return ExecResult{}, err
+	}
+	if !ok {
 		return ExecResult{}, errors.New("the machine has too many commands waiting (16): wait for them to finish, then try again")
 	}
-	select {
-	case res := <-ch:
-		if res.Error != "" {
-			return res, fmt.Errorf("the machine refused or failed: %s", res.Error)
-		}
-		return res, nil
-	case <-time.After(timeout + 60*time.Second):
+	ans, err := r.mqAwait(id.ID, timeout+60*time.Second, nil)
+	if err != nil {
+		return ExecResult{}, err
+	}
+	if ans == nil {
+		r.mqForget(id.ID)
 		return ExecResult{}, errors.New("no answer from the machine")
-	case <-r.handingOver(): // movegate.go: the machine's answer goes to the next leader
-		return ExecResult{}, errors.New("the router is moving: run it again")
 	}
-}
-
-// execQueue: callers hold cmdMu
-func (r *Router) execQueue(machine string) chan execItem {
-	q := r.execs[machine]
-	if q == nil {
-		q = make(chan execItem, 16)
-		r.execs[machine] = q
+	var res ExecResult
+	json.Unmarshal(ans, &res)
+	if res.Error != "" {
+		return res, fmt.Errorf("the machine refused or failed: %s", res.Error)
 	}
-	return q
+	return res, nil
 }
 
 func (r *Router) execResult(res ExecResult) {
-	r.cmdMu.Lock()
-	ch := r.results[res.ID]
-	r.cmdMu.Unlock()
-	if ch != nil {
-		select {
-		case ch <- res:
-		default:
-		}
+	if err := r.mqAnswer(res.ID, res); err != nil {
+		log.Printf("exec %s: its answer: %v", res.ID, err)
 	}
 }

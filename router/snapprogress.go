@@ -98,12 +98,6 @@ func leftText(d time.Duration) string {
 	return fmt.Sprintf("%d min %d s", sec/60, sec%60)
 }
 
-func (r *Router) snapshotAwaited(machine string) bool {
-	r.cmdMu.Lock()
-	defer r.cmdMu.Unlock()
-	return r.snapped[machine] != nil
-}
-
 func (r *Router) registerSnapProgress(m machineRoute) {
 	m("POST /m/snapshot-progress", func(w http.ResponseWriter, req *http.Request, machine string, body []byte) {
 		var p SnapProgress

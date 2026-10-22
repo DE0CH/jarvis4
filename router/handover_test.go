@@ -262,12 +262,7 @@ func TestTheSpareStartsAtTheStopAndGoesWhenTheOldMachineIsKept(t *testing.T) {
 	failedWithMachine(rg, "kill: core: fly destroy: timeout")
 	sentFirst := make(chan bool, 1)
 	spareStarted = func(sid string) {
-		q := rg.r.queue("m1")
-		cmd := ""
-		select {
-		case cmd = <-q:
-		default:
-		}
+		cmd, _ := takeCmd(rg.r, "m1")
 		sentFirst <- cmd == "snapshot"
 	}
 	t.Cleanup(func() { spareStarted = nil })

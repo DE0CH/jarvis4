@@ -434,24 +434,20 @@ func (r *Router) previewText(sid string, d Delivery) (string, error) {
 		return "", errors.New("the session has no running machine")
 	}
 	d.Preview, d.Approval, d.Attest, d.ID = true, nil, nil, randID()
-	res := make(chan DeliveryResult, 1)
-	deliveries.Lock()
-	deliveries.results[d.ID] = res
-	deliveries.Unlock()
-	defer func() { deliveries.Lock(); delete(deliveries.results, d.ID); deliveries.Unlock() }()
-	deliveryQueue(machine) <- d
-	select {
-	case out := <-res:
-		if noPreviewAnswer(out) {
-			return "", errNoPreview
-		}
-		if !out.OK {
-			return "", errors.New("the machine refused or failed: " + out.Error)
-		}
-		return out.Text, nil
-	case <-time.After(60 * time.Second):
+	out, ok, err := r.deliverAwait(machine, d, 60*time.Second)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
 		return "", errors.New("the machine didn't answer the preview within 60 s")
 	}
+	if noPreviewAnswer(out) {
+		return "", errNoPreview
+	}
+	if !out.OK {
+		return "", errors.New("the machine refused or failed: " + out.Error)
+	}
+	return out.Text, nil
 }
 
 // ---- Deyao's answers ------------------------------------------------------------------------------------------

@@ -82,16 +82,17 @@ func TestParseRemote(t *testing.T) {
 // fakeMachine answers the router's holder commands for one machine the way the machine would
 func fakeMachine(t *testing.T, r *Router, machine string, answer func(holder, cmd string) ExecResult) (stop func()) {
 	done := make(chan struct{})
-	r.cmdMu.Lock()
-	q := r.execQueue(machine)
-	r.cmdMu.Unlock()
 	pub, _ := r.HolderPublicKeys()
 	go func() {
 		for {
 			select {
 			case <-done:
 				return
-			case e := <-q:
+			default:
+			}
+			if b, ok := mqWaitKind(r, machine, "exec", 50*time.Millisecond); ok {
+				var e execItem
+				json.Unmarshal(b, &e)
 				var req struct{ ID, Holder, Cmd string }
 				json.Unmarshal([]byte(e.Request), &req)
 				name := ""

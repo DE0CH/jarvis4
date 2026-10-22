@@ -26,7 +26,7 @@ func TestAccountSwitchProxyHarnessNoRestart(t *testing.T) {
 	if code != 202 || out["to"] != "claude-b" {
 		t.Fatal(code, out)
 	}
-	if q := r.queue("mP"); len(q) == 0 || <-q != "claude-account" {
+	if c, ok := takeCmd(r, "mP"); !ok || c != "claude-account" {
 		t.Fatal("the machine wasn't told")
 	}
 	waitFor(t, "taking the login", func() bool { j := r.ops.jobView("sP"); return j != nil && j["phase"] == "taking the login" })

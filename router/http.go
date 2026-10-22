@@ -690,25 +690,30 @@ func (r *Router) buildHandlers() {
 		writeJSON(w, 200, d)
 	})
 	m("GET /m/commands", func(w http.ResponseWriter, req *http.Request, machine string, _ []byte) {
-		q := r.queue(machine)
-		r.cmdMu.Lock()
-		eq := r.execQueue(machine)
-		r.cmdMu.Unlock()
-		dq := deliveryQueue(machine) // vouch.go
-		select {
-		case c := <-q:
-			writeJSON(w, 200, map[string]any{"commands": []string{c}, "execs": []execItem{}})
-		case e := <-eq:
-			writeJSON(w, 200, map[string]any{"commands": []string{}, "execs": []execItem{e}})
-		case d := <-dq:
-			writeJSON(w, 200, map[string]any{"commands": []string{}, "execs": []execItem{}, "deliveries": []Delivery{d}})
-		case <-time.After(50 * time.Second):
-			writeJSON(w, 200, map[string]any{"commands": []string{}, "execs": []execItem{}})
-		case <-req.Context().Done():
+		// mq.go: the machine's oldest untaken row, waiting up to 50 s for one
+		it, err := r.mqNext(req.Context(), machine, 50*time.Second)
+		switch {
+		case err != nil && req.Context().Err() != nil:
 			if r.frozenNow() { // movegate.go: a handover — "nothing", so the machine polls again at once (the next leader)
 				w.Header().Set("Connection", "close")
 				writeJSON(w, 200, map[string]any{"commands": []string{}, "execs": []execItem{}})
 			}
+		case err != nil:
+			writeErr(w, err)
+		case it == nil:
+			writeJSON(w, 200, map[string]any{"commands": []string{}, "execs": []execItem{}})
+		case it.Kind == "command":
+			var c string
+			json.Unmarshal(it.Body, &c)
+			writeJSON(w, 200, map[string]any{"commands": []string{c}, "execs": []execItem{}})
+		case it.Kind == "exec":
+			var e execItem
+			json.Unmarshal(it.Body, &e)
+			writeJSON(w, 200, map[string]any{"commands": []string{}, "execs": []execItem{e}})
+		default:
+			var d Delivery
+			json.Unmarshal(it.Body, &d)
+			writeJSON(w, 200, map[string]any{"commands": []string{}, "execs": []execItem{}, "deliveries": []Delivery{d}})
 		}
 	})
 	m("POST /m/exec-result", func(w http.ResponseWriter, req *http.Request, machine string, body []byte) {
