@@ -179,7 +179,10 @@ jobs:
       - name: First launch on a kernel box (the router with the kernel and no core, as k8s/cluster/router runs it)
         run: |
           W="$RUNNER_TEMP/w"
-          kill $(cat "$W/core.pid" "$W/router.pid" 2>/dev/null) 2>/dev/null || true; pkill -x core || true; sleep 1
+          kill $(cat "$W/core.pid" "$W/router.pid" 2>/dev/null) 2>/dev/null || true; pkill -x core || true
+          # the walkthrough's router drains before it lets go of its ports
+          for i in $(seq 60); do lsof -nP -iTCP:18080 -iTCP:18081 -sTCP:LISTEN > /dev/null 2>&1 || break; sleep 1; done
+          lsof -nP -iTCP:18080 -iTCP:18081 -sTCP:LISTEN -t 2>/dev/null | xargs kill -9 2>/dev/null || true; sleep 1
           rm -rf data-kernel && mkdir -p data-kernel
           DBURL="$(bash infra/test-postgres.sh fresh router_kernel)"
           # KERNEL_URL names no component (a new box before a setup session has read them); NO_CORE=1 as production
