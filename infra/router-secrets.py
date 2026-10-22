@@ -28,19 +28,23 @@ manifest so it restarts with the new Secret. SRC is `env:VAR` (default `env:KEY`
   --part postgres  postgres.enc.yaml, Secret postgres-s3 in jarvis4-db — ACCESS_KEY_ID, ACCESS_SECRET_KEY: the Object
                  Storage credential of the database's WAL archive and base backups (bucket jarvis4-db-de0ch,
                  k8s/cluster/postgres/db/), e.g. ACCESS_KEY_ID=env:HETZNER_S3_ACCESS_KEY
+  --part db      router-db.enc.yaml, Secret router-db in jarvis4-router — DATABASE_URL only: the router's connection to
+                 the database (router/db.go), DATABASE_URL=dburl:JARVIS4_DB_ROUTER_PASSWORD (the infra store's password of
+                 role router, made into postgres://router:…@jarvis4-db-rw.jarvis4-db.svc:5432/jarvis4?sslmode=require)
   --part postgres-app  postgres-app.enc.yaml, Secret jarvis4-db-router (basic-auth) in jarvis4-db — username=router and
                  password: the database owner, made at initdb (the same password is JARVIS4_DB_ROUTER_PASSWORD in the
                  infra store, for the router's own copy; docs/STATE.md)
 Only for secrets that can't reach a code push (Deyao, 2026-10-09); the pods get them as env (envFrom) or files. Prints
 names only, never a value."""
-import hashlib, json, os, re, subprocess, sys, tempfile
+import hashlib, json, os, re, subprocess, sys, tempfile, urllib.parse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RT = "router/router.yaml"  # under k8s/cluster/
 BOXES = {  # box → (age recipient file, secrets dir, {part: manifest path under k8s/<box>/})
     "cluster": ("keys/cluster-age.pub", "k8s/cluster/secrets", {
         "": RT, "wg": RT, "backup": RT, "github": RT, "flyorgs": RT, "flypersonal": RT, "flyvolumes": RT,
-        "browserbase": RT, "devices": RT, "alloy": None, "tunnel": None, "postgres": None, "postgres-app": None}),
+        "browserbase": RT, "devices": RT, "alloy": None, "tunnel": None, "postgres": None, "postgres-app": None,
+        "db": RT}),
 }
 RNS = "jarvis4-router"
 PARTS = {  # part → (file, Secret name, annotation, namespace)
@@ -53,6 +57,7 @@ PARTS = {  # part → (file, Secret name, annotation, namespace)
     "flyvolumes": ("router-flyvolumes.enc.yaml", "router-secrets-flyvolumes", "jarvis2/secrets-rev-flyvolumes", RNS),
     "browserbase": ("router-browserbase.enc.yaml", "router-secrets-browserbase", "jarvis2/secrets-rev-browserbase", RNS),
     "devices": ("router-devices.enc.yaml", "router-secrets-devices", "jarvis2/secrets-rev-devices", RNS),
+    "db": ("router-db.enc.yaml", "router-db", "jarvis2/secrets-rev-db", RNS),  # the router's DATABASE_URL (docs/STATE.md)
     "alloy": ("alloy.enc.yaml", "alloy", None, "jarvis2-obs"),
     "tunnel": ("tunnel.enc.yaml", "tunnel-token", None, "jarvis2-edge"),
     "postgres": ("postgres.enc.yaml", "postgres-s3", None, "jarvis4-db"),  # the database's backups (docs/STATE.md)
@@ -83,10 +88,14 @@ def main():
         kind, _, ref = src.partition(":")
         if kind == "env":
             v = os.environ.get(ref)
+        elif kind == "dburl":  # the router's DATABASE_URL from the role router's password in env var ref
+            pw = os.environ.get(ref)
+            v = pw and "postgres://router:" + urllib.parse.quote(pw, safe="") + \
+                "@jarvis4-db-rw.jarvis4-db.svc:5432/jarvis4?sslmode=require"
         elif kind == "file":
             v = open(os.path.expanduser(ref)).read().strip()
         else:
-            sys.exit(f"{key}: SRC is env:VAR or file:PATH")
+            sys.exit(f"{key}: SRC is env:VAR, file:PATH or dburl:VAR")
         if not v:
             sys.exit(f"{key}: {src} is empty")
         data[key] = v

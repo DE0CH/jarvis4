@@ -148,7 +148,7 @@ func (r *Router) buildHandlers() {
 		}
 		writeJSON(w, 200, map[string]any{"secrets": present, "sessionImage": r.cfg.SessionImage, "coreUp": coreErr == nil, "version": os.Getenv("VERSION"), "githubRepos": gh, "flyOrgs": flyOrgs,
 			"move": moveStatusNow(), "backup": backupStatus(), "core": r.nextCoreStatus(), "process": processStatus(),
-			"volumeSweep": volumeSweepStatus()})
+			"volumeSweep": volumeSweepStatus(), "db": r.dbStatus(req.Context())})
 	}))
 	setup("GET /setup/identity", "GET", "/identity")
 	setup("POST /setup/stores", "POST", "/stores")

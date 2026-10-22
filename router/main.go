@@ -169,7 +169,8 @@ func main() {
 		log.Fatal(err)
 	}
 	r := NewRouter(cfg, st, coreClient, policy)
-	r.applyActiveCore() // nextcore.go: the core a flip left serving
+	r.connectDB(os.Getenv("DATABASE_URL")) // db.go: nothing is stored there yet; health shows it
+	r.applyActiveCore()                    // nextcore.go: the core a flip left serving
 	r.startFeatures()
 	r.startStateBackups()
 	drainMax, _ := strconv.Atoi(env("DRAIN_SECONDS", "1740"))

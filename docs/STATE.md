@@ -363,7 +363,9 @@ Each step ships alone, keeps the router working, and is a clean cut for what it 
 2. **Schema + connection**: the router gets `DATABASE_URL` (Secret `router-db` in jarvis4-router, written with
    `JARVIS4_DB_ROUTER_PASSWORD` from the infra store) and a migrations runner (embedded SQL files, applied under
    `pg_advisory_lock` at start); `/healthz` and the status page show the database (primary reachable, schema
-   version, replication lag). Nothing moves yet.
+   version, replication lag). Nothing moves yet. Done: router/db.go (pgx), router/migrations/, `infra/router-secrets.py
+   --box cluster --part db DATABASE_URL=dburl:JARVIS4_DB_ROUTER_PASSWORD`; the router's tests run against a real
+   Postgres (`TEST_DATABASE_URL`, a schema per test; CI's test job has a postgres:18 service container).
 3. **state.json → Postgres in one cut**: `State.Do` keeps its signature but loads from and writes to the tables
    (inside a transaction, the rows its closure touched); a one-shot import reads the volume's state.json into the
    tables at the first start of that version and renames the file. Still one replica, still the flock: this step is

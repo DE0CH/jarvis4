@@ -23,6 +23,14 @@ concurrency: { group: images, cancel-in-progress: false }
 jobs:
   test:
     runs-on: ubuntu-latest
+    # the router's tests need a Postgres (router/db_test.go: a schema per test); the same major as jarvis4-db
+    services:
+      postgres:
+        image: postgres:18
+        env: { POSTGRES_HOST_AUTH_METHOD: trust }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 30
+    env: { TEST_DATABASE_URL: "postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

@@ -28,6 +28,8 @@ type Router struct {
 	// kernel: the kernel's components (kernel.go, kernelline.go); nil while this box has none (KERNEL_URL unset)
 	kernel      *KernelClient
 	kernelLines *lineKeeper // linestate.go: the kernel secrets' line state
+	// db: the router's database (db.go); nil until connected
+	db atomic.Pointer[DB]
 	// kernelTokenDMed: the spawner's missing Fly token was DMed (once, until a token comes)
 	kernelTokenDMed atomic.Bool
 
