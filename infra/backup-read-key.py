@@ -1,40 +1,43 @@
 #!/usr/bin/env python3
-"""A new read credential for the backup bucket, for the router (docs/RUNBOOK.md "The backup bucket's read
-credential"). Values never print.
+"""Jarvis 4's read credential for the backup bucket jarvis2-backup-de0ch (the stores' backups Jarvis 2 writes; the
+Jarvis 4 app's Recover reads them through the router: GET /api/backups). Values never print.
 
 S3 credentials exist only in the Hetzner Console (no API), so the Console steps drive a Chrome over CDP
 (CDP, default http://127.0.0.1:9333 — e.g. a headed google-chrome on Xvfb with --remote-debugging-port=9333),
 logged in as HETZNER_USER / HETZNER_PASSWORD (when they aren't in the env, run it under `session-secret --keys
 HETZNER_USER,HETZNER_PASSWORD,HETZNER_S3_ENDPOINT,HETZNER_S3_REGION,HETZNER_S3_ACCESS_KEY,HETZNER_S3_SECRET_KEY --exec`).
 The admin key HETZNER_S3_* does the bucket policies and the cleanup. The new keys live in FILE
-(~/.jarvis2/backup-read.env, mode 600: ACCESS_KEY=… / SECRET_KEY=…) until `install` is done; then shred it.
+(~/.jarvis2/jarvis4-backup-read.env, mode 600: ACCESS_KEY=… / SECRET_KEY=…) until `install` is done; then it is shredded.
+
+A Hetzner S3 credential can do everything in the project unless a bucket policy denies it, so the key is restricted by
+statements of its own, next to Jarvis 2's (whose statement and key stay as they are):
+  jarvis2-backup-de0ch   Sid Jarvis4ReadKeyOnlyReads: Deny of every changing action, PutObject included (Jarvis 2's
+                         latest backup versions must never be Jarvis 4's: the key only READS)
+  every other bucket     Sid NoJarvis4BackupReadKey: Deny s3:* (a bucket with no policy gets one; a new bucket needs
+                         `policies` run again)
 
   backup-read-key.py login       log the Console in (project "Cloud Code", 2827255)
-  backup-read-key.py generate    a new credential "jarvis2-backup-read" → FILE (refuses if FILE exists)
-  backup-read-key.py policies    the new access key replaces the old one as the principal in both bucket policies
-                                 (jarvis2-backup-de0ch: Deny of 27 changing actions; de0ch-claude-6fdff6: Deny s3:*);
-                                 the old access key is kept in ~/.jarvis2/backup-read.old for delete-old
-  backup-read-key.py allow-put   the key may add object versions to the backup bucket (s3:PutObject leaves its Deny):
-                                 the router writes each key's backup as the key is written (router/storedocs.go);
-                                 delete, version, policy, lifecycle and ACL changes stay refused (DECISIONS 163)
-  backup-read-key.py test        what the new key may do (wait ~1 min after `policies`: a multi-delete went through
-                                 once seconds after a policy write); throwaway names only, cleaned up by the admin key
-  backup-read-key.py delete-old  delete the old credential in the Console (its row's ⋯ → Delete → OK)
-  backup-read-key.py install     the router's secrets: infra/router-secrets.py --box control --part backup (SOPS to
-                                 the control box's age key, k8s/control/secrets/router-backup.enc.yaml), then shred
-                                 FILE; commit and push that file and k8s/control/apps/router/router.yaml (the router
-                                 restarts with it)
+  backup-read-key.py generate    a new credential "jarvis4-backup-read" → FILE (refuses if FILE exists)
+  backup-read-key.py policies    the statements above name the new key (a rotated-out key is kept in
+                                 ~/.jarvis2/jarvis4-backup-read.old for delete-old)
+  backup-read-key.py test        what the new key may do (wait ~1 min after `policies`); throwaway names only, cleaned
+                                 up by the admin key
+  backup-read-key.py delete-old  delete the rotated-out credential in the Console (its row's ⋯ → Delete → OK)
+  backup-read-key.py install     the router's secrets: infra/router-secrets.py --box cluster --part backup (SOPS to the
+                                 cluster's age key, k8s/cluster/secrets/router-backup.enc.yaml), then shred FILE; commit
+                                 and push that file and k8s/cluster/router/router.yaml (the router restarts with it)
 """
 import json, os, re, secrets, subprocess, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FILE = os.path.expanduser("~/.jarvis2/backup-read.env")
-OLD = os.path.expanduser("~/.jarvis2/backup-read.old")
+FILE = os.path.expanduser("~/.jarvis2/jarvis4-backup-read.env")
+OLD = os.path.expanduser("~/.jarvis2/jarvis4-backup-read.old")
 CDP = os.environ.get("CDP", "http://127.0.0.1:9333")
 URL = "https://console.hetzner.com/projects/2827255/security/s3-credentials"
-NAME = "jarvis2-backup-read"
-B, O = "jarvis2-backup-de0ch", "de0ch-claude-6fdff6"
-POLICIES = [(B, "BackupReadKeyOnlyReads"), (O, "NoJarvis2BackupReadKey")]
+NAME = "jarvis4-backup-read"
+B = "jarvis2-backup-de0ch"
+SID_B, SID_OTHER = "Jarvis4ReadKeyOnlyReads", "NoJarvis4BackupReadKey"
+J2_SID = "BackupReadKeyOnlyReads"  # Jarvis 2's own statement on B: its actions, plus PutObject, are the Jarvis 4 key's Deny
 
 
 def client(ak, sk):
@@ -124,50 +127,44 @@ def generate():
 
 
 def policies():
-    """the new key becomes the policies' principal; the old one is kept in OLD for delete-old. Run delete-old right
-    after: a key the Deny no longer names is unrestricted until it is deleted."""
+    """the Jarvis 4 key's own Deny statements name the new key; a key they named before is kept in OLD for delete-old
+    (run it right after: a key no Deny names is unrestricted until it is deleted)"""
+    from botocore.exceptions import ClientError
     s3, (new, _) = admin(), newkey()
+    arn = "arn:aws:iam:::user/p2827255:" + new
     olds = set()
-    docs = {}
-    for b, sid in POLICIES:
-        j = json.loads(s3.get_bucket_policy(Bucket=b)["Policy"])
-        assert len(j["Statement"]) == 1 and j["Statement"][0]["Sid"] == sid, b
-        olds |= set(re.findall(r"p2827255:([A-Za-z0-9]+)", json.dumps(j["Statement"][0]["Principal"])))
-        docs[b] = j
-    others = olds - {new}
-    if not others and new in olds:
-        print("ok: both policies name only the new key"); return
-    assert len(others) == 1, "the policies name more than one other key"
-    old = others.pop()
-    with os.fdopen(os.open(OLD, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
-        f.write(old)
-    arn = lambda k: "arn:aws:iam:::user/p2827255:" + k
-    for b, sid in POLICIES:
-        j = docs[b]
-        st = j["Statement"][0]
-        acts = lambda x: sorted(x if isinstance(x, list) else [x])
-        want_actions, want_resource = acts(st["Action"]), st["Resource"]
-        st["Principal"] = {"AWS": arn(new)}
+    for b in [x["Name"] for x in s3.list_buckets()["Buckets"]]:
+        try:
+            j = json.loads(s3.get_bucket_policy(Bucket=b)["Policy"])
+        except ClientError as e:
+            if e.response["Error"]["Code"] != "NoSuchBucketPolicy":
+                raise
+            j = {"Version": "2012-10-17", "Statement": []}
+        sid = SID_B if b == B else SID_OTHER
+        if b == B:
+            j2 = next(st for st in j["Statement"] if st.get("Sid") == J2_SID)
+            acts = sorted(set(j2["Action"] if isinstance(j2["Action"], list) else [j2["Action"]]) | {"s3:PutObject"})
+        else:
+            acts = "s3:*"
+        mine = {"Sid": sid, "Effect": "Deny", "Principal": {"AWS": arn}, "Action": acts,
+                "Resource": [f"arn:aws:s3:::{b}", f"arn:aws:s3:::{b}/*"]}
+        rest = []
+        for st in j["Statement"]:
+            if st.get("Sid") == sid:
+                olds |= set(re.findall(r"p2827255:([A-Za-z0-9]+)", json.dumps(st["Principal"]))) - {new}
+            else:
+                rest.append(st)
+        j["Statement"] = rest + [mine]
         s3.put_bucket_policy(Bucket=b, Policy=json.dumps(j))
-        back = json.loads(s3.get_bucket_policy(Bucket=b)["Policy"])["Statement"][0]
-        text = json.dumps(back["Principal"])
-        assert new in text and old not in text and acts(back["Action"]) == want_actions and back["Resource"] == want_resource, b
-        print(f"ok: {b} {sid}: the principal is the new key, the old one is gone")
-
-
-def allow_put():
-    s3 = admin()
-    j = json.loads(s3.get_bucket_policy(Bucket=B)["Policy"])
-    st = j["Statement"][0]
-    acts = st["Action"] if isinstance(st["Action"], list) else [st["Action"]]
-    if "s3:PutObject" not in acts:
-        print("ok: the key may already add versions"); return
-    assert any(a in acts for a in ("s3:DeleteObject", "s3:DeleteObjectVersion")), "the Deny doesn't look like ours"
-    st["Action"] = [a for a in acts if a != "s3:PutObject"]
-    s3.put_bucket_policy(Bucket=B, Policy=json.dumps(j))
-    back = json.loads(s3.get_bucket_policy(Bucket=B)["Policy"])["Statement"][0]["Action"]
-    assert "s3:PutObject" not in back and "s3:DeleteObjectVersion" in back
-    print(f"ok: {B}: the read key may add versions (PutObject); {len(back)} actions still denied")
+        back = json.loads(s3.get_bucket_policy(Bucket=b)["Policy"])["Statement"]
+        assert any(st.get("Sid") == sid and new in json.dumps(st["Principal"]) for st in back), b
+        assert len(back) == len(rest) + 1, b
+        print(f"ok: {b} {sid}: the new key is denied {'every change' if b == B else 's3:*'} ({len(rest)} other statement(s) kept)")
+    if olds:
+        assert len(olds) == 1, "the statements named more than one other key"
+        with os.fdopen(os.open(OLD, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+            f.write(olds.pop())
+        print("the rotated-out key is in", OLD, "(delete-old next)")
 
 
 def test():
@@ -176,7 +173,9 @@ def test():
     t = f"zz-permission-test/{secrets.token_hex(8)}"
     vid = adm.put_object(Bucket=B, Key=t + "-real", Body=b"x")["VersionId"]
     o2 = f"zz-permission-test/{secrets.token_hex(8)}"
-    adm.put_object(Bucket=O, Key=o2, Body=b"x")
+    others = [x["Name"] for x in adm.list_buckets()["Buckets"] if x["Name"] != B]
+    for O in others:
+        adm.put_object(Bucket=O, Key=o2, Body=b"x")
     rows = []
 
     def check(name, expect, fn):
@@ -190,7 +189,7 @@ def test():
     check("get stores/default.json", "allowed", lambda: s3.get_object(Bucket=B, Key="stores/default.json")["Body"].read())
     check("list versions", "allowed", lambda: s3.list_object_versions(Bucket=B, MaxKeys=5))
     check("get the bucket policy", "allowed", lambda: s3.get_bucket_policy(Bucket=B))
-    check("put (a new version: key backups, DECISIONS 163)", "allowed", lambda: s3.put_object(Bucket=B, Key=t, Body=b"x"))
+    check("put (Jarvis 2's backups are never Jarvis 4's to write)", "refused", lambda: s3.put_object(Bucket=B, Key=t, Body=b"x"))
     check("plain delete", "refused", lambda: s3.delete_object(Bucket=B, Key=t + "-real"))
     check("delete a version", "refused", lambda: s3.delete_object(Bucket=B, Key=t + "-real", VersionId=vid))
     check("multi delete", "refused", lambda: s3.delete_objects(Bucket=B, Delete={"Objects": [{"Key": t + "-real"}]}))
@@ -202,22 +201,23 @@ def test():
     check("put a lifecycle", "refused", lambda: s3.put_bucket_lifecycle_configuration(Bucket=B, LifecycleConfiguration={"Rules": [
         {"ID": "x", "Status": "Enabled", "Filter": {"Prefix": "zz-permission-test/"}, "Expiration": {"Days": 1}}]}))
     check("put the bucket ACL", "refused", lambda: s3.put_bucket_acl(Bucket=B, ACL="private"))
-    check(f"list {O}", "refused", lambda: s3.list_objects_v2(Bucket=O, MaxKeys=1))
-    check(f"get on {O}", "refused", lambda: s3.get_object(Bucket=O, Key=o2)["Body"].read())
-    check(f"put on {O}", "refused", lambda: s3.put_object(Bucket=O, Key=t, Body=b"x"))
-    check(f"delete on {O}", "refused", lambda: s3.delete_object(Bucket=O, Key=o2))
+    for O in others:
+        check(f"list {O}", "refused", lambda O=O: s3.list_objects_v2(Bucket=O, MaxKeys=1))
+        check(f"get on {O}", "refused", lambda O=O: s3.get_object(Bucket=O, Key=o2)["Body"].read())
+        check(f"put on {O}", "refused", lambda O=O: s3.put_object(Bucket=O, Key=t, Body=b"x"))
+        check(f"delete on {O}", "refused", lambda O=O: s3.delete_object(Bucket=O, Key=o2))
     for name, res, ok in rows:
         print(f"{'PASS' if ok else 'FAIL'}  {name}: {res}")
     if adm.get_bucket_versioning(Bucket=B).get("Status") != "Enabled":
         adm.put_bucket_versioning(Bucket=B, VersioningConfiguration={"Status": "Enabled"})
         print("FAIL  versioning was changed (re-enabled)")
-    for b in (B, O):
+    for b in [B] + others:
         r = adm.list_object_versions(Bucket=b, Prefix="zz-permission-test/")
         for x in r.get("Versions", []) + r.get("DeleteMarkers", []):
             adm.delete_object(Bucket=b, Key=x["Key"], VersionId=x["VersionId"])
     if not all(ok for _, _, ok in rows):
         raise SystemExit("some checks failed (a policy write takes up to a minute to reach every gateway: re-run)")
-    print("ok: reads and new versions only, on the backup bucket only")
+    print("ok: reads only, on the backup bucket only")
 
 
 def delete_old():
@@ -245,14 +245,14 @@ def delete_old():
 def install():
     ak, sk = newkey()
     env = dict(os.environ, BACKUP_READ_ACCESS_KEY=ak, BACKUP_READ_SECRET_KEY=sk)
-    subprocess.run([sys.executable, os.path.join(ROOT, "infra/router-secrets.py"), "--box", "control",
+    subprocess.run([sys.executable, os.path.join(ROOT, "infra/router-secrets.py"), "--box", "cluster",
                     "--part", "backup", "BACKUP_READ_ACCESS_KEY", "BACKUP_READ_SECRET_KEY"], check=True, env=env)
     subprocess.run(["shred", "-u", FILE], check=True)
-    print(f"ok: in k8s/control/secrets/router-backup.enc.yaml (commit and push it with k8s/control/apps/router/router.yaml); {FILE} shredded")
+    print(f"ok: in k8s/cluster/secrets/router-backup.enc.yaml (commit and push it with k8s/cluster/router/router.yaml); {FILE} shredded")
 
 
 if __name__ == "__main__":
-    cmds = {"login": login, "generate": generate, "policies": policies, "allow-put": allow_put, "test": test, "delete-old": delete_old, "install": install}
+    cmds = {"login": login, "generate": generate, "policies": policies, "test": test, "delete-old": delete_old, "install": install}
     a = sys.argv[1:]
     if not a or a[0] not in cmds:
         raise SystemExit(__doc__)
