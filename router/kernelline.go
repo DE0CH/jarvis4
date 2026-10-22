@@ -533,7 +533,9 @@ func mustSucc(d *sig.Doc) doc.Object {
 
 // registerKernel: the app's side of the kernel
 //
-//	GET  /api/kernel                    {configured, serves, root, roster}: whether this box has a kernel, whether new
+//	GET  /api/kernel                    {configured, core, serves, root, roster}: whether this box has a kernel, whether
+//	                                    it also runs the old core (NO_CORE=1: no; the app's first launch then sets up
+//	                                    the kernel, never the core), whether new
 //	                                    sessions start on it, whether the root's grant is here, and the roster's
 //	                                    state (roster.go: none, pending, current, stale + "roster stale: component X
 //	                                    restarted" per component that refused it)
@@ -546,7 +548,7 @@ func (r *Router) registerKernel(app func(string, http.HandlerFunc)) {
 	app("GET /api/kernel", func(w http.ResponseWriter, req *http.Request) {
 		root := false
 		r.st.Do(func(d *persisted) { root = d.KernelRoot != nil })
-		writeJSON(w, 200, map[string]any{"configured": r.kernel != nil, "serves": r.kernelServes(), "root": root, "roster": r.rosterStatus()})
+		writeJSON(w, 200, map[string]any{"configured": r.kernel != nil, "core": !r.cfg.NoCore, "serves": r.kernelServes(), "root": root, "roster": r.rosterStatus()})
 	})
 	// the grant the root key signs once: ⊤ on the sink with the sink's keys (hashed from its name: the app can't
 	// compute them; a draft naming other keys is refused by every component that takes the grant)

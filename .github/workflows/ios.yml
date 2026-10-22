@@ -176,6 +176,29 @@ jobs:
             grep -q "TEST EXECUTE SUCCEEDED\|\*\* TEST SUCCEEDED" test-$a.log || ok=1
           done
           exit $ok
+      - name: First launch on a kernel box (the router with the kernel and no core, as k8s/cluster/router runs it)
+        run: |
+          W="$RUNNER_TEMP/w"
+          kill $(cat "$W/core.pid" "$W/router.pid" 2>/dev/null) 2>/dev/null || true; pkill -x core || true; sleep 1
+          rm -rf data-kernel && mkdir -p data-kernel
+          DBURL="$(bash infra/test-postgres.sh fresh router_kernel)"
+          # KERNEL_URL names no component (a new box before a setup session has read them); NO_CORE=1 as production
+          (DATABASE_URL="$DBURL" ROUTER_THROWAWAY=1 NO_ACCESS=1 NO_CORE=1 KERNEL_URL='http://127.0.0.1:9/%s' CORE_URL=http://core.invalid:8090 \
+            SEARCH_URL=http://127.0.0.1:9 ICLOUD_INDEX_URL=http://127.0.0.1:9 WATCH_URL=http://127.0.0.1:9 SETUP_KEY="$(cat "$W/keys/setup.pub")" \
+            DATA_DIR=$PWD/data-kernel WEB_DIR=$PWD/web TASKS_DIR=$PWD/tasks POLICY_FILE="$W/policy.json" \
+            SESSION_IMAGE=ghcr.io/de0ch/jarvis4-session:ci@sha256:0000000000000000000000000000000000000000000000000000000000000000 ADDR=127.0.0.1:18080 MACHINE_ADDR=127.0.0.1:18081 \
+            nohup "$W/router" > out/router-kernel.log 2>&1 & echo $! > "$W/router.pid")
+          for i in $(seq 20); do curl -sf http://127.0.0.1:18080/api/kernel > /dev/null && break; sleep 1; done
+          curl -sf http://127.0.0.1:18080/api/kernel
+          xcrun simctl keychain "$SIM_UDID" reset
+          xcrun simctl uninstall "$SIM_UDID" dev.de0ch.jarvis4 || true
+          xcrun simctl ui "$SIM_UDID" appearance light
+          rm -rf result-kernel.xcresult
+          (cd ios && xcodebuild test-without-building -project Jarvis4.xcodeproj -scheme Jarvis4 \
+            -only-testing:Jarvis4UITests/KernelUITests/testKernelFirstLaunch \
+            -destination "id=$SIM_UDID" -derivedDataPath ../dd \
+            -resultBundlePath ../result-kernel.xcresult 2>&1 | tee ../test-kernel.log | grep -E "error:|Test Case|\*\* " || true)
+          grep -q "TEST EXECUTE SUCCEEDED\|\*\* TEST SUCCEEDED" test-kernel.log
       - name: Failures as annotations (readable without signing in)
         if: failure()
         run: |
@@ -183,7 +206,7 @@ jobs:
       - name: Export results
         if: always()
         run: |
-          for a in light dark; do mkdir -p out/$a; xcrun xcresulttool export attachments --path result-$a.xcresult --output-path out/$a || true; done
+          for a in light dark kernel; do mkdir -p out/$a; xcrun xcresulttool export attachments --path result-$a.xcresult --output-path out/$a || true; done
           cat test-*.log > out/test.log 2>/dev/null || true
           tail -c 300000 xcodebuild.log > out/xcodebuild-tail.log || true
           grep -n "error:" xcodebuild.log | head -100 > out/errors.txt || true

@@ -19,6 +19,7 @@ import (
 
 type Config struct {
 	CoreURL         string            // the core, inside the cluster
+	NoCore          bool              // NO_CORE=1: this box runs no core, only the kernel (Jarvis 4); GET /api/kernel says so
 	KernelURL       string            // the kernel's components, %s = the role (KERNEL_URL; "" = no kernel on this box)
 	DataDir         string            // snapshots and the other files (a volume); the records are in Postgres (statedb.go)
 	WebDir          string            // the web page (expo export), served at /
@@ -57,6 +58,7 @@ func main() {
 	cfg := Config{
 		CoreURL:         env("CORE_URL", "http://core.jarvis2-core.svc.cluster.local:8090"),
 		KernelURL:       os.Getenv("KERNEL_URL"),
+		NoCore:          os.Getenv("NO_CORE") == "1",
 		DataDir:         env("DATA_DIR", "/data"),
 		WebDir:          env("WEB_DIR", "/web"),
 		SessionImage:    env("SESSION_IMAGE", "ghcr.io/de0ch/jarvis4-session:latest"),

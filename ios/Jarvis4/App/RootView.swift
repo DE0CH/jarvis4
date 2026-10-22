@@ -16,6 +16,7 @@ struct RootView: View {
     }
     .fullScreenCover(isPresented: $model.showSetup) { SetupView() }
     .fullScreenCover(isPresented: $model.showNextSetup) { SetupView(next: true) }
+    .fullScreenCover(isPresented: $model.showKernelSetup) { KernelFirstLaunch() }
     .sheet(item: $model.secure, onDismiss: model.secureDismissed) { req in ReviewSheet(request: req) }
     .sheet(item: $model.accountSwitch) { a in SwitchAccountView(sessionId: a.id) }
     .alert(model.question?.title ?? "", isPresented: Binding(get: { model.question != nil }, set: { if !$0 { model.question = nil } }), presenting: model.question) { q in
@@ -94,6 +95,18 @@ private struct SignedOutView: View {
     Task {
       if !(await RouterClient.shared.signIn()).isEmpty { model.signedOut = false; await model.refresh() }
       busy = false
+    }
+  }
+}
+
+/// the first launch on a kernel box: Settings → Kernel on its own, closable (the tabs work as far as a box with no set-up
+/// kernel allows)
+private struct KernelFirstLaunch: View {
+  @Environment(AppModel.self) private var model
+  var body: some View {
+    NavigationStack {
+      KernelSetupView()
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { model.showKernelSetup = false }.accessibilityIdentifier("kernel-close") } }
     }
   }
 }

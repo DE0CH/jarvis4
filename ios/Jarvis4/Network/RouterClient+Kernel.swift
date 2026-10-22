@@ -5,7 +5,14 @@
 import Foundation
 
 extension RouterClient {
-  struct KernelStatus: Decodable { let configured: Bool; let serves: Bool; let root: Bool }
+  struct KernelStatus: Decodable {
+    struct Roster: Decodable { var state: String? = nil; var rootKey: Bool? = nil; var pending: Bool? = nil; var stale: [String]? = nil }
+    let configured: Bool; let serves: Bool; let root: Bool; var roster: Roster? = nil
+    /// whether this box also runs the old core (Jarvis 2's routers report it; Jarvis 4's has none)
+    var core: Bool { coreField ?? true }
+    var coreField: Bool? = nil
+    enum CodingKeys: String, CodingKey { case configured, serves, root, roster, coreField = "core" }
+  }
   func kernelStatus() async throws -> KernelStatus { try await json("GET", "api/kernel") }
 
   /// `next`: the next secrets (blue/green, router/kernel.go): Recover alongside

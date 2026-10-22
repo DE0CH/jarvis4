@@ -55,9 +55,10 @@ struct KernelSetupView: View {
         }
         LabeledContent("Root grant") { StatusPill(text: status?.root == true ? "Signed" : "Not yet", color: status?.root == true ? .green : .secondary) }
           .accessibilityElement(children: .combine).accessibilityIdentifier("kernel-root")
-        LabeledContent("New sessions") { Text(status?.serves == true ? "On the kernel" : "On the core") }
+        LabeledContent("New sessions") { Text(status?.serves == true ? "On the kernel" : status?.core == false ? "Not yet" : "On the core") }
       } footer: {
-        Text("The kernel runs beside the core. Its components make new keys whenever they start, and work only once this iPhone's root key has signed them.")
+        Text((status?.core == false ? "Jarvis 4 runs the kernel only. " : "The kernel runs beside the core. ") +
+             "Its components make new keys whenever they start, and work only once this iPhone's root key has signed them.")
       }
 
       Section {
@@ -66,27 +67,32 @@ struct KernelSetupView: View {
           StatusPill(text: rootInGit == true ? "Yes" : rootInGit == false ? "Not yet" : "…", color: rootInGit == true ? .green : .secondary)
         }
         .accessibilityElement(children: .combine).accessibilityIdentifier("kernel-root-key-git")
+        LabeledContent("With the router") {
+          StatusPill(text: status?.roster?.rootKey == true ? "Registered" : "Not yet", color: status?.roster?.rootKey == true ? .green : .secondary)
+        }
+        .accessibilityElement(children: .combine).accessibilityIdentifier("kernel-root-key-router")
         if rootInGit == false {
-          Button(busy == "Registering…" ? "Registering…" : "Register the root key") { Task { await registerRoot() } }
+          Button(busy == "Registering…" ? "Registering…" : status?.roster?.rootKey == true ? "Register the root key again" : "Register the root key") { Task { await registerRoot() } }
             .disabled(busy != nil || rootKey == nil).accessibilityIdentifier("kernel-root-register")
         }
       } header: { Text("Root key") } footer: {
-        Text("The router passes the root key's public half to a setup session, which commits it to git. Every component checks its roster against it.")
+        Text(rootInGit == true ? "Every component checks its roster against this key." :
+             "The router passes the root key's public half to a setup session, which commits it to git. Every component checks its roster against it.")
       }
 
-      if status?.configured == true, let state, state.master.isEmpty {
+      if status?.configured == true, KernelTrust.pinned == nil, state?.master.isEmpty ?? true {
         Section {
           SecureField("Recovery kit", text: $kitText).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("kernel-kit")
           Button(busy ?? "Recover the kernel's secrets") { Task { await recover() } }
-            .disabled(kitText.isEmpty || busy != nil || pending == nil || rootInGit != true).accessibilityIdentifier("kernel-recover")
+            .disabled(kitText.isEmpty || busy != nil || pending == nil || keys == nil || rootInGit != true).accessibilityIdentifier("kernel-recover")
         } header: { Text("Step 1") } footer: {
-          Text(pending == nil ? "Waiting for a setup session to read the kernel's components." :
+          Text(rootInGit != true ? "Waiting for the root key to be in git." : pending == nil ? "Waiting for a setup session to read the kernel's components." :
                "Every store comes back from the backups, opened here with your kit. The kit never leaves this iPhone. Then the root key signs the kernel's components, with its own Face ID.")
         }
       }
 
       // an empty secrets is signed into the roster by its Recover (with the keys the kit derives), not before
-      if let p = pendingNew, !(status?.configured == true && state?.master.isEmpty == true) { rosterSection(p) }
+      if let p = pendingNew, KernelTrust.pinned != nil || state?.master.isEmpty == false { rosterSection(p) }
 
       if mine, let ns = nextState, ns.master.isEmpty {
         Section {
@@ -153,21 +159,25 @@ struct KernelSetupView: View {
       rootKey = rk
       rootInGit = (try? await KeySource.optionalKey("root.pub")).map { $0 == rk } ?? false
       status = try await RouterClient.shared.kernelStatus()
+      guard status?.configured == true else { return }
       let setupKey = try await KeySource.key("setup.pub")
-      roster = try await RouterClient.shared.kernelRoster(rootKey: rk)
+      // a roster the root key signed is read only once git has the root key the components check it against
+      if rootInGit == true { roster = try await RouterClient.shared.kernelRoster(rootKey: rk) } else { roster = nil }
       pending = try await RouterClient.shared.kernelPendingRoster().map { try KernelRoster.pending($0, setupKey: setupKey) }
-      if status?.configured == true {
-        let anchors = KernelSetup.Anchors(pinned: KernelTrust.pinned, roster: roster, pending: pending)
+      // secrets' identity: only once something vouches for it (this iPhone's pin, the root key's roster, the setup
+      // session's pending roster); until then the page waits on the steps above
+      let anchors = KernelSetup.Anchors(pinned: KernelTrust.pinned, roster: roster, pending: pending)
+      if anchors.pinned != nil || anchors.roster != nil || anchors.pending != nil {
         let r = try await RouterClient.shared.kernelIdentity(anchors)
         keys = r.keys; state = r.state
         if let n = try? await RouterClient.shared.kernelIdentity(anchors, next: true) { nextKeys = n.keys; nextState = n.state } else { nextKeys = nil; nextState = nil }
-        var u: [PublicKeys] = []
-        for next in [false, true] {
-          if let id = try? await RouterClient.shared.json("GET", "api/kernel/secrets/identity" + (next ? "?secrets=next" : ""), as: KernelSetup.Identity.self),
-             let k = KernelSetup.unclaimed(id) { u.append(k) }
-        }
-        unclaimed = u
+      } else { keys = nil; state = nil; nextKeys = nil; nextState = nil }
+      var u: [PublicKeys] = []
+      for next in [false, true] {
+        if let id = try? await RouterClient.shared.json("GET", "api/kernel/secrets/identity" + (next ? "?secrets=next" : ""), as: KernelSetup.Identity.self),
+           let k = KernelSetup.unclaimed(id) { u.append(k) }
       }
+      unclaimed = u
     } catch { failure = errText(error) }
   }
 
@@ -211,11 +221,13 @@ struct KernelSetupView: View {
       }
       busy = "Checking the kit…"
       let m = try RecoveryKit.parse(kitText).master
-      guard let cm = CoreTrust.master, m.matches(cm) else { throw TrustError.badKit("This isn't the recovery kit Jarvis 4 is set up with.") }
+      if let cm = CoreTrust.master, !m.matches(cm) { throw TrustError.badKit("This isn't the recovery kit Jarvis 4 is set up with.") }
       busy = "Reading the backups…"
-      // Jarvis 2's backups: the setup key signed them, the box key vouched for the core that wrote them (keys/*.pub)
+      // Jarvis 2's backups: the setup key signed them, the box key vouched for the core that wrote them (keys/*.pub);
+      // every store's backup opens only with the kit they were sealed to, which is how a box with no core checks the kit
       let setupKey = try await KeySource.key("setup.pub"), boxKey = try await KeySource.key("box.pub")
       let stores = try CoreSetup.readBackups(try await RouterClient.shared.backups(), master: m, setupKey: setupKey, boxKey: boxKey)
+      guard !stores.isEmpty else { throw TrustError.backup("The backups hold no store, so this kit can't be checked against them.") }
       busy = "Setting up the kernel…"
       let seed = KernelContinuity.seed(m)
       let derived = try KernelContinuity.keys(seed: seed)
@@ -231,6 +243,7 @@ struct KernelSetupView: View {
                                        identity: derived, standby: next)
       try await RouterClient.shared.kernelClaim(body, derived: derived, next: next)
       KernelTrust.pin(derived) // the same kit derives the same keys: the serving and the next secrets are one identity
+      if CoreTrust.master == nil { CoreTrust.setMaster(m.publicKey) }
       // the root key signs the setup session's roster with the keys secrets serves with now
       let r = try KernelRoster.replacing(p, role: "secrets", with: derived)
       try await sign(r)

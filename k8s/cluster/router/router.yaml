@@ -45,6 +45,8 @@ spec:
             - { name: ICLOUD_INDEX_URL, value: "http://icloud-index.jarvis4-services.svc.cluster.local:8091" }
             - { name: WATCH_URL, value: "http://watch.jarvis4-services.svc.cluster.local:8095" }
             - { name: CORE_URL, value: "http://core.invalid:8090" }
+            # no core on this box, only the kernel: the app's first launch sets up the kernel (GET /api/kernel "core")
+            - { name: NO_CORE, value: "1" }
             # its /data, age-encrypted to this key (the same key as Jarvis 2's router backups: the private half is
             # ROUTER_BACKUP_AGE_KEY in the infra store), to the Storage Box claude-records/.jarvis4-router (router/backup.go)
             - { name: ROUTER_BACKUP_AGE_PUB, value: "age1zkvnmh6wu5hyvxppvxf9c83l6q5af7xqqlxtmahkz0l5hhwqq90s8edvu0" }

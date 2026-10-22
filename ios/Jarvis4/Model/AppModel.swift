@@ -80,6 +80,9 @@ final class AppModel {
   @ObservationIgnored private var secureFinished = false
   /// Reset or recover (at first launch, after a core change, or from Settings)
   var showSetup = false
+  /// Settings → Kernel as the first-launch page: a box whose router runs a kernel and no core (Jarvis 4), on an iPhone
+  /// whose kernel secrets isn't set up yet
+  var showKernelSetup = false
   /// Reset or recover for the next core (Recover alongside)
   var showNextSetup = false
   var signedOut = false
@@ -132,7 +135,10 @@ final class AppModel {
     RouterClient.shared.onSignedOut = { [weak self] out in self?.signedOut = out }
     // the master private key an earlier build held in the Keychain: no core trusts it any more
     Keychain.set("held-master", nil); Keychain.set("held-master-public", nil)
-    if CoreTrust.pinned == nil {
+    // a box with a kernel and no core (Jarvis 4): the first launch is the kernel's setup, never the old core's page
+    if CoreTrust.pinned == nil, let k = try? await RouterClient.shared.kernelStatus(), k.configured, !k.core {
+      if KernelTrust.pinned == nil { showKernelSetup = true }
+    } else if CoreTrust.pinned == nil {
       showSetup = true
     } else if let x = try? await RouterClient.shared.identity() {
       adoptNext(x)

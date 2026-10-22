@@ -315,6 +315,8 @@ enum CoreTrust {
     Keychain.setString("master-public", master)
   }
   static func key() throws -> String { guard let p = pinned else { throw TrustError.notSetUp }; return p.signingKey }
+  /// a kernel Recover on a box with no core: the master public key of the kit that opened the backups
+  static func setMaster(_ m: String) { Keychain.setString("master-public", m) }
   /// a next core Recovered alongside with keys other than the pinned core's (the running core wasn't seeded): its keys
   /// (derived from the kit, so trusted as the kit is) are pinned once it is the core that serves (AppModel.adoptNext)
   static var pendingNext: (keys: PublicKeys, master: String)? {
