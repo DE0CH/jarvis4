@@ -38,6 +38,8 @@ manifest so it restarts with the new Secret. SRC is `env:VAR` (default `env:KEY`
   --part db      router-db.enc.yaml, Secret router-db in jarvis4-router — DATABASE_URL only: the router's connection to
                  the database (router/db.go), DATABASE_URL=dburl:JARVIS4_DB_ROUTER_PASSWORD (the infra store's password of
                  role router, made into postgres://router:…@jarvis4-db-rw.jarvis4-db.svc.cluster.local:5432/jarvis4?sslmode=require)
+  --part objects router-objects.enc.yaml, Secret router-secrets-objects — OBJECTS_ACCESS_KEY / OBJECTS_SECRET_KEY: the
+                 router's credential for jarvis4-snapshots-de0ch only (infra/objects-key.py install)
   --part postgres-app  postgres-app.enc.yaml, Secret jarvis4-db-router (basic-auth) in jarvis4-db — username=router and
                  password: the database owner, made at initdb (the same password is JARVIS4_DB_ROUTER_PASSWORD in the
                  infra store, for the router's own copy; docs/STATE.md)
@@ -53,7 +55,7 @@ BOXES = {  # box → (age recipient file, secrets dir, {part: manifest path unde
         "browserbase": RT, "devices": RT, "alloy": None, "tunnel": None, "postgres": None, "postgres-app": None,
         "search": "services/search/search.yaml", "icloud-index": "services/icloud-index/icloud-index.yaml",
         "icloud-session": "services/icloud-index/icloud-index.yaml",
-        "db": RT}),
+        "db": RT, "objects": RT}),
 }
 RNS = "jarvis4-router"
 PARTS = {  # part → (file, Secret name, annotation, namespace)
@@ -66,6 +68,7 @@ PARTS = {  # part → (file, Secret name, annotation, namespace)
     "flyvolumes": ("router-flyvolumes.enc.yaml", "router-secrets-flyvolumes", "jarvis2/secrets-rev-flyvolumes", RNS),
     "browserbase": ("router-browserbase.enc.yaml", "router-secrets-browserbase", "jarvis2/secrets-rev-browserbase", RNS),
     "devices": ("router-devices.enc.yaml", "router-secrets-devices", "jarvis2/secrets-rev-devices", RNS),
+    "objects": ("router-objects.enc.yaml", "router-secrets-objects", "jarvis2/secrets-rev-objects", RNS),  # jarvis4-snapshots-de0ch (infra/objects-key.py)
     "db": ("router-db.enc.yaml", "router-db", "jarvis2/secrets-rev-db", RNS),  # the router's DATABASE_URL (docs/STATE.md)
     "alloy": ("alloy.enc.yaml", "alloy", None, "jarvis2-obs"),
     "tunnel": ("tunnel.enc.yaml", "tunnel-token", None, "jarvis2-edge"),
