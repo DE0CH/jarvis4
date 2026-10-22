@@ -267,7 +267,10 @@ func TestFlipRechecksTheStandbyAfterTheDrain(t *testing.T) {
 		t.Fatal(err)
 	}
 	go func() {
-		time.Sleep(50 * time.Millisecond)
+		// once the drain has begun (the standby was checked before it), the standby changes, then the pause ends
+		for !r.draining() {
+			time.Sleep(time.Millisecond)
+		}
 		next.set(func(f *handoffCore) { f.key = "OTHER" })
 		done()
 	}()
