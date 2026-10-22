@@ -121,7 +121,9 @@ func (r *Router) kernelNewSessionApproval(s *Session, config string, opts map[st
 // respondKernel: the phone's signature over the draft → the source, then a spawn
 func (r *Router) respondKernel(a *Approval, signature string) (*Doc, string, error) {
 	cert := sig.Doc{Payload: a.Challenge.Payload, Sig: signature}
-	done, err := r.begin(a.Session, "approved")
+	// the start is a job (jobs.go "starting"): a replica that dies after the source is kept leaves it to another,
+	// which spawns from the kept source (kernelContinue)
+	done, err := r.lock(a.Session, "starting")
 	if err != nil {
 		return nil, "", err
 	}
@@ -488,6 +490,45 @@ func (r *Router) kernelResume(s Session, upgrade bool, unlock func(), op *lcHand
 		r.kernelSpawn(id)
 	}()
 	return nil
+}
+
+// kernelContinue: a kernel line's start or resume whose job another replica held when it died, carried on from where
+// the records say it is (every step is safe to repeat: the spawner answers a repeated spawn of a source with the
+// machine it made for it, kernel/spawner; its keys, the notarization and the move come again):
+//
+//	resuming with its old machine still on it  → the pause first, then the spawn (as kernelResume)
+//	starting / resuming with no machine         → the spawn from the kept source
+//	initialising / started on the new machine  → nothing left but waiting for it to boot
+func (r *Router) kernelContinue(sid string, unlock func()) {
+	var s Session
+	r.st.Do(func(d *persisted) {
+		if x := d.Sessions[sid]; x != nil {
+			s = *x
+		}
+	})
+	op := r.lcBegin(sid, "boot")
+	op.note("", "carried on by another router replica: its holder stopped")
+	switch {
+	case s.Kernel == nil || (s.Kernel.SourceCert == nil && s.State != "resuming"):
+		unlock()
+		op.endJoined("failed", "nothing to carry on")
+		r.cutOffSession(sid)
+	case s.State == "initialising" || s.State == "started":
+		unlock()
+		go r.lcAwaitBoot(op, sid, s.MachineID)
+	case s.State == "resuming" && s.MachineID != "" && (s.Kernel.MachineCert == nil || doc.Object("fly-"+s.MachineID) != mustSucc(s.Kernel.MachineCert)):
+		r.kernelResume(s, false, unlock, op)
+	default:
+		go func() {
+			defer unlock()
+			r.kernelSpawn(sid)
+		}()
+	}
+}
+
+func mustSucc(d *sig.Doc) doc.Object {
+	c, _ := doc.PeekCert(*d)
+	return c.Succ
 }
 
 // registerKernel: the app's side of the kernel

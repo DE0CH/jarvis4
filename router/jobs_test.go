@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 // deadJob: a running job of session sid whose holder died (its lease ran out)
@@ -75,5 +76,72 @@ func TestSchedulerLease(t *testing.T) {
 	r.pool().pool.Exec(context.Background(), "UPDATE leader SET until = now() - interval '1 second'")
 	if !r.leaseOnce() {
 		t.Fatal("the second replica didn't take the lapsed lease")
+	}
+}
+
+// a kernel start carried on while the first holder's spawn is still out: the spawner answers the repeated spawn of the
+// source with the machine it already made, so the line gets exactly one machine; and a start the records show done
+// (initialising) leaves nothing to do
+func TestAKernelStartCarriedOn(t *testing.T) {
+	rg, k := kernelRig(t)
+	k.Fly.Booting = true // machines stay "starting": the first spawn waits in its init loop
+	sid, err := rg.r.CreateSession(NewSession{Label: "carried", Harness: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a *Approval
+	waitFor(t, "the approval", func() bool {
+		rg.r.st.Do(func(d *persisted) {
+			for _, x := range d.Approvals {
+				if x.Session == sid {
+					a = x
+				}
+			}
+		})
+		return a != nil
+	})
+	signature, _ := k.Phone.Sign([]byte(a.Challenge.Payload))
+	if _, _, err := rg.r.Respond(a.ID, signature); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the first spawn", func() bool { return len(k.Fly.Machines) == 1 })
+	if !rg.r.busy(sid) {
+		t.Fatal("the start isn't a job")
+	}
+	// the holder "died": another replica carries the start on from the records (state starting, no machine yet)
+	done := make(chan bool)
+	go func() { rg.r.kernelContinue(sid, func() { done <- true }) }()
+	time.Sleep(300 * time.Millisecond)
+	for id := range k.Fly.Machines {
+		k.Fly.Up(id)
+	}
+	<-done
+	waitFor(t, "initialising", func() bool { s := kernelSession(rg, sid); return s.MachineID != "" && s.Kernel.MachineCert != nil })
+	if n := len(k.Fly.Machines); n != 1 {
+		t.Fatalf("%d machines for one start", n)
+	}
+	// nothing left to do: carrying it on again spawns nothing
+	rg.r.kernelContinue(sid, func() {})
+	if n := len(k.Fly.Machines); n != 1 {
+		t.Fatalf("%d machines after a second carry-on", n)
+	}
+}
+
+// a permission-mode switch whose holder died is run again by another replica
+func TestAModeSwitchCarriedOn(t *testing.T) {
+	r := newTestRouter(t)
+	addSession(r, "sA", "started", "mA", false)
+	stop := make(chan struct{})
+	defer close(stop)
+	cmds := answerExecs(r, "mA", 0, stop)
+	deadJob(t, r, "sA", "mode", `{"mode":"auto"}`)
+	r.jobsTick()
+	waitFor(t, "the switch", func() bool {
+		var m string
+		r.st.Do(func(d *persisted) { m = d.Sessions["sA"].PermissionMode })
+		return m == "auto" && !r.busy("sA")
+	})
+	if len(*cmds) != 1 {
+		t.Fatalf("commands %v", *cmds)
 	}
 }

@@ -205,7 +205,7 @@ func (r *Router) SwitchAccount(req *http.Request, id string, in accountSwitchIn)
 	if s.State != "started" {
 		return nil, fmt.Errorf("session is %s: switch its account once it is running, paused or failed", s.State)
 	}
-	unlock, err := r.lock(id, "account")
+	unlock, err := r.lockArgs(id, "account", map[string]any{"store": store, "harness": harness, "continue": in.Continue})
 	if err != nil {
 		return nil, err
 	}
