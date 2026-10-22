@@ -8,8 +8,11 @@ on:
   push:
     paths: [ios/**, core/**, kernel/**, router/**, tasks/**, infra/setup.py, infra/fly-token.sh, infra/fly-read-token.sh, infra/run-volumes.py, infra/run_volumes_test.py, infra/test-postgres.sh, e2e/testdata/**, policy/**, tools/**, .github/workflows/ios.yml, .github/actions/ios-simulator/**]
   workflow_dispatch:
+# on main every commit is its own group: a newer push never replaces a run waiting to start (agent pushes to router/
+# and kernel/ come minutes apart, and GitHub keeps only the newest pending run of a group); the phone replica still
+# runs one at a time (its own job group below)
 concurrency:
-  group: ios-${{ github.ref }}-${{ github.event_name }}
+  group: ios-${{ github.ref }}-${{ github.event_name }}${{ github.ref == 'refs/heads/main' && format('-{0}', github.sha) || '' }}
   cancel-in-progress: false
 jobs:
   compile:
