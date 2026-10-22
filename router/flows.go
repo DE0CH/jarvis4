@@ -35,12 +35,12 @@ type Router struct {
 	// kernelTokenDMed: the spawner's missing Fly token was DMed (once, until a token comes)
 	kernelTokenDMed atomic.Bool
 
-	cmdMu   sync.Mutex
-	notes   *broker // mq.go: this replica's waiters on the machines' queue, woken by the database
-	hk      holders
-	drain   drainState      // drain.go: the lifecycle goroutines running, refused once SIGTERM came
-	gate    moveGate        // movegate.go: deliveries and requests in flight at a handover
-	ops     opsState        // sessionops.go: busy marks, permission-mode/restart jobs, uploads, repos
+	cmdMu sync.Mutex
+	notes *broker // mq.go: this replica's waiters on the machines' queue, woken by the database
+	hk    holders
+	drain drainState // drain.go: the lifecycle goroutines running, refused once SIGTERM came
+	gate  moveGate   // movegate.go: deliveries and requests in flight at a handover
+	ops   opsState   // sessionops.go: busy marks, permission-mode/restart jobs, uploads, repos
 
 	policy Policy
 
@@ -1259,80 +1259,80 @@ func (r *Router) destroy(id string, o destroyOpts) error {
 func (r *Router) destroyRun(id string, s Session, o destroyOpts, unlock func(), op *lcHandle) {
 	force := o.force
 	gone := false
-		defer unlock()
-		defer func() {
-			if !gone {
-				op.endFromState()
-			}
-		}()
-		if s.MachineID != "" && !r.snapshotAndKill(id, s.MachineID, force) {
-			return
+	defer unlock()
+	defer func() {
+		if !gone {
+			op.endFromState()
 		}
-		var changes map[string]any
-		if o.report != nil {
-			changes = r.snapshotChanges(id) // archive.go: before finish() drops the snapshot
+	}()
+	if s.MachineID != "" && !r.snapshotAndKill(id, s.MachineID, force) {
+		return
+	}
+	var changes map[string]any
+	if o.report != nil {
+		changes = r.snapshotChanges(id) // archive.go: before finish() drops the snapshot
+	}
+	op.note("", "archiving the session to the Storage Box")
+	archived, aerr := r.archive(id)
+	switch {
+	case aerr != nil:
+		op.note("", "the archive failed: "+aerr.Error())
+	case archived != nil:
+		op.note("", "archived to "+archived.Dir)
+	default:
+		op.note("", "nothing to archive")
+	}
+	if aerr != nil && !force {
+		r.setState(id, "paused", "archive: "+aerr.Error()+" — nothing was lost (the session is paused): Destroy again once the Storage Box answers, or Destroy anyway (it goes without its archive)")
+		return
+	}
+	if s.Kernel != nil { // kernelline.go: the line's source ends
+		if err := r.kernelBurn(id); err != nil {
+			log.Printf("session %s: burn: %v", id, err)
+			op.note("", "ending the line (burn): "+err.Error())
+		} else {
+			op.note("", "the line ended: its source burned")
 		}
-		op.note("", "archiving the session to the Storage Box")
-		archived, aerr := r.archive(id)
-		switch {
-		case aerr != nil:
-			op.note("", "the archive failed: "+aerr.Error())
-		case archived != nil:
-			op.note("", "archived to "+archived.Dir)
-		default:
-			op.note("", "nothing to archive")
+	} else if s.Cert != nil {
+		// end the line: a succession to the null image, answered by the dead-machine responder → burn cert
+		ch, err := r.succession(s.Cert, "", nil, "", "", nullImage, "", "")
+		var a *Doc
+		if err == nil {
+			a, err = r.core.Call("/approve/by-dead-machine", map[string]any{"challenge": ch})
 		}
-		if aerr != nil && !force {
-			r.setState(id, "paused", "archive: "+aerr.Error()+" — nothing was lost (the session is paused): Destroy again once the Storage Box answers, or Destroy anyway (it goes without its archive)")
-			return
+		if err == nil {
+			_, err = r.core.Call("/certify", map[string]any{"approval": a, "machine": ""})
 		}
-		if s.Kernel != nil { // kernelline.go: the line's source ends
-			if err := r.kernelBurn(id); err != nil {
-				log.Printf("session %s: burn: %v", id, err)
-				op.note("", "ending the line (burn): "+err.Error())
-			} else {
-				op.note("", "the line ended: its source burned")
-			}
-		} else if s.Cert != nil {
-			// end the line: a succession to the null image, answered by the dead-machine responder → burn cert
-			ch, err := r.succession(s.Cert, "", nil, "", "", nullImage, "", "")
-			var a *Doc
-			if err == nil {
-				a, err = r.core.Call("/approve/by-dead-machine", map[string]any{"challenge": ch})
-			}
-			if err == nil {
-				_, err = r.core.Call("/certify", map[string]any{"approval": a, "machine": ""})
-			}
-			if err != nil {
-				log.Printf("session %s: burn: %v", id, err)
-				op.note("", "ending the line (burn): "+err.Error())
-			} else {
-				op.note("", "the line ended: the core's burn cert")
-			}
+		if err != nil {
+			log.Printf("session %s: burn: %v", id, err)
+			op.note("", "ending the line (burn): "+err.Error())
+		} else {
+			op.note("", "the line ended: the core's burn cert")
 		}
-		op.note("", "the session's records follow it into the archive (supervisor log, this log); the session becomes a record")
-		op.end("done", "")
-		r.st.Do(func(d *persisted) {
-			if x := d.Sessions[id]; x != nil {
-				s = *x // the latest: titles and hook fields moved on since the destroy began
-			}
-		})
-		for _, h := range onDestroy {
-			h(r, s)
+	}
+	op.note("", "the session's records follow it into the archive (supervisor log, this log); the session becomes a record")
+	op.end("done", "")
+	r.st.Do(func(d *persisted) {
+		if x := d.Sessions[id]; x != nil {
+			s = *x // the latest: titles and hook fields moved on since the destroy began
 		}
-		liveKept := r.clearArchivedLive(id, archived, aerr) // livearchive.go: only what the archive holds
-		r.finish(id, func(rec *Record) {
-			rec.Archive, rec.LiveKept = archived, liveKept
-			if aerr != nil {
-				rec.ArchiveError = aerr.Error()
-			}
-		})
-		gone = true
-		r.lcDrop(id)     // lifecycle.go: archived by its destroy hook
-		r.dropSupLog(id) // supervisorlog.go: likewise
-		if o.report != nil {
-			o.report(s, changes, archived, aerr)
+	})
+	for _, h := range onDestroy {
+		h(r, s)
+	}
+	liveKept := r.clearArchivedLive(id, archived, aerr) // livearchive.go: only what the archive holds
+	r.finish(id, func(rec *Record) {
+		rec.Archive, rec.LiveKept = archived, liveKept
+		if aerr != nil {
+			rec.ArchiveError = aerr.Error()
 		}
+	})
+	gone = true
+	r.lcDrop(id)     // lifecycle.go: archived by its destroy hook
+	r.dropSupLog(id) // supervisorlog.go: likewise
+	if o.report != nil {
+		o.report(s, changes, archived, aerr)
+	}
 }
 
 // finish: the session leaves the list for the records; its snapshots go. fill completes the record in the same state
