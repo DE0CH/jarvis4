@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -143,8 +142,7 @@ func TestALiveCopyFailureKeepsEveryLiveFile(t *testing.T) {
 // a session with no snapshot at all but live copies gets a record of them (nothing to restore), and they go only then
 func TestNoSnapshotStillArchivesTheLiveCopies(t *testing.T) {
 	rg := newRig(t)
-	os.Remove(rg.r.st.snapshotPath("m1"))
-	os.Remove(rg.r.st.snapshotPath("m1") + ".sig")
+	rg.r.snapDrop("m1")
 	putLive(t, rg, "dddd.jsonl", "only here\n")
 	if err := rg.r.Destroy("s1"); err != nil {
 		t.Fatal(err)

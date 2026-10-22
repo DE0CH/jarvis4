@@ -217,6 +217,11 @@ func readSnapshotFacts(p string) (*snapshotFacts, error) {
 		return nil, err
 	}
 	defer f.Close()
+	return readSnapshotFactsFrom(f)
+}
+
+// readSnapshotFactsFrom: the facts of a snapshot's bytes (a tar.gz), read through once
+func readSnapshotFactsFrom(f io.Reader) (*snapshotFacts, error) {
 	gz, err := gzip.NewReader(f)
 	if err != nil {
 		return nil, err

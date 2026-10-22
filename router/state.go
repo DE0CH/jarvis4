@@ -8,7 +8,6 @@ import (
 
 	"github.com/DE0CH/jarvis4/kernel/gv"
 
-	"path/filepath"
 	"sync"
 	"time"
 )
@@ -152,7 +151,7 @@ type persisted struct {
 // State: the router's records, in memory under one lock and in Postgres (statedb.go)
 type State struct {
 	mu   sync.Mutex
-	dir  string // the volume: snapshots (docs/STATE.md step 5 moves them)
+	dir  string // the volume: what is still a file there (docs/STATE.md)
 	data persisted
 	sdb  *stateDB
 	seal *Sealer // sealed.go: the router's secrets in the database
@@ -191,8 +190,4 @@ func (s *State) save() {
 		log.Printf("state: the database has every record again (it failed since %s)", s.sdb.errAt.Format(time.RFC3339))
 		s.sdb.lastErr = nil
 	}
-}
-
-func (s *State) snapshotPath(machine string) string {
-	return filepath.Join(s.dir, "snapshots", machine+".tar.gz")
 }

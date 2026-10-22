@@ -217,11 +217,8 @@ func (r *Router) onceTaken(sid string) {
 // the core can't check doesn't stop the kill, it just isn't named (core.go Kill, DECISIONS 190).
 func (r *Router) killMachine(machine string, requireSnapshot bool) (*Doc, error) {
 	in := map[string]any{"machine": machine}
-	p := r.st.snapshotPath(machine)
-	if sig, err := os.ReadFile(p + ".sig"); err == nil {
-		if sum, _, err := fileSha256(p); err == nil {
-			in["snapshot"] = map[string]any{"sha256": sum, "sig": strings.TrimSpace(string(sig)), "required": requireSnapshot}
-		}
+	if s := r.snap(machine); s != nil && s.State == "committed" {
+		in["snapshot"] = map[string]any{"sha256": s.Sha256, "sig": s.Sig, "required": requireSnapshot}
 	}
 	if key, err := r.core.Key(); err == nil {
 		if l := r.legacyFor(machine, key["signingKey"]); l != nil {

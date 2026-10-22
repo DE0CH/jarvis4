@@ -244,10 +244,10 @@ func TestSnapshotUploadStreamsAndChecksTheSignature(t *testing.T) {
 	if w := req("other bytes"); w.Code != 401 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
-	if _, err := os.Stat(r.st.snapshotPath("mA")); err == nil {
+	if r.snap("mA") != nil {
 		t.Fatal("a snapshot with a bad signature was kept")
 	}
-	ents, _ := os.ReadDir(filepath.Dir(r.st.snapshotPath("mA")))
+	ents, _ := os.ReadDir(filepath.Join(r.cfg.DataDir, "tmp"))
 	for _, e := range ents {
 		if strings.HasPrefix(e.Name(), ".upload-") {
 			t.Fatalf("temp file left: %s", e.Name())
@@ -256,11 +256,11 @@ func TestSnapshotUploadStreamsAndChecksTheSignature(t *testing.T) {
 	if w := req(body); w.Code != 200 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
-	if b, _ := os.ReadFile(r.st.snapshotPath("mA")); string(b) != body {
+	if b := snapBytes(r, "mA"); string(b) != body {
 		t.Fatal("stored snapshot differs")
 	}
-	if b, _ := os.ReadFile(r.st.snapshotPath("mA") + ".sig"); string(b) != "snapsig" {
-		t.Fatal(string(b))
+	if s := r.snap("mA"); s == nil || s.Sig != "snapsig" {
+		t.Fatalf("%+v", s)
 	}
 	// an unknown machine: refused before a byte is read
 	q := httptest.NewRequest("POST", "/m/snapshot", strings.NewReader(body))

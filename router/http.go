@@ -593,22 +593,26 @@ func (r *Router) buildHandlers() {
 			writeJSON(w, 404, map[string]string{"error": "no predecessor"})
 			return
 		}
-		p := r.st.snapshotPath(pred)
-		sig, err := os.ReadFile(p + ".sig")
-		if err != nil {
+		s := r.snap(pred)
+		if s == nil || s.State != "committed" {
 			writeJSON(w, 404, map[string]string{"error": "no snapshot"})
 			return
 		}
-		w.Header().Set("X-Snapshot-Sig", strings.TrimSpace(string(sig)))
+		rd, err := r.snapOpen(req.Context(), s)
+		if err != nil {
+			writeJSON(w, 404, map[string]string{"error": "no snapshot: " + err.Error()})
+			return
+		}
+		defer rd.Close()
+		w.Header().Set("X-Snapshot-Sig", s.Sig)
 		w.Header().Set("Content-Type", "application/gzip")
-		http.ServeFile(w, req, p)
+		http.ServeContent(w, req, "", s.CommittedAt, rd)
 	})
 	// the snapshot streams to the volume (a session's workspace can be several GB; the router has 1 GiB of memory):
 	// hashed on the way, the machine's request signature checked against that hash, then put in place
 	r.registerSnapStream(mmux, m) // snapstream.go: the final snapshot streamed, committed, carried or failed
 	r.registerSnapProgress(m)     // snapprogress.go: the final snapshot's progress, into the session's waiting line
 	mmux.Handle("POST /m/snapshot", r.requireMachineStream(func(w http.ResponseWriter, req *http.Request, machine, tmp string) {
-		p := r.st.snapshotPath(machine)
 		if req.Header.Get("X-Snapshot-None") != "" {
 			os.Remove(tmp)
 			// a machine still booting has nothing to snapshot: the waiting pause or destroy goes on at once
@@ -623,12 +627,16 @@ func (r *Router) buildHandlers() {
 			writeJSON(w, 400, map[string]string{"error": "X-Snapshot-Sig missing"})
 			return
 		}
-		if err := os.Rename(tmp, p); err != nil {
-			os.Remove(tmp)
+		f, err := os.Open(tmp)
+		if err == nil {
+			err = r.snapPutWhole(machine, f, sig) // snapstore.go: into the bucket, committed
+			f.Close()
+		}
+		os.Remove(tmp)
+		if err != nil {
 			writeErr(w, err)
 			return
 		}
-		os.WriteFile(p+".sig", []byte(sig), 0o600)
 		r.snapshotArrived(machine)
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	}))
@@ -962,7 +970,9 @@ func (r *Router) requireMachineStream(fn func(w http.ResponseWriter, req *http.R
 			writeJSON(w, 401, map[string]string{"error": "not signed by a machine the core started"})
 			return
 		}
-		f, err := os.CreateTemp(filepath.Dir(r.st.snapshotPath(machine)), ".upload-*")
+		scratch := filepath.Join(r.cfg.DataDir, "tmp")
+		os.MkdirAll(scratch, 0o700)
+		f, err := os.CreateTemp(scratch, ".upload-*")
 		if err != nil {
 			writeErr(w, err)
 			return

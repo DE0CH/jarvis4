@@ -2,7 +2,7 @@ package main
 
 // Carried secrets (docs/DESIGN.md "Carried secrets"): every pull that goes through answers a carry blob — the
 // machine's secrets per store, sealed under a key only the core holds, bound to that machine. The router keeps it
-// next to the machine's snapshot (snapshots/<machine>.carry on its volume) and hands it back to the core on the
+// in its database (router_docs carry/<machine>) and hands it back to the core on the
 // machine's next pull and, right after a successor is certified (a resume) or the machine gets a new cert (an
 // add-store, a downgrade), to the core with the call that makes the new cert, which answers it rebound to that machine
 // beside the cert, keeping only the stores the cert names (the core before R2: its carry/forward). The router can't open, alter or move it to another line; it can only lose it, and then the
@@ -14,14 +14,11 @@ package main
 import (
 	"errors"
 	"log"
-	"os"
-	"strings"
 	"sync"
 )
 
-func (s *State) carryPath(machine string) string {
-	return strings.TrimSuffix(s.snapshotPath(machine), ".tar.gz") + ".carry"
-}
+// a carry blob is a row of router_docs, carry/<machine>
+func carryDoc(machine string) string { return "carry/" + machine }
 
 // carryLock: one carry read-modify-write per machine at a time (a pull and a forward can race)
 var carryLocks sync.Map
@@ -37,8 +34,8 @@ func (r *Router) readCarry(machine string) string {
 	if machine == "" {
 		return ""
 	}
-	b, err := os.ReadFile(r.st.carryPath(machine))
-	if err != nil {
+	b, ok := r.st.ReadDoc(carryDoc(machine))
+	if !ok {
 		return ""
 	}
 	return string(b)
@@ -48,15 +45,12 @@ func (r *Router) saveCarry(machine, blob string) {
 	if blob == "" {
 		return
 	}
-	p := r.st.carryPath(machine)
-	if err := os.WriteFile(p+".tmp", []byte(blob), 0o600); err != nil {
+	if err := r.st.WriteDoc(carryDoc(machine), []byte(blob)); err != nil {
 		log.Printf("carry for %s: %v", machine, err)
-		return
 	}
-	os.Rename(p+".tmp", p)
 }
 
-func (r *Router) dropCarry(machine string) { os.Remove(r.st.carryPath(machine)) }
+func (r *Router) dropCarry(machine string) { r.st.DeleteDoc(carryDoc(machine)) }
 
 // carryForPull: the blob to send with a machine's pull — its own, else its predecessor's (a resumed machine whose
 // forward didn't happen)

@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync"
 	"testing"
 )
@@ -76,9 +75,6 @@ func TestTheRouterKeepsAndForwardsTheCarriedSecrets(t *testing.T) {
 	r.pulled("m1", certDoc("m1", ""), d)
 	if r.readCarry("m1") != "blob-after-pull-" {
 		t.Fatalf("kept %q", r.readCarry("m1"))
-	}
-	if fi, _ := os.Stat(r.st.carryPath("m1")); fi.Mode().Perm() != 0o600 {
-		t.Fatalf("mode %v", fi.Mode())
 	}
 	// a resume: m2 certified as m1's successor → forwarded to m2, m1's dropped
 	r.forwardCarry("m1", certDoc("m2", "m1"), "m2")

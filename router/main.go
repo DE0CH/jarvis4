@@ -192,6 +192,9 @@ func main() {
 	if err := r.probeObjects(); err != nil {
 		log.Fatal("objects: ", err)
 	}
+	if err := r.importSnapshotFiles(); err != nil { // snapstore.go: the volume's snapshots, once
+		log.Fatal(err)
+	}
 	r.applyActiveCore() // nextcore.go: the core a flip left serving
 	r.startFeatures()
 	r.startStateBackups()

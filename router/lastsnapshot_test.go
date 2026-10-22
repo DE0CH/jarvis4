@@ -15,7 +15,7 @@ func TestLastSnapshotNeverWaitsOnABootingMachine(t *testing.T) {
 	rg := newRig(t)
 	r := rg.r
 	r.cfg.SnapshotStall = 30 * time.Second
-	os.Remove(r.st.snapshotPath("m1") + ".sig") // m1 runs: it hasn't sent its final snapshot yet
+	unsignSnap(r, "m1") // m1 runs: it hasn't sent its final snapshot yet
 	running := func(booted string) {
 		r.st.Do(func(d *persisted) {
 			s := d.Sessions["s1"]

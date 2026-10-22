@@ -25,7 +25,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -265,11 +264,8 @@ func (r *Router) kernelSpawn(sid string) {
 // cert into the new source is notarized and the grant moves onto it. The snapshot hash it names ("" = none).
 func (r *Router) kernelKill(sid, machine string, required bool) (string, error) {
 	in := map[string]any{"id": machine}
-	p := r.st.snapshotPath(machine)
-	if s, err := os.ReadFile(p + ".sig"); err == nil {
-		if sum, _, err := fileSha256(p); err == nil {
-			in["snapshot"] = map[string]any{"sha256": sum, "sig": strings.TrimSpace(string(s)), "required": required}
-		}
+	if s := r.snap(machine); s != nil && s.State == "committed" {
+		in["snapshot"] = map[string]any{"sha256": s.Sha256, "sig": s.Sig, "required": required}
 	} else if required {
 		in["snapshot"] = map[string]any{"required": true}
 	}

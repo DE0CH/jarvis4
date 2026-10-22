@@ -121,7 +121,7 @@ type stateDB struct {
 // OpenState: the records from the database (state.json imported first if this is its first start), the snapshots
 // directory under dir
 func OpenState(ctx context.Context, db *DB, dir string, seal *Sealer) (*State, error) {
-	if err := os.MkdirAll(filepath.Join(dir, "snapshots"), 0o700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
 	if err := importStateFile(ctx, db, dir); err != nil {
@@ -457,6 +457,18 @@ func (s *State) WriteDoc(name string, b []byte) error {
 	_, err := s.sdb.db.pool.Exec(ctx, `INSERT INTO router_docs (name, body, updated_at) VALUES ($1, $2, now())
 		ON CONFLICT (name) DO UPDATE SET body = excluded.body, updated_at = now()`, name, b)
 	return err
+}
+
+// DeleteDoc: the document gone
+func (s *State) DeleteDoc(name string) {
+	if s == nil || s.sdb == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := s.sdb.db.pool.Exec(ctx, "DELETE FROM router_docs WHERE name = $1", name); err != nil {
+		log.Printf("docs: deleting %s: %v", name, err)
+	}
 }
 
 // importDocFiles: each document's file on the volume into router_docs, once (a row already there wins), then renamed

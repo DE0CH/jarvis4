@@ -1358,11 +1358,8 @@ func (r *Router) finish(id string, fill func(*Record)) {
 		}
 		for m, sid := range d.Machines {
 			if sid == id {
-				os.Remove(r.st.snapshotPath(m))
-				os.Remove(r.st.snapshotPath(m) + ".sig")
-				os.Remove(pendingPath(r.st.snapshotPath(m))) // snapstream.go: a stream never committed
-				os.Remove(pendingPath(r.st.snapshotPath(m)) + ".sha256")
-				r.dropCarry(m) // the carried secrets go with the line (the core has burnt it too)
+				defer r.snapDrop(m) // snapstore.go: its row (pending or committed) and its object, after the state lock
+				r.dropCarry(m)      // the carried secrets go with the line (the core has burnt it too)
 			}
 		}
 		s.State, s.MachineID = "destroyed", ""
@@ -1525,7 +1522,7 @@ func (r *Router) lastSnapshotThen(id, machine string, stopSent func()) error {
 		})
 		return
 	}
-	if haveSnapshot(r.st.snapshotPath(machine)) {
+	if r.haveSnap(machine) {
 		r.lcNote(id, machine, "the machine's final snapshot is already here")
 		return nil // it already sent its final one (a machine signs only one: a later ask gets the same)
 	}
@@ -1573,18 +1570,12 @@ func (r *Router) lastSnapshotThen(id, machine string, stopSent func()) error {
 		r.lcNote(id, machine, "the snapshot failed: "+err.Error())
 		return err
 	}
-	if fi, err := os.Stat(r.st.snapshotPath(machine)); err == nil {
-		r.lcNote(id, machine, fmt.Sprintf("the final snapshot arrived (%.1f MB, signed by the machine)", float64(fi.Size())/(1<<20)))
+	if s := r.snap(machine); s != nil && s.State == "committed" {
+		r.lcNote(id, machine, fmt.Sprintf("the final snapshot arrived (%.1f MB, signed by the machine)", float64(s.Bytes)/(1<<20)))
 	} else {
 		r.lcNote(id, machine, "the machine answered: nothing to snapshot")
 	}
 	return nil // its snapshot, or "nothing to snapshot" from a machine still booting
-}
-
-func haveSnapshot(p string) bool {
-	_, err1 := os.Stat(p)
-	_, err2 := os.Stat(p + ".sig")
-	return err1 == nil && err2 == nil
 }
 
 func (r *Router) setWaiting(id, what string) {

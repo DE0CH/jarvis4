@@ -170,16 +170,12 @@ func (r *Router) latestSnapshot(sessionID string) (machine string, cert *Doc, at
 		}
 	})
 	for _, m := range machines {
-		p := r.st.snapshotPath(m)
-		fi, err := os.Stat(p)
-		if err != nil || certs[m] == nil {
+		s := r.snap(m)
+		if s == nil || s.State != "committed" || certs[m] == nil {
 			continue
 		}
-		if _, err := os.Stat(p + ".sig"); err != nil {
-			continue
-		}
-		if machine == "" || fi.ModTime().After(at) {
-			machine, cert, at = m, certs[m], fi.ModTime()
+		if machine == "" || s.CommittedAt.After(at) {
+			machine, cert, at = m, certs[m], s.CommittedAt
 		}
 	}
 	return
@@ -288,8 +284,11 @@ func (r *Router) archiveSnapshot(box *StorageBox, s *Session) (*ArchiveInfo, err
 		log.Printf("session %s: no snapshot to archive", s.ID)
 		return nil, nil
 	}
-	snap := r.st.snapshotPath(machine)
-	facts, err := readSnapshotFacts(snap)
+	sn := r.snap(machine)
+	if sn == nil {
+		return nil, fmt.Errorf("the snapshot of %s is gone", machine)
+	}
+	facts, err := r.snapFacts(sn)
 	if err != nil {
 		return nil, fmt.Errorf("reading the snapshot: %w", err)
 	}
@@ -308,6 +307,12 @@ func (r *Router) archiveSnapshot(box *StorageBox, s *Session) (*ArchiveInfo, err
 	if err := os.MkdirAll(tmp, 0o700); err != nil {
 		return nil, err
 	}
+	snap, err := r.snapToFile(sn, tmp) // the archive walks it twice: a scratch copy, gone after
+	if err != nil {
+		return nil, fmt.Errorf("fetching the snapshot: %w", err)
+	}
+	defer os.Remove(snap)
+	defer os.Remove(snap + ".sig")
 	up, err := uploadSnapshotFiles(box, dir, snap, tmp, r.archiveProgress(s.ID))
 	r.setWaiting(s.ID, "")
 	if err != nil {
@@ -746,7 +751,7 @@ func (r *Router) snapshotChanges(id string) map[string]any {
 	if m == "" {
 		return no("it has no pause snapshot")
 	}
-	facts, err := readSnapshotFacts(r.st.snapshotPath(m))
+	facts, err := r.snapFactsOf(m)
 	if err != nil {
 		return no(err.Error())
 	}
@@ -774,7 +779,7 @@ func (r *Router) PausedTail(id string) (*Tail, int, error) {
 	if m == "" {
 		return nil, 404, errors.New("this session has no pause snapshot yet")
 	}
-	facts, err := readSnapshotFacts(r.st.snapshotPath(m))
+	facts, err := r.snapFactsOf(m)
 	if err != nil {
 		return nil, 500, err
 	}

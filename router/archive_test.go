@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/ecdh"
 	"crypto/rand"
 	"crypto/sha256"
@@ -303,9 +304,7 @@ func (rg *rig) writeSnapshot(t *testing.T, machine string, files []tfile) {
 	body := makeTar(t, files)
 	sum := sha256.Sum256(body)
 	sig, _ := signP256(rg.mkey.k, []byte(hex.EncodeToString(sum[:])))
-	p := rg.r.st.snapshotPath(machine)
-	os.WriteFile(p, body, 0o600)
-	os.WriteFile(p+".sig", []byte(sig), 0o600)
+	putSnap(t, rg.r, machine, body, sig)
 }
 
 func waitFor(t *testing.T, what string, ok func() bool) {
@@ -400,8 +399,9 @@ func TestDestroyArchivesThenRecords(t *testing.T) {
 	if hooked != "s1 claude-records/2026-10-01 Fix the router" {
 		t.Fatalf("destroy hook got %q", hooked)
 	}
-	if _, err := os.Stat(rg.r.st.snapshotPath("m1")); !os.IsNotExist(err) {
-		t.Fatal("the snapshot stayed on the volume")
+	waitFor(t, "the snapshot gone", func() bool { return rg.r.snap("m1") == nil })
+	if keys, _ := rg.r.objects.List(context.Background(), "snapshots/"); len(keys) != 0 {
+		t.Fatalf("the snapshot stayed in the bucket: %v", keys)
 	}
 	// the tail of the archived conversation
 	tail, st, err := rg.r.RecordTail("s1")
@@ -432,7 +432,7 @@ func TestDestroyArchiveFailureKeepsSession(t *testing.T) {
 
 func TestDestroyWithoutSnapshotNeedsNoBox(t *testing.T) {
 	rg := newRig(t)
-	os.Remove(rg.r.st.snapshotPath("m1"))
+	rg.r.snapDrop("m1")
 	sbox = nil
 	rg.r.Destroy("s1")
 	waitFor(t, "the record", func() bool { return rg.r.record("s1") != nil })

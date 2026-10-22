@@ -7,7 +7,6 @@ package main
 
 import (
 	"errors"
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -133,7 +132,7 @@ func TestADestroyGoesPastARefusedSnapshot(t *testing.T) {
 	rg, vc := v2Rig(t)
 	failedWithMachine(rg, "kill: core: the snapshot isn't signed by machine m1's current key")
 	vc.killErrs = []coreRefusal{{403, "the snapshot isn't signed by machine m1's current key"}}
-	body, _ := os.ReadFile(rg.r.st.snapshotPath("m1"))
+	body := snapBytes(rg.r, "m1")
 	if err := rg.r.Destroy("s1"); err != nil {
 		t.Fatal(err)
 	}

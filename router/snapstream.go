@@ -3,7 +3,7 @@ package main
 // The final snapshot without free disk on the machine (snapsafe.go): the machine streams its tar.gz straight into
 // the request body as it makes it (machine/main.go uploadSnapshot), so it needs no room for a local copy.
 //
-//	POST /m/snapshot-stream   the body, streamed to the router's volume and hashed on the way. The request is signed
+//	POST /m/snapshot-stream   the body, streamed into the bucket (snapstore.go) and hashed on the way. The request is signed
 //	                          over the constant body marker "stream" (the hash isn't known before the bytes), so the
 //	                          router checks the machine before it takes a byte. → {sha256, bytes}: the hash the router
 //	                          computed, kept as the machine's pending snapshot.
@@ -19,14 +19,10 @@ package main
 // POST /m/snapshot (a whole file signed over its hash) stays for older images.
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
-	"os"
 	"regexp"
 	"strconv"
 	"sync"
@@ -60,8 +56,6 @@ func (r *Router) snapshotError(machine string) error {
 	return fmt.Errorf("the machine's snapshot failed: %s", msg)
 }
 
-func pendingPath(final string) string { return final + ".pending" }
-
 func (r *Router) machineKey(machine string) (key string) {
 	r.st.Do(func(d *persisted) {
 		if s := d.Started[machine]; s != nil {
@@ -84,32 +78,13 @@ func (r *Router) registerSnapStream(mmux *http.ServeMux, m machineRoute) {
 			writeJSON(w, 401, map[string]string{"error": "not signed by a machine the core started"})
 			return
 		}
-		final := r.st.snapshotPath(machine)
-		f, err := os.CreateTemp(snapshotsDir(r), ".stream-*")
+		// snapstore.go: straight into the bucket, hashed on the way (snapwait.go: every read is progress)
+		sum, n, err := r.snapStream(req.Context(), machine, movedReader{req.Body, r, machine})
 		if err != nil {
-			writeErr(w, err)
-			return
-		}
-		tmp := f.Name()
-		h := sha256.New()
-		n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(movedReader{req.Body, r, machine}, snapshotMax+1)) // snapwait.go: every read is progress
-		if cerr := f.Close(); err == nil {
-			err = cerr
-		}
-		if err == nil && n > snapshotMax {
-			err = fmt.Errorf("body over %d bytes", int64(snapshotMax))
-		}
-		if err == nil {
-			err = os.Rename(tmp, pendingPath(final))
-		}
-		if err != nil {
-			os.Remove(tmp)
 			log.Printf("machine %s: snapshot stream: %v", machine, err)
 			writeErr(w, err)
 			return
 		}
-		sum := hex.EncodeToString(h.Sum(nil))
-		os.WriteFile(pendingPath(final)+".sha256", []byte(sum), 0o600)
 		writeJSON(w, 200, map[string]any{"sha256": sum, "bytes": n})
 	}))
 	m("POST /m/snapshot-commit", func(w http.ResponseWriter, req *http.Request, machine string, body []byte) {
@@ -118,10 +93,7 @@ func (r *Router) registerSnapStream(mmux *http.ServeMux, m machineRoute) {
 			writeJSON(w, 400, map[string]string{"error": "{sha256, sig}"})
 			return
 		}
-		final := r.st.snapshotPath(machine)
-		pend := pendingPath(final)
-		have, _ := os.ReadFile(pend + ".sha256")
-		if string(have) != in.Sha256 {
+		if s := r.snap(machine); s == nil || s.Sha256 != in.Sha256 {
 			writeJSON(w, 409, map[string]string{"error": "no streamed snapshot with that sha256"})
 			return
 		}
@@ -129,12 +101,10 @@ func (r *Router) registerSnapStream(mmux *http.ServeMux, m machineRoute) {
 			writeJSON(w, 403, map[string]string{"error": "the snapshot isn't signed by the machine's current key"})
 			return
 		}
-		if err := os.Rename(pend, final); err != nil {
+		if err := r.snapCommit(machine, in.Sha256, in.Sig); err != nil {
 			writeErr(w, err)
 			return
 		}
-		os.Remove(pend + ".sha256")
-		os.WriteFile(final+".sig", []byte(in.Sig), 0o600)
 		log.Printf("machine %s: snapshot committed (%s)", machine, in.Sha256[:12])
 		r.snapshotArrived(machine)
 		writeJSON(w, 200, map[string]bool{"ok": true})
@@ -179,20 +149,12 @@ func (r *Router) registerSnapStream(mmux *http.ServeMux, m machineRoute) {
 			writeJSON(w, 403, map[string]string{"error": "the snapshot isn't signed by the machine's current key"})
 			return
 		}
-		src, final := r.st.snapshotPath(pred), r.st.snapshotPath(machine)
-		os.Remove(final)
-		if err := os.Link(src, final); err != nil {
+		if err := r.snapCarry(machine, pred, in.Sha256, in.Sig); err != nil {
 			writeJSON(w, 409, map[string]string{"error": "the predecessor's snapshot: " + err.Error()})
 			return
 		}
-		os.WriteFile(final+".sig", []byte(in.Sig), 0o600)
 		log.Printf("machine %s: still booting; its predecessor %s's snapshot carried over", machine, pred)
 		r.snapshotArrived(machine)
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
-}
-
-func snapshotsDir(r *Router) string {
-	p := r.st.snapshotPath("x")
-	return p[:len(p)-len("x.tar.gz")]
 }

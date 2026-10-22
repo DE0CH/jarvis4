@@ -393,7 +393,12 @@ Each step ships alone, keeps the router working, and is a clean cut for what it 
    and bound to its name; a rotation passes the old key as `ROUTER_SEAL_KEY_OLD` and the router reseals at start. The
    volume's plaintext files are sealed in once and removed.
 5. **Snapshots into object storage** (2.2), with a one-shot copy of the existing `snapshots/` for paused sessions.
-   After this the volume holds only `wg.conf`, the flock and scratch.
+   After this the volume holds only `wg.conf`, the flock and scratch. Done for the machines' snapshots (snapstore.go, migrations/0006): the stream goes straight into
+   `snapshots/<machine>.tar.gz` (minio-go multipart, 16 MiB parts) while the router hashes it and reads its facts
+   (transcripts, tail, repo changes) into the row; commit flips the row to committed with the machine's signature; a
+   booting machine's carry-over is a row naming its predecessor's object (no copy; the object goes with its last row);
+   carried secrets are `router_docs` rows (`carry/<machine>`); the archive copies the object to scratch first. Restores
+   and Jarvis 1 imports are next.
 6. **The machine queue** (section 5) replaces the `commands`/`execs`/`deliveries`/`results` channels and the
    `snapped` waits, still on one replica.
 7. **Durable jobs** (section 3), one action at a time: pause, destroy, start/resume, upgrade/restart/disk, the switches,

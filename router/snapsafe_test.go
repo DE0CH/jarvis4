@@ -4,10 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -266,8 +264,7 @@ func TestTheStreamedSnapshotIsCommittedOnlyWithTheMachinesSignature(t *testing.T
 	if code, _ := m.do(t, h, "POST", "/m/snapshot-commit", `{"sha256":"`+want+`","sig":"`+good+`"}`); code != 200 {
 		t.Fatalf("commit: %d", code)
 	}
-	p := rg.r.st.snapshotPath("m2")
-	if b, _ := os.ReadFile(p); string(b) != body || !haveSnapshot(p) {
+	if b := snapBytes(rg.r, "m2"); string(b) != body || !rg.r.haveSnap("m2") {
 		t.Fatal("the snapshot isn't in place")
 	}
 	if kd, err := rg.r.killMachine("m2", false); err != nil || !strings.Contains(kd.Payload, want) {
@@ -278,12 +275,8 @@ func TestTheStreamedSnapshotIsCommittedOnlyWithTheMachinesSignature(t *testing.T
 // a machine paused while still booting carries its predecessor's snapshot over: the line keeps its state
 func TestABootingMachineCarriesThePredecessorsSnapshot(t *testing.T) {
 	rg := newRig(t)
-	p1 := rg.r.st.snapshotPath("m1")
-	f, _ := os.Open(p1)
-	hh := sha256.New()
-	io.Copy(hh, f)
-	f.Close()
-	sum := hex.EncodeToString(hh.Sum(nil))
+	hh := sha256.Sum256(snapBytes(rg.r, "m1"))
+	sum := hex.EncodeToString(hh[:])
 	cert := rg.core.key.doc(map[string]any{"kind": "succession-cert", "predecessorId": "m1", "snapshot": sum, "machine": map[string]any{"id": "m2", "signingKey": rg.mkey.pub()}})
 	rg.r.st.Do(func(d *persisted) {
 		d.Machines["m2"], d.Certs["m2"] = "s1", cert
@@ -300,7 +293,7 @@ func TestABootingMachineCarriesThePredecessorsSnapshot(t *testing.T) {
 	if code, _ := m.do(t, h, "POST", "/m/snapshot-carry", `{"sha256":"`+sum+`","sig":"`+sig+`"}`); code != 200 {
 		t.Fatalf("carry: %d", code)
 	}
-	if got, _, _ := fileSha256(rg.r.st.snapshotPath("m2")); got != sum || !haveSnapshot(rg.r.st.snapshotPath("m2")) {
+	if s := rg.r.snap("m2"); s == nil || s.Sha256 != sum || !rg.r.haveSnap("m2") || string(snapBytes(rg.r, "m2")) != string(snapBytes(rg.r, "m1")) {
 		t.Fatal("the predecessor's snapshot isn't m2's")
 	}
 }

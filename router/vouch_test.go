@@ -14,7 +14,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -196,8 +195,8 @@ func TestAKillNamesTheMachinesSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	snap, _ := vc.last("/kill")["snapshot"].(map[string]any)
-	body, _ := os.ReadFile(rg.r.st.snapshotPath("m1"))
-	sig, _ := os.ReadFile(rg.r.st.snapshotPath("m1") + ".sig")
+	body := snapBytes(rg.r, "m1")
+	sig := []byte(rg.r.snap("m1").Sig)
 	sum := sha256.Sum256(body)
 	if snap == nil || snap["sha256"] != hex.EncodeToString(sum[:]) || snap["sig"] != string(sig) || snap["required"] != false {
 		t.Fatalf("kill %v", vc.last("/kill"))

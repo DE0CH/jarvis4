@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -330,7 +329,5 @@ func TestAnOldSpareIsDestroyed(t *testing.T) {
 }
 
 func removeSnapshot(rg *rig, machine string) {
-	p := rg.r.st.snapshotPath(machine)
-	os.Remove(p)
-	os.Remove(p + ".sig")
+	rg.r.snapDrop(machine)
 }

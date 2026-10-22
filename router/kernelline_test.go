@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -152,9 +151,7 @@ func TestAKernelLinesLife(t *testing.T) {
 	tarball := makeTar(t, rg.files)
 	sum := sha256.Sum256(tarball)
 	snapSig, _ := m1.Sig.Sign([]byte(hex.EncodeToString(sum[:])))
-	p := rg.r.st.snapshotPath(m1.ID)
-	os.WriteFile(p, tarball, 0o600)
-	os.WriteFile(p+".sig", []byte(snapSig), 0o600)
+	putSnap(t, rg.r, m1.ID, tarball, snapSig)
 	if err := rg.r.Pause(sid); err != nil {
 		t.Fatal(err)
 	}
