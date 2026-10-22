@@ -20,7 +20,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -280,7 +279,7 @@ func (r *Router) FlipCore(drainMax time.Duration) error {
 			return fmt.Errorf("finalizing the serving core: %w", err)
 		}
 		n.final = final
-		os.WriteFile(filepath.Join(r.cfg.DataDir, "core-final.json"), final, 0o600)
+		r.st.WriteDoc("core-final.json", final) // kept beside the records (statedb.go), for a retry
 	}
 	if err := n.handoff.Adopt(n.next, final); err != nil {
 		// the old core is handed-off for good and can't serve: nothing serves until a takeover goes through (the final
@@ -333,7 +332,7 @@ func (r *Router) switchCores(n *nextCores) {
 	r.core.SetURL(nxt)
 	n.next.SetURL(cur)
 	n.final = nil
-	os.Remove(filepath.Join(r.cfg.DataDir, "core-final.json"))
+	r.st.DeleteDoc("core-final.json")
 	r.st.Do(func(d *persisted) { d.ActiveCore = nxt })
 	log.Printf("[flip] %s serves now; %s is final (the next release goes there)", nxt, cur)
 }

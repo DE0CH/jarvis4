@@ -216,7 +216,7 @@ func TestJarvis1ImportRefusesAnIncompleteSnapshot(t *testing.T) {
 	if p := waitPrepared(t, rg.r); p.State != "failed" || !strings.Contains(p.Error, "manifest.txt") {
 		t.Fatalf("%+v", p)
 	}
-	if _, err := os.Stat(filepath.Join(rg.r.j1Dir(j1TestID), j1ManifestFile)); err == nil {
+	if _, ok := rg.r.st.ReadDoc(j1Doc(j1TestID, j1ManifestFile)); ok {
 		t.Fatal("a manifest was written")
 	}
 }

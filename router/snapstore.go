@@ -288,3 +288,22 @@ func (r *Router) snapFactsOf(machine string) (*snapshotFacts, error) {
 	}
 	return r.snapFacts(s)
 }
+
+// snapsLike: the machine ids of rows that start with prefix (the restores' rows)
+func (r *Router) snapsLike(prefix string) []string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	rows, err := r.pool().pool.Query(ctx, "SELECT machine_id FROM snapshots WHERE starts_with(machine_id, $1)", prefix)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var m string
+		if rows.Scan(&m) == nil {
+			out = append(out, m)
+		}
+	}
+	return out
+}

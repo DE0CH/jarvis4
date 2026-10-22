@@ -28,7 +28,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -132,7 +131,13 @@ func (r *Router) sessionConfig(s *Session) (string, error) {
 				ID string `json:"id"`
 			} `json:"machine"`
 		}
-		sum, _, err := fileSha256(filepath.Join(r.restoresDir(s.ID), "snapshot.tar.gz"))
+		var sum string
+		var err error
+		if rs := r.snap(restoreSnap(s.ID)); rs != nil {
+			sum = rs.Sha256
+		} else {
+			err = errors.New("its snapshot isn't here")
+		}
 		if err != nil || s.RestoreCert.Decode(&oc) != nil || oc.Machine == nil {
 			return "", fmt.Errorf("the restore's snapshot or cert: %v", err)
 		}

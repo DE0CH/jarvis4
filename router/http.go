@@ -580,13 +580,19 @@ func (r *Router) buildHandlers() {
 			}
 		})
 		if pred == "restore" {
-			dir := r.restoreFilesFor(machine) // restore.go: only a restoring line's first machine
-			if dir == "" {
+			s := r.restoreFilesFor(machine) // restore.go: only a restoring line's first machine
+			if s == nil {
 				writeJSON(w, 404, map[string]string{"error": "no predecessor"})
 				return
 			}
+			rd, err := r.snapOpen(req.Context(), s)
+			if err != nil {
+				writeJSON(w, 404, map[string]string{"error": "no predecessor: " + err.Error()})
+				return
+			}
+			defer rd.Close()
 			w.Header().Set("Content-Type", "application/gzip")
-			http.ServeFile(w, req, filepath.Join(dir, "snapshot.tar.gz"))
+			http.ServeContent(w, req, "", s.CommittedAt, rd)
 			return
 		}
 		if pred == "" {

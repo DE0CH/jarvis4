@@ -526,7 +526,7 @@ func TestRestoreRecord(t *testing.T) {
 		d.Certs["m9"] = rg.core.key.doc(map[string]any{"kind": "succession-cert", "predecessorId": ""})
 		d.Sessions[sid].Cert = d.Certs["m9"]
 	})
-	if rg.r.restoreFilesFor("m9") == "" {
+	if rg.r.restoreFilesFor("m9") == nil {
 		t.Fatal("the first machine can't fetch the restore")
 	}
 	if env := rg.r.machineEnv(&Session{RestoreCert: s.RestoreCert, Cert: rg.cert}); env["JARVIS2_RESTORE_CERT"] != "" {
@@ -535,14 +535,14 @@ func TestRestoreRecord(t *testing.T) {
 	rg.r.st.Do(func(d *persisted) {
 		d.Certs["m9"] = rg.core.key.doc(map[string]any{"kind": "succession-cert", "predecessorId": "m8"})
 	})
-	if rg.r.restoreFilesFor("m9") != "" {
+	if rg.r.restoreFilesFor("m9") != nil {
 		t.Fatal("a successor may fetch the restore")
 	}
 	// once it runs, the files go and the record notes the restore
 	rg.r.st.Do(func(d *persisted) { d.Sessions[sid].State = "started" })
 	rg.r.tidyRestores()
-	if _, err := os.Stat(rg.r.restoresDir(sid)); !os.IsNotExist(err) {
-		t.Fatal("restore files stayed")
+	if rg.r.snap(restoreSnap(sid)) != nil {
+		t.Fatal("the restore's snapshot stayed")
 	}
 	if rec := rg.r.record("s1"); len(rec.Restored) != 1 || rec.Restored[0].Session != sid {
 		t.Fatalf("restored %+v", rec.Restored)

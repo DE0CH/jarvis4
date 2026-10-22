@@ -24,7 +24,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -245,7 +244,7 @@ func (r *Router) registerBackups(app func(string, http.HandlerFunc)) {
 			f.Objects = old.Objects
 		}
 		b, _ = json.Marshal(f)
-		if err := writeFileAtomic(filepath.Join(r.cfg.DataDir, backupFallbackFile), b); err != nil {
+		if err := r.st.WriteDoc(backupFallbackFile, b); err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
 			return
 		}
@@ -253,11 +252,7 @@ func (r *Router) registerBackups(app func(string, http.HandlerFunc)) {
 		writeJSON(w, 200, map[string]any{"ok": true, "fetchedAt": f.FetchedAt, "objects": len(f.Objects)})
 	})
 	app("DELETE /api/backups/fallback", func(w http.ResponseWriter, req *http.Request) {
-		err := os.Remove(filepath.Join(r.cfg.DataDir, backupFallbackFile))
-		if err != nil && !os.IsNotExist(err) {
-			writeJSON(w, 500, map[string]string{"error": err.Error()})
-			return
-		}
+		r.st.DeleteDoc(backupFallbackFile)
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
 }
@@ -294,8 +289,8 @@ func (f *backupExport) check() error {
 
 // backupFallback: the kept export, or nil
 func (r *Router) backupFallback() *backupExport {
-	b, err := os.ReadFile(filepath.Join(r.cfg.DataDir, backupFallbackFile))
-	if err != nil {
+	b, ok := r.st.ReadDoc(backupFallbackFile)
+	if !ok {
 		return nil
 	}
 	var f backupExport

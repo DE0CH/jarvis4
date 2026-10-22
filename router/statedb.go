@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -421,7 +422,8 @@ func (s *State) StoreError() (error, time.Time) {
 // ---- the router's small documents (docs/STATE.md step 4) --------------------------------------------------------
 
 // routerDocs: the files that were on the volume and now are rows of router_docs (imported once, then renamed)
-var routerDocs = []string{"store-docs.json", "repos.json", "claim-device.json", "core-certs.json", "line-state.json", "kernel-line-state.json"}
+var routerDocs = []string{"store-docs.json", "repos.json", "claim-device.json", "core-certs.json", "line-state.json", "kernel-line-state.json",
+	"backups-fallback.json"}
 
 // docStore: where a small document is read and written (the State's database)
 type docStore interface {
@@ -471,8 +473,29 @@ func (s *State) DeleteDoc(name string) {
 	}
 }
 
-// importDocFiles: each document's file on the volume into router_docs, once (a row already there wins), then renamed
+// importDocFiles: each document's file on the volume into router_docs, once (a row already there wins), then renamed;
+// the Jarvis 1 imports' small files (jarvis1-imports/<id>/<file>) the same way, under their path
 func importDocFiles(ctx context.Context, db *DB, dir string) error {
+	j1 := filepath.Join(dir, "jarvis1-imports")
+	if _, err := os.Stat(j1); err == nil {
+		err := filepath.WalkDir(j1, func(p string, e fs.DirEntry, err error) error {
+			if err != nil || e.IsDir() || strings.HasSuffix(p, ".tmp") {
+				return err
+			}
+			rel, _ := filepath.Rel(dir, p)
+			b, err := os.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			_, err = db.pool.Exec(ctx, "INSERT INTO router_docs (name, body) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING", filepath.ToSlash(rel), b)
+			return err
+		})
+		if err != nil {
+			return fmt.Errorf("import %s: %v", j1, err)
+		}
+		os.Rename(j1, j1+".imported")
+		log.Printf("docs: %s imported into the database", j1)
+	}
 	for _, name := range routerDocs {
 		p := filepath.Join(dir, name)
 		b, err := os.ReadFile(p)

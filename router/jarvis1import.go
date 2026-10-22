@@ -33,7 +33,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -107,7 +106,8 @@ func j1Path(root string, parts ...string) string {
 	return root + "/" + strings.Join(parts, "/")
 }
 
-func (r *Router) j1Dir(id string) string { return filepath.Join(r.cfg.DataDir, "jarvis1-imports", id) }
+// an import's small files are rows of router_docs, jarvis1-imports/<id>/<file> (statedb.go)
+func j1Doc(id, file string) string { return "jarvis1-imports/" + id + "/" + file }
 
 // ---- the Storage Box: a directory listing and a streamed GET ----------------------------------------------
 
@@ -269,14 +269,10 @@ func (r *Router) prepareJarvis1(id string, p *j1Prep) (string, error) {
 		return "", fmt.Errorf("session.json names session %s, not %s", jr.ID, id)
 	}
 	mb, _ := json.Marshal(man)
-	out := r.j1Dir(id)
-	if err := os.MkdirAll(out, 0o700); err != nil {
+	if err := r.st.WriteDoc(j1Doc(id, j1RecordFile), rec); err != nil {
 		return "", err
 	}
-	if err := writeFileAtomic(filepath.Join(out, j1RecordFile), rec); err != nil {
-		return "", err
-	}
-	if err := writeFileAtomic(filepath.Join(out, j1ManifestFile), mb); err != nil {
+	if err := r.st.WriteDoc(j1Doc(id, j1ManifestFile), mb); err != nil {
 		return "", err
 	}
 	return sha256Bytes(mb), nil
@@ -301,13 +297,6 @@ func j1Order(n string) int {
 	return 6
 }
 
-func writeFileAtomic(p string, b []byte) error {
-	if err := os.WriteFile(p+".tmp", b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(p+".tmp", p)
-}
-
 // j1PrepareWait: how long an import waits for the prepare it starts itself
 var j1PrepareWait = 10 * time.Minute
 
@@ -317,7 +306,7 @@ func (r *Router) ensurePreparedJarvis1(id string) error {
 	if !j1SessionIDRE.MatchString(id) {
 		return bad("not a Jarvis 1 session id: %q", id)
 	}
-	if _, err := os.Stat(filepath.Join(r.j1Dir(id), j1ManifestFile)); err == nil {
+	if _, ok := r.st.ReadDoc(j1Doc(id, j1ManifestFile)); ok {
 		return nil
 	}
 	if _, err := r.PrepareJarvis1(id); err != nil {
@@ -346,13 +335,13 @@ func (r *Router) preparedJarvis1(id string) ([]byte, string, *j1Record, error) {
 	if !j1SessionIDRE.MatchString(id) {
 		return nil, "", nil, bad("not a Jarvis 1 session id: %q", id)
 	}
-	mb, err := os.ReadFile(filepath.Join(r.j1Dir(id), j1ManifestFile))
-	if err != nil {
+	mb, ok := r.st.ReadDoc(j1Doc(id, j1ManifestFile))
+	if !ok {
 		return nil, "", nil, bad("Jarvis 1 session %s isn't prepared: POST …/jarvis1/%s/prepare first", id, id)
 	}
-	rb, err := os.ReadFile(filepath.Join(r.j1Dir(id), j1RecordFile))
-	if err != nil {
-		return nil, "", nil, err
+	rb, ok := r.st.ReadDoc(j1Doc(id, j1RecordFile))
+	if !ok {
+		return nil, "", nil, fmt.Errorf("Jarvis 1 session %s: its record is gone", id)
 	}
 	var rec j1Record
 	if err := json.Unmarshal(rb, &rec); err != nil {
@@ -536,12 +525,11 @@ func (r *Router) tidyImports() {
 		}
 	})
 	for _, x := range list {
-		p := filepath.Join(r.j1Dir(x.from), j1ImportedFile)
-		if _, err := os.Stat(p); err == nil {
+		if _, ok := r.st.ReadDoc(j1Doc(x.from, j1ImportedFile)); ok {
 			continue
 		}
 		b, _ := json.Marshal(map[string]any{"session": x.sid, "at": time.Now().UTC()})
-		writeFileAtomic(p, b)
+		r.st.WriteDoc(j1Doc(x.from, j1ImportedFile), b)
 	}
 }
 
@@ -591,7 +579,7 @@ func (r *Router) j1Status(id string, v map[string]any) {
 	if _, sum, _, err := r.preparedJarvis1(id); err == nil {
 		v["sha256"] = sum
 	}
-	if b, err := os.ReadFile(filepath.Join(r.j1Dir(id), j1ImportedFile)); err == nil {
+	if b, ok := r.st.ReadDoc(j1Doc(id, j1ImportedFile)); ok {
 		var x map[string]any
 		json.Unmarshal(b, &x)
 		v["imported"] = x

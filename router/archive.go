@@ -961,19 +961,20 @@ func (r *Router) registerArchive(app appRoute, m machineRoute) {
 			r.serveImportManifest(w, id)
 			return
 		}
-		dir := r.restoreFilesFor(machine)
-		if dir == "" {
+		s := r.restoreFilesFor(machine)
+		if s == nil {
 			writeJSON(w, 404, map[string]string{"error": "no restore for this machine"})
 			return
 		}
-		sig, err := os.ReadFile(filepath.Join(dir, "snapshot.sig"))
+		rd, err := r.snapOpen(req.Context(), s)
 		if err != nil {
 			writeJSON(w, 404, map[string]string{"error": "no restore snapshot"})
 			return
 		}
-		w.Header().Set("X-Snapshot-Sig", strings.TrimSpace(string(sig)))
+		defer rd.Close()
+		w.Header().Set("X-Snapshot-Sig", s.Sig)
 		w.Header().Set("Content-Type", "application/gzip")
-		http.ServeFile(w, req, filepath.Join(dir, "snapshot.tar.gz"))
+		http.ServeContent(w, req, "", s.CommittedAt, rd)
 	})
 }
 

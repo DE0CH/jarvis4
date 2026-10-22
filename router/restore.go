@@ -38,8 +38,12 @@ func init() {
 	})
 }
 
+// restoreSnap: the snapshot row (snapstore.go) holding a restoring session's archived snapshot, until its first boot
+func restoreSnap(sid string) string { return "restore-" + sid }
+
+// restoresDir: the scratch directory the archive's files are fetched into and checked in (then gone)
 func (r *Router) restoresDir(sid string) string {
-	return filepath.Join(r.cfg.DataDir, "restores", sid)
+	return filepath.Join(r.cfg.DataDir, "tmp", "restore-"+sid)
 }
 
 // RestoreRecord: the record's archived snapshot onto the volume, then a new session with the record's
@@ -93,8 +97,9 @@ func (r *Router) RestoreRecord(recordID, requestID string) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
+	defer os.RemoveAll(dir) // the snapshot goes into the bucket (below); nothing of the restore stays on disk
 	fail := func(err error) (string, error) {
-		os.RemoveAll(dir)
+		r.snapDrop(restoreSnap(sid))
 		return "", err
 	}
 	for _, f := range []string{"snapshot.tar.gz", "snapshot.sig", "cert.json"} {
@@ -111,6 +116,9 @@ func (r *Router) RestoreRecord(recordID, requestID string) (string, error) {
 	box.Download(rec.Archive.Dir+"/jarvis2/core-cert.json", filepath.Join(dir, "core-cert.json"))
 	cert, err := r.checkRestoreFiles(dir)
 	if err != nil {
+		return fail(err)
+	}
+	if err := r.putRestoreSnapshot(sid, dir); err != nil {
 		return fail(err)
 	}
 	var coreCert *MasterCert
@@ -137,7 +145,12 @@ func (r *Router) RestoreRecord(recordID, requestID string) (string, error) {
 		what = recordID
 	}
 	if r.kernelServes() { // kernelline.go: the restore on the kernel; the phone signs the snapshot's hash into the source
-		sum, err := sha256hex(filepath.Join(dir, "snapshot.tar.gz"))
+		sum, err := "", error(nil)
+		if s := r.snap(restoreSnap(sid)); s != nil {
+			sum = s.Sha256
+		} else {
+			err = errors.New("the restore's snapshot is gone")
+		}
 		if err == nil {
 			err = r.kernelNewSessionApproval(s, config, map[string]string{"model": s.Model, "size": s.Size, "permissionMode": s.PermissionMode,
 				"repos": s.Repos, "restore": fmt.Sprintf("%s (destroyed %s)", what, rec.DestroyedAt.UTC().Format("2006-01-02"))}, NewSession{}, sum)
@@ -208,8 +221,8 @@ func (r *Router) checkRestoreFiles(dir string) (*Doc, error) {
 	return &cert, nil
 }
 
-// restoreFilesFor: the restore files a machine may fetch — only the first machine of a restoring session
-func (r *Router) restoreFilesFor(machine string) string {
+// restoreFilesFor: the restore snapshot a machine may fetch — only the first machine of a restoring session
+func (r *Router) restoreFilesFor(machine string) *Snap {
 	var sid string
 	r.st.Do(func(d *persisted) {
 		s := d.Sessions[d.Machines[machine]]
@@ -219,21 +232,30 @@ func (r *Router) restoreFilesFor(machine string) string {
 		sid = s.ID
 	})
 	if sid == "" {
-		return ""
+		return nil
 	}
-	dir := r.restoresDir(sid)
-	if _, err := os.Stat(filepath.Join(dir, "snapshot.tar.gz")); err != nil {
-		return ""
+	return r.snap(restoreSnap(sid))
+}
+
+// putRestoreSnapshot: the checked archive's snapshot (dir) into the bucket, as the restoring session's row
+func (r *Router) putRestoreSnapshot(sid, dir string) error {
+	sig, err := os.ReadFile(filepath.Join(dir, "snapshot.sig"))
+	if err != nil {
+		return err
 	}
-	return dir
+	f, err := os.Open(filepath.Join(dir, "snapshot.tar.gz"))
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return r.snapPutWhole(restoreSnap(sid), f, strings.TrimSpace(string(sig)))
 }
 
 // tidyRestores: once a restoring session is past its first boot (or gone), its restore files go; a session
 // that came up is noted on the record it was restored from
 func (r *Router) tidyRestores() {
-	ents, _ := os.ReadDir(filepath.Join(r.cfg.DataDir, "restores"))
-	for _, e := range ents {
-		sid := e.Name()
+	for _, m := range r.snapsLike("restore-") {
+		sid := strings.TrimPrefix(m, "restore-")
 		var state, from string
 		r.st.Do(func(d *persisted) {
 			if s := d.Sessions[sid]; s != nil {
@@ -246,7 +268,7 @@ func (r *Router) tidyRestores() {
 		case "started":
 			r.markRestored(from, sid)
 		}
-		os.RemoveAll(filepath.Join(r.cfg.DataDir, "restores", sid))
+		r.snapDrop(m)
 	}
 }
 
