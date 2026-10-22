@@ -10,7 +10,7 @@
 #     read-only one (infra/fly-read-token.sh), both narrowed from REPLICA_FLY_TOKEN;
 #   - the core on 127.0.0.1:8090, started again whenever it ends (a Reset or the app's restart-and-recover wipes it,
 #     and Kubernetes starts an empty one in production), the router on 127.0.0.1:18080 with production's session image
-#     and its signatures (k8s/control/apps/router), the policy in policy/stores.json and its web page.
+#     and its signatures (k8s/cluster/router), the policy in policy/stores.json and its web page.
 # The router runs NO_ACCESS=1 on the loopback address: the simulator talks to it directly, there is no Cloudflare in
 # front (app/DECISIONS.md "The phone replica").
 #
@@ -113,7 +113,7 @@ for _ in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:8090/identity && b
 curl -sf -o /dev/null http://127.0.0.1:8090/identity || { echo "the core didn't come up"; tail -20 "$W/core.log"; exit 1; }
 
 # production's session image, its signature and the earlier pins' (the phone checks them against keys/ci.pub)
-RY="$ROOT/k8s/control/apps/router/router.yaml"
+RY="$ROOT/k8s/cluster/router/router.yaml"
 val() { sed -n "s/.*name: $1, value: \"\([^\"]*\)\".*/\1/p" "$RY" | head -1; }
 SIMG="$(val SESSION_IMAGE)"; SSIG="$(val SESSION_IMAGE_SIG)"
 [ -n "$SIMG" ] && [ -n "$SSIG" ] || { echo "no SESSION_IMAGE / SESSION_IMAGE_SIG in $RY"; exit 1; }
@@ -125,7 +125,7 @@ cat > "$W/router.sh" <<EOF
 exec env -i PATH="$PATH" HOME="$HOME" \\
   DATABASE_URL="$DBURL" NO_ACCESS=1 RECORDS_OFF=1 CORE_URL=http://127.0.0.1:8090 ADDR=127.0.0.1:18080 MACHINE_ADDR=127.0.0.1:18081 \\
   DATA_DIR="$W/data" WEB_DIR="$ROOT/web" TASKS_DIR="$ROOT/tasks" POLICY_FILE="$ROOT/policy/stores.json" \\
-  SESSION_IMAGE="$SIMG" SESSION_IMAGE_SIG="$SSIG" SESSION_IMAGE_SIGS_FILE="$ROOT/k8s/control/apps/router/session-image-sigs.txt" \\
+  SESSION_IMAGE="$SIMG" SESSION_IMAGE_SIG="$SSIG" SESSION_IMAGE_SIGS_FILE="$ROOT/k8s/cluster/router/session-image-sigs.txt" \\
   FLY_REGION=lhr MACHINE_URL="$MURL" WG_CONFIG="$W/wg.conf" FLY_READ_TOKEN="\$(cat "$W/fly-read")" \\
   SETUP_KEY="$(cat "$W/keys/setup.pub")" \\
   BACKUP_ENDPOINT=http://127.0.0.1:18098 BACKUP_BUCKET=jarvis2-backup-replica BACKUP_READ_ACCESS_KEY=replica BACKUP_READ_SECRET_KEY="$S3_SECRET" \\
