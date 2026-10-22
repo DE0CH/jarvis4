@@ -75,6 +75,12 @@ func main() {
 	if cfg.MachineURL == "" {
 		log.Printf("MACHINE_URL unset: machines will have no router address")
 	}
+	// the records are in Postgres (statedb.go): the database first, before this pod listens or stands by, so a pod that
+	// can't reach it (a wrong password, the database down) never becomes ready or takes over from a working leader
+	if os.Getenv("DATABASE_URL") == "" {
+		log.Fatal("DATABASE_URL is required: the router's records are in Postgres (docs/STATE.md)")
+	}
+	db := openDBWait(os.Getenv("DATABASE_URL"))
 	// leader.go: one router process owns the state; a rollout's new pod waits as a standby that proxies to it
 	addr, maddr := env("ADDR", ":8080"), env("MACHINE_ADDR", ":8081")
 	lock, err := openLeaderLock(cfg.DataDir)
@@ -161,11 +167,7 @@ func main() {
 		}
 	}
 
-	// the records are in Postgres (statedb.go); the first start against an empty database imports state.json
-	if os.Getenv("DATABASE_URL") == "" {
-		log.Fatal("DATABASE_URL is required: the router's records are in Postgres (docs/STATE.md)")
-	}
-	db := openDBWait(os.Getenv("DATABASE_URL"))
+	// the first start against an empty database imports state.json (statedb.go)
 	st, err := OpenState(context.Background(), db, cfg.DataDir) // after the lock: the previous leader's last writes
 	if err != nil {
 		log.Fatal(err)

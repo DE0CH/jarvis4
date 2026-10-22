@@ -3,7 +3,8 @@ package main
 // The router's database (docs/STATE.md, step 6): Postgres at DATABASE_URL (the Cluster jarvis4-db, role router; Secret
 // router-db, infra/router-secrets.py --box cluster --part db). Schema changes are the embedded migrations/NNNN_*.sql,
 // applied in order at start under a Postgres advisory lock. The router's records live there (statedb.go); (so two replicas starting together apply each once), each in
-// its own transaction with its row in schema_migrations. GET /healthz and /setup/status report what Status says.
+// its own transaction with its row in schema_migrations. A new router migrates while the old one still serves (a rollout),
+// so a migration only adds (tables, nullable columns); what the old code needs is dropped one release later. GET /healthz and /setup/status report what Status says.
 
 import (
 	"context"
