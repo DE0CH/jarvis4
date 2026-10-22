@@ -19,6 +19,15 @@ spec:
       owner: router
       secret: { name: jarvis4-db-router }
       dataChecksums: true
+  # the role router's password is reconciled from its Secret (bootstrap.initdb only sets it once, at creation): a
+  # rotation is a new jarvis4-db-router (router-secrets.py --part postgres-app) with the same value in router-db's
+  # DATABASE_URL (--part db), committed together
+  managed:
+    roles:
+      - name: router
+        ensure: present
+        login: true
+        passwordSecret: { name: jarvis4-db-router }
   postgresql:
     parameters:
       shared_buffers: 128MB
