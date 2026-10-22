@@ -30,7 +30,7 @@ manifest so it restarts with the new Secret. SRC is `env:VAR` (default `env:KEY`
                  k8s/cluster/postgres/db/), e.g. ACCESS_KEY_ID=env:HETZNER_S3_ACCESS_KEY
   --part db      router-db.enc.yaml, Secret router-db in jarvis4-router — DATABASE_URL only: the router's connection to
                  the database (router/db.go), DATABASE_URL=dburl:JARVIS4_DB_ROUTER_PASSWORD (the infra store's password of
-                 role router, made into postgres://router:…@jarvis4-db-rw.jarvis4-db.svc:5432/jarvis4?sslmode=require)
+                 role router, made into postgres://router:…@jarvis4-db-rw.jarvis4-db.svc.cluster.local:5432/jarvis4?sslmode=require)
   --part postgres-app  postgres-app.enc.yaml, Secret jarvis4-db-router (basic-auth) in jarvis4-db — username=router and
                  password: the database owner, made at initdb (the same password is JARVIS4_DB_ROUTER_PASSWORD in the
                  infra store, for the router's own copy; docs/STATE.md)
@@ -91,7 +91,7 @@ def main():
         elif kind == "dburl":  # the router's DATABASE_URL from the role router's password in env var ref
             pw = os.environ.get(ref)
             v = pw and "postgres://router:" + urllib.parse.quote(pw, safe="") + \
-                "@jarvis4-db-rw.jarvis4-db.svc:5432/jarvis4?sslmode=require"
+                "@jarvis4-db-rw.jarvis4-db.svc.cluster.local:5432/jarvis4?sslmode=require"
         elif kind == "file":
             v = open(os.path.expanduser(ref)).read().strip()
         else:
