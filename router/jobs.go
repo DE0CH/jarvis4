@@ -9,8 +9,14 @@ package main
 //	            answers the same cert
 //	destroying  run again (destroyRun): the kill as above, the archive skips what it holds, the line's burn is kept
 //	            (a one-shot's report hook doesn't survive: its DM is lost, the destroy isn't)
-//	anything else (a start, a resume, a switch): cut off as before (endCutOff): the session becomes failed or paused
-//	            with the reason, for Deyao to run again. These move onto steps of their own next.
+//	starting    a kernel line's start or resume: carried on from where the records say it is (kernelContinue)
+//	mode        the permission-mode switch run again (setting the mode it already has is a no-op)
+//	account     the machine told again, the switch checked as a fresh one
+//	anything else (an old-core line's start or resume: Jarvis 4 runs no old core): cut off as before (endCutOff), the
+//	            session failed or paused with the reason, for Deyao to run again
+//
+// An approved add-store on a kernel line is answered within its request (kernelline.go respondKernelAdd): a replica
+// that dies fails the request, and the app sends the same signatures again (every step of it is safe to repeat).
 
 import (
 	"context"
@@ -168,6 +174,44 @@ func (r *Router) carryOn(j *jobRow) {
 		op.machine(s.MachineID)
 		op.note("", "carried on by another router replica: its holder stopped (the pause runs again from the snapshot)")
 		go r.pauseRun(j.Session, s.MachineID, nil, unlock, op)
+	case j.Kind == "starting" && s.Kernel != nil:
+		go r.kernelContinue(j.Session, unlock)
+	case j.Kind == "mode" && s.State == "started":
+		var a struct{ Mode string }
+		json.Unmarshal(j.Args, &a)
+		wj, err := r.ops.startJob(j.Session, "permission-mode")
+		if err != nil {
+			unlock()
+			return
+		}
+		go r.modeRun(j.Session, a.Mode, wj, unlock)
+	case j.Kind == "account" && s.State == "started":
+		var a struct {
+			Store, Harness string
+			Continue       bool
+		}
+		json.Unmarshal(j.Args, &a)
+		wj, err := r.ops.startJob(j.Session, "account")
+		if err != nil {
+			unlock()
+			return
+		}
+		// the account is already the session's (set before the job began): the machine is told again and its switch
+		// is checked as a fresh one (what ran before isn't known here)
+		r.send(s.MachineID, "claude-account")
+		go func() {
+			defer unlock()
+			to := r.accounts().hub(a.Store)
+			if to == nil {
+				r.ops.phase(wj, "failed", fmt.Errorf("no Claude account %s", a.Store))
+				return
+			}
+			if err := r.runAccountSwitch(wj, j.Session, s.MachineID, a.Harness, Registry{}, to, a.Continue); err != nil {
+				r.ops.phase(wj, "failed", err)
+				return
+			}
+			r.ops.phase(wj, "done", nil)
+		}()
 	case j.Kind == "destroying" && s.State == "destroying":
 		var a struct{ Force bool }
 		json.Unmarshal(j.Args, &a)

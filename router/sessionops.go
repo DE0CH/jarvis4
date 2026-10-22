@@ -300,7 +300,7 @@ func (r *Router) SetPermissionMode(id, mode string) (map[string]any, error) {
 	if mode == "bypass" && !r.HasPhoneGrant(id, "terminal") {
 		return nil, &GrantNeeded{Holder: "terminal", Phone: true}
 	}
-	unlock, err := r.lock(id, "mode")
+	unlock, err := r.lockArgs(id, "mode", map[string]string{"mode": mode})
 	if err != nil {
 		return nil, err
 	}
@@ -309,7 +309,14 @@ func (r *Router) SetPermissionMode(id, mode string) (map[string]any, error) {
 		unlock()
 		return nil, err
 	}
-	go func() {
+	go r.modeRun(id, mode, j, unlock)
+	return map[string]any{"started": true, "kind": "permission-mode", "permissionMode": mode, "inPlace": true}, nil
+}
+
+// modeRun: the running session's switch to mode, under its job (jobs.go: a replica carrying the job on runs it again:
+// setting the mode the session already has is a no-op on the machine)
+func (r *Router) modeRun(id, mode string, j *wakeJob, unlock func()) {
+	func() {
 		defer unlock()
 		r.ops.phase(j, "switching", nil)
 		exec := r.Exec
@@ -332,7 +339,6 @@ func (r *Router) SetPermissionMode(id, mode string) (map[string]any, error) {
 		})
 		r.ops.phase(j, "done", nil)
 	}()
-	return map[string]any{"started": true, "kind": "permission-mode", "permissionMode": mode, "inPlace": true}, nil
 }
 
 // askModeGrant: the switch to mode waits on a fresh phone grant for holder: a grant request (10 minutes) goes into

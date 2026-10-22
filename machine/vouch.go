@@ -43,6 +43,7 @@ var (
 	flyValueRE = regexp.MustCompile(`^[A-Za-z0-9:._@/+-]{0,200}$`)
 	b64KeyRE   = regexp.MustCompile(`^[A-Za-z0-9+/]{60,120}={0,2}$`)
 	routerRE   = regexp.MustCompile(`^http://[A-Za-z0-9][A-Za-z0-9._-]{0,200}(:[0-9]{1,5})?/?$`)
+	// JARVIS2_URL: one router address, or several comma-separated (the gateways, routerdial.go): each one as routerRE
 	// a GitHub owner/name: an owner never starts with a dot, a name is never . or ..
 	sourceRE = regexp.MustCompile(`^source-[0-9a-f]{32}$`)
 	ghRepoRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9_.-]{1,100}$`)
@@ -86,7 +87,7 @@ func cleanEnv(started []string, imageEnv []string) ([]string, error) {
 	default:
 		return nil, errors.New("no core key (" + coreKeyEnv + ") or kernel root key, roster and source (" + kernelRootEnv + ", " + kernelRosterEnv + ", " + kernelSourceEnv + ") in the machine's config")
 	}
-	if u := strings.TrimSpace(got["JARVIS2_URL"]); routerRE.MatchString(u) {
+	if u := strings.TrimSpace(got["JARVIS2_URL"]); routerURLsOK(u) {
 		m["JARVIS2_URL"] = u
 	}
 	out := make([]string, 0, len(m))

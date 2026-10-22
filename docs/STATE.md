@@ -413,16 +413,22 @@ Each step ships alone, keeps the router working, and is a clean cut for what it 
    running per session (the 409 on any replica), held under a 60 s lease renewed every 20 s; a replica's `jobsLoop`
    claims a job whose lease ran out and carries it on. Pause and destroy run again from their start (each of their
    effects is safe to repeat: the machine signs one snapshot, the kill answers the same cert, the archive skips what it
-   holds); start, resume, the switches and the approved flows are still cut off as before (endCutOff, now only for a
-   session no live job holds) until they are split into steps of their own.
+   holds). A kernel line's start and resume carry on from where the records say they are (kernelContinue:
+   the old machine's pause first, else the spawn from the kept source, which the spawner answers with the machine it
+   already made, else only the wait for its boot); the permission-mode switch runs again; the account switch tells the
+   machine again and checks it afresh. An approved add-store is answered within its request (the app sends the same
+   signatures again after a failure; every step repeats safely). Only an old-core line's start or resume is still cut
+   off (Jarvis 4 runs no old core).
 8. **The scheduler lease** (section 4) replaces "the leader runs the loops". Done: leaderlease.go, migrations/0009: the row `scheduler` of `leader`, taken for 30 s and
    renewed every 10 s; every periodic loop waits at the top of each round until this replica leads (a replica stops
    leading 5 s before its row runs out); jobs and the machines' polls run everywhere.
 9. **m-gateway** (section 5): the WireGuard peer leaves the router; the router listens on :8081 in the pod network. Done
    as the first cut: `router m-gateway` (mgateway.go), one Deployment (Recreate: one peer can't run twice) holding the
    existing peer jarvis4-box and passing every request on to the router Service's :8081; the router no longer mounts
-   wg.conf (a standby passes its :8081 to the leader's). Still to do: the second peer (jarvis4-gw-b, its own
-   Deployment) and the machines trying the other address on a failed dial, so a gateway's rollout is no gap.
+   wg.conf (a standby passes its :8081 to the leader's). Two gateways now: a StatefulSet m-gateway of 2 (m-gateway-0
+   holds jarvis4-box, m-gateway-1 jarvis4-gw-b, by ordinal), replaced one at a time; a stopping gateway takes no new
+   connection and lets what it carries finish; the machines get both addresses (JARVIS2_URL comma-separated) and dial
+   the other when one doesn't answer (machine/routerdial.go), so a gateway's rollout is no gap.
 10. **Stateless replicas** (prepared on branch `step10-replicas`, waiting for the second node): the router Deployment becomes 2 replicas, RollingUpdate `maxUnavailable: 0`, readiness on
     the database, a PodDisruptionBudget, no volume (scratch is an emptyDir). This is the step that deletes the old
     machinery (section 7).
