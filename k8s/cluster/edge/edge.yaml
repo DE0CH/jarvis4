@@ -1,8 +1,8 @@
 # The one cluster's way in (docs/PLAN-cluster.md): the remotely managed tunnel jarvis2-cluster (infra/cloudflare.py
 # --cluster): jarvis4.deyaochen.com → the router (k8s/cluster/router, behind the "Jarvis 4" Access apps) and
 # kernel-id.deyaochen.com → kernel-id below, behind the Access app "Jarvis 4 kernel id" (only the service token
-# jarvis2-kernel-id). kernel-id is a test page until the
-# kernel's read-only identity endpoints take its place. Its token: the Secret tunnel-token (k8s/cluster/secrets).
+# jarvis2-kernel-id). kernel-id is the kernel's read-only
+# identity gateway (below). Its token: the Secret tunnel-token (k8s/cluster/secrets).
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: cloudflared, namespace: jarvis2-edge }
@@ -51,11 +51,33 @@ spec:
     - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16] } }]
       ports: [{ port: 7844, protocol: UDP }, { port: 7844, protocol: TCP }, { port: 443, protocol: TCP }]
 ---
-# the test page behind kernel-id.deyaochen.com (step 2a only)
+# kernel-id: the kernel's read-only identity gateway behind kernel-id.deyaochen.com. GET /<role>/identity answers that
+# component's own GET /identity (its fresh keys, self-signed), for infra/setup.py kernel-roster; nothing else passes
+# (other paths 404, other methods 403, no request headers or body forwarded)
 apiVersion: v1
 kind: ConfigMap
-metadata: { name: kernel-id-page, namespace: jarvis2-edge }
-data: { index.html: "jarvis4 kernel-id: the tunnel works, Flux reads DE0CH/jarvis4\n" }
+metadata: { name: kernel-id, namespace: jarvis2-edge }
+data:
+  default.conf: |
+    resolver kube-dns.kube-system.svc.cluster.local valid=10s;
+    server {
+      listen 8080;
+      server_tokens off;
+      location = /healthz { access_log off; return 200 "ok\n"; }
+      location ~ ^/(notary|notarizer|mover|merger|spawner|identity|gullible|secrets-blue|secrets-green)/identity$ {
+        limit_except GET { deny all; }
+        set $component $1;
+        set $upstream http://$component.jarvis4-kernel.svc.cluster.local:8080/identity;
+        proxy_pass $upstream;
+        proxy_method GET;
+        proxy_pass_request_headers off;
+        proxy_pass_request_body off;
+        proxy_set_header Host $component;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 10s;
+      }
+      location / { return 404 "only GET /<role>/identity\n"; }
+    }
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -69,14 +91,14 @@ spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       containers:
-        - name: page
-          image: busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
-          args: [httpd, -f, -p, "8080", -h, /www]
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:1.29.1-alpine@sha256:27985295bdb22a1ef8f712863210bd5877c0f3006494a593e86b3fe0fa55467e
           ports: [{ containerPort: 8080 }]
-          volumeMounts: [{ name: page, mountPath: /www }]
-          resources: { requests: { cpu: 10m, memory: 8Mi }, limits: { memory: 16Mi } }
-          securityContext: { runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] }, seccompProfile: { type: RuntimeDefault } }
-      volumes: [{ name: page, configMap: { name: kernel-id-page } }]
+          readinessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 5 }
+          volumeMounts: [{ name: conf, mountPath: /etc/nginx/conf.d, readOnly: true }, { name: tmp, mountPath: /tmp }]
+          resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { memory: 64Mi } }
+          securityContext: { runAsNonRoot: true, runAsUser: 101, runAsGroup: 101, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] }, seccompProfile: { type: RuntimeDefault } }
+      volumes: [{ name: conf, configMap: { name: kernel-id } }, { name: tmp, emptyDir: { medium: Memory, sizeLimit: 16Mi } }]
 ---
 apiVersion: v1
 kind: Service
@@ -85,7 +107,7 @@ spec:
   selector: { app: kernel-id }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
-# kernel-id takes connections only from cloudflared
+# kernel-id takes connections only from cloudflared, and reaches only DNS and the kernel's components on :8080
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: kernel-id, namespace: jarvis2-edge }
@@ -94,4 +116,9 @@ spec:
   policyTypes: [Ingress, Egress]
   ingress:
     - from: [{ podSelector: { matchLabels: { app: cloudflared } } }]
+      ports: [{ port: 8080 }]
+  egress:
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }, podSelector: { matchLabels: { k8s-app: kube-dns } } }]
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis4-kernel } }, podSelector: { matchLabels: { app: kernel } } }]
       ports: [{ port: 8080 }]

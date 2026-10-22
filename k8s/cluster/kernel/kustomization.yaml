@@ -1,0 +1,10 @@
+# The kernel (kernel.yaml). KERNEL_ROOT comes from root.pub (keys/root.pub, written by infra/setup.py kernel-root-key):
+# the components refuse to start without it, so k8s/cluster/kustomization.yaml lists this directory only once root.pub
+# is committed.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: [kernel.yaml]
+configMapGenerator:
+  - name: kernel-root
+    namespace: jarvis4-kernel
+    files: [root.pub]
