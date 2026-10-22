@@ -1,11 +1,11 @@
-# The ONE cluster's Flux sync (docs/PLAN-cluster.md; Deyao, 2026-10-22: git manages the whole cluster). Applied once
+# Jarvis 4's cluster: its Flux sync (docs/PLAN-cluster.md; Deyao, 2026-10-22: git manages the whole cluster). Applied once
 # by infra/cloud-init.sh (BOX_KIND=cluster) and from then on kept by Flux itself: it is part of ./k8s/cluster, so
 # a change here is a push like any other. Flux applies ./k8s/cluster as its own controller (cluster admin): namespaces,
 # quotas, permissions and apps all come from git, never from a new VM. SOPS-encrypted files in the tree are decrypted
 # with the cluster's age key (keys/cluster-age.pub).
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
-metadata: { name: jarvis2, namespace: flux-system }
+metadata: { name: jarvis4, namespace: flux-system }
 spec:
   interval: 1m
   url: https://github.com/DE0CH/jarvis4
@@ -18,7 +18,7 @@ spec:
   interval: 1m
   retryInterval: 30s
   timeout: 3m
-  sourceRef: { kind: GitRepository, name: jarvis2 }
+  sourceRef: { kind: GitRepository, name: jarvis4 }
   path: ./k8s/cluster
   prune: true
   wait: false

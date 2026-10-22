@@ -52,7 +52,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata: { name: kernel-id-page, namespace: jarvis2-edge }
-data: { index.html: "jarvis2-cluster kernel-id: the tunnel works (PLAN-cluster step 2a)\n" }
+data: { index.html: "jarvis4 kernel-id: the tunnel works, Flux reads DE0CH/jarvis4\n" }
 ---
 apiVersion: apps/v1
 kind: Deployment
