@@ -1,7 +1,9 @@
 // The root key (DESIGN "Target design"): a second Secure Enclave key, apart from the phone's own, that may sign
 // anything in the kernel's table: above all the one grant everything else narrows from, ⊤ on the sink. It is never
 // part of a batch (each use asks for its own Face ID) and is used only behind its own warning screen
-// (KernelSetupView). The kernel's secrets learns its public half from the claim the master key signs.
+// (KernelSetupView). It signs the kernel's roster (the components' keys), which every component checks against its
+// public half in keys/root.pub (registered with the router, committed by a setup session); the kernel's secrets also
+// learns it from the claim the master key signs. Its own Keychain items (root-se / root-sw) in this app's own Keychain.
 // KernelTrust: secrets' keys this iPhone set up, pinned like the old core's (CoreTrust): every document of secrets is
 // checked against them, never against keys learned from the network.
 import CryptoKit

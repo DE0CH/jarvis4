@@ -11,7 +11,7 @@ fixes, 34–40 carried over from the old app and still true, 41–43 the web pag
    trusted Swift shell from an untrusted React Native extension in its own process; now the whole app is trusted code, so
    the "secure pages" are ordinary sheets of the app. What made them secure stays: what the phone signs is rendered from
    the signed content, every signature takes Face ID, the keys stay in the Secure Enclave and the Keychain (same Keychain
-   service `dev.de0ch.jarvis2.shell`, so an installed app keeps its keys and pinned core across the update).
+   service `dev.de0ch.jarvis4.shell`, so an installed app keeps its keys and pinned core across the update).
 2. **No third-party Swift packages.** None was needed: QR codes come from CoreImage, the terminal from WebKit, crypto from
    CryptoKit. Two community agent skills guide the code (`.claude/skills/swiftui-pro`, `swift-concurrency-pro`, Paul
    Hudson, MIT).
@@ -72,10 +72,10 @@ fixes, 34–40 carried over from the old app and still true, 41–43 the web pag
 19. **iPhone and iPad** (`TARGETED_DEVICE_FAMILY 1,2`), every orientation on iPad.
 20. **Version 2.0**, build number = the `ios` workflow's run number + 1000 (above the old app's builds).
 21. **TestFlight from GitHub Actions** (`ios.yml`), archived unsigned and cloud-signed at export with the App Store Connect
-    API key (lessons/75), bundle id `dev.de0ch.jarvis2`, the job in the `release` environment (main only). It ships only
+    API key (lessons/75), bundle id `dev.de0ch.jarvis4`, the job in the `release` environment (main only). It ships only
     when the walkthrough, the interop test and the phone replica of the same run passed (75), and checks the archive carries no CI key source, no
     other keys ref, and the pinned policy is git's.
-22. **Tests**: the walkthrough (`UITests/Jarvis2UITests.swift`, light and dark against the real core and router on the
+22. **Tests**: the walkthrough (`UITests/Jarvis4UITests.swift`, light and dark against the real core and router on the
     runner), the transitions run (`TransitionsUITests`: every tab, push, pop, edge swipe, sheet, background and relaunch,
     recorded; a blank screen over 1.5 s or a near-uniform screenshot fails it), the phone replica (`ReplicaUITests`, the
     Release build against a real throwaway Jarvis 4 on the runner and real Fly sessions, Face ID driven by the runner; 75) and the crypto interop test against the real core.
@@ -388,13 +388,13 @@ fixes, 34–40 carried over from the old app and still true, 41–43 the web pag
     would need the account-wide Cloudflare token (the per-run service token can't be minted with the scoped one) and
     the bot's mailbox password in GitHub; the sign-in sheet is Cloudflare's own page and the router's JWT checks have
     their unit tests, so the replica covers everything after the sign-in. *One permanent test repo*
-    (`DE0CH/jarvis2-replica-test`) with a fine-grained token for it alone, instead of a repo and a PAT made per run
+    (`DE0CH/jarvis4-replica-test`) with a fine-grained token for it alone, instead of a repo and a PAT made per run
     (that needed Deyao's GitHub password and TOTP in CI); runs take turns (concurrency group `replica`) and each clears
     its deploy keys before and after. *Keys from a branch the job pushes* (`replica-keys-<run>-<attempt>`, deleted at
     the end): the Release build reads keys only from a git ref of this repo, so the job's GITHUB_TOKEN gets
     `contents: write`; the ruleset's `update` rule keeps it off main. *The core and router built from source on the
     runner*, not the pinned images: the same code, and the shipped app is tested against the core main builds also
-    while the production core is held. *A leftover sweep at the start* (machines naming any `jarvis2-replica-*` peer,
+    while the production core is held. *A leftover sweep at the start* (machines naming any `jarvis4-replica-*` peer,
     those peers) rather than relying on teardown alone: a cancelled job may never reach its teardown.
 
 ## Unfinished / known gaps

@@ -717,7 +717,7 @@ Jarvis 4 on the same runner (`ios/ci/replica-stack.sh`):
   with production's session image and signatures (`k8s/control/apps/router`), `policy/stores.json`, the web page and a
   read-only Fly token, on 127.0.0.1:18080 with `NO_ACCESS=1` (the simulator talks to it directly: no Cloudflare);
 - real Fly session machines in `jarvis4-sessions`, reaching the router over this run's WireGuard peer
-  `jarvis2-replica-<run>-<attempt>`, which the router runs in userspace as production's does; the core's Fly token
+  `jarvis4-replica-<run>-<attempt>`, which the router runs in userspace as production's does; the core's Fly token
   narrowed as production's and expiring after 6 hours (`infra/fly-token.sh`);
 - a throwaway box key and setup key (their public halves on the branch `replica-keys-<run>-<attempt>`, which the
   Release build reads them from; the job's GITHUB_TOKEN can push it, never main: the ruleset's `update` rule), the
@@ -743,11 +743,11 @@ not running in time. The video, screenshots and logs (core, router, the setup an
   `REPLICA_FLY_TOKEN` (`infra/fly-replica-token.sh`: the org token narrowed to app `jarvis4-sessions`, the org's
   WireGuard peers and read on the rest: the peer, the machines and volumes, `flyctl machine exec`; the job narrows it
   further for the core and the router) and `REPLICA_REPO_TOKEN` (a fine-grained token, no expiry, for the private test
-  repo `DE0CH/jarvis2-replica-test` only, Administration read and write: its deploy keys; Contents is refused). Both
-  set 2026-10-20 with `gh secret set NAME --env replica -R DE0CH/jarvis2`. The job fails at its first step naming a
+  repo `DE0CH/jarvis4-replica-test` only, Administration read and write: its deploy keys; Contents is refused). Both
+  set 2026-10-22 with `gh secret set NAME --env replica -R DE0CH/jarvis4`. The job fails at its first step naming a
   missing one.
 - **One run at a time** (the job's concurrency group `replica`): the test repo's deploy keys are shared, and each run
-  starts by sweeping earlier runs' leftovers (machines whose router address names a `jarvis2-replica-*` peer, those
+  starts by sweeping earlier runs' leftovers (machines whose router address names a `jarvis4-replica-*` peer, those
   peers, the repo's deploy keys); its teardown (always) removes its own machines and their volumes, its peer, the keys
   branch and the repo's deploy keys. It also deletes the run's volumes whose machine is already gone
   (`infra/run-volumes.py`: only ids the run's router state and core log name; "Leftover volumes" below).

@@ -13,7 +13,7 @@ it is**: nothing here touches Jarvis 1's box, cluster, repo paths, session image
 | Router | The Jarvis 4 backend (API for the app and the web page) on the control box; outside the core; untrusted |
 | Sessions | Fly Machines in a **new Fly organisation** (`jarvis2-370`), so Jarvis 1's budget scan never sees them |
 | Public address | `jarvis4.deyaochen.com`, a Cloudflare Tunnel (cloudflared on the control box) behind its own Cloudflare Access app: Deyao's login; `/setup` admits only the setup session's service token. Session machines never come through Cloudflare: they reach the router over Fly's private network (the control box's router is a WireGuard peer of the org), because Jarvis 1's Access apps admit any service token of the account |
-| iPhone app | "Jarvis 4" (`dev.de0ch.jarvis2`, its own TestFlight app): one native SwiftUI app for iPhone and iPad (`ios/`, Apple frameworks only) |
+| iPhone app | "Jarvis 4" (`dev.de0ch.jarvis4`, its own TestFlight app): one native SwiftUI app for iPhone and iPad (`ios/`, Apple frameworks only) |
 | CI | GitHub Actions (this repo is public, so macOS runners are free): images to GHCR, the app to TestFlight |
 
 ## Setting up (Deyao, 2026-10-10)

@@ -1,7 +1,11 @@
-// The kernel (DESIGN "Target design", docs/PLAN-grants.md) as the app sees it, with no UI, network or Keychain in it
-// (compiled into the interop test too, which runs it against the real kernel binaries):
-//   - secrets' identity, vouched for by the box key, and its claim (Recover: every store from the backups, wrapped to
-//     secrets' store key; its keys derived from the kit like the old core's, under the kernel's own labels);
+// The kernel (DESIGN "Target design", docs/PLAN-grants.md, docs/PLAN-cluster.md "The roster") as the app sees it, with
+// no UI, network or Keychain in it (compiled into the interop test too, which runs it against the real kernel binaries):
+//   - the roster: the kernel's components and their RAM-only keys, which the setup session reads and signs with the
+//     setup key (keys/setup.pub), and the root key signs here (KernelRoster, the exact payload kernel/sig
+//     RosterPayload makes);
+//   - secrets' identity, checked against the roster (or, once claimed, the keys this iPhone pinned), and its claim
+//     (Recover: every store from the backups, wrapped to secrets' store key; its keys derived from the kit like the
+//     old core's, under the kernel's own labels);
 //   - the certs the phone signs (a new source, an add-store's two), read strictly and checked against what the
 //     approval is for before Face ID.
 #if canImport(CryptoKit)
@@ -33,22 +37,42 @@ enum KernelContinuity {
 
 enum KernelSetup {
   // ---- secrets' identity and state (kernel/secrets: GET /identity) ----
-  struct Identity: Decodable { let signingKey: String; let agreementKey: String; let boxSig: String; let state: SignedDoc }
+  struct Identity: Decodable { var role: String? = nil; let signingKey: String; let agreementKey: String; let state: SignedDoc }
   struct State: Decodable {
     let kind: String; let master: String; let phone: PublicKeys?; let root: String?; var lineSeq: Int? = nil; var derived: Bool? = nil; var serving: String? = nil
   }
-  /// what the box key signs for a kernel component's keys (kernel/sig IdentityText)
-  static func identityText(role: String, _ k: PublicKeys) -> String { "jarvis2-kernel-\(role)-identity \(k.signingKey) \(k.agreementKey)" }
-  static func vouched(role: String, _ k: PublicKeys, boxSig: String, boxKey: String) -> Bool {
-    PublicKeys.valid(k) && CoreCrypto.valid(Data(identityText(role: role, k).utf8), sig: boxSig, by: boxKey)
-  }
-  /// the box key signed secrets' keys, and secrets signed its state
-  static func check(_ id: Identity, boxKey: String) throws -> (keys: PublicKeys, state: State) {
+  /// what vouches for secrets' keys: the keys this iPhone pinned when it claimed secrets, the root key's roster, and
+  /// before a claim the setup session's pending roster (setup-signed: trusted for an empty secrets only)
+  struct Anchors { var pinned: PublicKeys? = nil; var roster: KernelRoster.Roster? = nil; var pending: KernelRoster.Roster? = nil }
+  /// secrets' keys are vouched for and it signed its state: or nothing goes on
+  static func check(_ id: Identity, _ anchors: Anchors) throws -> (keys: PublicKeys, state: State) {
     let k = PublicKeys(signingKey: id.signingKey, agreementKey: id.agreementKey)
-    guard vouched(role: "secrets", k, boxSig: id.boxSig, boxKey: boxKey) else { throw TrustError.badSignature("the kernel's secrets keys (not the box key's)") }
+    guard PublicKeys.valid(k), id.role == nil || id.role == "secrets" else { throw TrustError.mismatch("not the kernel's secrets") }
+    let byPhone = anchors.pinned == k || anchors.roster?.member("secrets") == k
+    let bySetup = anchors.pending?.member("secrets") == k
+    guard byPhone || bySetup else { throw TrustError.badSignature("the kernel's secrets keys (not the roster's)") }
     let st = try CoreCrypto.decode(id.state, by: k.signingKey, as: State.self, what: "the kernel's secrets state")
     guard st.kind == "secrets-state" else { throw TrustError.mismatch("not the kernel's secrets state") }
+    // the setup key vouches only for a secrets nobody has claimed yet (the claim seals the stores to these keys)
+    guard byPhone || st.master.isEmpty else { throw TrustError.badSignature("the kernel's secrets keys (claimed, but not in the root key's roster)") }
     return (k, st)
+  }
+
+  /// a secrets nobody has claimed: its state, signed by the keys it names, has no master key (what lets the root key
+  /// sign a roster naming a secrets other than the one this iPhone pinned: an empty kernel copy)
+  static func unclaimed(_ id: Identity) -> PublicKeys? {
+    let k = PublicKeys(signingKey: id.signingKey, agreementKey: id.agreementKey)
+    guard PublicKeys.valid(k), let st = try? CoreCrypto.decode(id.state, by: k.signingKey, as: State.self, what: "secrets' state"),
+          st.kind == "secrets-state", st.master.isEmpty else { return nil }
+    return k
+  }
+  /// whether the root key may sign this roster as it stands: its secrets is the one this iPhone pinned, or (none pinned,
+  /// or another kernel copy) a secrets that answers unclaimed with those keys
+  static func signable(_ r: KernelRoster.Roster, pinned: PublicKeys?, unclaimed: [PublicKeys]) throws {
+    guard let s = r.member("secrets") else { return }
+    guard s == pinned || unclaimed.contains(s) else {
+      throw TrustError.mismatch("the roster names a secrets that is neither this iPhone's nor an empty one")
+    }
   }
 
   // ---- the claim (kernel/secrets Claim) ----
@@ -83,13 +107,14 @@ enum KernelSetup {
     return ["statement": st, "masterSig": try master.sign(st), "bundle": try CoreCrypto.seal(bundle, to: secrets.agreementKey, info: claimInfo)]
   }
   /// a component's identity document (kernel/internal/serve: GET /identity, signed by the component), checked: signed by
-  /// the keys it names, which the box key vouched for in this role
-  static func component(_ doc: SignedDoc, role: String, boxKey: String) throws -> PublicKeys {
-    struct I: Decodable { let role: String; let signingKey: String; let agreementKey: String; let boxSig: String }
+  /// the keys it names, which the root key's roster names for this role
+  static func component(_ doc: SignedDoc, role: String, roster: KernelRoster.Roster) throws -> PublicKeys {
+    struct I: Decodable { let role: String; let signingKey: String; let agreementKey: String }
     guard let i = try? JSONDecoder().decode(I.self, from: Data(doc.payload.utf8)) else { throw TrustError.mismatch("not a component's identity") }
     let k = PublicKeys(signingKey: i.signingKey, agreementKey: i.agreementKey)
-    guard i.role == role, vouched(role: role, k, boxSig: i.boxSig, boxKey: boxKey),
-          CoreCrypto.valid(Data(doc.payload.utf8), sig: doc.sig, by: i.signingKey) else { throw TrustError.badSignature("the kernel's \(role) (not the box key's)") }
+    guard i.role == role, roster.member(role) == k, CoreCrypto.valid(Data(doc.payload.utf8), sig: doc.sig, by: i.signingKey) else {
+      throw TrustError.badSignature("the kernel's \(role) (not the roster's)")
+    }
     return k
   }
   /// the body of POST /api/kernel/spawner/fly-token: the Fly token sealed to the spawner
@@ -103,6 +128,61 @@ enum KernelSetup {
     let e = JSONEncoder(); e.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
     let st = String(decoding: try e.encode(W(secrets: secrets.signingKey)), as: UTF8.self)
     return ["statement": st, "masterSig": try master.sign(st)]
+  }
+}
+
+// ---- the roster (kernel/sig Roster, docs/PLAN-cluster.md "The roster") ----
+enum KernelRoster {
+  struct Member: Codable, Equatable { let role: String; let signingKey: String; let agreementKey: String
+    var keys: PublicKeys { PublicKeys(signingKey: signingKey, agreementKey: agreementKey) }
+  }
+  struct Roster: Equatable {
+    let copy: String; let members: [Member]
+    func member(_ role: String) -> PublicKeys? { members.first { $0.role == role }?.keys }
+    /// the exact payload the setup key and the root key sign
+    var payload: String { KernelRoster.payload(copy: copy, members: members) }
+  }
+  /// what the setup session filed (GET /api/kernel/roster/pending)
+  struct Pending: Codable, Equatable { let copy: String; let payload: String; let setupSig: String }
+
+  static func validRole(_ r: String) -> Bool { !r.isEmpty && r.allSatisfy { ("a"..."z").contains($0) || ("0"..."9").contains($0) || $0 == "-" } }
+  /// kernel/sig RosterPayload, byte for byte: Go's json.Marshal of {kind, copy, members[{role, signingKey,
+  /// agreementKey}]}, members sorted by role. Roles are [a-z0-9-] and keys base64, so nothing needs escaping.
+  static func payload(copy: String, members: [Member]) -> String {
+    let ms = members.sorted { $0.role < $1.role }.map { "{\"role\":\"\($0.role)\",\"signingKey\":\"\($0.signingKey)\",\"agreementKey\":\"\($0.agreementKey)\"}" }
+    return "{\"kind\":\"kernel-roster\",\"copy\":\"\(copy)\",\"members\":[\(ms.joined(separator: ","))]}"
+  }
+  /// a roster read strictly: kind, copy blue or green, one member per role sorted, every key a P-256 key, and the
+  /// payload exactly the one this app would sign (so what is shown is what is signed)
+  static func parse(_ payload: String) throws -> Roster {
+    struct R: Decodable { let kind: String; let copy: String; let members: [Member] }
+    guard let r = try? JSONDecoder().decode(R.self, from: Data(payload.utf8)), r.kind == "kernel-roster", r.copy == "blue" || r.copy == "green", !r.members.isEmpty else {
+      throw TrustError.mismatch("not a kernel roster")
+    }
+    for (i, m) in r.members.enumerated() {
+      guard validRole(m.role), PublicKeys.valid(m.keys) else { throw TrustError.mismatch("a roster member without valid keys") }
+      if i > 0, r.members[i - 1].role >= m.role { throw TrustError.mismatch("the roster's members aren't sorted by role, one each") }
+    }
+    let out = Roster(copy: r.copy, members: r.members)
+    guard out.payload == payload else { throw TrustError.mismatch("the roster isn't in its canonical form") }
+    return out
+  }
+  /// the setup session's roster: the setup key (keys/setup.pub from GitHub) signed exactly this payload
+  static func pending(_ p: Pending, setupKey: String) throws -> Roster {
+    guard CoreCrypto.valid(Data(p.payload.utf8), sig: p.setupSig, by: setupKey) else { throw TrustError.badSignature("the kernel's roster (not the setup key's)") }
+    let r = try parse(p.payload)
+    guard r.copy == p.copy else { throw TrustError.mismatch("the roster is for another kernel copy") }
+    return r
+  }
+  /// a roster the root key signed
+  static func signed(_ d: SignedDoc, rootKey: String) throws -> Roster {
+    guard CoreCrypto.valid(Data(d.payload.utf8), sig: d.sig, by: rootKey) else { throw TrustError.badSignature("the kernel's roster (not this iPhone's root key)") }
+    return try parse(d.payload)
+  }
+  /// the same roster with secrets' keys replaced (a claim with a seed: secrets serves with the keys the kit derives)
+  static func replacing(_ r: Roster, role: String, with k: PublicKeys) throws -> Roster {
+    guard r.members.contains(where: { $0.role == role }) else { throw TrustError.mismatch("the roster has no \(role)") }
+    return Roster(copy: r.copy, members: r.members.map { $0.role == role ? Member(role: role, signingKey: k.signingKey, agreementKey: k.agreementKey) : $0 })
   }
 }
 

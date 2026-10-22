@@ -4,7 +4,7 @@
 import SwiftUI
 
 @main
-struct Jarvis2App: App {
+struct Jarvis4App: App {
   @State private var model = AppModel()
   @Environment(\.scenePhase) private var phase
 

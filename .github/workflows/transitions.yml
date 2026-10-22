@@ -7,7 +7,7 @@ name: transitions
 on:
   workflow_dispatch:
   push:
-    paths: [ios/Jarvis2/App/**, ios/Jarvis2/Review/**, ios/Jarvis2/Setup/**, ios/UITests/TransitionsUITests.swift, ios/UITests/UITestKit.swift, .github/workflows/transitions.yml]
+    paths: [ios/Jarvis4/App/**, ios/Jarvis4/Review/**, ios/Jarvis4/Setup/**, ios/UITests/TransitionsUITests.swift, ios/UITests/UITestKit.swift, .github/workflows/transitions.yml]
 concurrency:
   group: transitions-${{ github.ref }}
   cancel-in-progress: false
@@ -33,7 +33,7 @@ jobs:
         run: |
           xcodegen generate
           set -o pipefail
-          xcodebuild build-for-testing -project Jarvis2.xcodeproj -scheme Jarvis2 \
+          xcodebuild build-for-testing -project Jarvis4.xcodeproj -scheme Jarvis4 \
             -destination "id=$SIM_UDID" -derivedDataPath ../dd \
             JARVIS_BASE=http://127.0.0.1:18080/ JARVIS_CI_FLAG=JARVIS_CI JARVIS_CI_KEYS_BASE=http://127.0.0.1:18099/ \
             2>&1 | tee ../xcodebuild.log | grep -E "error:|\*\* " || true
@@ -56,14 +56,14 @@ jobs:
                 SESSION_IMAGE=ghcr.io/de0ch/jarvis4-session:ci@sha256:0000000000000000000000000000000000000000000000000000000000000000 ADDR=127.0.0.1:18080 MACHINE_ADDR=127.0.0.1:18081 nohup "$W/router" > out/router-$a.log 2>&1 & echo $! > "$W/router.pid")
               sleep 2
               xcrun simctl keychain "$SIM_UDID" reset
-              xcrun simctl uninstall "$SIM_UDID" dev.de0ch.jarvis2 || true
+              xcrun simctl uninstall "$SIM_UDID" dev.de0ch.jarvis4 || true
               xcrun simctl ui "$SIM_UDID" appearance $a
               xcrun simctl io "$SIM_UDID" recordVideo --codec=h264 --force out/transitions-$a.mov > out/record-$a.log 2>&1 &
               rec=$!
               sleep 2
-              (cd ios && TEST_RUNNER_JARVIS2_KIT="$kit" TEST_RUNNER_JARVIS2_APPEARANCE=$a \
-                xcodebuild test-without-building -project Jarvis2.xcodeproj -scheme Jarvis2 \
-                -only-testing:Jarvis2UITests/TransitionsUITests/testTransitions \
+              (cd ios && TEST_RUNNER_JARVIS4_KIT="$kit" TEST_RUNNER_JARVIS4_APPEARANCE=$a \
+                xcodebuild test-without-building -project Jarvis4.xcodeproj -scheme Jarvis4 \
+                -only-testing:Jarvis4UITests/TransitionsUITests/testTransitions \
                 -destination "id=$SIM_UDID" -derivedDataPath ../dd \
                 -resultBundlePath ../result-$a.xcresult 2>&1 | tee ../test-$a.log | grep -E "error:|Test Case|\*\* " || true)
               kill -INT $rec; wait $rec || true

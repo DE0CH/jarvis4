@@ -26,8 +26,8 @@ func TestEveryInboxKindIsKnownToTheApps(t *testing.T) {
 		return string(b)
 	}
 	files := map[string]string{
-		"iOS list title (BatchReviewView.swift actionTitle)": read("ios/Jarvis2/Review/BatchReviewView.swift"),
-		"iOS kind pill (InboxView.swift kindName)":           read("ios/Jarvis2/Inbox/InboxView.swift"),
+		"iOS list title (BatchReviewView.swift actionTitle)": read("ios/Jarvis4/Review/BatchReviewView.swift"),
+		"iOS kind pill (InboxView.swift kindName)":           read("ios/Jarvis4/Inbox/InboxView.swift"),
 		"web title (app/src/lib/inbox.ts inboxTitle)":        read("app/src/lib/inbox.ts"),
 		"web kind pill (app/src/views/Inbox.tsx KIND)":       read("app/src/views/Inbox.tsx"),
 	}

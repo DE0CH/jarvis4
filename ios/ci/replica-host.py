@@ -52,7 +52,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 
 def backup_open(kit):
-    data = subprocess.run(["xcrun", "simctl", "get_app_container", UDID, "dev.de0ch.jarvis2", "data"],
+    data = subprocess.run(["xcrun", "simctl", "get_app_container", UDID, "dev.de0ch.jarvis4", "data"],
                           capture_output=True, text=True).stdout.strip()
     files = sorted(glob.glob(os.path.join(data, "tmp", "backups", "jarvis2-backup-*.json")), key=os.path.getmtime)
     if not files:

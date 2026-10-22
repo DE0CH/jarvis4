@@ -25,7 +25,7 @@ jobs:
           set -o pipefail
           ok=0
           for f in "" JARVIS_CI; do
-            xcodebuild build -project Jarvis2.xcodeproj -scheme Jarvis2 -configuration Release -destination 'generic/platform=iOS Simulator' \
+            xcodebuild build -project Jarvis4.xcodeproj -scheme Jarvis4 -configuration Release -destination 'generic/platform=iOS Simulator' \
               -derivedDataPath ../dd-$f CODE_SIGNING_ALLOWED=NO JARVIS_CI_FLAG=$f 2>&1 | tee ../build-$f.log | grep -E "error:|warning: .*(deprecated|concurren)|\*\* " || true
             grep -q "BUILD SUCCEEDED" ../build-$f.log || ok=1
           done
@@ -49,18 +49,21 @@ jobs:
       - name: swift run Units (app code that needs no simulator, e.g. ResumeOnce)
         working-directory: ios/interop
         run: swift run Units
-      - name: swift run Kernel (the app's kernel code against the real kernel secrets and Go-made certs)
+      - name: swift run Kernel (the app's kernel code against the real kernel secrets and spawner, the roster on both sides, Go-made certs)
         working-directory: ios/interop
         run: |
           K="$RUNNER_TEMP/kernel"; mkdir -p "$K"
-          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$K/box.pem"
-          openssl pkey -in "$K/box.pem" -pubout -outform DER | tail -c 65 | base64 | tr -d '\n' > "$K/box.pub"
+          # the root key the test plays: the components check the roster against its public half (KERNEL_ROOT)
+          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$K/root.pem"
+          openssl pkey -in "$K/root.pem" -pubout -outform DER | tail -c 65 | base64 | tr -d '\n' > "$K/root.pub"
           (cd "$GITHUB_WORKSPACE/kernel" && go build -o "$K/secrets" ./cmd/secrets && go build -o "$K/spawner" ./cmd/spawner && go run ./cmd/vectors > "$K/vectors.json")
-          KERNEL_BOX_KEY="$K/box.pem" KERNEL_ADDR=127.0.0.1:18300 "$K/secrets" > "$K/secrets.log" 2>&1 &
+          (cd rostervec && go build -o "$K/rostervec" .)
+          KERNEL_ROOT="$(cat "$K/root.pub")" KERNEL_ADDR=127.0.0.1:18300 "$K/secrets" > "$K/secrets.log" 2>&1 &
           mkdir -p "$K/spawner-data"
-          KERNEL_BOX_KEY="$K/box.pem" KERNEL_ADDR=127.0.0.1:18301 KERNEL_DATA="$K/spawner-data" "$K/spawner" > "$K/spawner.log" 2>&1 &
+          KERNEL_ROOT="$(cat "$K/root.pub")" KERNEL_ADDR=127.0.0.1:18301 KERNEL_DATA="$K/spawner-data" "$K/spawner" > "$K/spawner.log" 2>&1 &
           sleep 2
-          KERNEL_SECRETS=http://127.0.0.1:18300 KERNEL_SPAWNER=http://127.0.0.1:18301 KERNEL_BOX_PUB="$K/box.pub" KERNEL_VECTORS="$K/vectors.json" swift run -c release Kernel
+          KERNEL_SECRETS=http://127.0.0.1:18300 KERNEL_SPAWNER=http://127.0.0.1:18301 KERNEL_ROOT_PEM="$K/root.pem" KERNEL_ROSTERVEC="$K/rostervec" \
+            KERNEL_VECTORS="$K/vectors.json" swift run -c release Kernel
       - name: swift run Interop
         working-directory: ios/interop
         run: |
@@ -108,7 +111,7 @@ jobs:
       - name: Stream logs
         run: |
           mkdir -p out
-          nohup xcrun simctl spawn "$SIM_UDID" log stream --style compact --level debug --predicate 'process == "Jarvis2"' > out/sim.log 2>&1 &
+          nohup xcrun simctl spawn "$SIM_UDID" log stream --style compact --level debug --predicate 'process == "Jarvis4"' > out/sim.log 2>&1 &
       - name: A test photo in the simulator's library (the walkthrough attaches it on New session)
         run: |
           python3 ios/ci/test-photo.py "$RUNNER_TEMP/ci-photo.png" && xcrun simctl addmedia "$SIM_UDID" "$RUNNER_TEMP/ci-photo.png"
@@ -120,7 +123,7 @@ jobs:
         run: |
           xcodegen generate
           set -o pipefail
-          xcodebuild build-for-testing -project Jarvis2.xcodeproj -scheme Jarvis2 \
+          xcodebuild build-for-testing -project Jarvis4.xcodeproj -scheme Jarvis4 \
             -destination "id=$SIM_UDID" -derivedDataPath ../dd \
             JARVIS_BASE=http://127.0.0.1:18080/ JARVIS_CI_FLAG=JARVIS_CI JARVIS_CI_KEYS_BASE=http://127.0.0.1:18099/ \
             2>&1 | tee ../xcodebuild.log | grep -E "error:|\*\* " || true
@@ -145,16 +148,16 @@ jobs:
                 SESSION_IMAGE=ghcr.io/de0ch/jarvis4-session:ci@sha256:0000000000000000000000000000000000000000000000000000000000000000 ADDR=127.0.0.1:18080 MACHINE_ADDR=127.0.0.1:18081 nohup "$W/router" > out/router-$a.log 2>&1 & echo $! > "$W/router.pid")
               sleep 2 && curl -sf http://127.0.0.1:18080/api/state > /dev/null && echo "router up ($a)"
               xcrun simctl keychain "$SIM_UDID" reset
-              xcrun simctl uninstall "$SIM_UDID" dev.de0ch.jarvis2 || true
+              xcrun simctl uninstall "$SIM_UDID" dev.de0ch.jarvis4 || true
               xcrun simctl ui "$SIM_UDID" appearance $a
               sleep 5
               xcrun simctl io "$SIM_UDID" recordVideo --codec=h264 --force out/walkthrough-$a.mov > out/record-$a.log 2>&1 &
               rec=$!
               touch "$RUNNER_TEMP/try-start"
               rm -rf result-$a.xcresult
-              (cd ios && TEST_RUNNER_JARVIS2_APPEARANCE=$a TEST_RUNNER_JARVIS2_KIT="$kit" TEST_RUNNER_JARVIS2_SETUP_KEY="$(cat "$W/setup-key.pem")" \
-                xcodebuild test-without-building -project Jarvis2.xcodeproj -scheme Jarvis2 \
-                -only-testing:Jarvis2UITests/Jarvis2UITests/testWalkthrough \
+              (cd ios && TEST_RUNNER_JARVIS4_APPEARANCE=$a TEST_RUNNER_JARVIS4_KIT="$kit" TEST_RUNNER_JARVIS4_SETUP_KEY="$(cat "$W/setup-key.pem")" \
+                xcodebuild test-without-building -project Jarvis4.xcodeproj -scheme Jarvis4 \
+                -only-testing:Jarvis4UITests/Jarvis4UITests/testWalkthrough \
                 -destination "id=$SIM_UDID" -derivedDataPath ../dd \
                 -resultBundlePath ../result-$a.xcresult 2>&1 | tee ../test-$a.log | grep -E "error:|Test Case|\*\* " || true)
               kill -INT $rec; wait $rec || true
@@ -165,7 +168,7 @@ jobs:
               elif python3 ios/ci/apple-crash.py "$RUNNER_TEMP/try-start"; then echo "the simulator crashed the app in Apple's code ($a): once more"
               else break; fi
               cp test-$a.log out/test-$a-try$try.log
-              xcrun simctl terminate "$SIM_UDID" dev.de0ch.jarvis2 || true; sleep 10
+              xcrun simctl terminate "$SIM_UDID" dev.de0ch.jarvis4 || true; sleep 10
             done
             grep -q "TEST EXECUTE SUCCEEDED\|\*\* TEST SUCCEEDED" test-$a.log || ok=1
           done
@@ -207,7 +210,7 @@ jobs:
     env:
       REPLICA_FLY_TOKEN: ${{ secrets.REPLICA_FLY_TOKEN }}
       REPLICA_REPO_TOKEN: ${{ secrets.REPLICA_REPO_TOKEN }}
-      REPLICA_REPO: DE0CH/jarvis2-replica-test
+      REPLICA_REPO: DE0CH/jarvis4-replica-test
       REPLICA_RUN: ${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
@@ -241,7 +244,7 @@ jobs:
           git worktree add -q -b "$B" "$RUNNER_TEMP/keys-wt" HEAD
           cp "$RUNNER_TEMP/stack/keys/box.pub" "$RUNNER_TEMP/stack/keys/setup.pub" "$RUNNER_TEMP/keys-wt/keys/"
           cd "$RUNNER_TEMP/keys-wt"
-          git -c user.name=jarvis2-replica -c user.email=replica@invalid commit -qam "phone replica $REPLICA_RUN: the throwaway box and setup keys [skip ci]"
+          git -c user.name=jarvis4-replica -c user.email=replica@invalid commit -qam "phone replica $REPLICA_RUN: the throwaway box and setup keys [skip ci]"
           git push -q origin "HEAD:refs/heads/$B"
           echo "KEYS_REF=$B" >> "$GITHUB_ENV"
           for _ in $(seq 30); do
@@ -254,7 +257,7 @@ jobs:
           xcrun simctl spawn "$SIM_UDID" notifyutil -s com.apple.BiometricKit.enrollmentChanged 1
           xcrun simctl spawn "$SIM_UDID" notifyutil -p com.apple.BiometricKit.enrollmentChanged
           nohup xcrun simctl spawn "$SIM_UDID" log stream --style compact --level debug \
-            --predicate 'process == "Jarvis2"' > out/sim.log 2>&1 &
+            --predicate 'process == "Jarvis4"' > out/sim.log 2>&1 &
       - name: A test photo in the simulator's library (the replica attaches it on New session)
         run: |
           python3 ios/ci/test-photo.py "$RUNNER_TEMP/ci-photo.png" && xcrun simctl addmedia "$SIM_UDID" "$RUNNER_TEMP/ci-photo.png"
@@ -266,7 +269,7 @@ jobs:
         run: |
           xcodegen generate
           set -o pipefail
-          xcodebuild build-for-testing -project Jarvis2.xcodeproj -scheme Jarvis2 -configuration Release \
+          xcodebuild build-for-testing -project Jarvis4.xcodeproj -scheme Jarvis4 -configuration Release \
             -destination "id=$SIM_UDID" -derivedDataPath ../dd \
             JARVIS_BASE=http://127.0.0.1:18080/ JARVIS_KEYS_REF="$KEYS_REF" \
             2>&1 | tee ../xcodebuild.log | grep -E "error:|\*\* " || true
@@ -285,14 +288,14 @@ jobs:
           for try in 1 2; do
             rm -rf replica.xcresult
             (cd ios && TEST_RUNNER_REPLICA_REPO="$REPLICA_REPO" \
-              xcodebuild test-without-building -project Jarvis2.xcodeproj -scheme Jarvis2 -configuration Release \
-              -only-testing:Jarvis2UITests/ReplicaUITests/testReplica -destination "id=$SIM_UDID" -derivedDataPath ../dd \
+              xcodebuild test-without-building -project Jarvis4.xcodeproj -scheme Jarvis4 -configuration Release \
+              -only-testing:Jarvis4UITests/ReplicaUITests/testReplica -destination "id=$SIM_UDID" -derivedDataPath ../dd \
               -resultBundlePath ../replica.xcresult 2>&1 | tee ../test.log | grep -E "error:|Test Case|\*\* " || true)
             # the simulator's own faults (it didn't launch the app, or XCTest timed out reading it) before the Reset's
             # stores were written (the stack is still empty) are retried once; anything later is the result
             grep -q "Failed to launch\|Timed out while evaluating UI query" test.log && ! grep -q "reset-done" out/host.log || break
             echo "the simulator failed before the Reset: once more"; cp test.log out/test-try$try.log
-            xcrun simctl terminate "$SIM_UDID" dev.de0ch.jarvis2 || true; sleep 10
+            xcrun simctl terminate "$SIM_UDID" dev.de0ch.jarvis4 || true; sleep 10
           done
           kill -INT $VP; sleep 5
           grep -q "TEST EXECUTE SUCCEEDED\|\*\* TEST SUCCEEDED" test.log
@@ -346,18 +349,18 @@ jobs:
           xcodegen generate
           set -o pipefail
           # signing at archive time would mint a development certificate on every runner (lessons/75)
-          xcodebuild archive -project Jarvis2.xcodeproj -scheme Jarvis2 -configuration Release \
-            -destination 'generic/platform=iOS' -archivePath ../Jarvis2.xcarchive \
+          xcodebuild archive -project Jarvis4.xcodeproj -scheme Jarvis4 -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath ../Jarvis4.xcarchive \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM=S64YL394S3 \
             CURRENT_PROJECT_VERSION=$(( ${{ github.run_number }} + 1000 )) 2>&1 | tee ../archive.log | grep -E "error:|warning: .*sign|\*\* " || true
           grep -q "ARCHIVE SUCCEEDED" ../archive.log
           # a release build never carries the CI stand-in's address or another keys ref
           for k in JarvisCIKeysBase JarvisKeysRef; do
-            v=$(/usr/libexec/PlistBuddy -c "Print :$k" ../Jarvis2.xcarchive/Products/Applications/Jarvis2.app/Info.plist 2>/dev/null || true)
+            v=$(/usr/libexec/PlistBuddy -c "Print :$k" ../Jarvis4.xcarchive/Products/Applications/Jarvis4.app/Info.plist 2>/dev/null || true)
             [ -z "$v" ] || { echo "release Info.plist has $k=$v"; exit 1; }
           done
           # and the pinned harness policy is git's
-          cmp ../Jarvis2.xcarchive/Products/Applications/Jarvis2.app/stores.json ../policy/stores.json
+          cmp ../Jarvis4.xcarchive/Products/Applications/Jarvis4.app/stores.json ../policy/stores.json
       - name: Export + upload to App Store Connect
         run: |
           cat > ExportOptions.plist <<'PLIST'
@@ -372,7 +375,7 @@ jobs:
           </dict></plist>
           PLIST
           set -o pipefail
-          xcodebuild -exportArchive -archivePath Jarvis2.xcarchive -exportOptionsPlist ExportOptions.plist -exportPath export \
+          xcodebuild -exportArchive -archivePath Jarvis4.xcarchive -exportOptionsPlist ExportOptions.plist -exportPath export \
             -allowProvisioningUpdates -authenticationKeyPath ~/.asc/AuthKey.p8 \
             -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" 2>&1 | tee export.log | tail -30
           grep -q "EXPORT SUCCEEDED\|Upload succeeded" export.log

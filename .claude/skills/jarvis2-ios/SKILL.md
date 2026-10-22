@@ -1,6 +1,6 @@
 ---
 name: jarvis2-ios
-description: Work on the Jarvis 4 iPhone/iPad app, the native SwiftUI app in ios/ (bundle dev.de0ch.jarvis2, TestFlight "Jarvis 4"). How it is laid out, the security rules every review page must keep, how to build and test it with no Mac (GitHub macOS runners), the walkthrough, transitions and phone-replica tests, and shipping to TestFlight. Use when a task touches ios/, the app's Face ID review pages, its CI (ios.yml, transitions.yml) or a TestFlight build. Follow the swiftui-pro and swift-concurrency-pro skills for code style.
+description: Work on the Jarvis 4 iPhone/iPad app, the native SwiftUI app in ios/ (bundle dev.de0ch.jarvis4, TestFlight "Jarvis 4"). How it is laid out, the security rules every review page must keep, how to build and test it with no Mac (GitHub macOS runners), the walkthrough, transitions and phone-replica tests, and shipping to TestFlight. Use when a task touches ios/, the app's Face ID review pages, its CI (ios.yml, transitions.yml) or a TestFlight build. Follow the swiftui-pro and swift-concurrency-pro skills for code style.
 ---
 
 # jarvis2-ios
@@ -12,7 +12,7 @@ Design: `docs/DESIGN.md` "iOS app structure".
 ## Layout (`ios/`)
 
 ```
-project.yml          xcodegen spec (Jarvis2.xcodeproj is generated, not in git); iOS 26.0, iPhone + iPad
+project.yml          xcodegen spec (Jarvis4.xcodeproj is generated, not in git); iOS 26.0, iPhone + iPad
 Jarvis2/App          @main, RootView (setup cover, review sheet, alerts, notice), MainTabs (sidebarAdaptable)
 Jarvis2/Model        AppModel (state, polling, pending labels, exclusive, ask/confirm, present review),
                      AppModel+Actions (pause/resume/destroy/…), JSON (lenient), Shapes (router shapes), SecureRequest
@@ -24,7 +24,7 @@ Jarvis2/Review       the Face ID sheets: NewSession (+ AttachmentsSection, Picke
                      RepoKey, RequestReviewSection
 Jarvis2/<feature>    Sessions (split view, detail, terminal WebView, grants, schedules, remote, transcript), Inbox,
                      Previous, Search, Stores, Tasks, Settings (usage, Fly, repos, machines), Setup (Reset or recover)
-UITests/             UITestKit (helpers, blank checks), Jarvis2UITests (walkthrough), TransitionsUITests, ReplicaUITests
+UITests/             UITestKit (helpers, blank checks), Jarvis4UITests (walkthrough), TransitionsUITests, ReplicaUITests
 interop/             swift run Interop / Rehearse: the Security files (symlinks) against the real core
 ci/                  standins.sh (keys, S3 stand-in, core + router), standin.py, replica-stack.sh (the replica's Jarvis 4),
                      replica-setup.sh (the setup session's answers), replica-host.py (Face ID, those answers)
@@ -73,11 +73,11 @@ ci/                  standins.sh (keys, S3 stand-in, core + router), standin.py,
   against a real throwaway Jarvis 4 on the runner (`ios/ci/replica-stack.sh`: this commit's core and router, real Fly
   session machines over the run's own WireGuard peer), Face ID driven by `ios/ci/replica-host.py`, the setup session's
   answers by `ios/ci/replica-setup.sh`. Secrets: GitHub environment `replica` (REPLICA_FLY_TOKEN, REPLICA_REPO_TOKEN for
-  `DE0CH/jarvis2-replica-test`). docs/RUNBOOK.md "The phone replica".
+  `DE0CH/jarvis4-replica-test`). docs/RUNBOOK.md "The phone replica".
 
 ## Ship
 
 Push to main → `ios.yml`: TestFlight ships when the walkthrough, the interop test and the replica of that run pass.
 The job runs in environment `release` (main only; ASC secrets there), archives unsigned and cloud-signs at export
 (lessons/75), build number = run number + 1000. Check with the apple-dev skill's
-`testflight-status.py dev.de0ch.jarvis2`. Never use Deyao's iPhone to test.
+`testflight-status.py dev.de0ch.jarvis4`. Never use Deyao's iPhone to test.

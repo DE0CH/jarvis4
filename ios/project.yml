@@ -1,6 +1,6 @@
-name: Jarvis2
+name: Jarvis4
 # The Jarvis 4 iPhone and iPad app: one native SwiftUI app (Deyao, 2026-10-11), Apple frameworks and our Swift only (no
-# packages, no pods). `xcodegen generate` makes Jarvis2.xcodeproj (not in git).
+# packages, no pods). `xcodegen generate` makes Jarvis4.xcodeproj (not in git).
 options:
   bundleIdPrefix: dev.de0ch
   deploymentTarget:
@@ -22,25 +22,25 @@ settings:
     # leave both empty
     JARVIS_CI_FLAG: ""
     JARVIS_CI_KEYS_BASE: ""
-    # the phone replica only (ios.yml job `replica`): the git ref of DE0CH/jarvis2 the keys come from (KeySource.swift);
+    # the phone replica only (ios.yml job `replica`): the git ref of DE0CH/jarvis4 the keys come from (KeySource.swift);
     # empty = main, and the TestFlight archive must leave it empty
     JARVIS_KEYS_REF: ""
 targets:
-  Jarvis2:
+  Jarvis4:
     type: application
     platform: iOS
     sources:
-      - path: Jarvis2
+      - path: Jarvis4
       # which stores each harness brings, pinned in the app from git (PinnedPolicy, Security/LinePins.swift)
       - path: ../policy/stores.json
         buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.de0ch.jarvis2
+        PRODUCT_BUNDLE_IDENTIFIER: dev.de0ch.jarvis4
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) $(JARVIS_CI_FLAG)"
-        PRODUCT_NAME: Jarvis2
+        PRODUCT_NAME: Jarvis4
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_FILE: Jarvis2/Info.plist
+        INFOPLIST_FILE: Jarvis4/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: "Jarvis 4"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
@@ -53,23 +53,23 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
-  Jarvis2UITests:
+  Jarvis4UITests:
     type: bundle.ui-testing
     platform: iOS
     sources: [UITests]
     dependencies:
-      - target: Jarvis2
+      - target: Jarvis4
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.de0ch.jarvis2.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: dev.de0ch.jarvis4.uitests
         GENERATE_INFOPLIST_FILE: YES
-        TEST_TARGET_NAME: Jarvis2
+        TEST_TARGET_NAME: Jarvis4
         TARGETED_DEVICE_FAMILY: "1,2"
 schemes:
-  Jarvis2:
+  Jarvis4:
     build:
       targets:
-        Jarvis2: all
+        Jarvis4: all
     test:
       config: Release
-      targets: [Jarvis2UITests]
+      targets: [Jarvis4UITests]

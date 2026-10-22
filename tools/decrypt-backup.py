@@ -345,7 +345,7 @@ def open_key(key_obj, d, setup_keys, box_keys, master):
 
 
 def check_and_open(objs, setup_keys, master, box_keys=()):
-    """the same checks as the app's Recover (ios/Jarvis2/Security/CoreSetup.swift readBackups), per object, then the
+    """the same checks as the app's Recover (ios/Jarvis4/Security/CoreSetup.swift readBackups), per object, then the
     merge: each store's whole-store backup, then its key backups written after it.
     → (stores {name: {sensitive, at, values, explanations}}, problems [(key, why)])"""
     problems, docs, keyobjs, seen = [], [], [], set()

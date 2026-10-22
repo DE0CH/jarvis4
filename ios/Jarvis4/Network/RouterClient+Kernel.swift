@@ -1,6 +1,7 @@
 // The kernel's routes (router/kernelline.go): its status, the root grant, and secrets' own API relayed as is
-// (/api/kernel/secrets/…). Every document of secrets is checked here against the keys this iPhone pinned
-// (KernelTrust), or, before a claim, against the box key.
+// (/api/kernel/secrets/…), and the roster (the kernel's components, signed by the setup key, then by the root key).
+// Every document of secrets is checked here against the keys this iPhone pinned (KernelTrust), the root key's roster,
+// or, before a claim, the setup session's pending roster.
 import Foundation
 
 extension RouterClient {
@@ -9,9 +10,35 @@ extension RouterClient {
 
   /// `next`: the next secrets (blue/green, router/kernel.go): Recover alongside
   private static func q(_ next: Bool) -> String { next ? "?secrets=next" : "" }
-  /// secrets' identity, checked against the box key (keys/box.pub)
-  func kernelIdentity(boxKey: String, next: Bool = false) async throws -> (keys: PublicKeys, state: KernelSetup.State) {
-    try KernelSetup.check(try await json("GET", "api/kernel/secrets/identity" + Self.q(next), as: KernelSetup.Identity.self), boxKey: boxKey)
+  /// secrets' identity, checked against the anchors (KernelSetup.check)
+  func kernelIdentity(_ anchors: KernelSetup.Anchors, next: Bool = false) async throws -> (keys: PublicKeys, state: KernelSetup.State) {
+    try KernelSetup.check(try await json("GET", "api/kernel/secrets/identity" + Self.q(next), as: KernelSetup.Identity.self), anchors)
+  }
+
+  // ---- the roster ----
+  /// the root key's public half, for the setup session to commit as keys/root.pub (no Face ID)
+  func kernelRegisterRootKey(_ rootKey: String) async throws { try await call("POST", "api/kernel/root-key", ["rootKey": rootKey]) }
+  /// what the setup session filed: the components' keys it read, signed with the setup key (nil: nothing pending)
+  func kernelPendingRoster() async throws -> KernelRoster.Pending? {
+    let (status, data) = try await raw("GET", "api/kernel/roster/pending", nil)
+    if status == 404 { return nil }
+    guard status == 200 else { throw Self.failure("GET", "api/kernel/roster/pending", status, data) }
+    guard let p = try? JSONDecoder().decode(KernelRoster.Pending.self, from: data) else { throw TrustError.mismatch("not a pending roster") }
+    return p
+  }
+  /// the roster the components hold (the root key's signature), checked against this iPhone's root key; nil: none yet
+  func kernelRoster(rootKey: String) async throws -> KernelRoster.Roster? {
+    let (status, data) = try await raw("GET", "api/kernel/roster", nil)
+    if status == 404 { return nil }
+    guard status == 200 else { throw Self.failure("GET", "api/kernel/roster", status, data) }
+    struct Wrapped: Decodable { let roster: SignedDoc }
+    let d = JSONDecoder()
+    guard let doc = (try? d.decode(SignedDoc.self, from: data)) ?? (try? d.decode(Wrapped.self, from: data))?.roster else { return nil }
+    return try KernelRoster.signed(doc, rootKey: rootKey)
+  }
+  /// the root key's signature over exactly the roster's payload: the router hands it to every component
+  func kernelPostRoster(_ payload: String, rootSig: Data) async throws {
+    try await call("POST", "api/kernel/roster", ["payload": payload, "rootSig": rootSig.base64EncodedString()])
   }
   /// secrets' store key C = P + K for this phone, with `secrets` (a Recover's derived K), checked against `signedBy`
   func kernelStoreKey(signedBy: String, secrets: String, next: Bool = false) async throws -> String {
@@ -37,10 +64,10 @@ extension RouterClient {
     guard (try CoreCrypto.decode(d, by: derived.signingKey, as: C.self, what: "secrets' claim answer")).kind == "claimed" else { throw TrustError.stale("claim") }
   }
 
-  /// the spawner's Fly token (from the recovered core store), sealed to its box-vouched key
-  func kernelSpawnerToken(_ token: String, boxKey: String) async throws {
+  /// the spawner's Fly token (from the recovered core store), sealed to the keys the root key's roster names
+  func kernelSpawnerToken(_ token: String, roster: KernelRoster.Roster) async throws {
     let doc = try await json("GET", "api/kernel/spawner/identity", as: SignedDoc.self)
-    let k = try KernelSetup.component(doc, role: "spawner", boxKey: boxKey)
+    let k = try KernelSetup.component(doc, role: "spawner", roster: roster)
     try await call("POST", "api/kernel/spawner/fly-token", try KernelSetup.flyToken(token, to: k))
   }
   /// what the root key signs once: ⊤ on the sink (the router fills in the sink's keys, hashed from its name)

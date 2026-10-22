@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Draw the Jarvis 4 app icon (the Jarvis arc-reactor ring with a "2" at its centre in place of the triangle and
-core) -> assets/icon.png (app.json "icon") and ../ios/Jarvis2/Assets.xcassets/AppIcon.appiconset/icon.png (the native
+core) -> assets/icon.png (app.json "icon") and ../ios/Jarvis4/Assets.xcassets/AppIcon.appiconset/icon.png (the native
 native build actually uses). The "2" is drawn as strokes (no font file), so it renders the same anywhere.
 1024x1024 RGB, no alpha (App Store rejects alpha). Rendered at 2x and downsampled for smooth edges.
 The web favicon is the ring (with its 2) alone on a transparent background, no square tile:

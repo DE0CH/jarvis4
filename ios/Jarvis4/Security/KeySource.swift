@@ -1,5 +1,7 @@
-// Where the app gets what it trusts besides the router: the public keys in git (keys/box.pub vouches for a
-// core's identity, keys/setup.pub for the backups), fetched from GitHub — never from the router. A CI build
+// Where the app gets what it trusts besides the router: the public keys in DE0CH/jarvis4's git (keys/box.pub vouches
+// for a core's identity and for the core named in Jarvis 2's backups, keys/setup.pub for the backups and the kernel's
+// pending roster, keys/root.pub is checked against this iPhone's own root key), fetched from GitHub — never from the
+// router. A CI build
 // (compiled with JARVIS_CI, simulator walkthrough only) may point at a local stand-in through its Info.plist.
 // Any build may name another git ref of the same repo (JarvisKeysRef, a branch name only): the phone replica's
 // Release build reads its throwaway stack's keys from a branch replica-keys-<run> (ios.yml job `replica`). The
@@ -7,7 +9,7 @@
 import Foundation
 
 enum KeySource {
-  static let githubKeys = "https://raw.githubusercontent.com/DE0CH/jarvis2/main/keys/"
+  static let githubKeys = "https://raw.githubusercontent.com/DE0CH/jarvis4/main/keys/"
 
   private static func plist(_ k: String) -> String? {
     #if JARVIS_CI

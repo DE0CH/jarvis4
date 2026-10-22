@@ -6,7 +6,7 @@
 #   - a box key and a setup key (ios/ci/standin.py keys): the Release build reads their public halves from the keys
 #     branch the job pushes (JarvisKeysRef, KeySource.swift);
 #   - the backup bucket on rclone's S3 server at 127.0.0.1:18098 (it checks SigV4);
-#   - the WireGuard peer jarvis2-replica-<RUN>, the core's Fly token (infra/fly-token.sh, 6 hours) and the router's
+#   - the WireGuard peer jarvis4-replica-<RUN>, the core's Fly token (infra/fly-token.sh, 6 hours) and the router's
 #     read-only one (infra/fly-read-token.sh), both narrowed from REPLICA_FLY_TOKEN;
 #   - the core on 127.0.0.1:8090, started again whenever it ends (a Reset or the app's restart-and-recover wipes it,
 #     and Kubernetes starts an empty one in production), the router on 127.0.0.1:18080 with production's session image
@@ -18,7 +18,7 @@
 #   replica-stack.sh down W    this run's machines and their volumes, its peer, the processes; idempotent. Also the
 #                              run's volumes whose machine is already gone (infra/run-volumes.py: only ids this run's
 #                              router state and core log name, so never production's)
-#   replica-stack.sh sweep     every earlier replica run's leftovers (machines naming a jarvis2-replica-* peer, and
+#   replica-stack.sh sweep     every earlier replica run's leftovers (machines naming a jarvis4-replica-* peer, and
 #                              those peers): one run at a time (ios.yml's concurrency group), so none is in flight.
 #                              NOT an earlier run's bare volume (its machine gone): Fly keeps no label on a volume and
 #                              every core names its volumes jarvis4_state, so it can't be told from production's
@@ -54,9 +54,9 @@ for m in json.load(sys.stdin):
 }
 
 if [ "$CMD" = sweep ]; then
-  destroy_machines 'jarvis2-replica-[0-9-]+'
+  destroy_machines 'jarvis4-replica-[0-9-]+'
   FLY_API_TOKEN="$REPLICA_FLY_TOKEN" flyctl wireguard list "$ORG" --json 2>/dev/null \
-    | python3 -I -c 'import json,re,sys;[print(n) for n in (p.get("Name") or p.get("name") or "" for p in (json.load(sys.stdin) or [])) if re.fullmatch(r"jarvis2-replica-[0-9-]+", n)]' \
+    | python3 -I -c 'import json,re,sys;[print(n) for n in (p.get("Name") or p.get("name") or "" for p in (json.load(sys.stdin) or [])) if re.fullmatch(r"jarvis4-replica-[0-9-]+", n)]' \
     | while read -r p; do FLY_API_TOKEN="$REPLICA_FLY_TOKEN" flyctl wireguard remove "$ORG" "$p" >/dev/null 2>&1 && echo "peer $p removed"; done
   exit 0
 fi
@@ -64,7 +64,7 @@ fi
 W="${2:?usage: replica-stack.sh up|down W}"
 RUN="${REPLICA_RUN:?}"
 case "$RUN" in ''|*[!0-9-]*) echo "REPLICA_RUN must be digits and dashes"; exit 2 ;; esac
-PEER="jarvis2-replica-$RUN"
+PEER="jarvis4-replica-$RUN"
 MURL="http://$PEER._peer.internal:8081"
 
 if [ "$CMD" = down ]; then

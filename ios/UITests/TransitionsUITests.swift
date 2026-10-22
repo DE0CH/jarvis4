@@ -12,10 +12,10 @@ final class TransitionsUITests: JarvisUITestCase {
 
   func testTransitions() {
     continueAfterFailure = true
-    tag = "transitions-" + (env["JARVIS2_APPEARANCE"] ?? "run")
+    tag = "transitions-" + (env["JARVIS4_APPEARANCE"] ?? "run")
     app.launch()
     // launch → Reset or recover (a full-screen cover) → Recover → Done → the list
-    guard recoverAtLaunch(env["JARVIS2_KIT"] ?? "") else { return }
+    guard recoverAtLaunch(env["JARVIS4_KIT"] ?? "") else { return }
     shot("list")
 
     // tabs, each twice

@@ -6,7 +6,7 @@
 # of jarvis4-sessions listed, another app's machines refused (403), a peer created and removed, an app create refused,
 # infra/fly-token.sh and fly-read-token.sh narrow it further and their tokens work. No expiry (a CI secret); it dies
 # with JARVIS2_FLY_TOKEN. Written to OUT (mode 600), never printed; set it with
-#   gh secret set REPLICA_FLY_TOKEN --env replica -R DE0CH/jarvis2 < OUT
+#   gh secret set REPLICA_FLY_TOKEN --env replica -R DE0CH/jarvis4 < OUT
 set -euo pipefail
 : "${JARVIS2_FLY_TOKEN:?}"
 OUT="${1:?usage: fly-replica-token.sh OUT}"

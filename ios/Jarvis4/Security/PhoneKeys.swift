@@ -11,7 +11,7 @@ import LocalAuthentication
 import Security
 
 enum Keychain {
-  private static let service = "dev.de0ch.jarvis2.shell"
+  private static let service = "dev.de0ch.jarvis4.shell"
   static func get(_ account: String) -> Data? {
     let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account, kSecReturnData as String: true]
     var out: CFTypeRef?

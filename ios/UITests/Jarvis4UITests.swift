@@ -12,7 +12,7 @@ import XCTest
 /// resume with a prompt (signed, shown on the approval) → permission mode → resume with the latest image → destroy →
 /// Previous → search → repos (add with its deploy key, Jarvis 4's own repo comes up sensitive, remove; claude-env
 /// pre-selected on New session only when listed) → tasks → Reset (the kit ends the core; a new kit; the stores empty).
-final class Jarvis2UITests: JarvisUITestCase {
+final class Jarvis4UITests: JarvisUITestCase {
 
   /// New session pre-selects DE0CH/claude-env (and its store) only when it is on the repo list (Deyao, 2026-10-11)
   func checkNewSessionRepoDefault(expect: Bool) {
@@ -201,8 +201,8 @@ final class Jarvis2UITests: JarvisUITestCase {
 
   func testWalkthrough() {
     continueAfterFailure = true
-    tag = env["JARVIS2_APPEARANCE"] ?? "run"
-    let kit = env["JARVIS2_KIT"] ?? ""
+    tag = env["JARVIS4_APPEARANCE"] ?? "run"
+    let kit = env["JARVIS4_KIT"] ?? ""
     app.launch()
 
     // ---- Reset or recover: the core is empty (checked against the box key by the app itself)
@@ -615,7 +615,7 @@ final class Jarvis2UITests: JarvisUITestCase {
   }
 }
 
-extension Jarvis2UITests {
+extension Jarvis4UITests {
   /// the router's JSON (the test reads payloads; the app checks signatures)
   func routerJSON(_ method: String, _ path: String, _ body: String? = nil) -> (Int, [String: Any]) {
     let (s, d) = routerRaw(method, path, body: body.map { Data($0.utf8) }, headers: ["Content-Type": "application/json"])
@@ -642,9 +642,9 @@ extension Jarvis2UITests {
   /// core/history.go: no kit, the phone's signature over the core's begin document and its share of the key.
   func restoreStore() {
     let key = "OTHER"
-    // the walkthrough's router checks the setup key (SETUP_KEY): the stand-in's private half comes in TEST_RUNNER_JARVIS2_SETUP_KEY
-    guard let pem = env["JARVIS2_SETUP_KEY"], let sk = try? P256.Signing.PrivateKey(pemRepresentation: pem) else {
-      XCTFail("[\(tag)] no setup key for the restore step (TEST_RUNNER_JARVIS2_SETUP_KEY)"); return
+    // the walkthrough's router checks the setup key (SETUP_KEY): the stand-in's private half comes in TEST_RUNNER_JARVIS4_SETUP_KEY
+    guard let pem = env["JARVIS4_SETUP_KEY"], let sk = try? P256.Signing.PrivateKey(pemRepresentation: pem) else {
+      XCTFail("[\(tag)] no setup key for the restore step (TEST_RUNNER_JARVIS4_SETUP_KEY)"); return
     }
     let (ds, db) = setupCall(sk, "POST", "/setup/stores/default/keys/\(key)",
                              ["delete": true, "sig": sig(sk, "jarvis2-store-key\ndefault\n\(key)\n\n\n")])
