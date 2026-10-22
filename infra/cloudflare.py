@@ -1,40 +1,28 @@
 #!/usr/bin/env python3
-"""Cloudflare side of Jarvis 4 (idempotent): the tunnel, its DNS name, the two Access apps, the setup
-session's service token. Writes TUNNEL_TOKEN (for the box) and SETUP_ACCESS_ID/SECRET (for the setup
-session, Jarvis 1's default store as JARVIS2_SETUP_ACCESS_ID/SECRET) to OUT (mode 600); prints nothing secret.
-The apps' audiences are not secret: they are in k8s/control/apps/router/router.yaml (the script prints them to check).
+"""Cloudflare side of Jarvis 4 (idempotent). Everything goes through the one cluster's tunnel jarvis2-cluster
+(docs/PLAN-cluster.md); Jarvis 2's own tunnel, apps and tokens are never touched. Prints nothing secret.
 
   CF_JARVIS2_INFRA_TOKEN  tunnel + Access apps + DNS (scoped token "jarvis2-infra")
-  CLOUDFLARE_API          only to mint the setup service token (the scoped token can't)
+  CLOUDFLARE_API          only to mint service tokens (the scoped token can't)
 
-  infra/cloudflare.py OUT
-  infra/cloudflare.py --peer OUT
-                               Jarvis 1's way to the Claude login (router/claudelogin.go /peer/*): the service token
-                               jarvis1-claude-login (kept unless ROTATE=1; a new one's JARVIS2_LOGIN_ID/SECRET go to
-                               OUT, mode 600) and the Access app jarvis4.deyaochen.com/peer admitting only it; prints
-                               the app's audience and the token's client id (k8s/control/apps/router/router.yaml ACCESS_PEER_AUD,
-                               JARVIS1_LOGIN_CLIENT_ID; neither is secret)
-  infra/cloudflare.py --devices  only the paired apps' Access app (CF_JARVIS2_INFRA_TOKEN); prints its audience
   infra/cloudflare.py --cluster OUT
-                               the one cluster's tunnel jarvis2-cluster (docs/PLAN-cluster.md step 2a): only
-                               kernel-id.deyaochen.com → the kernel's read-only identity endpoints, behind the Access app
-                               "Jarvis 4 kernel id" admitting only the service token jarvis2-kernel-id (the setup
-                               session's; kept unless ROTATE=1). A new token's KERNEL_ID_ACCESS_ID/SECRET and the
-                               tunnel's TUNNEL_TOKEN go to OUT (mode 600)
-  infra/cloudflare.py --health OUT
-                               the external uptime probe's way in (router/healthz.go GET /healthz): the service token
-                               jarvis2-health-probe (kept unless ROTATE=1; a new one's HEALTH_PROBE_ID/SECRET go to OUT,
-                               mode 600, for Grafana Synthetic Monitoring) and the Access app jarvis4.deyaochen.com/healthz
-                               admitting only it; prints the app's audience and the token's client id
-                               (k8s/control/apps/router/router.yaml ACCESS_HEALTH_AUD, HEALTH_CLIENT_ID; neither is secret)
-Access apps (created Access first, then DNS, so the hostname is never reachable ungated):
-  "Jarvis 4"        jarvis4.deyaochen.com         Deyao's email only (the app + web page)
-  "Jarvis 4 setup"  jarvis4.deyaochen.com/setup   service token jarvis2-setup only (the setup session)
-  "Jarvis 4 peer"   jarvis4.deyaochen.com/peer    service token jarvis1-claude-login only (Jarvis 1 reads the Claude login)
-  "Jarvis 4 health" jarvis4.deyaochen.com/healthz service token jarvis2-health-probe only (Grafana's uptime probe)
+      the tunnel jarvis2-cluster's ingress, Access first, then the tunnel, DNS last:
+        jarvis4.deyaochen.com   → the router (http://router.jarvis4-router.svc.cluster.local:8080)
+        kernel-id.deyaochen.com → the kernel's read-only identity endpoints
+      Service tokens are kept unless ROTATE=1; a newly minted one's values go to OUT (mode 600) with the tunnel's
+      TUNNEL_TOKEN: KERNEL_ID_ACCESS_ID/SECRET (jarvis2-kernel-id), JARVIS4_SETUP_ACCESS_ID/SECRET (jarvis4-setup).
+      Prints the apps' audiences and the client ids (k8s/cluster/router/router.yaml; none is secret).
+  infra/cloudflare.py --devices  only the paired apps' Access app; prints its audience
+
+Access apps:
+  "Jarvis 4"         jarvis4.deyaochen.com          Deyao's email only (the app + web page)
+  "Jarvis 4 setup"   jarvis4.deyaochen.com/setup    service token jarvis4-setup only (the setup session)
+  "Jarvis 4 health"  jarvis4.deyaochen.com/healthz  service token jarvis2-health-probe only (Grafana's uptime probe,
+                                                    the same token as Jarvis 2's; router/healthz.go)
   "Jarvis 4 devices" jarvis4.deyaochen.com/api/remotes and /api/sessions/*/start: Deyao's email, or ANY service token
-                    of the account (Deyao's paired OpenClaw/Paseo apps); the router admits a token only when it is a
-                    paired device's (router/devices.go). Audience: ACCESS_DEVICES_AUD in k8s/control/apps/router/router.yaml
+                     of the account (Deyao's paired OpenClaw/Paseo apps); the router admits a token only when it is a
+                     paired device's (router/devices.go)
+  "Jarvis 4 kernel id" kernel-id.deyaochen.com      service token jarvis2-kernel-id only (setup sessions)
 Session machines don't come through Cloudflare at all (Fly's private network, docs/API.md).
 
 A rehearsal box (infra/rehearse-recover.sh) gets its own of each, never production's:
@@ -102,34 +90,19 @@ def tunnel_and_dns(host, name, extra=()):
     return tun["id"], token
 
 
-def peer(out):
-    """Jarvis 1's service token for /peer (minted with CLOUDFLARE_API, which the scoped token can't), then its app"""
+def service_token(name, vals, idkey, secretkey):
+    """the service token NAME (minted with CLOUDFLARE_API; kept unless ROTATE=1, a new one's values into VALS)"""
     big = os.environ["CLOUDFLARE_API"]
-    toks = call("GET", f"/accounts/{ACCOUNT}/access/service_tokens", token=big)
-    tok = next((t for t in toks if t["name"] == "jarvis1-claude-login"), None)
-    if tok and os.environ.get("ROTATE"):
+    tok = next((t for t in call("GET", f"/accounts/{ACCOUNT}/access/service_tokens", token=big) if t["name"] == name), None)
+    if tok and idkey and os.environ.get("ROTATE"):
         tok = {"id": tok["id"]} | call("POST", f"/accounts/{ACCOUNT}/access/service_tokens/{tok['id']}/rotate", token=big)
-        write_out(out, {"JARVIS2_LOGIN_ID": tok["client_id"], "JARVIS2_LOGIN_SECRET": tok["client_secret"]})
+        vals |= {idkey: tok["client_id"], secretkey: tok["client_secret"]}
+    elif not tok and idkey:
+        tok = call("POST", f"/accounts/{ACCOUNT}/access/service_tokens", {"name": name, "duration": "8760h"}, token=big)
+        vals |= {idkey: tok["client_id"], secretkey: tok["client_secret"]}
     elif not tok:
-        tok = call("POST", f"/accounts/{ACCOUNT}/access/service_tokens", {"name": "jarvis1-claude-login", "duration": "8760h"}, token=big)
-        write_out(out, {"JARVIS2_LOGIN_ID": tok["client_id"], "JARVIS2_LOGIN_SECRET": tok["client_secret"]})
-    aud = access_app("Jarvis 4 peer", HOST + "/peer", {
-        "name": "Jarvis 1", "decision": "non_identity", "include": [{"service_token": {"token_id": tok["id"]}}]})
-    print(f"ok (k8s/control/apps/router/router.yaml): ACCESS_PEER_AUD={aud} JARVIS1_LOGIN_CLIENT_ID={tok['client_id']}")
-def health(out):
-    """the uptime probe's service token for /healthz (minted with CLOUDFLARE_API), then its app"""
-    big = os.environ["CLOUDFLARE_API"]
-    toks = call("GET", f"/accounts/{ACCOUNT}/access/service_tokens", token=big)
-    tok = next((t for t in toks if t["name"] == "jarvis2-health-probe"), None)
-    if tok and os.environ.get("ROTATE"):
-        tok = {"id": tok["id"]} | call("POST", f"/accounts/{ACCOUNT}/access/service_tokens/{tok['id']}/rotate", token=big)
-        write_out(out, {"HEALTH_PROBE_ID": tok["client_id"], "HEALTH_PROBE_SECRET": tok["client_secret"]})
-    elif not tok:
-        tok = call("POST", f"/accounts/{ACCOUNT}/access/service_tokens", {"name": "jarvis2-health-probe", "duration": "8760h"}, token=big)
-        write_out(out, {"HEALTH_PROBE_ID": tok["client_id"], "HEALTH_PROBE_SECRET": tok["client_secret"]})
-    aud = access_app("Jarvis 4 health", HOST + "/healthz", {
-        "name": "uptime probe", "decision": "non_identity", "include": [{"service_token": {"token_id": tok["id"]}}]})
-    print(f"ok (k8s/control/apps/router/router.yaml): ACCESS_HEALTH_AUD={aud} HEALTH_CLIENT_ID={tok['client_id']}")
+        raise SystemExit(f"no service token {name}")
+    return tok
 
 
 DEVICE_PATHS = ["/api/remotes", "/api/sessions/*/start"]
@@ -160,28 +133,32 @@ CLUSTER_ID_ORIGIN = "http://kernel-id.jarvis2-edge.svc.cluster.local:8080"
 
 
 def cluster(out):
-    """the one cluster's tunnel: only the kernel's identity endpoints, Access first, then the tunnel, DNS last"""
-    big = os.environ["CLOUDFLARE_API"]
+    """the one cluster's tunnel: Access first, then the tunnel's ingress, DNS last"""
     vals = {}
-    toks = call("GET", f"/accounts/{ACCOUNT}/access/service_tokens", token=big)
-    tok = next((t for t in toks if t["name"] == "jarvis2-kernel-id"), None)
-    if tok and os.environ.get("ROTATE"):
-        tok = {"id": tok["id"]} | call("POST", f"/accounts/{ACCOUNT}/access/service_tokens/{tok['id']}/rotate", token=big)
-        vals |= {"KERNEL_ID_ACCESS_ID": tok["client_id"], "KERNEL_ID_ACCESS_SECRET": tok["client_secret"]}
-    elif not tok:
-        tok = call("POST", f"/accounts/{ACCOUNT}/access/service_tokens", {"name": "jarvis2-kernel-id", "duration": "8760h"}, token=big)
-        vals |= {"KERNEL_ID_ACCESS_ID": tok["client_id"], "KERNEL_ID_ACCESS_SECRET": tok["client_secret"]}
+    kid = service_token("jarvis2-kernel-id", vals, "KERNEL_ID_ACCESS_ID", "KERNEL_ID_ACCESS_SECRET")
+    setup = service_token("jarvis4-setup", vals, "JARVIS4_SETUP_ACCESS_ID", "JARVIS4_SETUP_ACCESS_SECRET")
+    health = service_token("jarvis2-health-probe", {}, None, None)  # Jarvis 2's probe token, never rotated here
     access_app("Jarvis 4 kernel id", CLUSTER_ID_HOST, {
-        "name": "setup session", "decision": "non_identity", "include": [{"service_token": {"token_id": tok["id"]}}]})
+        "name": "setup session", "decision": "non_identity", "include": [{"service_token": {"token_id": kid["id"]}}]})
+    aud = access_app("Jarvis 4", HOST, {"name": "Deyao", "decision": "allow", "include": [{"email": {"email": EMAIL}}]})
+    setup_aud = access_app("Jarvis 4 setup", HOST + "/setup", {
+        "name": "setup session", "decision": "non_identity", "include": [{"service_token": {"token_id": setup["id"]}}]})
+    health_aud = access_app("Jarvis 4 health", HOST + "/healthz", {
+        "name": "uptime probe", "decision": "non_identity", "include": [{"service_token": {"token_id": health["id"]}}]})
+    devices()
     tunnels = call("GET", f"/accounts/{ACCOUNT}/cfd_tunnel?name=jarvis2-cluster&is_deleted=false")
     tun = tunnels[0] if tunnels else call("POST", f"/accounts/{ACCOUNT}/cfd_tunnel", {"name": "jarvis2-cluster", "config_src": "cloudflare"})
     call("PUT", f"/accounts/{ACCOUNT}/cfd_tunnel/{tun['id']}/configurations", {"config": {"ingress": [
-        {"hostname": CLUSTER_ID_HOST, "service": CLUSTER_ID_ORIGIN}, {"service": "http_status:404"}]}})
+        {"hostname": HOST, "service": ORIGIN}, {"hostname": CLUSTER_ID_HOST, "service": CLUSTER_ID_ORIGIN},
+        {"service": "http_status:404"}]}})
     vals["TUNNEL_TOKEN"] = call("GET", f"/accounts/{ACCOUNT}/cfd_tunnel/{tun['id']}/token")
     dns(CLUSTER_ID_HOST, tun["id"], "jarvis2-cluster")
+    dns(HOST, tun["id"], "jarvis2-cluster")
     write_out(out, vals)
-    print(f"ok: tunnel jarvis2-cluster {tun['id']}, https://{CLUSTER_ID_HOST}/ behind its Access app; values in {out}"
-          + ("" if "KERNEL_ID_ACCESS_ID" in vals else " (the service token was kept: its secret is already in the infra store)"))
+    print(f"audiences (k8s/cluster/router/router.yaml): ACCESS_APP_AUD={aud} ACCESS_SETUP_AUD={setup_aud} "
+          f"ACCESS_HEALTH_AUD={health_aud} HEALTH_CLIENT_ID={health['client_id']} SETUP_CLIENT_ID={setup['client_id']}")
+    print(f"ok: tunnel jarvis2-cluster {tun['id']}: https://{HOST}/ and https://{CLUSTER_ID_HOST}/ behind Access; "
+          f"new values ({', '.join(sorted(vals)) or 'none'}) in {out}")
 
 
 def write_out(out, vals):
@@ -224,47 +201,13 @@ def rehearsal(name, out):
 
 
 def main():
-    if sys.argv[1:2] == ["--peer"]:
-        return peer(sys.argv[2])
-    if sys.argv[1:2] == ["--health"]:
-        return health(sys.argv[2])
     if sys.argv[1:] == ["--devices"]:
         return devices()
     if sys.argv[1:2] == ["--cluster"]:
         return cluster(sys.argv[2])
-    if os.environ.get("REHEARSAL"):
+    if os.environ.get("REHEARSAL") and sys.argv[1:2]:
         return rehearsal(os.environ["REHEARSAL"], sys.argv[1])
-    out = sys.argv[1]
-    vals = {}
-
-    # 1. the setup session's service token (needs the broader token; kept unless ROTATE=1)
-    toks = call("GET", f"/accounts/{ACCOUNT}/access/service_tokens", token=os.environ["CLOUDFLARE_API"])
-    tok = next((t for t in toks if t["name"] == "jarvis2-setup"), None)
-    prev = {}
-    if os.path.exists(out):
-        prev = dict(l.rstrip("\n").split("=", 1) for l in open(out) if "=" in l)
-    if tok and not os.environ.get("ROTATE") and prev.get("SETUP_ACCESS_SECRET"):
-        vals["SETUP_ACCESS_ID"], vals["SETUP_ACCESS_SECRET"] = prev["SETUP_ACCESS_ID"], prev["SETUP_ACCESS_SECRET"]
-        tok_id = tok["id"]
-    else:
-        if tok:
-            call("DELETE", f"/accounts/{ACCOUNT}/access/service_tokens/{tok['id']}", token=os.environ["CLOUDFLARE_API"])
-        t = call("POST", f"/accounts/{ACCOUNT}/access/service_tokens", {"name": "jarvis2-setup", "duration": "8760h"},
-                 token=os.environ["CLOUDFLARE_API"])
-        vals["SETUP_ACCESS_ID"], vals["SETUP_ACCESS_SECRET"], tok_id = t["client_id"], t["client_secret"], t["id"]
-
-    # 2. Access apps first
-    aud = access_app("Jarvis 4", HOST, {"name": "Deyao", "decision": "allow", "include": [{"email": {"email": EMAIL}}]})
-    setup_aud = access_app("Jarvis 4 setup", HOST + "/setup", {
-        "name": "setup session", "decision": "non_identity", "include": [{"service_token": {"token_id": tok_id}}]})
-    print(f"audiences (k8s/control/apps/router/router.yaml): ACCESS_APP_AUD={aud} ACCESS_SETUP_AUD={setup_aud}")
-
-    # 3. the tunnel (remotely managed) and its ingress, then DNS last
-    tid, vals["TUNNEL_TOKEN"] = tunnel_and_dns(HOST, "jarvis2")
-    devices()
-
-    write_out(out, vals)
-    print(f"ok: tunnel {tid}, Access apps + setup service token ready; values in {out}")
+    sys.exit(__doc__)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
-# The one cluster's way in for setup sessions (docs/PLAN-cluster.md step 2a): the remotely managed tunnel
-# jarvis2-cluster (infra/cloudflare.py --cluster) whose only rule is kernel-id.deyaochen.com → kernel-id below, behind
-# the Access app "Jarvis 4 kernel id" (only the service token jarvis2-kernel-id). kernel-id is a test page until the
+# The one cluster's way in (docs/PLAN-cluster.md): the remotely managed tunnel jarvis2-cluster (infra/cloudflare.py
+# --cluster): jarvis4.deyaochen.com → the router (k8s/cluster/router, behind the "Jarvis 4" Access apps) and
+# kernel-id.deyaochen.com → kernel-id below, behind the Access app "Jarvis 4 kernel id" (only the service token
+# jarvis2-kernel-id). kernel-id is a test page until the
 # kernel's read-only identity endpoints take its place. Its token: the Secret tunnel-token (k8s/cluster/secrets).
 apiVersion: apps/v1
 kind: Deployment
@@ -33,7 +34,7 @@ spec:
   minAvailable: 1
   selector: { matchLabels: { app: cloudflared } }
 ---
-# cloudflared reaches only DNS, kernel-id and Cloudflare's edge
+# cloudflared reaches only DNS, kernel-id, the router (jarvis4.deyaochen.com) and Cloudflare's edge
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: cloudflared, namespace: jarvis2-edge }
@@ -44,6 +45,8 @@ spec:
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }, podSelector: { matchLabels: { k8s-app: kube-dns } } }]
       ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
     - to: [{ podSelector: { matchLabels: { app: kernel-id } } }]
+      ports: [{ port: 8080 }]
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis4-router } }, podSelector: { matchLabels: { app: router } } }]
       ports: [{ port: 8080 }]
     - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16] } }]
       ports: [{ port: 7844, protocol: UDP }, { port: 7844, protocol: TCP }, { port: 443, protocol: TCP }]

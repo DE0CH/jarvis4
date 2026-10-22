@@ -1,0 +1,8 @@
+resources: [router.yaml]
+# every session image CI ever pinned, with CI's signature over it ("<image> <sig>" per line; images.yml appends): the
+# router passes the signature on with an approval naming that image (a resume on a session's own older image), and the
+# phone checks it against keys/ci.pub
+configMapGenerator:
+  - name: session-image-sigs
+    namespace: jarvis4-router
+    files: [session-image-sigs.txt]

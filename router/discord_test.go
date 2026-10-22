@@ -121,7 +121,7 @@ func testDiscord(t *testing.T) (*fakeDiscord, *discordClient, *[]time.Duration) 
 
 func TestChannelName(t *testing.T) {
 	for in, want := range map[string]string{
-		"Fix the Jarvis 4 router!": "fix-the-jarvis-2-router",
+		"Fix the Jarvis 4 router!": "fix-the-jarvis-4-router",
 		"  --Café déjà vu-- ":      "cafe-deja-vu",
 		"深圳 hotel":                 "深圳-hotel",
 		"":                         "session-89abcdef",

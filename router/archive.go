@@ -49,7 +49,7 @@ import (
 
 const (
 	recordsRoot  = "claude-records"
-	recordsIndex = recordsRoot + "/.index/jarvis2-destroyed-sessions.json"
+	recordsIndex = recordsRoot + "/.index/jarvis4-destroyed-sessions.json" // Jarvis 2 keeps its own index
 	// changesFile: the repos' state, written by the machine into every snapshot (machine/restore.go)
 	changesFile = ".jarvis2-changes.txt"
 )

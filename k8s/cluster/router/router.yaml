@@ -1,0 +1,121 @@
+# The Jarvis 4 router on the one cluster (docs/PLAN-cluster.md step 5): the app's API, the web page and setup (through
+# the tunnel jarvis2-cluster, from cloudflared in jarvis2-edge: jarvis4.deyaochen.com behind Access) and the machines' API
+# (/m, only on its own WireGuard peer jarvis4-box in Fly org jarvis2-370, router/wg.go). Reaches the kernel
+# (jarvis4-kernel), the internet (Access certs, Fly, Discord, the Storage Box) and Fly's WireGuard gateway. Its records
+# live on a local-path volume until step 6 (Postgres) and are backed up, age-encrypted, to the Storage Box
+# (claude-records/.jarvis4-router, router/backup.go).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: router-data, namespace: jarvis4-router }
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources: { requests: { storage: 10Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: router, namespace: jarvis4-router }
+spec:
+  # ONE router, and a rollout's surge pod IS the standby: it starts next to the leader (maxSurge 1), proxies to it, and
+  # takes over after the leader's drain (router/leader.go). Both share the one RWO volume (single node) and its flock.
+  replicas: 1
+  minReadySeconds: 5
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  selector: { matchLabels: { app: router } }
+  template:
+    # secrets-rev*: bumped by infra/router-secrets.py so a changed Secret restarts the pod (envFrom is read at start)
+    metadata: { labels: { app: router }, annotations: { jarvis2/secrets-rev: "7e99c39a0a2c", jarvis2/secrets-rev-wg: "ec3a90144137", jarvis2/secrets-rev-backup: "000000000000", jarvis2/secrets-rev-github: "000000000000", jarvis2/secrets-rev-flyorgs: "000000000000", jarvis2/secrets-rev-flypersonal: "000000000000", jarvis2/secrets-rev-flyvolumes: "cdd49966c8fa", jarvis2/secrets-rev-browserbase: "000000000000", jarvis2/secrets-rev-devices: "000000000000" } }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      # SIGTERM drains (router/drain.go): running lifecycle actions finish before the pod exits (DRAIN_SECONDS 1740)
+      terminationGracePeriodSeconds: 1800
+      securityContext: { fsGroup: 65532 }
+      containers:
+        - name: router
+          image: ghcr.io/de0ch/jarvis4-router:latest
+          env:
+            - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }  # the standby proxies to the leader's
+            # the kernel's components (k8s/cluster/kernel): %s is the component's Service name
+            - { name: KERNEL_URL, value: "http://%s.jarvis4-kernel.svc.cluster.local:8080" }
+            # no old core in Jarvis 4: nothing answers here
+            - { name: CORE_URL, value: "http://core.invalid:8090" }
+            # its /data, age-encrypted to this key (the same key as Jarvis 2's router backups: the private half is
+            # ROUTER_BACKUP_AGE_KEY in the infra store), to the Storage Box claude-records/.jarvis4-router (router/backup.go)
+            - { name: ROUTER_BACKUP_AGE_PUB, value: "age1zkvnmh6wu5hyvxppvxf9c83l6q5af7xqqlxtmahkz0l5hhwqq90s8edvu0" }
+            - { name: SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session:latest" }
+            # the CI key's signature over "jarvis2-session-image <SESSION_IMAGE>" (images.yml, keys/ci.pub): the phone checks it
+            - { name: SESSION_IMAGE_SIG, value: "" }
+            # every earlier CI-pinned session image with its signature (session-image-sigs.txt here, images.yml)
+            - { name: SESSION_IMAGE_SIGS_FILE, value: /sigs/session-image-sigs.txt }
+            - { name: FLY_REGION, value: lhr }
+            # the router's WireGuard peer in Fly org jarvis2-370 (fly wireguard create jarvis2-370 lhr jarvis4-box)
+            - { name: MACHINE_URL, value: "http://jarvis4-box._peer.internal:8081" }
+            - { name: WG_CONFIG, value: /wg/wg.conf }
+            # Access apps (infra/cloudflare.py --cluster; none is secret): "Jarvis 4", "Jarvis 4 setup", "Jarvis 4 devices",
+            # "Jarvis 4 health" (its one service token is Grafana's uptime probe's, jarvis2-health-probe)
+            - { name: ACCESS_APP_AUD, value: 964d35b645828a89427a2d56f56322de7022d8e1540c01a8e81d1cf5476027fc }
+            - { name: ACCESS_SETUP_AUD, value: 1509ebfd67ea2361a42fbf5f5f3c0419f5688ccc5a8dda1ff72806896705a62f }
+            - { name: ACCESS_DEVICES_AUD, value: 39f8523fae2ff6ce36bc9e8d59804205cd635f392efc8d2a42e49114768a467f }
+            - { name: ACCESS_HEALTH_AUD, value: 855266d6e0f83f5d5db551c615ce18e1d148a45d58d7e40cf09ad411200b7552 }
+            - { name: HEALTH_CLIENT_ID, value: "f8d3af1465028cfa370fdf13bd9d4cea.access" }
+            # the setup session's PUBLIC key (keys/setup.pub): the router checks it on every /setup call
+            - { name: SETUP_KEY, value: "BEhYIkmGeCkg7D8vdKhRe8b00asMI8a9EyXNW41eBbIphkf6lZmy/c9FsRlqoXLD5JyRZgVOxLzM7OBv47Uy2Ms=" }
+            # each session's channel goes under the Discord category "Jarvis 4" (guild 1482150592414486748)
+            - { name: DISCORD_SESSIONS_CATEGORY, value: "Jarvis 4" }
+            # the Fly cap for app jarvis4-sessions alone (router/budget.go counts only its own app): the org's USD 50 is
+            # shared with Jarvis 2's router, which caps jarvis2-sessions at 50 by itself
+            - { name: FLY_BUDGET_USD, value: "20" }
+            - { name: FLY_BUDGET_WARN_USD, value: "15" }
+            - { name: BROWSERBASE_BUDGET_USD, value: "10" }
+            - { name: BROWSERBASE_BUDGET_WARN_USD, value: "8" }
+          # SOPS-encrypted to the cluster's age key (k8s/cluster/secrets, infra/router-secrets.py --box cluster).
+          # router-secrets-github stays LAST: with a key in several envFrom sources the last one wins
+          envFrom: [{ secretRef: { name: router-secrets, optional: true } }, { secretRef: { name: router-secrets-backup, optional: true } }, { secretRef: { name: router-secrets-flyorgs, optional: true } }, { secretRef: { name: router-secrets-flypersonal, optional: true } }, { secretRef: { name: router-secrets-flyvolumes, optional: true } }, { secretRef: { name: router-secrets-browserbase, optional: true } }, { secretRef: { name: router-secrets-devices, optional: true } }, { secretRef: { name: router-secrets-github, optional: true } }]
+          ports: [{ containerPort: 8080 }]
+          readinessProbe: { tcpSocket: { port: 8080 }, periodSeconds: 2, failureThreshold: 2 }
+          volumeMounts: [{ name: data, mountPath: /data }, { name: wg, mountPath: /wg, readOnly: true }, { name: sigs, mountPath: /sigs, readOnly: true }]
+          resources: { requests: { cpu: 200m, memory: 256Mi }, limits: { memory: 1Gi } }
+          securityContext: { runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] }, seccompProfile: { type: RuntimeDefault } }
+      volumes:
+        - { name: data, persistentVolumeClaim: { claimName: router-data } }
+        - { name: wg, secret: { secretName: router-wg, defaultMode: 0440, optional: true } }
+        - { name: sigs, configMap: { name: session-image-sigs } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: router, namespace: jarvis4-router }
+spec:
+  selector: { app: router }
+  ports: [{ port: 8080, targetPort: 8080 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: router, namespace: jarvis4-router }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # cloudflared (the tunnel jarvis2-cluster)
+    - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis2-edge } }, podSelector: { matchLabels: { app: cloudflared } } }]
+      ports: [{ port: 8080 }]
+    # the standby's proxy to the leader (pod to pod)
+    - from: [{ podSelector: { matchLabels: { app: router } } }]
+      ports: [{ port: 8080 }]
+  egress:
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }, podSelector: { matchLabels: { k8s-app: kube-dns } } }]
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+    # the kernel's components
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis4-kernel } } }]
+      ports: [{ port: 8080 }]
+    # Postgres (k8s/cluster/postgres, step 6)
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis4-db } } }]
+      ports: [{ port: 5432 }]
+    # the standby's proxy to the leader
+    - to: [{ podSelector: { matchLabels: { app: router } } }]
+      ports: [{ port: 8080 }]
+    - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16] } }]
+      ports: [{ port: 443 }]
+    # Fly's WireGuard gateway (lhr1.gateway.6pn.dev)
+    - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16] } }]
+      ports: [{ port: 51820, protocol: UDP }]

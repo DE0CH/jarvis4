@@ -39,7 +39,7 @@ import (
 )
 
 const (
-	backupDir      = "claude-records/.jarvis2-router"
+	backupDir      = "claude-records/.jarvis4-router" // Jarvis 4's own: Jarvis 2's router keeps .jarvis2-router
 	backupKeep     = 48
 	backupEvery    = 15 * time.Minute
 	backupMaxFile  = 200 << 20

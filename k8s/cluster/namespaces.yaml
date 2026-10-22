@@ -12,3 +12,10 @@ kind: Namespace
 metadata:
   name: jarvis2-edge
   labels: { pod-security.kubernetes.io/enforce: restricted, jarvis2/ns: edge }
+---
+# jarvis4-router: the Jarvis 4 router (k8s/cluster/router), behind cloudflared in jarvis2-edge
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jarvis4-router
+  labels: { pod-security.kubernetes.io/enforce: restricted, jarvis2/ns: router }
