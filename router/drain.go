@@ -193,34 +193,51 @@ func (r *Router) drainUntil(max time.Duration, abort <-chan struct{}) bool {
 // would hold the rollout for hours, so the start ends instead (Deyao starts it again; DECISIONS).
 var errLimitDraining = errors.New("the Fly org is at its machine limit and the router is updating: start it again")
 
-// endCutOff: at start, sessions a crash left in the middle of an action (no goroutine runs them any more) become
-// plain sessions with the reason; Deyao runs the action again. A cut-off resume's line is still there (the core marks
-// the predecessor used only at certify), so it is paused again; a new line's start, a pause or a destroy is failed.
-// A machine the cut-off start had made, never certified, holds no secret and shows on the Machines tab with no
-// session (attention), where Deyao can destroy it.
+// endCutOff: at start, sessions a crash left in the middle of an action that no job holds (jobs.go: a job whose
+// holder died is carried on by jobsLoop instead) become plain sessions with the reason; Deyao runs the action again. A
+// cut-off resume's line is still there (the core marks the predecessor used only at certify), so it is paused again; a
+// new line's start, a pause or a destroy is failed. A machine the cut-off start had made, never certified, holds no
+// secret and shows on the Machines tab with no session (attention), where Deyao can destroy it.
 func (r *Router) endCutOff() {
+	var ids []string
 	r.st.Do(func(d *persisted) {
-		for id, s := range d.Sessions {
-			why := ""
-			switch s.State {
-			case "resuming", "starting":
-				if s.hasLine() && s.MachineID == "" {
-					s.State, s.Error = "paused", "the resume was cut off by a router crash: resume it again"
-				} else {
-					s.State, s.Error = "failed", "the start was cut off by a router crash: start it again"
-				}
-				why = s.Error
-			case "pausing":
-				s.State, s.Error = "failed", "the pause was cut off by a router crash (the machine may still run): pause it again"
-				why = s.Error
-			case "destroying":
-				s.State, s.Error = "failed", "the destroy was cut off by a router crash: destroy it again"
-				why = s.Error
+		for id := range d.Sessions {
+			ids = append(ids, id)
+		}
+	})
+	for _, id := range ids {
+		if !r.jobBusy(id) {
+			r.cutOffSession(id)
+		}
+	}
+}
+
+// cutOffSession: a session in the middle of an action nobody runs any more, made a plain one with the reason
+func (r *Router) cutOffSession(id string) {
+	r.st.Do(func(d *persisted) {
+		s := d.Sessions[id]
+		if s == nil {
+			return
+		}
+		why := ""
+		switch s.State {
+		case "resuming", "starting":
+			if s.hasLine() && s.MachineID == "" {
+				s.State, s.Error = "paused", "the resume was cut off by a router crash: resume it again"
+			} else {
+				s.State, s.Error = "failed", "the start was cut off by a router crash: start it again"
 			}
-			if why != "" {
-				s.Waiting = ""
-				log.Printf("session %s: %s", id, why)
-			}
+			why = s.Error
+		case "pausing":
+			s.State, s.Error = "failed", "the pause was cut off by a router crash (the machine may still run): pause it again"
+			why = s.Error
+		case "destroying":
+			s.State, s.Error = "failed", "the destroy was cut off by a router crash: destroy it again"
+			why = s.Error
+		}
+		if why != "" {
+			s.Waiting = ""
+			log.Printf("session %s: %s", id, why)
 		}
 	})
 }

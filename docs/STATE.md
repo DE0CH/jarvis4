@@ -409,7 +409,12 @@ Each step ships alone, keeps the router working, and is a clean cut for what it 
    beside it. Rows older than a day are swept.
 7. **Durable jobs** (section 3), one action at a time: pause, destroy, start/resume, upgrade/restart/disk, the switches,
    approved flows, task runs. Each action's goroutine and its `lock`/`begin` go as it moves. Prerequisite for start:
-   the spawner's idempotent spawn.
+   the spawner's idempotent spawn. Done as the first cut (jobs.go, migrations/0008): every lifecycle action is a row of `jobs`, one
+   running per session (the 409 on any replica), held under a 60 s lease renewed every 20 s; a replica's `jobsLoop`
+   claims a job whose lease ran out and carries it on. Pause and destroy run again from their start (each of their
+   effects is safe to repeat: the machine signs one snapshot, the kill answers the same cert, the archive skips what it
+   holds); start, resume, the switches and the approved flows are still cut off as before (endCutOff, now only for a
+   session no live job holds) until they are split into steps of their own.
 8. **The scheduler lease** (section 4) replaces "the leader runs the loops".
 9. **m-gateway** (section 5): the WireGuard peer leaves the router; the router listens on :8081 in the pod network.
 10. **Stateless replicas**: the router Deployment becomes 2 replicas, RollingUpdate `maxUnavailable: 0`, readiness on

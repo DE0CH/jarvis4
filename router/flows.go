@@ -38,8 +38,6 @@ type Router struct {
 	cmdMu   sync.Mutex
 	notes   *broker // mq.go: this replica's waiters on the machines' queue, woken by the database
 	hk      holders
-	locksMu sync.Mutex
-	locks   map[string]bool // session id → a lifecycle action holds it (lock): one at a time
 	drain   drainState      // drain.go: the lifecycle goroutines running, refused once SIGTERM came
 	gate    moveGate        // movegate.go: deliveries and requests in flight at a handover
 	ops     opsState        // sessionops.go: busy marks, permission-mode/restart jobs, uploads, repos
@@ -91,48 +89,34 @@ func randID() string {
 
 var errBusy = errors.New("the session is in the middle of another action")
 
-// lock: a session's lifecycle actions don't overlap; a clash is refused (409), not queued. kind names the
-// action in /api/state's `busy` (sessionops.go). Each lock is a tracked lifecycle action (drain.go): refused with
-// errDraining (503) once the router drains, waited for until its unlock.
-func (r *Router) lock(id, kind string) (func(), error) {
+// lock: a session's lifecycle actions don't overlap, on any replica (jobs.go: one running job per session); a clash is
+// refused (409), not queued. kind names the action in /api/state's `busy` (sessionops.go). Each lock is also a tracked
+// lifecycle action of this process (drain.go): refused with errDraining (503) once the router drains.
+func (r *Router) lock(id, kind string) (func(), error) { return r.lockArgs(id, kind, nil) }
+
+// lockArgs: lock with what a replica that carries the job on needs (jobs.go carryOn)
+func (r *Router) lockArgs(id, kind string, args any) (func(), error) {
 	done, err := r.begin(id, kind)
 	if err != nil {
 		return nil, err
 	}
-	r.locksMu.Lock()
-	if r.locks[id] {
-		r.locksMu.Unlock()
+	jid, err := r.jobStart(id, kind, args)
+	if err != nil {
 		done()
-		if b := r.ops.busyOf(id); b != nil && b.Kind != "" {
-			return nil, fmt.Errorf("%w: %s, running since %s; try again once it ends (/api/state shows it as busy)", errBusy, b.Kind, b.Since.Format("15:04:05 UTC"))
-		}
-		return nil, errBusy
+		return nil, err
 	}
-	if r.locks == nil {
-		r.locks = map[string]bool{}
-	}
-	r.locks[id] = true
-	r.locksMu.Unlock()
-	r.ops.setBusy(id, kind)
+	unlock := r.jobUnlock(id, kind, r.jobHold(jid))
 	var once sync.Once
 	return func() {
 		once.Do(func() {
-			r.ops.setBusy(id, "")
-			r.locksMu.Lock()
-			delete(r.locks, id)
-			r.locksMu.Unlock()
+			unlock()
 			done()
 		})
 	}, nil
 }
 
-// busy: a lifecycle action holds the session. Only reads: asking never makes a concurrent lock fail (a TryLock probe
-// did, for the moment it held the lock).
-func (r *Router) busy(id string) bool {
-	r.locksMu.Lock()
-	defer r.locksMu.Unlock()
-	return r.locks[id]
-}
+// busy: a lifecycle action holds the session (on any replica)
+func (r *Router) busy(id string) bool { return r.jobBusy(id) }
 
 func (r *Router) setState(id, state, errMsg string) {
 	r.st.Do(func(d *persisted) {
@@ -985,20 +969,24 @@ func (r *Router) pauseWith(id string, next *nextMachine) error {
 	r.setState(id, "pausing", "")
 	op := r.lcBegin(id, "pause") // lifecycle.go
 	op.machine(s.MachineID)
-	go func() {
-		defer unlock()
-		defer op.endFromState()
-		if !r.finalSnapshotAndKillNext(id, s.MachineID, next) { // snapsafe.go: kept, failed and DMed
-			return
-		}
-		now := time.Now().UTC()
-		r.st.Do(func(d *persisted) {
-			if x := d.Sessions[id]; x != nil {
-				x.State, x.MachineID, x.PausedAt, x.Status = "paused", "", &now, ""
-			}
-		})
-	}()
+	go r.pauseRun(id, s.MachineID, next, unlock, op)
 	return nil
+}
+
+// pauseRun: the pause's work under its job (jobs.go); run again by a replica carrying on a job whose holder died (the
+// final snapshot is taken once: a machine signs only one; the kill answers the same cert)
+func (r *Router) pauseRun(id, machine string, next *nextMachine, unlock func(), op *lcHandle) {
+	defer unlock()
+	defer op.endFromState()
+	if !r.finalSnapshotAndKillNext(id, machine, next) { // snapsafe.go: kept, failed and DMed
+		return
+	}
+	now := time.Now().UTC()
+	r.st.Do(func(d *persisted) {
+		if x := d.Sessions[id]; x != nil {
+			x.State, x.MachineID, x.PausedAt, x.Status = "paused", "", &now, ""
+		}
+	})
 }
 
 // ---- resume ----------------------------------------------------------------------------------------------
@@ -1245,8 +1233,7 @@ type destroyOpts struct {
 }
 
 func (r *Router) destroy(id string, o destroyOpts) error {
-	force := o.force
-	unlock, err := r.lock(id, "destroying")
+	unlock, err := r.lockArgs(id, "destroying", map[string]bool{"force": o.force})
 	if err != nil {
 		return err
 	}
@@ -1263,8 +1250,15 @@ func (r *Router) destroy(id string, o destroyOpts) error {
 	r.setState(id, "destroying", "")
 	op := r.lcBegin(id, "destroy") // lifecycle.go
 	op.machine(s.MachineID)
+	go r.destroyRun(id, s, o, unlock, op)
+	return nil
+}
+
+// destroyRun: the destroy's work under its job (jobs.go); a replica that carries on a job whose holder died runs it
+// again: the kill answers the same cert, the archive skips what it holds, the burn is kept on the line
+func (r *Router) destroyRun(id string, s Session, o destroyOpts, unlock func(), op *lcHandle) {
+	force := o.force
 	gone := false
-	go func() {
 		defer unlock()
 		defer func() {
 			if !gone {
@@ -1339,8 +1333,6 @@ func (r *Router) destroy(id string, o destroyOpts) error {
 		if o.report != nil {
 			o.report(s, changes, archived, aerr)
 		}
-	}()
-	return nil
 }
 
 // finish: the session leaves the list for the records; its snapshots go. fill completes the record in the same state
