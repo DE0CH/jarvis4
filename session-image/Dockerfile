@@ -4,7 +4,7 @@
 # then runs the base's entrypoint as its child (the keeper: machine/keeper.go). The base is pinned by digest in BASE below; moving it is a visible commit (the
 # images workflow's pin job writes it after building a changed session-image/base/, and builds this image from that
 # new base in the same run through --build-arg BASE).
-ARG BASE=ghcr.io/de0ch/jarvis4-session:base-sha-1f7616d8dd0c@sha256:71e1ec8272c68fe9974995834f6fb091d06413ae569819f881a1a8281623be64
+ARG BASE=ghcr.io/de0ch/jarvis4-session:base-sha-8170527e19da@sha256:71e1ec8272c68fe9974995834f6fb091d06413ae569819f881a1a8281623be64
 FROM golang:1.25-bookworm AS build
 WORKDIR /src/machine
 COPY kernel/ /src/kernel/
