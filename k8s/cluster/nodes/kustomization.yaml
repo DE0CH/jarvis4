@@ -1,0 +1,5 @@
+# More than one node (infra/cluster-node.sh): listed in k8s/cluster/kustomization.yaml by that script when the first
+# extra node is added, not before.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: [node-net.yaml]

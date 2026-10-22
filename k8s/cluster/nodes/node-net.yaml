@@ -1,0 +1,72 @@
+# node-net: the host network every node needs to reach the others (infra/cluster-node.sh), from git because no node
+# has SSH. Each node runs k3s on a fixed IPv4 of a dummy interface (k3s0, infra/warp-host.sh: the hosts are IPv6-only)
+# and flannel's VXLAN between those addresses, so on every node, every 60 s and idempotently:
+#   - the other nodes' k3s0 addresses (10.254.254.0/24) go over the Hetzner Network's gateway (the Network itself routes
+#     each /32 to its node: infra/cluster-node.sh adds those routes); a node's own /32 stays local
+#   - the private guard (infra/cloud-init.sh jarvis2-private-guard: on the private interface only answers come in) lets
+#     new connections in from the other nodes' private and k3s0 addresses, and /etc/jarvis2/private-allow keeps them
+#     for the guard's next boot
+# It runs in the host's namespaces (nsenter into PID 1), privileged: what Flux applies is already cluster admin
+# (docs/PLAN-cluster.md), so this adds no new power, only puts the host's network under git like the rest.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jarvis4-node
+  labels: { pod-security.kubernetes.io/enforce: privileged, jarvis2/ns: node }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: node-net, namespace: jarvis4-node }
+data:
+  # "<private address> <k3s0 address>" per node (infra/cluster-node.sh appends); GATEWAY is the Network's gateway
+  NODES: |
+    10.77.0.4 10.254.254.1
+  GATEWAY: "10.77.0.1"
+  PRIVATE_PREFIX: "10.77."
+  K3S_RANGE: "10.254.254.0/24"
+  node-net.sh: |
+    set -u
+    IF="$(ip -o -4 addr show | awk -v p=" $PRIVATE_PREFIX" 'index($0, p) {print $2; exit}')"
+    [ -n "$IF" ] || { echo "no private interface"; exit 0; }
+    ip route replace "$K3S_RANGE" via "$GATEWAY" dev "$IF" onlink
+    iptables -t mangle -L JARVIS2-PRIVATE -n >/dev/null 2>&1 || { echo "no private guard on this node"; exit 0; }
+    mkdir -p /etc/jarvis2; touch /etc/jarvis2/private-allow
+    for a in $NODES; do
+      iptables -t mangle -C JARVIS2-PRIVATE -s "$a" -j RETURN 2>/dev/null || iptables -t mangle -I JARVIS2-PRIVATE 1 -s "$a" -j RETURN
+      grep -qw "$a" /etc/jarvis2/private-allow || echo "$a" >> /etc/jarvis2/private-allow
+    done
+    echo "node-net: $K3S_RANGE via $GATEWAY on $IF; guard admits $(echo $NODES)"
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: { name: node-net, namespace: jarvis4-node }
+spec:
+  selector: { matchLabels: { app: node-net } }
+  updateStrategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 1 } }
+  template:
+    metadata: { labels: { app: node-net } }
+    spec:
+      hostNetwork: true
+      hostPID: true
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      priorityClassName: system-node-critical
+      tolerations: [{ operator: Exists }]
+      containers:
+        - name: node-net
+          image: busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+          # the ConfigMap is read afresh every round (a mounted ConfigMap follows its changes), then the script runs
+          # with the host's own ip/iptables (nsenter into PID 1's namespaces), every 60 s
+          command:
+            - sh
+            - -c
+            - |
+              while true; do
+                nsenter -t 1 -m -u -i -n -- env NODES="$(cat /cfg/NODES)" GATEWAY="$(cat /cfg/GATEWAY)" \
+                  PRIVATE_PREFIX="$(cat /cfg/PRIVATE_PREFIX)" K3S_RANGE="$(cat /cfg/K3S_RANGE)" sh -c "$(cat /cfg/node-net.sh)"
+                sleep 60
+              done
+          volumeMounts: [{ name: cfg, mountPath: /cfg, readOnly: true }]
+          resources: { requests: { cpu: 5m, memory: 8Mi }, limits: { memory: 32Mi } }
+          securityContext: { privileged: true }
+      volumes: [{ name: cfg, configMap: { name: node-net } }]
