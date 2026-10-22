@@ -119,7 +119,7 @@ func (r *Router) sessionConfig(s *Session) (string, error) {
 	if s.Ops != nil {
 		c.APIProxy = s.Ops.APIProxy
 		for _, f := range s.Ops.Attach {
-			sum, size, err := fileSha256(filepath.Join(r.uploadDir(s.Ops.Upload), f.Name))
+			sum, size, err := r.objSha256(uploadKey(s.Ops.Upload, f.Name))
 			if err != nil {
 				return "", fmt.Errorf("attachment %s: %v", f.Name, err)
 			}

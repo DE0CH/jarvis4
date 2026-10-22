@@ -25,7 +25,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -87,7 +86,8 @@ func isImageName(n string) bool {
 	return false
 }
 
-func (r *Router) uploadDir(id string) string { return filepath.Join(r.cfg.DataDir, "uploads", id) }
+// an upload's files are objects uploads/<id>/<name> (objstore.go)
+func uploadKey(id, name string) string { return "uploads/" + id + "/" + name }
 
 // StageUpload: one file of a form's upload, streamed to the volume. owner: the session staging it ("" = the app);
 // an upload takes files from its owner only.
@@ -124,27 +124,18 @@ func (r *Router) StageUpload(uploadID, owner, rawName string, body io.Reader) (A
 	if err != nil {
 		return AttachFile{}, err
 	}
-	dir := r.uploadDir(uploadID)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return AttachFile{}, err
-	}
-	tmp := filepath.Join(dir, ".part-"+randID())
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
-		return AttachFile{}, err
-	}
-	n, err := io.Copy(f, io.LimitReader(body, attachMaxBytes+1))
-	f.Close()
-	if err == nil && n > attachMaxBytes {
+	// read whole (at most attachMaxBytes) before it is stored: a file over the cap never becomes an object
+	b, err := io.ReadAll(io.LimitReader(body, attachMaxBytes+1))
+	if err == nil && int64(len(b)) > attachMaxBytes {
 		err = &httpStatusErr{413, fmt.Sprintf("%s is larger than %d MB", name, attachMaxBytes>>20)}
 	}
 	if err == nil {
-		err = os.Rename(tmp, filepath.Join(dir, name))
+		err = r.objPutBytes(uploadKey(uploadID, name), b)
 	}
 	if err != nil {
-		os.Remove(tmp)
 		return AttachFile{}, err
 	}
+	n := int64(len(b))
 	af := AttachFile{Name: name, Size: n, IsImage: isImageName(name)}
 	r.st.Do(func(d *persisted) {
 		m := uploads(d)
@@ -284,7 +275,7 @@ func (r *Router) machineUpload(machine string) (*Upload, error) {
 func (r *Router) attestAttachments(machine string, u *Upload) (map[string]*Doc, error) {
 	out := map[string]*Doc{}
 	for _, f := range u.Files {
-		sum, _, err := fileSha256(filepath.Join(r.uploadDir(u.ID), f.Name))
+		sum, _, err := r.objSha256(uploadKey(u.ID, f.Name))
 		if err != nil {
 			return nil, fmt.Errorf("attachment %s: %v", f.Name, err)
 		}
@@ -304,7 +295,11 @@ func (r *Router) dropUpload(id string) {
 	r.ops.uploadMu.Lock()
 	defer r.ops.uploadMu.Unlock()
 	r.st.Do(func(d *persisted) { delete(uploads(d), id) })
-	os.RemoveAll(r.uploadDir(id))
+	ctx, cancel := objCtx()
+	defer cancel()
+	if err := r.objects.DeletePrefix(ctx, "uploads/"+id+"/"); err != nil {
+		log.Printf("[uploads] %s: %v", id, err)
+	}
 }
 
 // sweepUploads: unbound uploads older than a day, uploads whose session is gone, and unbound ones whose owner is gone
@@ -391,23 +386,23 @@ func (r *Router) registerUploads(app appRoute, m machineRoute) {
 	// the app: a staged file of a session not yet started (the approval page shows it, checked against the signed hash)
 	app("GET /api/sessions/{id}/attachments/{name}", func(w http.ResponseWriter, req *http.Request) {
 		sid, name := req.PathValue("id"), req.PathValue("name")
-		var dir string
+		var upID string
 		r.st.Do(func(d *persisted) {
 			if s := d.Sessions[sid]; s != nil && s.Ops != nil && s.Ops.Upload != "" {
 				if u := uploads(d)[s.Ops.Upload]; u != nil && u.Session == sid {
 					for _, f := range s.Ops.Attach {
 						if f.Name == name {
-							dir = r.uploadDir(u.ID)
+							upID = u.ID
 						}
 					}
 				}
 			}
 		})
-		if dir == "" || safeName(name) != name {
+		if upID == "" || safeName(name) != name {
 			writeJSON(w, 404, map[string]string{"error": "no such attachment (a started session's attachments are gone from the router)"})
 			return
 		}
-		f, err := os.Open(filepath.Join(dir, name))
+		f, err := r.objects.Get(req.Context(), uploadKey(upID, name))
 		if err != nil {
 			writeJSON(w, 404, map[string]string{"error": "no such attachment"})
 			return
@@ -424,7 +419,7 @@ func (r *Router) registerUploads(app appRoute, m machineRoute) {
 			writeJSON(w, 404, map[string]string{"error": "no such attachment"})
 			return
 		}
-		f, err := os.Open(filepath.Join(r.uploadDir(u.ID), name))
+		f, err := r.objects.Get(req.Context(), uploadKey(u.ID, name))
 		if err != nil {
 			writeJSON(w, 404, map[string]string{"error": "no such attachment"})
 			return

@@ -641,11 +641,14 @@ func (r *Router) pruneRuns(i *TaskInstance) {
 	i.Runs = keep
 }
 
-func (r *Router) runDir() string { return filepath.Join(r.cfg.DataDir, "task-runs") }
+// a run's log and output are objects task-runs/<run>.log and .output (objstore.go)
+func runKey(id, ext string) string { return "task-runs/" + id + ext }
 
 func (r *Router) removeRunFiles(id string) {
-	os.Remove(filepath.Join(r.runDir(), id+".log"))
-	os.Remove(filepath.Join(r.runDir(), id+".output"))
+	ctx, cancel := objCtx()
+	defer cancel()
+	r.objects.Delete(ctx, runKey(id, ".log"))
+	r.objects.Delete(ctx, runKey(id, ".output"))
 }
 
 // ---- views ---------------------------------------------------------------------------------------------
@@ -1192,8 +1195,8 @@ func (r *Router) runDetail(runID string) (map[string]any, error) {
 	if v == nil {
 		return nil, notFound("no such run: %s", runID)
 	}
-	logb, _ := os.ReadFile(filepath.Join(r.runDir(), runID+".log"))
-	out, _ := os.ReadFile(filepath.Join(r.runDir(), runID+".output"))
+	logb, _ := r.objGetBytes(runKey(runID, ".log"))
+	out, _ := r.objGetBytes(runKey(runID, ".output"))
 	v["log"], v["output"] = string(logb), string(out)
 	return v, nil
 }
@@ -1245,9 +1248,6 @@ func (r *Router) saveSchedule(id string, b map[string]any) (map[string]any, erro
 }
 
 func (r *Router) registerTasks(app appRoute, m machineRoute) {
-	if err := os.MkdirAll(r.runDir(), 0o700); err != nil {
-		log.Printf("[tasks] %v", err)
-	}
 	app("GET /api/tasks", func(w http.ResponseWriter, req *http.Request) {
 		templates := []*TaskTemplate{}
 		for _, t := range readTemplates(tasksDir) {
@@ -1520,9 +1520,13 @@ func (r *Router) taskResult(machine string, in TaskResult) error {
 		return err
 	}
 	if done != nil {
-		os.WriteFile(filepath.Join(r.runDir(), done.ID+".log"), []byte(in.Log), 0o600)
+		if err := r.objPutBytes(runKey(done.ID, ".log"), []byte(in.Log)); err != nil {
+			log.Printf("[tasks] run %s: its log: %v", done.ID, err)
+		}
 		if in.Output != "" {
-			os.WriteFile(filepath.Join(r.runDir(), done.ID+".output"), []byte(in.Output), 0o600)
+			if err := r.objPutBytes(runKey(done.ID, ".output"), []byte(in.Output)); err != nil {
+				log.Printf("[tasks] run %s: its output: %v", done.ID, err)
+			}
 		}
 		log.Printf("[tasks] %s: run %s %s", inst.ID, done.ID, done.Phase)
 		r.notifyRun(&inst, done)

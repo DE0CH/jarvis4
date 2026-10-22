@@ -123,7 +123,7 @@ cat > "$W/router.sh" <<EOF
 #!/bin/sh
 # the router's whole env: nothing of production's (no Discord, Storage Box, Jarvis 1 or Claude keys)
 exec env -i PATH="$PATH" HOME="$HOME" \\
-  DATABASE_URL="$DBURL" NO_ACCESS=1 RECORDS_OFF=1 CORE_URL=http://127.0.0.1:8090 ADDR=127.0.0.1:18080 MACHINE_ADDR=127.0.0.1:18081 \\
+  DATABASE_URL="$DBURL" OBJECTS_MEMORY=1 NO_ACCESS=1 RECORDS_OFF=1 CORE_URL=http://127.0.0.1:8090 ADDR=127.0.0.1:18080 MACHINE_ADDR=127.0.0.1:18081 \\
   DATA_DIR="$W/data" WEB_DIR="$ROOT/web" TASKS_DIR="$ROOT/tasks" POLICY_FILE="$ROOT/policy/stores.json" \\
   SESSION_IMAGE="$SIMG" SESSION_IMAGE_SIG="$SSIG" SESSION_IMAGE_SIGS_FILE="$ROOT/k8s/cluster/router/session-image-sigs.txt" \\
   FLY_REGION=lhr MACHINE_URL="$MURL" WG_CONFIG="$W/wg.conf" FLY_READ_TOKEN="\$(cat "$W/fly-read")" \\

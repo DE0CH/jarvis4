@@ -81,6 +81,10 @@ func main() {
 		log.Fatal("DATABASE_URL is required: the router's records are in Postgres (docs/STATE.md)")
 	}
 	db := openDBWait(os.Getenv("DATABASE_URL"))
+	// the blobs are in object storage (objstore.go); only a throwaway router (CI's stand-ins, e2e) keeps them in memory
+	if os.Getenv("OBJECTS_ACCESS_KEY") == "" && os.Getenv("OBJECTS_MEMORY") != "1" {
+		log.Fatal("OBJECTS_ACCESS_KEY / OBJECTS_SECRET_KEY are required (Secret router-secrets-objects), or OBJECTS_MEMORY=1 for a throwaway router")
+	}
 	// leader.go: one router process owns the state; a rollout's new pod waits as a standby that proxies to it
 	addr, maddr := env("ADDR", ":8080"), env("MACHINE_ADDR", ":8081")
 	lock, err := openLeaderLock(cfg.DataDir)
@@ -178,6 +182,12 @@ func main() {
 	}
 	r := NewRouter(cfg, st, coreClient, policy)
 	r.db.Store(db)
+	if err := r.importBlobFiles(); err != nil { // objstore.go: the volume's uploads and task runs, once
+		log.Fatal(err)
+	}
+	if err := r.probeObjects(); err != nil {
+		log.Fatal("objects: ", err)
+	}
 	r.applyActiveCore() // nextcore.go: the core a flip left serving
 	r.startFeatures()
 	r.startStateBackups()

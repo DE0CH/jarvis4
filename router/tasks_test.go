@@ -223,7 +223,6 @@ func newTaskRig(t *testing.T, sensitive bool) (*Router, *fakeLine) {
 	tasksDir = dir
 	t.Cleanup(func() { tasksDir = old })
 	r := newTestRouter(t)
-	os.MkdirAll(r.runDir(), 0o700)
 	f := &fakeLine{r: r}
 	f.install(t, sensitive)
 	return r, f
@@ -625,7 +624,7 @@ func TestRunsPruned(t *testing.T) {
 		i := tasksOf(d).Instances[id]
 		for k := 0; k < taskKeepRuns+5; k++ {
 			x := &TaskRun{ID: "old" + string(rune('a'+k)), Phase: "succeeded"}
-			os.WriteFile(filepath.Join(r.runDir(), x.ID+".log"), []byte("l"), 0o600)
+			r.objPutBytes(runKey(x.ID, ".log"), []byte("l"))
 			i.Runs = append(i.Runs, x)
 		}
 		i.Runs = append([]*TaskRun{{ID: "q", Phase: "queued"}}, i.Runs...)
@@ -634,7 +633,7 @@ func TestRunsPruned(t *testing.T) {
 			t.Fatalf("%d", len(i.Runs))
 		}
 	})
-	if _, err := os.Stat(filepath.Join(r.runDir(), "old"+string(rune('a'+taskKeepRuns+1))+".log")); err == nil {
+	if _, err := r.objGetBytes(runKey("old"+string(rune('a'+taskKeepRuns+1)), ".log")); err == nil {
 		t.Fatal("a pruned run's log stayed")
 	}
 }

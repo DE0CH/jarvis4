@@ -394,10 +394,10 @@ func TestAnAttachmentIsSignedByHashAndAttestedIntoTheInputLog(t *testing.T) {
 		t.Fatalf("input log %q", b)
 	}
 
-	// swapped on the volume after the phone signed: attested under the new bytes' hash, never the signed one
-	var dir string
-	r.st.Do(func(d *persisted) { dir = r.uploadDir(d.Sessions[sid].Ops.Upload) })
-	if err := os.WriteFile(dir+"/IMG_1.png", []byte("another picture"), 0o600); err != nil {
+	// swapped in the bucket after the phone signed: attested under the new bytes' hash, never the signed one
+	var upID string
+	r.st.Do(func(d *persisted) { upID = d.Sessions[sid].Ops.Upload })
+	if err := r.objPutBytes(uploadKey(upID, "IMG_1.png"), []byte("another picture")); err != nil {
 		t.Fatal(err)
 	}
 	if e := attested(listing()); e["sha256"] == want {

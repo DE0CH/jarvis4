@@ -62,7 +62,7 @@ if [ "${NO_CORE:-}" != 1 ]; then
   echo '{"harnesses":{"claude":{"stores":["claude-login"]}}}' > "$W/policy.json"
   DBURL="$(bash "$ROOT/infra/test-postgres.sh" fresh router_standins)"  # the router's records (router/statedb.go)
   (set -a; . "$W/router-backup.env"; set +a
-   DATABASE_URL="$DBURL" NO_ACCESS=1 CORE_URL=http://127.0.0.1:8090 DATA_DIR="$W/router-data" WEB_DIR="$W/web" POLICY_FILE="$W/policy.json" TASKS_DIR="$ROOT/tasks" \
+   DATABASE_URL="$DBURL" OBJECTS_MEMORY=1 NO_ACCESS=1 CORE_URL=http://127.0.0.1:8090 DATA_DIR="$W/router-data" WEB_DIR="$W/web" POLICY_FILE="$W/policy.json" TASKS_DIR="$ROOT/tasks" \
      ADDR=127.0.0.1:${ROUTER_PORT:-18080} MACHINE_ADDR=127.0.0.1:$((${ROUTER_PORT:-18080}+1)) nohup "$W/router" > "$W/router.log" 2>&1 &)
   for i in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:${ROUTER_PORT:-18080}/api/state && break; sleep 1; done
   echo "core and router up"

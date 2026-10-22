@@ -201,3 +201,24 @@ func TestLogFilesImported(t *testing.T) {
 		t.Fatalf("%+v", ls)
 	}
 }
+
+// uploads/ and task-runs/ on the volume go into the bucket under the same keys, once
+func TestBlobFilesImported(t *testing.T) {
+	r := newTestRouter(t)
+	os.MkdirAll(filepath.Join(r.cfg.DataDir, "uploads", "up1"), 0o700)
+	os.MkdirAll(filepath.Join(r.cfg.DataDir, "task-runs"), 0o700)
+	os.WriteFile(filepath.Join(r.cfg.DataDir, "uploads", "up1", "a.png"), []byte("png"), 0o600)
+	os.WriteFile(filepath.Join(r.cfg.DataDir, "task-runs", "r1.log"), []byte("log"), 0o600)
+	if err := r.importBlobFiles(); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := r.objGetBytes(uploadKey("up1", "a.png")); string(b) != "png" {
+		t.Fatalf("upload: %q", b)
+	}
+	if b, _ := r.objGetBytes(runKey("r1", ".log")); string(b) != "log" {
+		t.Fatalf("run log: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(r.cfg.DataDir, "uploads.imported")); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ecdh"
 	"crypto/rand"
 	"crypto/sha256"
@@ -11,8 +12,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -368,7 +367,7 @@ func TestIdempotentCreateAndAttachments(t *testing.T) {
 	if code, _ := mx.do(t, h, "DELETE", "/m/attachments", ""); code != 200 {
 		t.Fatal(code)
 	}
-	if _, err := os.Stat(filepath.Join(r.cfg.DataDir, "uploads", "up1")); !os.IsNotExist(err) {
+	if keys, _ := r.objects.List(context.Background(), "uploads/up1/"); len(keys) != 0 {
 		t.Fatal("the staged files are still there")
 	}
 	// once certified (a resume), no attachment env

@@ -30,6 +30,8 @@ type Router struct {
 	kernelLines *lineKeeper // linestate.go: the kernel secrets' line state
 	// db: the router's database (db.go); nil until connected
 	db atomic.Pointer[DB]
+	// objects: the router's blobs (objstore.go): the bucket, or memory for a router with none (tests)
+	objects ObjStore
 	// kernelTokenDMed: the spawner's missing Fly token was DMed (once, until a token comes)
 	kernelTokenDMed atomic.Bool
 
@@ -66,6 +68,13 @@ type Router struct {
 func NewRouter(cfg Config, st *State, core *CoreClient, policy Policy) *Router {
 	r := &Router{cfg: cfg, st: st, core: core, policy: policy, setupSeen: map[string]time.Time{}, commands: map[string]chan string{}, execs: map[string]chan execItem{}, results: map[string]chan ExecResult{}, snapped: map[string]*snapWait{}, sup: &supLogs{next: map[string]int64{}}, lc: newLifecycle()}
 	r.wireKernel(newKernelClient(cfg.KernelURL))
+	if o, err := objectsFromEnv(); err != nil {
+		log.Fatal("objects: ", err)
+	} else if o != nil {
+		r.objects = o
+	} else {
+		r.objects = newMemObjects()
+	}
 	if core != nil { // linestate.go: the core's line state, kept as its answers name a new one
 		r.lines = newLineKeeper(st, core)
 		core.onLineSeq = r.lines.seen

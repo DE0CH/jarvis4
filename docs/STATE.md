@@ -385,7 +385,10 @@ Each step ships alone, keeps the router working, and is a clean cut for what it 
    ReadDoc/WriteDoc; each file imported once at start and renamed `.imported`). The logs (`lifecycle/`,
    `supervisor-log/`, `input-log.jsonl`) are rows of `session_log` (session, kind, line jsonb, in order; sessionlog.go):
    one table for the three, read whole per session as the files were, reshaped into `ops`/`op_events` when a query
-   needs more.
+   needs more. Uploads and task-run logs/outputs are objects (`uploads/<id>/<name>`, `task-runs/<run>.log|.output`)
+   in `jarvis4-snapshots-de0ch` through the credential `jarvis4-objects` (objstore.go, minio-go; infra/objects-key.py),
+   probed at start; a throwaway router (CI, e2e) says `OBJECTS_MEMORY=1`. Restores and Jarvis 1 imports move with the
+   snapshots (step 5): they are snapshots served the same way.
 5. **Snapshots into object storage** (2.2), with a one-shot copy of the existing `snapshots/` for paused sessions.
    After this the volume holds only `wg.conf`, the flock and scratch.
 6. **The machine queue** (section 5) replaces the `commands`/`execs`/`deliveries`/`results` channels and the
