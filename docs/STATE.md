@@ -380,7 +380,9 @@ Each step ships alone, keeps the router working, and is a clean cut for what it 
    `infra/test-postgres.sh fresh NAME`.
 4. **The other volume files**: logs (`lifecycle/`, `supervisor-log/`), small JSON files (store-docs, repos,
    claim-device, core-certs, line-state, input-log), Claude accounts and holder keys (sealed) into tables; uploads,
-   task-run outputs, restores and imports into object storage.
+   task-run outputs, restores and imports into object storage. Done so far: the small JSON files (store-docs, repos, claim-device,
+   core-certs, line-state, kernel-line-state) are rows of `router_docs` (migrations/0003_docs.sql, statedb.go
+   ReadDoc/WriteDoc; each file imported once at start and renamed `.imported`).
 5. **Snapshots into object storage** (2.2), with a one-shot copy of the existing `snapshots/` for paused sessions.
    After this the volume holds only `wg.conf`, the flock and scratch.
 6. **The machine queue** (section 5) replaces the `commands`/`execs`/`deliveries`/`results` channels and the

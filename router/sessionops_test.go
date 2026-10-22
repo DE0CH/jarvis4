@@ -468,7 +468,7 @@ func TestReposAndGitHub(t *testing.T) {
 		t.Fatal(code, out)
 	}
 	// entries that aren't GitHub repos (an older list) are left off
-	os.WriteFile(r.reposPath(), []byte(`[{"name":"a","url":"https://gitlab.com/x/a.git"},{"name":"b","url":"https://github.com/DE0CH/b.git"}]`), 0o600)
+	r.st.WriteDoc("repos.json", []byte(`[{"name":"a","url":"https://gitlab.com/x/a.git"},{"name":"b","url":"https://github.com/DE0CH/b.git"}]`))
 	if rs := r.Repos(); len(rs) != 1 || rs[0].Repo != "DE0CH/b" || rs[0].Store != "github-b" {
 		t.Fatalf("%+v", rs)
 	}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -129,5 +130,45 @@ func TestStateWriteRetried(t *testing.T) {
 	db.pool.QueryRow(ctx, "SELECT count(*) FROM sessions WHERE id = 's1'").Scan(&n)
 	if n != 1 || !r.dbStatus(ctx).OK {
 		t.Fatalf("after the retry: %d rows, %+v", n, r.dbStatus(ctx))
+	}
+}
+
+// the small documents: read and written in the database; a file of one on the volume is imported once and set aside
+func TestRouterDocs(t *testing.T) {
+	url := testDBURL(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "repos.json"), []byte(`[{"url":"https://github.com/DE0CH/b.git"}]`), 0o600)
+	db, err := OpenDB(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	st, err := OpenState(ctx, db, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, ok := st.ReadDoc("repos.json"); !ok || !strings.Contains(string(b), "DE0CH/b") {
+		t.Fatalf("imported: %s %v", b, ok)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "repos.json.imported")); err != nil {
+		t.Fatal("repos.json wasn't set aside after the import")
+	}
+	if _, ok := st.ReadDoc("store-docs.json"); ok {
+		t.Fatal("a document nobody wrote")
+	}
+	st.WriteDoc("store-docs.json", []byte(`{"a":{}}`))
+	st.WriteDoc("store-docs.json", []byte(`{"b":{}}`))
+	os.WriteFile(filepath.Join(dir, "store-docs.json"), []byte(`{"old":{}}`), 0o600)
+	st2, err := OpenState(ctx, db, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := st2.ReadDoc("store-docs.json"); string(b) != `{"b":{}}` {
+		t.Fatalf("after a restart: %s (a stale file beside the database must not win)", b)
+	}
+	r := &Router{st: st2}
+	if rs := r.Repos(); len(rs) != 1 || rs[0].Repo != "DE0CH/b" {
+		t.Fatalf("repos: %+v", rs)
 	}
 }

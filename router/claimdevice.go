@@ -9,8 +9,7 @@ package main
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
+	"log"
 	"sync"
 )
 
@@ -22,13 +21,11 @@ type ClaimDevice struct {
 
 var claimDeviceMu sync.Mutex
 
-func (r *Router) claimDevicePath() string { return filepath.Join(r.cfg.DataDir, "claim-device.json") }
-
 func (r *Router) claimDevices() []ClaimDevice {
 	claimDeviceMu.Lock()
 	defer claimDeviceMu.Unlock()
 	out := []ClaimDevice{}
-	if b, err := os.ReadFile(r.claimDevicePath()); err == nil {
+	if b, ok := r.st.ReadDoc("claim-device.json"); ok {
 		json.Unmarshal(b, &out)
 	}
 	return out
@@ -49,7 +46,9 @@ func (r *Router) keepClaimDevice(body []byte) {
 		list = list[:10]
 	}
 	b, _ := json.Marshal(list)
-	os.WriteFile(r.claimDevicePath(), b, 0o600)
+	if err := r.st.WriteDoc("claim-device.json", b); err != nil {
+		log.Printf("claim device: %v", err)
+	}
 }
 
 // ---- the master's signature on the core (R2: kept here, not in the core) ----------------------------------------
@@ -63,8 +62,6 @@ type MasterCert struct {
 	MasterSig string `json:"masterSig"`
 }
 
-func (r *Router) coreCertsPath() string { return filepath.Join(r.cfg.DataDir, "core-certs.json") }
-
 // keepCoreCert: a claim body the core answered 200
 func (r *Router) keepCoreCert(body []byte) {
 	var in MasterCert
@@ -74,7 +71,7 @@ func (r *Router) keepCoreCert(body []byte) {
 	claimDeviceMu.Lock()
 	defer claimDeviceMu.Unlock()
 	list := []MasterCert{}
-	if b, err := os.ReadFile(r.coreCertsPath()); err == nil {
+	if b, ok := r.st.ReadDoc("core-certs.json"); ok {
 		json.Unmarshal(b, &list)
 	}
 	list = append([]MasterCert{in}, list...)
@@ -82,7 +79,9 @@ func (r *Router) keepCoreCert(body []byte) {
 		list = list[:10]
 	}
 	b, _ := json.Marshal(list)
-	os.WriteFile(r.coreCertsPath(), b, 0o600)
+	if err := r.st.WriteDoc("core-certs.json", b); err != nil {
+		log.Printf("core certs: %v", err)
+	}
 }
 
 // coreCert: the kept claim naming the running core (by its signing key from /identity); nil when none.
@@ -94,7 +93,7 @@ func (r *Router) coreCert() []byte {
 	}
 	claimDeviceMu.Lock()
 	list := []MasterCert{}
-	if b, err := os.ReadFile(r.coreCertsPath()); err == nil {
+	if b, ok := r.st.ReadDoc("core-certs.json"); ok {
 		json.Unmarshal(b, &list)
 	}
 	claimDeviceMu.Unlock()

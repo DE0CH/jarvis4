@@ -10,7 +10,11 @@ import (
 )
 
 func TestTheClaimsDeviceSignatureIsKeptForTheSetupSession(t *testing.T) {
-	r := &Router{cfg: Config{DataDir: t.TempDir()}}
+	st, err := testState(t, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &Router{cfg: Config{DataDir: t.TempDir()}, st: st}
 	r.keepClaimDevice([]byte(`{"statement":"{\"kind\":\"claim\"}","masterSig":"m","deviceKey":"k","deviceSig":"s"}`))
 	r.keepClaimDevice([]byte(`{"statement":"x"}`)) // no countersignature: nothing kept
 	got := r.claimDevices()

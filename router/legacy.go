@@ -11,7 +11,6 @@ package main
 import (
 	"encoding/json"
 	"log"
-	"os"
 	"time"
 )
 
@@ -22,7 +21,7 @@ func (r *Router) claimOfSigner(doc *Doc) *MasterCert {
 	}
 	claimDeviceMu.Lock()
 	list := []MasterCert{}
-	if b, err := os.ReadFile(r.coreCertsPath()); err == nil {
+	if b, ok := r.st.ReadDoc("core-certs.json"); ok {
 		json.Unmarshal(b, &list)
 	}
 	claimDeviceMu.Unlock()
@@ -128,7 +127,7 @@ func (r *Router) adoptPaused(id string) {
 func (r *Router) keepRunningClaim(key string) {
 	claimDeviceMu.Lock()
 	list := []MasterCert{}
-	if b, err := os.ReadFile(r.coreCertsPath()); err == nil {
+	if b, ok := r.st.ReadDoc("core-certs.json"); ok {
 		json.Unmarshal(b, &list)
 	}
 	claimDeviceMu.Unlock()

@@ -15,8 +15,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,7 +43,8 @@ type keptLineState struct {
 
 type lineKeeper struct {
 	mu         sync.Mutex
-	path       string
+	docs       docStore // where the kept line state is (router_docs: name)
+	name       string
 	object     string // its copy in the bucket
 	kept       *keptLineState
 	bucketSeq  int
@@ -56,12 +55,10 @@ type lineKeeper struct {
 	bucketBusy bool
 }
 
-func (r *Router) lineStatePath() string { return filepath.Join(r.cfg.DataDir, "line-state.json") }
-
 // newKernelLineKeeper: the same for the kernel's secrets (kernel/secrets/continuity.go: its stores and the deploy-key
 // stores, which have no backup), kept beside the core's (kernel-line-state.json; keys/_jarvis2/kernel-line-state.json)
-func newKernelLineKeeper(path string, k *KernelClient) *lineKeeper {
-	lk := &lineKeeper{path: path, object: "keys/_jarvis2/kernel-line-state.json", bucket: backupBucketFromEnv}
+func newKernelLineKeeper(docs docStore, k *KernelClient) *lineKeeper {
+	lk := &lineKeeper{docs: docs, name: "kernel-line-state.json", object: "keys/_jarvis2/kernel-line-state.json", bucket: backupBucketFromEnv}
 	lk.fetch = func() (int, []byte, error) {
 		b, err := k.callNoHook("secrets", "GET", "/line-state", nil)
 		if err != nil {
@@ -81,7 +78,7 @@ func newKernelLineKeeper(path string, k *KernelClient) *lineKeeper {
 		}
 		return id.SigningKey
 	}
-	if b, err := os.ReadFile(path); err == nil {
+	if b, ok := docs.ReadDoc(lk.name); ok {
 		var x keptLineState
 		if json.Unmarshal(b, &x) == nil && x.Core != "" {
 			lk.kept = &x
@@ -91,8 +88,8 @@ func newKernelLineKeeper(path string, k *KernelClient) *lineKeeper {
 }
 
 // lineKeeperFor: the router's keeper, wired to its core client
-func newLineKeeper(path string, c *CoreClient) *lineKeeper {
-	k := &lineKeeper{path: path, object: lineStateObject, bucket: backupBucketFromEnv}
+func newLineKeeper(docs docStore, c *CoreClient) *lineKeeper {
+	k := &lineKeeper{docs: docs, name: "line-state.json", object: lineStateObject, bucket: backupBucketFromEnv}
 	k.fetch = func() (int, []byte, error) { return c.rawNoHook("GET", "/line-state", nil) }
 	k.coreKey = func() string {
 		st, b, err := c.rawNoHook("GET", "/identity", nil)
@@ -105,7 +102,7 @@ func newLineKeeper(path string, c *CoreClient) *lineKeeper {
 		json.Unmarshal(b, &id)
 		return id.SigningKey
 	}
-	if b, err := os.ReadFile(path); err == nil {
+	if b, ok := docs.ReadDoc(k.name); ok {
 		var x keptLineState
 		if json.Unmarshal(b, &x) == nil && x.Core != "" {
 			k.kept = &x
@@ -149,9 +146,8 @@ func (k *lineKeeper) seen(n int) {
 	}
 	x := &keptLineState{Core: key, Seq: h.Seq, Doc: d, At: time.Now().UTC()}
 	raw, _ := json.Marshal(x)
-	tmp := k.path + ".tmp"
-	if os.WriteFile(tmp, raw, 0o600) != nil || os.Rename(tmp, k.path) != nil {
-		log.Printf("line state %d: can't write %s", h.Seq, k.path)
+	if err := k.docs.WriteDoc(k.name, raw); err != nil {
+		log.Printf("line state %d: can't write %s: %v", h.Seq, k.name, err)
 		return
 	}
 	k.kept = x

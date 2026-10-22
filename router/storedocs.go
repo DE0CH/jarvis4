@@ -5,7 +5,7 @@ package main
 // is allowed without overwriting the store).
 //
 // Key names and who wrote each key come from the core's signed store list (a store is a set of keys, core/keys.go).
-// What a store and each key are for is the router's own record (store-docs.json on its data volume): not a secret and
+// What a store and each key are for is the router's own record (store-docs.json, a row of router_docs in its database): not a secret and
 // not part of any trust decision, written by whoever writes a key (a new key name needs its explanation), by the setup
 // session (`POST /setup/store-docs`) and by Deyao in the app. Every key's backup carries its explanation too, so a
 // Recover brings them back.
@@ -33,8 +33,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -86,11 +84,9 @@ const docMax = 2000 // characters of one explanation
 
 var storeDocsMu sync.Mutex
 
-func (r *Router) storeDocsPath() string { return filepath.Join(r.cfg.DataDir, "store-docs.json") }
-
 func (r *Router) readStoreDocs() map[string]StoreDoc {
 	m := map[string]StoreDoc{}
-	if b, err := os.ReadFile(r.storeDocsPath()); err == nil {
+	if b, ok := r.st.ReadDoc("store-docs.json"); ok {
 		json.Unmarshal(b, &m)
 	}
 	return m
@@ -151,11 +147,7 @@ func (r *Router) SetStoreDocs(store string, about *string, keys map[string]strin
 	}
 	m[store] = d
 	b, _ := json.MarshalIndent(m, "", " ")
-	tmp := r.storeDocsPath() + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, r.storeDocsPath())
+	return r.st.WriteDoc("store-docs.json", b)
 }
 
 func storeNameOK(n string) bool {

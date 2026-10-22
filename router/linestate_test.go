@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"testing"
@@ -40,7 +39,10 @@ func TestTheRouterKeepsTheNewestLineStateBeforeTheAnswerGoesOn(t *testing.T) {
 	srv := httptest.NewServer(lc)
 	defer srv.Close()
 	cc := &CoreClient{base: srv.URL, http: http.DefaultClient}
-	path := filepath.Join(t.TempDir(), "line-state.json")
+	path, err := testState(t, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	k := newLineKeeper(path, cc)
 	cc.onLineSeq = k.seen
 	if _, _, err := cc.Raw("POST", "/certify", []byte("{}")); err != nil {
@@ -56,7 +58,7 @@ func TestTheRouterKeepsTheNewestLineStateBeforeTheAnswerGoesOn(t *testing.T) {
 	if x := k.current(); x.Seq != 7 {
 		t.Fatalf("kept %d", x.Seq)
 	}
-	// a router that starts again reads it from its volume
+	// a router that starts again reads it from its database
 	k2 := newLineKeeper(path, cc)
 	if x := k2.current(); x == nil || x.Seq != 7 {
 		t.Fatalf("after a restart: %+v", x)

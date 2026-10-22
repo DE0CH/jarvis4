@@ -67,7 +67,7 @@ func NewRouter(cfg Config, st *State, core *CoreClient, policy Policy) *Router {
 	r := &Router{cfg: cfg, st: st, core: core, policy: policy, setupSeen: map[string]time.Time{}, commands: map[string]chan string{}, execs: map[string]chan execItem{}, results: map[string]chan ExecResult{}, snapped: map[string]*snapWait{}, sup: &supLogs{next: map[string]int64{}}, lc: newLifecycle()}
 	r.wireKernel(newKernelClient(cfg.KernelURL))
 	if core != nil { // linestate.go: the core's line state, kept as its answers name a new one
-		r.lines = newLineKeeper(r.lineStatePath(), core)
+		r.lines = newLineKeeper(st, core)
 		core.onLineSeq = r.lines.seen
 	}
 	return r

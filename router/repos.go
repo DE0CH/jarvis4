@@ -9,7 +9,7 @@ package main
 // token that can push or manage keys (the picker lists repos with GITHUB_READ_TOKEN, metadata read only), and
 // it records an entry only from the core's answer. Sessions clone, pull and push a repo over SSH with its
 // store's key (machine/deploykeys.go); the picker only fills New session's `repos`.
-// The repo list is the router's own (DATA_DIR/repos.json), shown in /api/state `repos`.
+// The repo list is the router's own (repos.json, a row of router_docs in its database), shown in /api/state `repos`.
 
 import (
 	"crypto/sha256"
@@ -20,7 +20,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -73,8 +72,6 @@ func repoEntry(repo string) RepoEntry {
 	return RepoEntry{Name: name, URL: "https://github.com/" + repo + ".git", Repo: repo, Store: repoStore(repo)}
 }
 
-func (r *Router) reposPath() string { return filepath.Join(r.cfg.DataDir, "repos.json") }
-
 func (r *Router) Repos() []RepoEntry {
 	r.ops.reposMu.Lock()
 	defer r.ops.reposMu.Unlock()
@@ -84,7 +81,7 @@ func (r *Router) Repos() []RepoEntry {
 // readRepos: the list; every entry is a GitHub repo, its derived fields recomputed from its URL
 func (r *Router) readRepos() []RepoEntry {
 	var raw []RepoEntry
-	if b, err := os.ReadFile(r.reposPath()); err == nil {
+	if b, ok := r.st.ReadDoc("repos.json"); ok {
 		json.Unmarshal(b, &raw)
 	}
 	out := []RepoEntry{}
@@ -107,11 +104,7 @@ func (r *Router) updateRepos(fn func([]RepoEntry) []RepoEntry) error {
 	defer r.ops.reposMu.Unlock()
 	next := fn(r.readRepos())
 	b, _ := json.MarshalIndent(next, "", " ")
-	tmp := r.reposPath() + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, r.reposPath())
+	return r.st.WriteDoc("repos.json", b)
 }
 
 // keyAnswer: the core's answer to a finished deploy-key request, applied to the list

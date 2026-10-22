@@ -128,6 +128,9 @@ func OpenState(ctx context.Context, db *DB, dir string) (*State, error) {
 		return nil, err
 	}
 	renameImported(dir)
+	if err := importDocFiles(ctx, db, dir); err != nil {
+		return nil, err
+	}
 	s := &State{dir: dir, sdb: &stateDB{db: db}}
 	if err := s.sdb.load(ctx, &s.data); err != nil {
 		return nil, err
@@ -404,4 +407,70 @@ func (s *State) StoreError() (error, time.Time) {
 	s.sdb.mu.Lock()
 	defer s.sdb.mu.Unlock()
 	return s.sdb.lastErr, s.sdb.errAt
+}
+
+// ---- the router's small documents (docs/STATE.md step 4) --------------------------------------------------------
+
+// routerDocs: the files that were on the volume and now are rows of router_docs (imported once, then renamed)
+var routerDocs = []string{"store-docs.json", "repos.json", "claim-device.json", "core-certs.json", "line-state.json", "kernel-line-state.json"}
+
+// docStore: where a small document is read and written (the State's database)
+type docStore interface {
+	ReadDoc(name string) ([]byte, bool)
+	WriteDoc(name string, b []byte) error
+}
+
+// ReadDoc: the document, and whether there is one (a database error reads as none, and is logged)
+func (s *State) ReadDoc(name string) ([]byte, bool) {
+	if s == nil || s.sdb == nil {
+		return nil, false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var b []byte
+	err := s.sdb.db.pool.QueryRow(ctx, "SELECT body FROM router_docs WHERE name = $1", name).Scan(&b)
+	if err != nil {
+		if err != pgx.ErrNoRows {
+			log.Printf("docs: reading %s: %v", name, err)
+		}
+		return nil, false
+	}
+	return b, true
+}
+
+// WriteDoc: the document replaced
+func (s *State) WriteDoc(name string, b []byte) error {
+	if s == nil || s.sdb == nil {
+		return fmt.Errorf("docs: no database")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := s.sdb.db.pool.Exec(ctx, `INSERT INTO router_docs (name, body, updated_at) VALUES ($1, $2, now())
+		ON CONFLICT (name) DO UPDATE SET body = excluded.body, updated_at = now()`, name, b)
+	return err
+}
+
+// importDocFiles: each document's file on the volume into router_docs, once (a row already there wins), then renamed
+func importDocFiles(ctx context.Context, db *DB, dir string) error {
+	for _, name := range routerDocs {
+		p := filepath.Join(dir, name)
+		b, err := os.ReadFile(p)
+		if os.IsNotExist(err) {
+			continue
+		} else if err != nil {
+			return err
+		}
+		tag, err := db.pool.Exec(ctx, "INSERT INTO router_docs (name, body) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING", name, b)
+		if err != nil {
+			return fmt.Errorf("import %s: %v", name, err)
+		}
+		if tag.RowsAffected() == 1 {
+			log.Printf("docs: imported %s into the database", p)
+			os.Rename(p, p+".imported")
+		} else {
+			log.Printf("docs: the database has %s already: %s set aside (.stale)", name, p)
+			os.Rename(p, p+".stale")
+		}
+	}
+	return nil
 }

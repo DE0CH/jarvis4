@@ -12,7 +12,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -345,7 +344,7 @@ func (r *Router) wireKernel(k *KernelClient) {
 		})
 		return c
 	}
-	r.kernelLines = newKernelLineKeeper(filepath.Join(r.cfg.DataDir, "kernel-line-state.json"), k)
+	r.kernelLines = newKernelLineKeeper(r.st, k)
 	k.onSecretsSeq = r.kernelLines.seen
 	k.roster = r.currentRoster // roster.go
 	k.onStale = r.rosterStale
