@@ -1,0 +1,6 @@
+# Jarvis 4's database (docs/STATE.md): CloudNativePG, applied by Flux in three layers that wait for each other
+# (flux.yaml): cert-manager → the operator and its Barman Cloud plugin → the Cluster. The namespace is here, in the
+# main tree, because the Secrets the Cluster uses (k8s/cluster/secrets/postgres*.enc.yaml) are applied with it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: [namespace.yaml, flux.yaml]

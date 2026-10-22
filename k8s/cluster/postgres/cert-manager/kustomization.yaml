@@ -1,0 +1,8 @@
+# cert-manager v1.21.2, the upstream static manifest (sha256 in ../flux.yaml), images pinned by digest
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: [cert-manager-1.21.2.yaml]
+images:
+  - { name: quay.io/jetstack/cert-manager-controller, digest: "sha256:70f532fd9cfde0b09d55687200942399d89838bc2d5d5b45152eb799a15912b8" }
+  - { name: quay.io/jetstack/cert-manager-webhook, digest: "sha256:a60e2dac46dbb8a7f3df95c54ce941012f54c2fe022f0ee55aaa1ab40ed957ae" }
+  - { name: quay.io/jetstack/cert-manager-cainjector, digest: "sha256:c85268c64f2e0e76684bf5fe8906caff34b82523561c6affe0fae3546bd87562" }

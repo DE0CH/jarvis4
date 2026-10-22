@@ -1,0 +1,6 @@
+# jarvis4-db: the router's Postgres (CloudNativePG Cluster jarvis4-db), reached only from jarvis4-router (db/db.yaml)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jarvis4-db
+  labels: { pod-security.kubernetes.io/enforce: baseline, pod-security.kubernetes.io/warn: restricted, jarvis2/ns: db }

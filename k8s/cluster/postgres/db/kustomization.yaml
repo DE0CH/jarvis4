@@ -1,0 +1,5 @@
+# Jarvis 4's Postgres: the Cluster, its object store (WAL archive + base backups in Hetzner Object Storage), the daily
+# base backup, and the NetworkPolicy (only jarvis4-router reaches it). docs/STATE.md says what goes in it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: [db.yaml]

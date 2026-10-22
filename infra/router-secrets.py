@@ -25,6 +25,12 @@ manifest so it restarts with the new Secret. SRC is `env:VAR` (default `env:KEY`
   --part alloy   alloy.enc.yaml, Secret alloy in jarvis2-obs — GRAFANA_LOGS_URL/USER, GRAFANA_METRICS_URL/USER,
                  GRAFANA_WRITE_TOKEN: the host's Grafana Alloy reads it (infra/alloy/; no pod uses it)
   --part tunnel  tunnel.enc.yaml, Secret tunnel-token in jarvis2-edge — token=TUNNEL_TOKEN (infra/cloudflare.py --cluster)
+  --part postgres  postgres.enc.yaml, Secret postgres-s3 in jarvis4-db — ACCESS_KEY_ID, ACCESS_SECRET_KEY: the Object
+                 Storage credential of the database's WAL archive and base backups (bucket jarvis4-db-de0ch,
+                 k8s/cluster/postgres/db/), e.g. ACCESS_KEY_ID=env:HETZNER_S3_ACCESS_KEY
+  --part postgres-app  postgres-app.enc.yaml, Secret jarvis4-db-router (basic-auth) in jarvis4-db — username=router and
+                 password: the database owner, made at initdb (the same password is JARVIS4_DB_ROUTER_PASSWORD in the
+                 infra store, for the router's own copy; docs/STATE.md)
 Only for secrets that can't reach a code push (Deyao, 2026-10-09); the pods get them as env (envFrom) or files. Prints
 names only, never a value."""
 import hashlib, json, os, re, subprocess, sys, tempfile
@@ -34,7 +40,7 @@ RT = "router/router.yaml"  # under k8s/cluster/
 BOXES = {  # box → (age recipient file, secrets dir, {part: manifest path under k8s/<box>/})
     "cluster": ("keys/cluster-age.pub", "k8s/cluster/secrets", {
         "": RT, "wg": RT, "backup": RT, "github": RT, "flyorgs": RT, "flypersonal": RT, "flyvolumes": RT,
-        "browserbase": RT, "devices": RT, "alloy": None, "tunnel": None}),
+        "browserbase": RT, "devices": RT, "alloy": None, "tunnel": None, "postgres": None, "postgres-app": None}),
 }
 RNS = "jarvis4-router"
 PARTS = {  # part → (file, Secret name, annotation, namespace)
@@ -49,7 +55,10 @@ PARTS = {  # part → (file, Secret name, annotation, namespace)
     "devices": ("router-devices.enc.yaml", "router-secrets-devices", "jarvis2/secrets-rev-devices", RNS),
     "alloy": ("alloy.enc.yaml", "alloy", None, "jarvis2-obs"),
     "tunnel": ("tunnel.enc.yaml", "tunnel-token", None, "jarvis2-edge"),
+    "postgres": ("postgres.enc.yaml", "postgres-s3", None, "jarvis4-db"),  # the database's backups (docs/STATE.md)
+    "postgres-app": ("postgres-app.enc.yaml", "jarvis4-db-router", None, "jarvis4-db"),  # the database owner's login
 }
+SECRET_TYPES = {"postgres-app": "kubernetes.io/basic-auth"}  # CloudNativePG's initdb secret is basic-auth
 
 
 def main():
@@ -83,7 +92,7 @@ def main():
         data[key] = v
     recipient = open(os.path.join(ROOT, keyfile)).read().strip()
     doc = {"apiVersion": "v1", "kind": "Secret", "metadata": {"name": secret, "namespace": namespace},
-           "type": "Opaque", "stringData": data}
+           "type": SECRET_TYPES.get(part, "Opaque"), "stringData": data}
     with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False, dir=os.path.dirname(out)) as f:
         os.chmod(f.name, 0o600)
         json.dump(doc, f)  # JSON is YAML

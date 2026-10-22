@@ -1,0 +1,92 @@
+# The router's database (docs/STATE.md). Two instances (primary + streaming replica, one synchronous standby when it is
+# up: a lost primary loses no committed job step), database jarvis4 owned by the role router (password: the Secret
+# jarvis4-db-router, infra/router-secrets.py --box cluster --part postgres-app). Every WAL segment and a daily base
+# backup go to s3://jarvis4-db-de0ch (Hetzner Object Storage fsn1, credential: Secret postgres-s3, part postgres), so a
+# lost node or cluster restores to any point in the last 30 days (docs/STATE.md "Restore").
+# Sizing for the cx23 node (docs/STATE.md "Memory"): each instance 512 MiB (shared_buffers 128 MB), its Barman sidecar
+# up to 256 MiB. The two instances prefer separate nodes; on one node they share it.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata: { name: jarvis4-db, namespace: jarvis4-db }
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.6-202609281634-minimal-trixie@sha256:4467d4cf7e502fbc29800b75d755ede477a765b25a506a58a0842a57a4bf42c9
+  primaryUpdateStrategy: unsupervised
+  primaryUpdateMethod: switchover
+  bootstrap:
+    initdb:
+      database: jarvis4
+      owner: router
+      secret: { name: jarvis4-db-router }
+      dataChecksums: true
+  postgresql:
+    parameters:
+      shared_buffers: 128MB
+      effective_cache_size: 384MB
+      work_mem: 4MB
+      maintenance_work_mem: 32MB
+      max_connections: "60"
+      max_wal_size: 512MB
+      min_wal_size: 80MB
+      wal_compression: "on"
+      archive_timeout: 5min
+      idle_in_transaction_session_timeout: 60s
+    synchronous: { method: any, number: 1, dataDurability: preferred }
+  storage: { size: 5Gi, storageClass: local-path }
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { memory: 512Mi }
+  affinity:
+    enablePodAntiAffinity: true
+    podAntiAffinityType: preferred
+    topologyKey: kubernetes.io/hostname
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters: { barmanObjectName: jarvis4-db-store }
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata: { name: jarvis4-db-store, namespace: jarvis4-db }
+spec:
+  retentionPolicy: 30d
+  configuration:
+    destinationPath: s3://jarvis4-db-de0ch/
+    endpointURL: https://fsn1.your-objectstorage.com
+    s3Credentials:
+      accessKeyId: { name: postgres-s3, key: ACCESS_KEY_ID }
+      secretAccessKey: { name: postgres-s3, key: ACCESS_SECRET_KEY }
+    wal: { compression: gzip, maxParallel: 2 }
+    data: { compression: gzip, jobs: 2 }
+  instanceSidecarConfiguration:
+    resources:
+      requests: { cpu: 10m, memory: 64Mi }
+      limits: { memory: 256Mi }
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata: { name: jarvis4-db-daily, namespace: jarvis4-db }
+spec:
+  cluster: { name: jarvis4-db }
+  schedule: "0 0 3 * * *"  # 03:00 UTC daily (six fields: seconds first)
+  immediate: true          # the first base backup as soon as the Cluster is up, so point-in-time recovery starts at once
+  backupOwnerReference: self
+  method: plugin
+  pluginConfiguration: { name: barman-cloud.cloudnative-pg.io }
+---
+# Only the router (namespace jarvis4-router) reaches Postgres; the instances reach each other (replication, the instance
+# manager's :8000) and the operator reaches their instance managers. Egress stays open: the instances talk to the
+# Kubernetes API and to Object Storage.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: jarvis4-db, namespace: jarvis4-db }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis4-router } } }]
+      ports: [{ port: 5432 }]
+    - from: [{ podSelector: { matchLabels: { cnpg.io/cluster: jarvis4-db } } }]
+      ports: [{ port: 5432 }, { port: 8000 }]
+    - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: cnpg-system } } }]
+      ports: [{ port: 8000 }, { port: 5432 }]

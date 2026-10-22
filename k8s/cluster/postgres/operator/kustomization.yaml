@@ -1,0 +1,27 @@
+# CloudNativePG 1.30.1 and its Barman Cloud plugin 0.15.1 (the WAL archive and base backups; the in-tree
+# barmanObjectStore goes in 1.31), upstream release manifests (sha256 in ../flux.yaml), every image by digest:
+# the operator, the image it copies into each instance (OPERATOR_IMAGE_NAME), the plugin and its sidecar.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: [cnpg-1.30.1.yaml, barman-cloud-0.15.1.yaml]
+images:
+  - { name: ghcr.io/cloudnative-pg/cloudnative-pg, digest: "sha256:923c267ec29636db3bee20f993d0ec4973fa22998e1adad37da79e4d32b5bc07" }
+  - { name: ghcr.io/cloudnative-pg/plugin-barman-cloud, digest: "sha256:c75acad19a36e8176cfe2885761ff1b836c6ef977d7257e298c99a28b5c302ef" }
+patches:
+  - target: { kind: Deployment, name: cnpg-controller-manager, namespace: cnpg-system }
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0
+        value: { name: OPERATOR_IMAGE_NAME, value: "ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1@sha256:923c267ec29636db3bee20f993d0ec4973fa22998e1adad37da79e4d32b5bc07" }
+  # SIDECAR_IMAGE = ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.15.1@sha256:2287a793a804db751edd0d07d44cd549e357677e98a800eb12e2cf7c0d53f9b0
+  - target: { kind: Secret, name: plugin-barman-cloud-5fm982t42b, namespace: cnpg-system }
+    patch: |
+      - op: replace
+        path: /data/SIDECAR_IMAGE
+        value: Z2hjci5pby9jbG91ZG5hdGl2ZS1wZy9wbHVnaW4tYmFybWFuLWNsb3VkLXNpZGVjYXI6djAuMTUuMUBzaGEyNTY6MjI4N2E3OTNhODA0ZGI3NTFlZGQwZDA3ZDQ0Y2Q1NDllMzU3Njc3ZTk4YTgwMGViMTJlMmNmN2MwZDUzZjliMA==
+  # the plugin's own pod has no resources upstream (resources: {})
+  - target: { kind: Deployment, name: barman-cloud, namespace: cnpg-system }
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value: { requests: { cpu: 10m, memory: 48Mi }, limits: { memory: 128Mi } }

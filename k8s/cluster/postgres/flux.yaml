@@ -1,0 +1,44 @@
+# The database's three layers, each its own Flux Kustomization so a layer's CRDs exist before the next layer's objects
+# are dry-run: cert-manager (the Barman Cloud plugin's mTLS certificates) → the CloudNativePG operator + the plugin →
+# the Cluster, its object store and its backups. Release manifests are vendored and pinned (file sha256 below, images
+# by digest in each kustomization.yaml); an upgrade is a new vendored file and a push.
+#   cert-manager-1.21.2.yaml   sha256 e03b668ec8675214af6b0a671699d088f2601fa3878e0dbe1b41d3feafd1879f
+#   cnpg-1.30.1.yaml           sha256 37237f145d8138256ea25ae830f87759255665ff08f8d552fdd8224a5ec032fb
+#   barman-cloud-0.15.1.yaml   sha256 8f377ff4a7d0d3f74fc64b0f7ac4f449fc38ca9e83a40107cca2f9315a9bd920
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: { name: db-cert-manager, namespace: flux-system }
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  sourceRef: { kind: GitRepository, name: jarvis4 }
+  path: ./k8s/cluster/postgres/cert-manager
+  prune: true
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: { name: db-operator, namespace: flux-system }
+spec:
+  dependsOn: [{ name: db-cert-manager }]
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  sourceRef: { kind: GitRepository, name: jarvis4 }
+  path: ./k8s/cluster/postgres/operator
+  prune: true
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: { name: db, namespace: flux-system }
+spec:
+  dependsOn: [{ name: db-operator }]
+  interval: 10m
+  retryInterval: 1m
+  timeout: 10m
+  sourceRef: { kind: GitRepository, name: jarvis4 }
+  path: ./k8s/cluster/postgres/db
+  prune: false  # never let a git mistake delete the database (its PVCs go with the Cluster); removing it is by hand
+  wait: true    # Ready only once the Cluster reports healthy: `flux get kustomizations` shows the database's state
