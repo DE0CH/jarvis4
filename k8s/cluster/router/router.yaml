@@ -140,6 +140,7 @@ spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       terminationGracePeriodSeconds: 20
+      securityContext: { fsGroup: 65532 } # wg.conf is mode 0440: readable through the group
       containers:
         - name: m-gateway
           image: ghcr.io/de0ch/jarvis4-router:latest
