@@ -57,6 +57,9 @@ both). Values never print.
   infra/setup.py resume SESSION        resume a paused session on its own image, no prompt (a pre-router-login Claude image:
                                        a resume-upgrade approval in the Inbox instead, DECISIONS 154)
   infra/setup.py restart SESSION       pause + resume as the app's Restart; wakeups and crons stay armed
+  infra/setup.py destroy SESSION [--force]
+                                       the app's Destroy: pause (its final snapshot), archive to the Storage Box, end
+                                       the line, keep the record; a failed archive leaves it paused unless --force
   infra/setup.py requests              what waits in the phone's Inbox (requests and approvals)
   infra/setup.py jarvis1               Jarvis 1's paused sessions (its index) and each one's import state here
   infra/setup.py jarvis1 prepare ID… [--wait]
@@ -516,6 +519,11 @@ def main():
     elif cmd == "pause":
         # pause (the snapshot if the machine answers) and cancel its wakeups and crons first
         print(json.dumps(call("POST", "/setup/sessions/" + args[0] + "/pause", {})))
+    elif cmd == "destroy":
+        if not args or args[0].startswith("-") or any(a != "--force" for a in args[1:]):
+            raise SystemExit("destroy SESSION [--force]")
+        # force goes in the body, which the setup signature covers
+        print(json.dumps(call("POST", "/setup/sessions/" + args[0] + "/destroy", {"force": "--force" in args[1:]})))
     elif cmd == "requests":
         out = call("GET", "/setup/requests")
         for q in out["requests"]:

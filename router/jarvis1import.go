@@ -704,6 +704,21 @@ func (r *Router) registerJarvis1Import(app appRoute, m machineRoute, public publ
 		}
 		writeJSON(w, 202, out)
 	}))
+	// destroy from the setup session (Deyao, 2026-10-22: "destroy should be an api endpoint too"): the app's
+	// POST /api/sessions/{id}/destroy — a running session is paused first (its final snapshot), then archived to the
+	// Storage Box and burnt; a failed archive leaves it paused with the error unless force (?force=1 as the app's, or
+	// {"force": true} in the body, which the setup signature covers; infra/setup.py sends the body)
+	public("POST /setup/sessions/{id}/destroy", setupOnly(func(w http.ResponseWriter, req *http.Request, b []byte) {
+		var in struct {
+			Force bool `json:"force"`
+		}
+		json.Unmarshal(b, &in)
+		if err := r.DestroyWith(req.PathValue("id"), in.Force || req.URL.Query().Get("force") == "1"); err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, 202, map[string]any{"ok": true, "phase": "destroying"})
+	}))
 	// the importing line's first machine (its manifest is served at /m/restore-snapshot, restore.go)
 	m("GET /m/import-file/{name}", func(w http.ResponseWriter, req *http.Request, machine string, _ []byte) {
 		r.serveImportFile(w, machine, req.PathValue("name"))
