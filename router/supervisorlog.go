@@ -2,7 +2,7 @@ package main
 
 // The supervisor's log (Deyao, 2026-10-16): each session machine's supervisor (machine/supervisor.go) pushes its own
 // log lines here (POST /m/supervisor-log), from its first second (also while it boots, before its first status
-// report). The router keeps them per session on its volume (supervisor-log/<session>.jsonl), for the session's life;
+// report). The router keeps them per session in its database (session_log, sessionlog.go), for the session's life;
 // the app and web page read them in the session's one event stream with the lifecycle log (sessionevents.go,
 // GET /api/sessions/{id}/events). On Destroy both go into the session's Storage Box archive
 // (jarvis2/supervisor-log.jsonl), then off the volume.
@@ -11,13 +11,10 @@ package main
 // shows them only to Deyao's login.
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 )
@@ -43,10 +40,6 @@ type supLogs struct {
 	next map[string]int64 // session → the next seq (read from its file on first use)
 }
 
-func (r *Router) supLogPath(session string) string {
-	return filepath.Join(r.cfg.DataDir, "supervisor-log", logFileName(session)+".jsonl")
-}
-
 // safeName: a session id as a file name (ids are [a-z0-9-]; anything else is replaced)
 func logFileName(s string) string {
 	b := []byte(s)
@@ -61,77 +54,64 @@ func logFileName(s string) string {
 	return string(b)
 }
 
-// readSupLog: every line of a session's file, in order
-func readSupLog(p string) []SupLine {
-	f, err := os.Open(p)
+// readSupLog: every line of a session's supervisor log, in order
+func (r *Router) readSupLog(session string) []SupLine {
+	r.sup.mu.Lock()
+	defer r.sup.mu.Unlock()
+	return r.readSupLogLocked(session)
+}
+
+func (r *Router) readSupLogLocked(session string) []SupLine {
+	raw, err := r.st.ReadLog(session, logSupervisor)
 	if err != nil {
-		return nil
+		log.Printf("[supervisor-log] reading %s: %v", session, err)
 	}
-	defer f.Close()
 	var out []SupLine
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 64<<10), 1<<20)
-	for sc.Scan() {
+	for _, b := range raw {
 		var l SupLine
-		if json.Unmarshal(sc.Bytes(), &l) == nil {
+		if json.Unmarshal(b, &l) == nil {
 			out = append(out, l)
 		}
 	}
 	return out
 }
 
-// appendSupLog: lines of one machine onto its session's file, numbered; cut to the newer half past supLogMaxFile
+// appendSupLog: lines of one machine onto its session's log, numbered; cut to the newer half past supLogMaxFile
 func (r *Router) appendSupLog(session, machine string, lines []SupLine) error {
 	r.sup.mu.Lock()
 	defer r.sup.mu.Unlock()
 	if r.lc.dropped(session) {
 		return nil
 	}
-	p := r.supLogPath(session)
-	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-		return err
-	}
 	next, ok := r.sup.next[session]
 	if !ok {
 		next = 1
-		if all := readSupLog(p); len(all) > 0 {
+		if all := r.readSupLogLocked(session); len(all) > 0 {
 			next = all[len(all)-1].Seq + 1
 		}
 	}
-	var buf bytes.Buffer
+	rows := make([][]byte, 0, len(lines))
 	for _, l := range lines {
 		l.Seq, l.Machine = next, machine
 		next++
 		b, _ := json.Marshal(l)
-		buf.Write(b)
-		buf.WriteByte('\n')
+		rows = append(rows, b)
 	}
-	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(buf.Bytes())
-	f.Close()
-	if err != nil {
+	if err := r.st.AppendLog(session, logSupervisor, rows...); err != nil {
 		return err
 	}
 	r.sup.next[session] = next
-	if fi, err := os.Stat(p); err == nil && fi.Size() > supLogMaxFile {
-		all := readSupLog(p)
+	if r.st.LogBytes(session, logSupervisor) > supLogMaxFile {
+		all := r.readSupLogLocked(session)
 		keep := all[len(all)/2:]
 		note := SupLine{Seq: keep[0].Seq - 1 /* a dropped line's: the seqs stay in order */, At: time.Now().UTC().Format(time.RFC3339Nano), Machine: "",
 			Text: fmt.Sprintf("[router] the supervisor log passed %d MB: its %d oldest lines were dropped", supLogMaxFile>>20, len(all)-len(keep))}
-		var out bytes.Buffer
+		out := [][]byte{}
 		for _, l := range append([]SupLine{note}, keep...) {
 			b, _ := json.Marshal(l)
-			out.Write(b)
-			out.WriteByte('\n')
+			out = append(out, b)
 		}
-		tmp := p + ".tmp"
-		if err := os.WriteFile(tmp, out.Bytes(), 0o600); err != nil {
-			return err
-		}
-		return os.Rename(tmp, p)
+		return r.st.ReplaceLog(session, logSupervisor, out)
 	}
 	return nil
 }
@@ -140,7 +120,7 @@ func (r *Router) appendSupLog(session, machine string, lines []SupLine) error {
 func (r *Router) dropSupLog(session string) {
 	r.sup.mu.Lock()
 	defer r.sup.mu.Unlock()
-	os.Remove(r.supLogPath(session))
+	r.st.DropLog(session, logSupervisor)
 	delete(r.sup.next, session)
 }
 

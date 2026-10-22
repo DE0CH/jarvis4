@@ -15,11 +15,9 @@ package main
 // exact; an event's key ("s<seq>", "l<record>") is stable across reads.
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -43,19 +41,10 @@ type SessionEvent struct {
 
 // lcRecords: every record of a session's lifecycle file, in file order
 func (r *Router) lcRecords(session string) []lcRec {
-	r.lc.file.Lock()
-	defer r.lc.file.Unlock()
-	f, err := os.Open(r.lcPath(session))
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
 	var out []lcRec
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 64<<10), 1<<20)
-	for sc.Scan() {
+	for _, raw := range r.lcLines(session) {
 		var rec lcRec
-		json.Unmarshal(sc.Bytes(), &rec) // a bad line stays a record (an empty one): the record numbers stay the file's
+		json.Unmarshal(raw, &rec) // a bad line stays a record (an empty one): the record numbers stay the log's
 		out = append(out, rec)
 	}
 	return out
@@ -137,9 +126,7 @@ func (r *Router) sessionEvents(session string, tail bool, afterSup int64, afterL
 		from = 0
 	}
 	out, running = lcEvents(recs, from)
-	r.sup.mu.Lock()
-	sup := readSupLog(r.supLogPath(session))
-	r.sup.mu.Unlock()
+	sup := r.readSupLog(session)
 	nextSup := afterSup
 	if tail {
 		nextSup = 0

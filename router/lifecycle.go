@@ -21,14 +21,13 @@ package main
 // and the next leader closes an operation a crash left open ("cut off").
 
 import (
-	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -117,10 +116,6 @@ func (l *lifecycle) dropped(session string) bool {
 	return l.gone[session]
 }
 
-func (r *Router) lcPath(session string) string {
-	return filepath.Join(r.cfg.DataDir, "lifecycle", logFileName(session)+".jsonl")
-}
-
 func nowText() string { return time.Now().UTC().Format(time.RFC3339Nano) }
 
 func (r *Router) lcWrite(session string, rec lcRec) {
@@ -129,19 +124,10 @@ func (r *Router) lcWrite(session string, rec lcRec) {
 	}
 	r.lc.file.Lock()
 	defer r.lc.file.Unlock()
-	p := r.lcPath(session)
-	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-		log.Printf("[lifecycle] %v", err)
-		return
-	}
 	b, _ := json.Marshal(rec)
-	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
-	if err != nil {
+	if err := r.st.AppendLog(session, logLifecycle, b); err != nil {
 		log.Printf("[lifecycle] %v", err)
-		return
 	}
-	f.Write(append(b, '\n'))
-	f.Close()
 }
 
 // lcBegin: a new operation of the session (its kind), or the job's operation it runs inside
@@ -314,19 +300,15 @@ func (r *Router) lcDrop(session string) {
 	r.lc.gone[session] = true
 	r.lc.mu.Unlock()
 	r.lc.file.Lock()
-	os.Remove(r.lcPath(session))
+	r.st.DropLog(session, logLifecycle)
 	r.lc.file.Unlock()
 }
 
-// lcCutOff: at the leader's start, an operation still open in a file was cut off (a crash, or a drain that ended its
+// lcCutOff: at the leader's start, an operation still open in a log was cut off (a crash, or a drain that ended its
 // log early): closed as such
 func (r *Router) lcCutOff() {
-	ents, _ := os.ReadDir(filepath.Join(r.cfg.DataDir, "lifecycle"))
-	for _, e := range ents {
-		if !strings.HasSuffix(e.Name(), ".jsonl") {
-			continue
-		}
-		ops, _ := r.lcRead(filepath.Join(r.cfg.DataDir, "lifecycle", e.Name()))
+	for _, session := range r.st.LogSessions(logLifecycle) {
+		ops, _ := r.lcRead(session)
 		for _, op := range ops {
 			if op.State == "running" {
 				op.State, op.Ended, op.Error = "cut off", nowText(), "the router restarted while it ran: its log ends here (the supervisor's own log goes on)"
@@ -549,23 +531,14 @@ func (r *Router) lcPoll(run *lcRun) {
 
 // ---- reading ------------------------------------------------------------------------------------------------
 
-// lcRead: a session's file → its operations (oldest first) and each one's router and Fly entries
-func (r *Router) lcRead(p string) ([]LcOp, map[string][]LcEntry) {
-	r.lc.file.Lock()
-	defer r.lc.file.Unlock()
-	f, err := os.Open(p)
-	if err != nil {
-		return nil, nil
-	}
-	defer f.Close()
+// lcRead: a session's log → its operations (oldest first) and each one's router and Fly entries
+func (r *Router) lcRead(session string) ([]LcOp, map[string][]LcEntry) {
 	byID := map[string]LcOp{}
 	order := []string{}
 	entries := map[string][]LcEntry{}
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 64<<10), 1<<20)
-	for sc.Scan() {
+	for _, raw := range r.lcLines(session) {
 		var rec lcRec
-		if json.Unmarshal(sc.Bytes(), &rec) != nil {
+		if json.Unmarshal(raw, &rec) != nil {
 			continue
 		}
 		if rec.Op != nil {
@@ -612,10 +585,8 @@ func (r *Router) lcOpLog(op LcOp, own []LcEntry, sup []SupLine) []LcEntry {
 
 // lcAll: every operation of the session, each with its log (the archive's lifecycle.json), oldest first
 func (r *Router) lcAll(session string) []map[string]any {
-	ops, entries := r.lcRead(r.lcPath(session))
-	r.sup.mu.Lock()
-	sup := readSupLog(r.supLogPath(session))
-	r.sup.mu.Unlock()
+	ops, entries := r.lcRead(session)
+	sup := r.readSupLog(session)
 	out := []map[string]any{}
 	for _, op := range ops {
 		out = append(out, map[string]any{"id": op.ID, "kind": op.Kind, "started": op.Started, "ended": op.Ended, "state": op.State,
@@ -638,8 +609,8 @@ func lifecycleDestroy(r *Router, s Session) {
 		log.Printf("[lifecycle] %s: archive dir: %v", s.ID, err)
 		return
 	}
-	if p := r.supLogPath(s.ID); fileExists(p) {
-		if err := box.PutFile(dir+"/supervisor-log.jsonl", p); err != nil {
+	if lines, _ := r.st.ReadLog(s.ID, logSupervisor); len(lines) > 0 {
+		if err := box.PutBytes(dir+"/supervisor-log.jsonl", append(bytes.Join(lines, []byte("\n")), '\n')); err != nil {
 			log.Printf("[lifecycle] %s: archiving the supervisor log: %v", s.ID, err)
 		}
 	}
@@ -652,6 +623,17 @@ func lifecycleDestroy(r *Router, s Session) {
 }
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
+
+// lcLines: a session's lifecycle log, its records' JSON in order
+func (r *Router) lcLines(session string) [][]byte {
+	r.lc.file.Lock()
+	defer r.lc.file.Unlock()
+	lines, err := r.st.ReadLog(session, logLifecycle)
+	if err != nil {
+		log.Printf("[lifecycle] reading %s: %v", session, err)
+	}
+	return lines
+}
 
 func init() { onDestroy = append(onDestroy, lifecycleDestroy) }
 

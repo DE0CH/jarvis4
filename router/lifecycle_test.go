@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -77,11 +76,10 @@ func TestSupervisorLogCap(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		r.appendSupLog("sA", "mA", []SupLine{{At: nowText(), Text: fmt.Sprintf("line %03d", i)}})
 	}
-	fi, _ := os.Stat(r.supLogPath("sA"))
-	if fi.Size() > 4000+200 {
-		t.Fatalf("file %d bytes", fi.Size())
+	if n := r.st.LogBytes("sA", logSupervisor); n > 4000+200 {
+		t.Fatalf("log %d bytes", n)
 	}
-	ls := readSupLog(r.supLogPath("sA"))
+	ls := r.readSupLog("sA")
 	if !strings.Contains(ls[0].Text, "oldest lines were dropped") || ls[len(ls)-1].Text != "line 099" {
 		t.Fatalf("first %q last %q", ls[0].Text, ls[len(ls)-1].Text)
 	}
@@ -268,7 +266,7 @@ func TestFlyEventDedupe(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		r.lcPollOnce(h.run)
 	}
-	_, entries := r.lcRead(r.lcPath("sA"))
+	_, entries := r.lcRead("sA")
 	got := entries[h.run.op.ID]
 	if len(got) != 1 || !strings.Contains(got[0].Text, "start → started") {
 		t.Fatalf("%+v", got)
@@ -318,8 +316,11 @@ func TestDestroyArchivesTheLogs(t *testing.T) {
 	if !strings.Contains(string(b), "archived to ") || !strings.Contains(string(b), "supervisor started") {
 		t.Fatalf("entries %s", b)
 	}
-	if fileExists(rg.r.supLogPath("s1")) || fileExists(rg.r.lcPath("s1")) {
-		t.Fatal("the logs stayed on the volume")
+	if l, _ := rg.r.st.ReadLog("s1", logSupervisor); len(l) > 0 {
+		t.Fatal("the supervisor log stayed in the database")
+	}
+	if l, _ := rg.r.st.ReadLog("s1", logLifecycle); len(l) > 0 {
+		t.Fatal("the lifecycle log stayed in the database")
 	}
 }
 

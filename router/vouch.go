@@ -564,8 +564,6 @@ func (r *Router) coreKeepsInputLog() bool {
 	return keptLogProbe.yes
 }
 
-func (r *Router) inputLogPath() string { return filepath.Join(r.cfg.DataDir, "input-log.jsonl") }
-
 // logInputs: entries from the core's answers, appended (nil ones skipped). With a core that keeps its own log, that
 // log is read instead.
 func (r *Router) logInputs(entries ...*Doc) {
@@ -575,18 +573,16 @@ func (r *Router) logInputs(entries ...*Doc) {
 	}
 	inputLog.Lock()
 	defer inputLog.Unlock()
-	f, err := os.OpenFile(r.inputLogPath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		log.Printf("[input-log] %v", err)
-		return
-	}
-	defer f.Close()
+	var rows [][]byte
 	for _, e := range entries {
 		if e == nil || e.Payload == "" {
 			continue
 		}
 		b, _ := json.Marshal(e)
-		f.Write(append(b, '\n'))
+		rows = append(rows, b)
+	}
+	if err := r.st.AppendLog("", logInput, rows...); err != nil {
+		log.Printf("[input-log] %v", err)
 	}
 }
 
@@ -618,7 +614,7 @@ func (r *Router) persistInputLog() {
 func (r *Router) persistInputLogLocked(from int) {
 	if !inputLog.chained {
 		inputLog.chained = true
-		if last := lastLine(r.inputLogPath()); last != "" {
+		if last := r.lastInputLine(); last != "" {
 			var d Doc
 			if json.Unmarshal([]byte(last), &d) == nil && d.Payload != "" {
 				sum := sha256.Sum256([]byte(d.Payload))
@@ -641,33 +637,34 @@ func (r *Router) appendInputLog(entries []Doc) {
 	if len(entries) == 0 {
 		return
 	}
-	f, err := os.OpenFile(r.inputLogPath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		log.Printf("[input-log] %v", err)
-		return
-	}
-	defer f.Close()
+	var rows [][]byte
+	next := inputLog.next
 	for _, e := range entries {
 		var x struct {
 			Seq int `json:"seq"`
 		}
 		e.Decode(&x)
-		if x.Seq < inputLog.next {
+		if x.Seq < next {
 			continue
 		}
 		b, _ := json.Marshal(e)
-		f.Write(append(b, '\n'))
-		inputLog.next = x.Seq + 1
+		rows = append(rows, b)
+		next = x.Seq + 1
 	}
+	if err := r.st.AppendLog("", logInput, rows...); err != nil {
+		log.Printf("[input-log] %v", err)
+		return
+	}
+	inputLog.next = next
 }
 
-func lastLine(p string) string {
-	b, err := os.ReadFile(p)
-	if err != nil {
+// lastInputLine: the input log's newest entry ("" when none)
+func (r *Router) lastInputLine() string {
+	l, _ := r.st.TailLog("", logInput, 1)
+	if len(l) == 0 {
 		return ""
 	}
-	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
-	return lines[len(lines)-1]
+	return string(l[0])
 }
 
 // inputLogTick: every minute, for the core before R2 (it logs certs by itself, without a router call)
@@ -731,24 +728,18 @@ func (r *Router) registerVouch(app appRoute, m machineRoute) {
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
 	app("GET /api/input-log", func(w http.ResponseWriter, req *http.Request) {
-		b, err := os.ReadFile(r.inputLogPath())
-		if err != nil && !os.IsNotExist(err) {
-			writeErr(w, err)
-			return
-		}
-		lines := strings.Split(strings.TrimSpace(string(b)), "\n")
 		n, _ := strconv.Atoi(req.URL.Query().Get("last"))
 		if n <= 0 || n > 2000 {
 			n = 200
 		}
-		if len(lines) > n {
-			lines = lines[len(lines)-n:]
+		lines, err := r.st.TailLog("", logInput, n)
+		if err != nil {
+			writeErr(w, err)
+			return
 		}
 		out := []json.RawMessage{}
 		for _, l := range lines {
-			if l != "" {
-				out = append(out, json.RawMessage(l))
-			}
+			out = append(out, json.RawMessage(l))
 		}
 		writeJSON(w, 200, map[string]any{"entries": out})
 	})

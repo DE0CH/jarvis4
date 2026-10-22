@@ -172,3 +172,32 @@ func TestRouterDocs(t *testing.T) {
 		t.Fatalf("repos: %+v", rs)
 	}
 }
+
+// the logs on the volume (lifecycle/, supervisor-log/, input-log.jsonl) are imported once, in order, then set aside
+func TestLogFilesImported(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "lifecycle"), 0o700)
+	os.MkdirAll(filepath.Join(dir, "supervisor-log"), 0o700)
+	os.WriteFile(filepath.Join(dir, "lifecycle", "s1.jsonl"), []byte("{\"op\":{\"id\":\"o1\"}}\n{\"opId\":\"o1\",\"entry\":{\"text\":\"b\"}}\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, "supervisor-log", "s1.jsonl"), []byte("{\"seq\":1,\"text\":\"one\"}\nnot json\n{\"seq\":2,\"text\":\"two\"}\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, "input-log.jsonl"), []byte("{\"payload\":\"p\",\"sig\":\"s\"}\n"), 0o600)
+	st, err := testState(t, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc, _ := st.ReadLog("s1", logLifecycle)
+	sup, _ := st.ReadLog("s1", logSupervisor)
+	in, _ := st.ReadLog("", logInput)
+	if len(lc) != 2 || len(sup) != 2 || len(in) != 1 || !strings.Contains(string(sup[1]), "two") {
+		t.Fatalf("imported %d %d %d", len(lc), len(sup), len(in))
+	}
+	for _, p := range []string{"lifecycle.imported", "supervisor-log.imported", "input-log.jsonl.imported"} {
+		if _, err := os.Stat(filepath.Join(dir, p)); err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+	}
+	r := &Router{st: st, lc: newLifecycle(), sup: &supLogs{next: map[string]int64{}}}
+	if ls := r.readSupLog("s1"); len(ls) != 2 || ls[1].Seq != 2 {
+		t.Fatalf("%+v", ls)
+	}
+}

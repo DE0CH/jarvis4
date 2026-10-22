@@ -131,6 +131,9 @@ func OpenState(ctx context.Context, db *DB, dir string) (*State, error) {
 	if err := importDocFiles(ctx, db, dir); err != nil {
 		return nil, err
 	}
+	if err := importLogFiles(ctx, db, dir); err != nil {
+		return nil, err
+	}
 	s := &State{dir: dir, sdb: &stateDB{db: db}}
 	if err := s.sdb.load(ctx, &s.data); err != nil {
 		return nil, err

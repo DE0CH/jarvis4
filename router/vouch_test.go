@@ -5,6 +5,7 @@ package main
 // machine/vouch_test.go.
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -387,7 +388,8 @@ func TestAnAttachmentIsSignedByHashAndAttestedIntoTheInputLog(t *testing.T) {
 	if at := vc.last("/attest"); at["origin"] != "cert" || at["sha256"] != want {
 		t.Fatalf("attest asked %v", at)
 	}
-	b, _ := os.ReadFile(r.inputLogPath())
+	ils, _ := r.st.ReadLog("", logInput)
+	b := bytes.Join(ils, []byte("\n"))
 	if !strings.Contains(string(b), `\"input\":\"attachment\"`) || !strings.Contains(string(b), want) {
 		t.Fatalf("input log %q", b)
 	}

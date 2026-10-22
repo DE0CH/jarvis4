@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -48,8 +47,11 @@ func TestTheRouterKeepsWhatComesBesideACert(t *testing.T) {
 	}
 	a, _ := r.core.Call("/attest", map[string]string{})
 	r.logInputs(a)
-	b, _ := os.ReadFile(r.inputLogPath())
-	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	raw, _ := r.st.ReadLog("", logInput)
+	lines := []string{}
+	for _, l := range raw {
+		lines = append(lines, string(l))
+	}
 	if len(lines) != 2 || !strings.Contains(lines[0], `\"input\":\"cert\"`) || !strings.Contains(lines[1], `\"input\":\"wakeup\"`) {
 		t.Fatalf("input log %q", lines)
 	}
