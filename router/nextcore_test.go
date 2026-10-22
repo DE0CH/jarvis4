@@ -301,8 +301,7 @@ func TestFinishAFlipTheNextCoreTookOverByRecover(t *testing.T) {
 	if err := r.FlipCore(time.Second); err == nil {
 		t.Fatal("the takeover must be refused")
 	}
-	finalFile := r.cfg.DataDir + "/core-final.json"
-	if _, err := os.Stat(finalFile); err != nil {
+	if _, ok := r.st.ReadDoc("core-final.json"); !ok {
 		t.Fatal("the final state is kept")
 	}
 	// another kit's core serving there: not switched to
@@ -330,7 +329,7 @@ func TestFinishAFlipTheNextCoreTookOverByRecover(t *testing.T) {
 	if active != next.srv.URL || r.nextOf().final != nil {
 		t.Fatalf("activeCore %q, final kept %v", active, r.nextOf().final != nil)
 	}
-	if _, err := os.Stat(finalFile); !os.IsNotExist(err) {
+	if _, ok := r.st.ReadDoc("core-final.json"); ok {
 		t.Fatal("core-final.json must go")
 	}
 	if r.nextCoreStatus()["activeCore"] != next.srv.URL {
