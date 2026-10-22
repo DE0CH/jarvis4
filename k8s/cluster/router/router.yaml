@@ -55,7 +55,7 @@ spec:
             - { name: SESSION_IMAGE_SIGS_FILE, value: /sigs/session-image-sigs.txt }
             - { name: FLY_REGION, value: lhr }
             # the router's WireGuard peer in Fly org jarvis2-370 (fly wireguard create jarvis2-370 lhr jarvis4-box)
-            - { name: MACHINE_URL, value: "http://jarvis4-box._peer.internal:8081" }
+            - { name: MACHINE_URL, value: "http://jarvis4-box._peer.internal:8081,http://jarvis4-gw-b._peer.internal:8081" }
             # Access apps (infra/cloudflare.py --cluster; none is secret): "Jarvis 4", "Jarvis 4 setup", "Jarvis 4 devices",
             # "Jarvis 4 health" (its one service token is Grafana's uptime probe's, jarvis2-health-probe)
             - { name: ACCESS_APP_AUD, value: 964d35b645828a89427a2d56f56322de7022d8e1540c01a8e81d1cf5476027fc }
@@ -127,37 +127,52 @@ spec:
     - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16] } }]
       ports: [{ port: 443 }]
 ---
-# m-gateway (docs/STATE.md 5, step 9; router/mgateway.go): the Fly org's WireGuard peer jarvis4-box, the machines'
-# only way to the router: every request it takes on :8081 goes to the router Service's :8081 (any replica). One peer
-# can't run in two processes at once (its endpoint would flap), so one replica, replaced Recreate: a gateway rollout is
-# a gap of seconds for the machines (they retry); the router's own rollouts no longer touch the peer.
-apiVersion: apps/v1
-kind: Deployment
+# m-gateway (docs/STATE.md 5, step 9; router/mgateway.go): two gateways, each the Fly org's WireGuard peer of its
+# own (m-gateway-0: jarvis4-box, m-gateway-1: jarvis4-gw-b), the machines' only way to the router: every request a
+# gateway takes on :8081 goes to the router Service's :8081 (any replica). The machines know both (MACHINE_URL /
+# KERNEL_MACHINE_URL) and dial the other when one doesn't answer (machine/routerdial.go). A StatefulSet so a rollout
+# replaces one at a time (the other is ready meanwhile) and each pod keeps its peer (by its ordinal); a stopping
+# gateway takes no new connection and lets what it carries finish first.
+apiVersion: v1
+kind: Service
 metadata: { name: m-gateway, namespace: jarvis4-router }
 spec:
-  replicas: 1
-  strategy: { type: Recreate }
+  clusterIP: None
+  selector: { app: m-gateway }
+  ports: [{ name: health, port: 8080 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: m-gateway, namespace: jarvis4-router }
+spec:
+  serviceName: m-gateway
+  replicas: 2
+  podManagementPolicy: OrderedReady
+  updateStrategy: { type: RollingUpdate }
+  minReadySeconds: 10
   selector: { matchLabels: { app: m-gateway } }
   template:
-    metadata: { labels: { app: m-gateway } }
+    metadata: { labels: { app: m-gateway }, annotations: { jarvis2/secrets-rev-wg-b: "73e3aa9dc695" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
-      terminationGracePeriodSeconds: 20
+      terminationGracePeriodSeconds: 1800
       securityContext: { fsGroup: 65532 } # wg.conf is mode 0440: readable through the group
       containers:
         - name: m-gateway
-          image: ghcr.io/de0ch/jarvis4-router:sha-84849d650fc0@sha256:8a0f4b98400e8f23c8ad8593ff67c4028049c52ca3b8032294738ca155b4adc0
+          image: ghcr.io/de0ch/jarvis4-router:latest
           args: [m-gateway]
           env:
-            - { name: WG_CONFIG, value: /wg/wg.conf }
+            - { name: POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+            - { name: WG_CONFIGS, value: "/wg-a/wg.conf,/wg-b/wg.conf" }
             - { name: M_GATEWAY_TO, value: "http://router.jarvis4-router.svc.cluster.local:8081" }
           readinessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 2, failureThreshold: 2 }
-          volumeMounts: [{ name: wg, mountPath: /wg, readOnly: true }]
+          volumeMounts: [{ name: wg-a, mountPath: /wg-a, readOnly: true }, { name: wg-b, mountPath: /wg-b, readOnly: true }]
           resources: { requests: { cpu: 20m, memory: 32Mi }, limits: { memory: 128Mi } }
           securityContext: { runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] }, seccompProfile: { type: RuntimeDefault } }
       volumes:
-        - { name: wg, secret: { secretName: router-wg, defaultMode: 0440 } }
+        - { name: wg-a, secret: { secretName: router-wg, defaultMode: 0440 } }
+        - { name: wg-b, secret: { secretName: router-wg-b, defaultMode: 0440 } }
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

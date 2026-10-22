@@ -186,7 +186,7 @@ spec:
           image: ghcr.io/de0ch/jarvis4-kernel:sha-1f7616d8dd0c@sha256:08c227c221913dda69fcab7d7032a8350e11d11ce7e540757845a5680db0e3e9
           command: ["/kernel/spawner"]
           ports: [{ containerPort: 8080 }]
-          env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_DATA, value: /data }, { name: KERNEL_MACHINE_URL, value: "http://jarvis4-box._peer.internal:8081" }]
+          env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_DATA, value: /data }, { name: KERNEL_MACHINE_URL, value: "http://jarvis4-box._peer.internal:8081,http://jarvis4-gw-b._peer.internal:8081" }]
           volumeMounts: [{ name: data, mountPath: /data }]
           readinessProbe: { httpGet: { path: /identity, port: 8080 }, periodSeconds: 5 }
           resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 96Mi } }

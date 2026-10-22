@@ -1219,7 +1219,9 @@ func newClient() (*client, error) {
 	if conf.URL == "" {
 		return nil, errors.New("no router URL (JARVIS2_URL)")
 	}
-	return &client{base: strings.TrimSuffix(conf.URL, "/"), me: conf.Machine, sig: priv.sig, http: &http.Client{Timeout: 10 * time.Minute}}, nil
+	base, tr := routerTransport(conf.URL) // routerdial.go: the gateways, the other one on a failed dial
+	streamHTTP = &http.Client{Transport: tr.streaming()}
+	return &client{base: base, me: conf.Machine, sig: priv.sig, http: &http.Client{Timeout: 10 * time.Minute, Transport: tr.plain()}}, nil
 }
 
 func (c *client) raw(method, path string, body []byte, hdr ...string) ([]byte, http.Header, int, error) {

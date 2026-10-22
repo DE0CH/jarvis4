@@ -6,6 +6,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -104,6 +105,15 @@ func (w *wgServer) Stop() {
 		w.dev.Close()
 		w.srv.Close()
 	})
+}
+
+// Shutdown: no new connection (Quiesce: a machine's dial goes to the other gateway), the requests in flight end (a
+// snapshot upload, a long poll), then the peer goes; ctx bounds the wait
+func (w *wgServer) Shutdown(ctx context.Context) {
+	w.Quiesce()
+	w.oneShot.Store(true) // kept-alive connections close after their current request
+	w.srv.Shutdown(ctx)
+	w.Stop()
 }
 
 // synFilter: the TUN between WireGuard and the netstack; drops incoming TCP SYNs once the peer is quiesced

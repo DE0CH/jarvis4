@@ -425,8 +425,10 @@ Each step ships alone, keeps the router working, and is a clean cut for what it 
 9. **m-gateway** (section 5): the WireGuard peer leaves the router; the router listens on :8081 in the pod network. Done
    as the first cut: `router m-gateway` (mgateway.go), one Deployment (Recreate: one peer can't run twice) holding the
    existing peer jarvis4-box and passing every request on to the router Service's :8081; the router no longer mounts
-   wg.conf (a standby passes its :8081 to the leader's). Still to do: the second peer (jarvis4-gw-b, its own
-   Deployment) and the machines trying the other address on a failed dial, so a gateway's rollout is no gap.
+   wg.conf (a standby passes its :8081 to the leader's). Two gateways now: a StatefulSet m-gateway of 2 (m-gateway-0
+   holds jarvis4-box, m-gateway-1 jarvis4-gw-b, by ordinal), replaced one at a time; a stopping gateway takes no new
+   connection and lets what it carries finish; the machines get both addresses (JARVIS2_URL comma-separated) and dial
+   the other when one doesn't answer (machine/routerdial.go), so a gateway's rollout is no gap.
 10. **Stateless replicas**: the router Deployment becomes 2 replicas, RollingUpdate `maxUnavailable: 0`, readiness on
     the database, a PodDisruptionBudget, no volume (scratch is an emptyDir). This is the step that deletes the old
     machinery (section 7).

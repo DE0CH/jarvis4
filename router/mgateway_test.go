@@ -46,3 +46,12 @@ func TestWithPort(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestGatewayConfigByOrdinal(t *testing.T) {
+	if p, err := gatewayConfig("/wg-a/wg.conf,/wg-b/wg.conf", "m-gateway-1"); err != nil || p != "/wg-b/wg.conf" {
+		t.Fatal(p, err)
+	}
+	if _, err := gatewayConfig("/wg-a/wg.conf", "m-gateway-1"); err == nil {
+		t.Fatal("an ordinal past the peers")
+	}
+}
