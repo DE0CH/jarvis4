@@ -477,6 +477,10 @@ var callRules = map[string]callRule{
 	"GET /api/policy":                             callBody,
 	"GET /api/kernel":                             callBody, // kernelline.go: whether the kernel is here and serves
 	"POST /api/kernel/root-grant":                 callNo,   // the root key's grant, signed on the phone
+	"POST /api/kernel/root-key":                   callNo,   // roster.go: the app's root key (only the app registers it)
+	"GET /api/kernel/roster":                      callBody, // roster.go: the current roster and what each component said
+	"GET /api/kernel/roster/pending":              callBody,
+	"POST /api/kernel/roster":                     callNo, // the root key's roster, signed on the phone
 	"GET /api/kernel/root-grant/draft":            callBody,
 	"GET /api/kernel/line-state":                  callBody, // the kernel secrets' sealed line state (a Recover's)
 	"GET /api/kernel/spawner/identity":            callBody,

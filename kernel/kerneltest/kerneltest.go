@@ -346,3 +346,29 @@ func (k *Kernel) ClaimSeeded(sc *secrets.Secrets, seed []byte, standby bool) err
 	_, err = sc.Claim(string(sb), ms, sealed)
 	return err
 }
+
+// Restart: a stateless component (mover, merger, identity, gullible) starts again as a restart does: fresh keys, no
+// roster, on a new server (URLFor names it from now on)
+func (k *Kernel) Restart(t testing.TB, role string) {
+	c, err := sig.NewComponent(role)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trust := sig.NewTrust(k.Root.PublicKey())
+	s := serve.New(c, trust)
+	switch role {
+	case "mover":
+		mover.Register(s, mover.New(c.Signer, trust))
+	case "merger":
+		merger.Register(s, merger.New(c.Signer, trust))
+	case "identity":
+		signers.RegisterIdentity(s)
+	case "gullible":
+		signers.RegisterGullible(s)
+	default:
+		t.Fatalf("Restart: %s keeps state; only mover, merger, identity and gullible", role)
+	}
+	srv := httptest.NewServer(s.Mux)
+	k.servers = append(k.servers, srv)
+	k.URL[role] = srv.URL
+}

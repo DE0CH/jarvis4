@@ -245,7 +245,8 @@ func (r *Router) buildHandlers() {
 	}))
 	device("POST /api/core/wipe", "/wipe")
 	r.registerBackups(app)
-	r.registerKernel(app) // kernelline.go
+	r.registerKernel(app)      // kernelline.go
+	r.registerRoster(app, mux) // roster.go
 	r.registerLineState(app)
 	app("GET /api/policy", func(w http.ResponseWriter, req *http.Request) { writeJSON(w, 200, r.policy) })
 

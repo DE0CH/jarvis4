@@ -197,13 +197,20 @@ New sessions start on the kernel once it is configured and the root's grant is i
 
 | Route | |
 |---|---|
-| `GET /api/kernel` | `{configured, serves, root}` |
+| `GET /api/kernel` | `{configured, serves, root, roster}`; `roster`: `{state: none\|pending\|current\|stale, rootKey, pending, copy, id, at, results, stale: ["roster stale: component X restarted (…)"]}` |
+| `POST /api/kernel/root-key` | `{rootKey}` (base64 X9.63): the app's root key, kept until the setup session commits it (`keys/root.pub`, `k8s/cluster/kernel/root.pub`) |
+| `GET /setup/kernel/root-key` | `{rootKey}`, setup-signed (`infra/setup.py kernel-root-key`) |
+| `POST /setup/kernel/roster` | `{copy, payload, setupSig}`, setup-signed: `payload` exactly `sig.RosterPayload` of the 8 roles, `setupSig` the setup key's over it; kept as pending (`infra/setup.py kernel-roster`) |
+| `GET /setup/kernel/roster` | `{current, secretsServing, status}`, setup-signed |
+| `GET /api/kernel/roster/pending` | `{copy, payload, setupSig, at}`: what the app checks against `keys/setup.pub` and the root key signs |
+| `POST /api/kernel/roster` | `{payload, rootSig}`: checked against the registered root key, posted as `{"roster": {payload, sig}}` to all 9 Deployments (notary, notarizer, mover, merger, spawner, identity, gullible, secrets-blue, secrets-green) → `{id, results}` (per Deployment `taken`, `standby, not named: …` for the next secrets, `refused: …`, `unreachable: …`); kept as current |
+| `GET /api/kernel/roster` | the current `{copy, payload, sig, at, results, status}`; a component that answers it has no roster (a restart) gets it again, and refuses it (new keys): the roster is stale until a new one is signed (one DM) |
 | `GET /api/kernel/root-grant/draft` | `{payload}`: ⊤ on the sink with the sink's (hash-to-curve) keys: what the root key signs once |
 | `POST /api/kernel/root-grant` | `{grant: {payload, sig}}`: checked against the root key secrets names (`/keys`), then kept (`kernelRoot`) |
 | `GET\|POST /api/kernel/secrets/{path}` | secrets' own API relayed as is (`identity`, `claim`, `store-key`, `stores`, `unlock/begin`, `unlock/finish`, `lock`, `unlocked`, `keys`, `wipe`, versions, restore, deploy keys): every answer is signed by secrets |
 | `POST /setup/kernel/secrets/flip` | blue/green: the serving secrets hands off, the next (Recovered alongside with `?secrets=next`) takes over → `{serving}` |
-| `GET /api/kernel/spawner/identity`, `POST /api/kernel/spawner/fly-token` | the app's Recover: the spawner's box-vouched identity, and the Fly token from the core store's backup sealed to it |
-| `GET /setup/kernel/spawner/identity`, `POST /setup/kernel/spawner/fly-token` | the setup session: the spawner's box-vouched identity, and the Fly token sealed to it (`infra/setup.py kernel-fly-token`) |
+| `GET /api/kernel/spawner/identity`, `POST /api/kernel/spawner/fly-token` | the app's Recover: the spawner's identity (the roster names its keys), and the Fly token from the core store's backup sealed to it |
+| `GET /setup/kernel/spawner/identity`, `POST /setup/kernel/spawner/fly-token` | the setup session: the spawner's identity (checked against the root key's current roster), and the Fly token sealed to it (`infra/setup.py kernel-fly-token`) |
 | `GET /m/kernel/boot` | a kernel machine's documents: `{grant, machineCert, machineNotarized, sourceCert, sourceNotarized, notary, notarizer, mover, merger, spawner, secrets (identities), keys (secrets' keys statement), stores (secrets' signed store list)}` (machine/kernelboot.go checks them) |
 | `POST /m/kernel/downgrade` | `{keep: [stores]}`: the identity signer narrows the machine's grant (`jarvis2 downgrade` on a kernel machine) |
 | `POST /m/pull-secrets` (kernel machine) | secrets' `/pull` with the line's grant: `{kind: secrets, machine: fly-<id>, grant, stores, versions, stale, sealed}`, signed by secrets |

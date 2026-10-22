@@ -33,6 +33,10 @@ type KernelClient struct {
 	onSecretsSeq func(int)
 	// activeSecrets: the colour of the secrets that serves (blue or green)
 	activeSecrets func() string
+	// roster: the root key's current roster (roster.go), re-posted to a component that answers it has none (a
+	// restart); onStale: a component refused it (it restarted with new keys: Deyao signs a new one)
+	roster  func() *sig.Doc
+	onStale func(deployment, msg string)
 }
 
 // newKernelClient: nil when KERNEL_URL isn't set (no kernel on this box yet)
@@ -71,6 +75,47 @@ func (k *KernelClient) callNoHook(role, method, path string, body any) ([]byte, 
 }
 
 func (k *KernelClient) callSeq(role, method, path string, body any) ([]byte, int, error) {
+	dep := k.secretsRole(role)
+	b, seq, err := k.do(role, dep, method, path, body)
+	if err == nil || path == "/roster" || !isNoRoster(err) || k.roster == nil {
+		return b, seq, err
+	}
+	// a component without the roster restarted (fresh keys): it takes the current roster again only if it names its
+	// keys, which a restart's new keys never are, unless the roster was signed after it
+	d := k.roster()
+	if d == nil {
+		return b, seq, err
+	}
+	if perr := k.postRoster(dep, *d); perr != nil {
+		return b, seq, perr
+	}
+	k.forget(role)
+	return k.do(role, dep, method, path, body)
+}
+
+// isNoRoster: the component answered that it holds no roster yet (sig.ErrNoRoster)
+func isNoRoster(err error) bool {
+	var ke *KernelError
+	return errors.As(err, &ke) && strings.Contains(ke.Msg, "no roster yet")
+}
+
+// postRoster: the roster to one Deployment; a refusal (403: it doesn't name this component's keys) means the
+// component restarted since the roster was signed: the roster is stale
+func (k *KernelClient) postRoster(dep string, d sig.Doc) error {
+	_, _, err := k.do(dep, dep, "POST", "/roster", map[string]sig.Doc{"roster": d})
+	var ke *KernelError
+	if errors.As(err, &ke) && ke.Status == 403 {
+		msg := fmt.Sprintf("roster stale: component %s restarted (%s)", dep, ke.Msg)
+		if k.onStale != nil {
+			k.onStale(dep, msg)
+		}
+		return fmt.Errorf("kernel %s: %s", dep, msg)
+	}
+	return err
+}
+
+// do: one request to one Deployment (dep), its errors named by role
+func (k *KernelClient) do(role, dep, method, path string, body any) ([]byte, int, error) {
 	var rd io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -79,7 +124,7 @@ func (k *KernelClient) callSeq(role, method, path string, body any) ([]byte, int
 		}
 		rd = bytes.NewReader(b)
 	}
-	req, err := http.NewRequest(method, k.url(k.secretsRole(role))+path, rd)
+	req, err := http.NewRequest(method, k.url(dep)+path, rd)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -302,4 +347,6 @@ func (r *Router) wireKernel(k *KernelClient) {
 	}
 	r.kernelLines = newKernelLineKeeper(filepath.Join(r.cfg.DataDir, "kernel-line-state.json"), k)
 	k.onSecretsSeq = r.kernelLines.seen
+	k.roster = r.currentRoster // roster.go
+	k.onStale = r.rosterStale
 }

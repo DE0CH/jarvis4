@@ -30,8 +30,18 @@ both). Values never print.
   infra/setup.py backup NAME KEY[=SRC]… [--not-sensitive]
                                        a store's backup only, for the next Recover; sensitive unless
                                        --not-sensitive
+  infra/setup.py kernel-root-key       the root key the Jarvis 4 app registered with the router (Settings → Kernel):
+                                       written to keys/root.pub and k8s/cluster/kernel/root.pub (the ConfigMap the
+                                       kernel's components check their roster with, KERNEL_ROOT); commit both
+  infra/setup.py kernel-roster [--copy blue|green] [--secrets blue|green]
+                                       the kernel's roster (docs/PLAN-cluster.md "The roster"): every component's
+                                       GET /identity read through kernel-id.deyaochen.com (KERNEL_ID_ACCESS_ID/SECRET),
+                                       the members printed, sig.RosterPayload made byte for byte, signed with the setup
+                                       key and filed with the router; Deyao signs it with the root key in the app.
+                                       --secrets: the secrets colour the roster names (default: the one that serves)
   infra/setup.py kernel-fly-token FILE the kernel's spawner's Fly token (FILE: infra/fly-token.sh's), sealed to the
-                                       spawner's box-vouched key; again after every spawner restart
+                                       spawner's key as the root key's current roster names it (checked against
+                                       keys/root.pub); again after every spawner restart (and its new roster)
   infra/setup.py kernel-secrets-flip   the next kernel secrets (Recovered alongside in the app) serves from now on
   infra/setup.py backup-core FILE      the core's Fly token, FLY_API_TOKEN from FILE (infra/fly-token.sh):
                                        sent to the core sealed to its key, and backed up as the `core` store
@@ -459,17 +469,27 @@ def main():
         backup("core", tok, True, me["master"])
         print("ok: the core has its Fly token, and the core store's backup is written")
     elif cmd == "kernel-fly-token":
-        # the kernel's spawner (kernel/spawner): its identity checked against the box key, the token sealed to it
+        # the kernel's spawner (kernel/spawner): its identity checked against the root key's roster, the token sealed to it
         d = call("GET", "/setup/kernel/spawner/identity")
         ident = json.loads(d["payload"])
         if not _verify(ident["signingKey"], d["payload"].encode(), d["sig"]):
             raise SystemExit("the spawner's identity document isn't signed by the spawner")
-        text = f"jarvis2-kernel-spawner-identity {ident['signingKey']} {ident['agreementKey']}".encode()
-        if ident.get("role") != "spawner" or not _verify(keyfile("box.pub"), text, ident.get("boxSig", "")):
-            raise SystemExit("the spawner's identity isn't signed by this box's key (keys/box.pub)")
+        member = roster_members(call("GET", "/setup/kernel/roster").get("current")).get("spawner")
+        if ident.get("role") != "spawner" or member != {k: ident.get(k) for k in ("role", "signingKey", "agreementKey")}:
+            raise SystemExit("the spawner's keys aren't the ones the root key's current roster names (a restart? sign a new roster)")
         tok = {"FLY_API_TOKEN": open(os.path.expanduser(args[0])).read().strip()}
         call("POST", "/setup/kernel/spawner/fly-token", {"sealed": seal_to(ident["agreementKey"], json.dumps(tok).encode(), "jarvis2/fly-token")})
         print("ok: the kernel's spawner has its Fly token (send it again after the spawner restarts)")
+    elif cmd == "kernel-root-key":
+        k = call("GET", "/setup/kernel/root-key")["rootKey"]
+        try:
+            ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), base64.b64decode(k, validate=True))
+        except Exception:
+            raise SystemExit("the router's root key isn't a P-256 public key")
+        write_root_key(k)
+        print(f"ok: root key {k[:16]}… written to keys/root.pub and k8s/cluster/kernel/root.pub: commit and push both")
+    elif cmd == "kernel-roster":
+        kernel_roster(opt(args, "--copy", "blue"), opt(args, "--secrets"))
     elif cmd == "kernel-secrets-flip":
         # blue/green (router/kernel.go): the next secrets, Recovered alongside, serves from now on
         print(json.dumps(call("POST", "/setup/kernel/secrets/flip", {})))
@@ -510,6 +530,91 @@ def main():
         jarvis1(args)
     else:
         raise SystemExit(__doc__)
+
+
+# ---- the kernel's roster (docs/PLAN-cluster.md "The roster") ----------------------------------------------------
+
+KERNEL_ROLES = ["notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible"]
+
+
+def write_root_key(k):
+    """keys/root.pub (what the app and setup sessions read) and the copy the kernel's ConfigMap is made from (no
+    newline: it becomes KERNEL_ROOT)"""
+    keys = os.environ.get("JARVIS2_KEYS_DIR") or os.path.join(ROOT, "keys")
+    with open(os.path.join(keys, "root.pub"), "w") as f:
+        f.write(k + "\n")
+    with open(os.path.join(ROOT, "k8s", "cluster", "kernel", "root.pub"), "w") as f:
+        f.write(k)
+
+
+def go_json(s):
+    """a JSON string exactly as Go's encoding/json writes it: UTF-8 kept, <, >, & and U+2028/U+2029 escaped"""
+    out = json.dumps(s, ensure_ascii=False)
+    for c, e in (("<", "\\u003c"), (">", "\\u003e"), ("&", "\\u0026"), ("\u2028", "\\u2028"), ("\u2029", "\\u2029")):
+        out = out.replace(c, e)
+    return out
+
+
+def roster_payload(copy, members):
+    """sig.RosterPayload byte for byte: json.Marshal(Roster{Kind, Copy, Members sorted by role}), the struct's field
+    order, no spaces"""
+    ms = sorted(members, key=lambda m: m["role"].encode())
+    mem = ",".join("{" + ",".join(f'"{k}":{go_json(m[k])}' for k in ("role", "signingKey", "agreementKey")) + "}" for m in ms)
+    return '{"kind":"kernel-roster","copy":' + go_json(copy) + ',"members":[' + mem + "]}"
+
+
+def roster_members(doc):
+    """role → member of a roster the root key (keys/root.pub) signed ({} when there is none)"""
+    if not doc:
+        return {}
+    if not _verify(keyfile("root.pub"), doc["payload"].encode(), doc["sig"]):
+        raise SystemExit("the router's current roster isn't signed by the root key (keys/root.pub)")
+    return {m["role"]: m for m in json.loads(doc["payload"])["members"]}
+
+
+def kernel_id(path):
+    """GET kernel-id.deyaochen.com/<path> (the read-only identity gateway, behind Access)"""
+    base = os.environ.get("KERNEL_ID_URL", "https://kernel-id.deyaochen.com")
+    h = {"CF-Access-Client-Id": os.environ["KERNEL_ID_ACCESS_ID"], "CF-Access-Client-Secret": os.environ["KERNEL_ID_ACCESS_SECRET"],
+         "User-Agent": "jarvis2-setup/1"}
+    try:
+        return json.load(urllib.request.urlopen(urllib.request.Request(base + path, headers=h), timeout=30))
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"kernel-id {path}: HTTP {e.code}: {e.read()[:200]!r}")
+
+
+def component_identity(dep):
+    """a component's identity as it answers GET /identity: self-signed (nobody vouches yet: the roster will)"""
+    d = kernel_id(f"/{dep}/identity")
+    if dep.startswith("secrets-"):
+        m = {"role": d.get("role"), "signingKey": d.get("signingKey"), "agreementKey": d.get("agreementKey")}
+        st = d.get("state") or {}
+        if m["role"] != "secrets" or not _verify(m["signingKey"] or "", (st.get("payload") or "").encode(), st.get("sig") or ""):
+            raise SystemExit(f"{dep}: not a secrets identity signed with its own key")
+        return m, json.loads(st["payload"])
+    m = json.loads(d["payload"])
+    if m.get("role") != dep or not _verify(m.get("signingKey") or "", d["payload"].encode(), d.get("sig") or ""):
+        raise SystemExit(f"{dep}: not a {dep} identity signed with its own key")
+    return {k: m[k] for k in ("role", "signingKey", "agreementKey")}, None
+
+
+def kernel_roster(copy, colour=None):
+    if copy not in ("blue", "green"):
+        raise SystemExit("--copy: blue or green")
+    cur = call("GET", "/setup/kernel/roster")
+    colour = colour or cur["secretsServing"]
+    if colour not in ("blue", "green"):
+        raise SystemExit("--secrets: blue or green")
+    members = []
+    for dep in KERNEL_ROLES + ["secrets-" + colour]:
+        m, state = component_identity(dep)
+        members.append(m)
+        extra = f" (secrets-{colour}: {state.get('serving')}, master {'set' if state.get('master') else 'none'})" if state else ""
+        print(f"  {m['role']:10} signing {m['signingKey'][:24]}…  agreement {m['agreementKey'][:24]}…{extra}")
+    payload = roster_payload(copy, members)
+    setup_sig = base64.b64encode(setup_key().sign(payload.encode(), ec.ECDSA(hashes.SHA256()))).decode()
+    out = call("POST", "/setup/kernel/roster", {"copy": copy, "payload": payload, "setupSig": setup_sig})
+    print(f"ok: roster {out['id'][:16]}… (copy {copy}, secrets-{colour}) filed; Deyao signs it in the app: Settings → Kernel → Sign roster")
 
 
 def parse_item(spec):

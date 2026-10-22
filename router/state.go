@@ -139,6 +139,11 @@ type persisted struct {
 	KernelRoot  *gv.Signed               `json:"kernelRoot,omitempty"`  // kernelline.go: the root key's ⊤ on the sink
 	// kernel.go: the colour of the kernel's secrets that serves ("" = blue)
 	KernelSecrets string `json:"kernelSecrets,omitempty"`
+	// roster.go: the app's root key (registered, for keys/root.pub), the setup session's roster waiting for it, and
+	// the root key's roster the components hold
+	KernelRootKey       string         `json:"kernelRootKey,omitempty"`
+	KernelRosterPending *RosterFiling  `json:"kernelRosterPending,omitempty"`
+	KernelRoster        *RosterCurrent `json:"kernelRoster,omitempty"`
 	// messages.go: messages held for Deyao to deliver or deny, and his per-kind rules
 	Messages     map[string]*PendingMessage `json:"messages,omitempty"`
 	MessageRules map[string]*MessageRule    `json:"messageRules,omitempty"`

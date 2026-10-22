@@ -7,7 +7,7 @@ name: images
 on:
   push:
     branches: [main]
-    paths: [kernel/**, router/**, machine/**, session-image/**, policy/**, tasks/**, app/**, infra/setup.py, infra/setup_trust_test.py, infra/setup_write_test.py, infra/image-unpacked-size.py, .github/workflows/images.yml]
+    paths: [kernel/**, router/**, machine/**, session-image/**, policy/**, tasks/**, app/**, infra/setup.py, infra/setup_trust_test.py, infra/setup_write_test.py, infra/setup_roster_test.py, infra/image-unpacked-size.py, .github/workflows/images.yml]
   workflow_dispatch:
     inputs:
       base:
@@ -30,7 +30,7 @@ jobs:
       - run: cd kernel && go vet ./... && go test ./... && test -z "$(gofmt -l .)"
       - run: cd router && go vet ./... && go test ./...
       - run: cd machine && go vet ./... && go test ./...
-      - run: pip install -q cryptography && python3 infra/setup_trust_test.py && python3 infra/setup_write_test.py
+      - run: pip install -q cryptography && python3 infra/setup_trust_test.py && python3 infra/setup_write_test.py && python3 infra/setup_roster_test.py
   base:
     needs: test
     runs-on: ubuntu-latest

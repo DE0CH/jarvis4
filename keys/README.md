@@ -5,6 +5,9 @@ Public keys Jarvis 4 trusts (docs/DESIGN.md):
 - `control-age.pub`, `services-age.pub` — each box's age key: the SOPS recipient of its secrets (k8s/<box>/secrets/,
   infra/router-secrets.py).
 - `ci.pub` — CI's image key: the phone shows a session image as a CI build only with its signature.
+- `root.pub` — the Jarvis 4 app's root key (Secure Enclave; the app registers it with the router, `infra/setup.py
+  kernel-root-key` writes it here and to `k8s/cluster/kernel/root.pub`, the kernel's `KERNEL_ROOT`). It signs the
+  kernel's roster: the components' keys, which they make fresh at every start.
 - `setup.pub` — the setup session's key (private half JARVIS2_SETUP_KEY in Jarvis 1's default store). The
   router checks it on every /setup call; the app checks it on the backups the setup session writes.
 
