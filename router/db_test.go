@@ -61,7 +61,7 @@ func testDB(t testing.TB) *DB {
 // testState: the router's records on a database of the test's own (state.json in dir imported, as at a first start)
 func testState(t testing.TB, dir string) (*State, error) {
 	t.Helper()
-	return OpenState(context.Background(), testDB(t), dir)
+	return OpenState(context.Background(), testDB(t), dir, randomSealer())
 }
 
 func TestMigrations(t *testing.T) {

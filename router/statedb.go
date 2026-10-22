@@ -120,7 +120,7 @@ type stateDB struct {
 
 // OpenState: the records from the database (state.json imported first if this is its first start), the snapshots
 // directory under dir
-func OpenState(ctx context.Context, db *DB, dir string) (*State, error) {
+func OpenState(ctx context.Context, db *DB, dir string, seal *Sealer) (*State, error) {
 	if err := os.MkdirAll(filepath.Join(dir, "snapshots"), 0o700); err != nil {
 		return nil, err
 	}
@@ -134,7 +134,13 @@ func OpenState(ctx context.Context, db *DB, dir string) (*State, error) {
 	if err := importLogFiles(ctx, db, dir); err != nil {
 		return nil, err
 	}
-	s := &State{dir: dir, sdb: &stateDB{db: db}}
+	s := &State{dir: dir, sdb: &stateDB{db: db}, seal: seal}
+	if err := s.importSealedFiles(dir); err != nil {
+		return nil, err
+	}
+	if err := s.resealOld(ctx); err != nil {
+		return nil, err
+	}
 	if err := s.sdb.load(ctx, &s.data); err != nil {
 		return nil, err
 	}

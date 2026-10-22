@@ -99,7 +99,8 @@ type loginFile struct {
 }
 
 type loginHub struct {
-	path      string
+	st        *State // sealed.go: the pair is a sealed document of the database
+	name      string // its name there: claude-accounts/claude-<name>.json
 	store     string // the account's key store, claude-<name>
 	mu        sync.Mutex
 	f         loginFile
@@ -122,34 +123,23 @@ type loginHub struct {
 	elsewhere func(uuid, email string) (*loginHub, error)
 }
 
-func newLoginHub(path, store string) *loginHub {
-	h := &loginHub{path: path, store: store, changed: make(chan struct{}), acks: map[string]int64{}, seen: map[string]time.Time{}}
-	if b, err := os.ReadFile(h.path); err == nil {
+func newLoginHub(st *State, name, store string) *loginHub {
+	h := &loginHub{st: st, name: name, store: store, changed: make(chan struct{}), acks: map[string]int64{}, seen: map[string]time.Time{}}
+	if b, ok, err := st.ReadSealed(name); err != nil {
+		log.Printf("[login] %s: %v", name, err)
+	} else if ok {
 		if err := json.Unmarshal(b, &h.f); err != nil {
-			log.Printf("[login] %s unreadable: %v", h.path, err)
+			log.Printf("[login] %s unreadable: %v", name, err)
 		}
 	}
 	return h
 }
 
-// save: atomic, 0600, synced (a refreshed pair must survive a crash right after: the old refresh token is dead)
+// save: sealed into the database, committed before it returns (a refreshed pair must survive a crash right after: the
+// old refresh token is dead)
 func (h *loginHub) save() error {
 	b, _ := json.MarshalIndent(h.f, "", " ")
-	tmp := h.path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err = f.Write(b); err == nil {
-		err = f.Sync()
-	}
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		return err
-	}
-	return os.Rename(tmp, h.path)
+	return h.st.WriteSealed(h.name, b)
 }
 
 func (h *loginHub) broadcastLocked() {

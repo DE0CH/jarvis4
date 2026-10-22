@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -117,12 +116,13 @@ func TestLoginOfferNewerWinsAndAccount(t *testing.T) {
 	if cur := h.current(); cur.ExpiresAt != now+3000 || accountUUID(cur.Account) != "acct-1" {
 		t.Fatalf("%+v", cur)
 	}
-	// on the volume, 0600, and read back by a new hub (a router restart)
-	fi, err := os.Stat(h.path)
-	if err != nil || fi.Mode().Perm() != 0o600 {
-		t.Fatalf("%v %v", err, fi)
+	// sealed in the database (no refresh token in the clear there), and read back by a new hub (a router restart)
+	var body []byte
+	h.st.sdb.db.pool.QueryRow(context.Background(), "SELECT body FROM sealed_docs WHERE name = $1", h.name).Scan(&body)
+	if len(body) == 0 || strings.Contains(string(body), "refresh") {
+		t.Fatalf("the sealed row: %d bytes", len(body))
 	}
-	h2 := newLoginHub(h.path, h.store)
+	h2 := newLoginHub(h.st, h.name, h.store)
 	if c := h2.current(); c.ExpiresAt != now+3000 {
 		t.Fatalf("%+v", c)
 	}

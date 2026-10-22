@@ -93,7 +93,6 @@ type accountsDoc struct {
 
 type claudeAccounts struct {
 	r    *Router
-	dir  string
 	mu   sync.Mutex
 	hubs map[string]*loginHub
 	doc  accountsDoc
@@ -102,21 +101,20 @@ type claudeAccounts struct {
 // accounts: the router's Claude accounts (loaded, and the one shared login migrated, on first use)
 func (r *Router) accounts() *claudeAccounts {
 	r.loginOnce.Do(func() {
-		dir := r.cfg.DataDir
-		if dir == "" {
-			dir = os.TempDir()
-		}
-		a := &claudeAccounts{r: r, dir: filepath.Join(dir, "claude-accounts"), hubs: map[string]*loginHub{}}
-		a.load(dir)
+		a := &claudeAccounts{r: r, hubs: map[string]*loginHub{}}
+		a.load(r.cfg.DataDir)
 		r.claude = a
 	})
 	return r.claude
 }
 
-func (a *claudeAccounts) docPath() string { return filepath.Join(a.dir, "accounts.json") }
+// the accounts' list and each account's pair are sealed documents (sealed.go) named as their files were
+const accountsDocName = "claude-accounts/accounts.json"
+
+func hubDoc(store string) string { return "claude-accounts/" + store + ".json" }
 
 func (a *claudeAccounts) newHub(store string) *loginHub {
-	h := newLoginHub(filepath.Join(a.dir, store+".json"), store)
+	h := newLoginHub(a.r.st, hubDoc(store), store)
 	h.dm = a.r.DM
 	h.check = func(uuid string) error { return a.checkRelogin(store, uuid) }
 	h.elsewhere = a.hubFor
@@ -124,15 +122,17 @@ func (a *claudeAccounts) newHub(store string) *loginHub {
 }
 
 func (a *claudeAccounts) load(dataDir string) {
-	if err := os.MkdirAll(a.dir, 0o700); err != nil {
-		log.Printf("[accounts] %s: %v", a.dir, err)
-	}
-	if b, err := os.ReadFile(a.docPath()); err == nil {
+	if b, ok, err := a.r.st.ReadSealed(accountsDocName); err != nil {
+		log.Printf("[accounts] %v", err)
+	} else if ok {
 		json.Unmarshal(b, &a.doc)
 	}
-	files, _ := filepath.Glob(filepath.Join(a.dir, "claude-*.json"))
-	for _, f := range files {
-		store := strings.TrimSuffix(filepath.Base(f), ".json")
+	names, err := a.r.st.ListSealed("claude-accounts/claude-")
+	if err != nil {
+		log.Printf("[accounts] %v", err)
+	}
+	for _, f := range names {
+		store := strings.TrimSuffix(strings.TrimPrefix(f, "claude-accounts/"), ".json")
 		if accountStoreRE.MatchString(store) {
 			a.hubs[store] = a.newHub(store)
 		}
@@ -159,7 +159,7 @@ func (a *claudeAccounts) migrate(dataDir string) {
 	if a.hubs[store] == nil {
 		f.Pending = nil
 		nb, _ := json.MarshalIndent(f, "", " ")
-		if err := writeFile0600(filepath.Join(a.dir, store+".json"), nb); err != nil {
+		if err := a.r.st.WriteSealed(hubDoc(store), nb); err != nil {
 			log.Printf("[accounts] migrating %s: %v", old, err)
 			return
 		}
@@ -204,27 +204,9 @@ func containsStr(list []string, x string) bool {
 	return false
 }
 
-func writeFile0600(path string, b []byte) error {
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err = f.Write(b); err == nil {
-		err = f.Sync()
-	}
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
 func (a *claudeAccounts) saveDoc() error {
 	b, _ := json.MarshalIndent(a.doc, "", " ")
-	return writeFile0600(a.docPath(), b)
+	return a.r.st.WriteSealed(accountsDocName, b)
 }
 
 // hub: the account's hub; nil = no such account
@@ -405,7 +387,7 @@ func (a *claudeAccounts) removeHub(store string) (string, error) {
 	defer h.refreshMu.Unlock()
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := os.Remove(h.path); err != nil && !os.IsNotExist(err) {
+	if err := a.r.st.DeleteSealed(h.name); err != nil {
 		return "", err
 	}
 	delete(a.hubs, store)

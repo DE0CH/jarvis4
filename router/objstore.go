@@ -272,7 +272,7 @@ func (r *Router) probeObjects() error {
 		return err
 	}
 	if _, mem := r.objects.(*memObjects); mem {
-		log.Printf("objects: in memory (OBJECTS_MEMORY=1: a throwaway router)")
+		log.Printf("objects: in memory (ROUTER_THROWAWAY=1: a throwaway router)")
 	} else {
 		log.Printf("objects: the bucket %s answers (put, get, delete)", env("OBJECTS_BUCKET", "jarvis4-snapshots-de0ch"))
 	}

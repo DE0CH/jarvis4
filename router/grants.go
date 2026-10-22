@@ -16,8 +16,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -67,23 +65,20 @@ type holders struct {
 	err  error
 }
 
-// holderKeys: made once and kept in DATA_DIR/holders (mode 600), so standing rules naming a key survive restarts
+// holderKeys: made once and kept sealed in the database (holders/<name>.key, sealed.go), so standing rules naming a key
+// survive restarts
 func (r *Router) holderKeys() (map[string]*ecdh.PrivateKey, error) {
 	r.hk.once.Do(func() {
-		dir := filepath.Join(r.cfg.DataDir, "holders")
-		if r.hk.err = os.MkdirAll(dir, 0o700); r.hk.err != nil {
-			return
-		}
 		r.hk.keys = map[string]*ecdh.PrivateKey{}
 		for _, n := range holderNames {
-			p := filepath.Join(dir, n+".key")
-			b, err := os.ReadFile(p)
+			name := "holders/" + n + ".key"
+			b, ok, err := r.st.ReadSealed(name)
 			var k *ecdh.PrivateKey
-			if err == nil {
+			if err == nil && ok {
 				k, err = ecdh.P256().NewPrivateKey(b)
-			} else if os.IsNotExist(err) {
+			} else if err == nil {
 				if k, err = ecdh.P256().GenerateKey(rand.Reader); err == nil {
-					err = os.WriteFile(p, k.Bytes(), 0o600)
+					err = r.st.WriteSealed(name, k.Bytes())
 				}
 			}
 			if err != nil {

@@ -22,7 +22,7 @@ func TestStateInPostgres(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		st, err := OpenState(ctx, db, t.TempDir())
+		st, err := OpenState(ctx, db, t.TempDir(), testSeal)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -77,7 +77,7 @@ func TestStateImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	st, err := OpenState(ctx, db, dir)
+	st, err := OpenState(ctx, db, dir, testSeal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestStateImport(t *testing.T) {
 		t.Fatal("state.json wasn't renamed after the import")
 	}
 	os.WriteFile(filepath.Join(dir, "state.json"), []byte(`{"sessions":{"sX":{"id":"sX"}}}`), 0o600)
-	st2, err := OpenState(ctx, db, dir)
+	st2, err := OpenState(ctx, db, dir, testSeal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestStateWriteRetried(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	st, err := OpenState(ctx, db, t.TempDir())
+	st, err := OpenState(ctx, db, t.TempDir(), testSeal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestRouterDocs(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	st, err := OpenState(ctx, db, dir)
+	st, err := OpenState(ctx, db, dir, testSeal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestRouterDocs(t *testing.T) {
 	st.WriteDoc("store-docs.json", []byte(`{"a":{}}`))
 	st.WriteDoc("store-docs.json", []byte(`{"b":{}}`))
 	os.WriteFile(filepath.Join(dir, "store-docs.json"), []byte(`{"old":{}}`), 0o600)
-	st2, err := OpenState(ctx, db, dir)
+	st2, err := OpenState(ctx, db, dir, testSeal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,3 +222,6 @@ func TestBlobFilesImported(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// testSeal: one seal key for a test binary (a reopened State reads what an earlier one sealed)
+var testSeal = randomSealer()

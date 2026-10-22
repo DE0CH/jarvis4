@@ -82,8 +82,8 @@ func main() {
 	}
 	db := openDBWait(os.Getenv("DATABASE_URL"))
 	// the blobs are in object storage (objstore.go); only a throwaway router (CI's stand-ins, e2e) keeps them in memory
-	if os.Getenv("OBJECTS_ACCESS_KEY") == "" && os.Getenv("OBJECTS_MEMORY") != "1" {
-		log.Fatal("OBJECTS_ACCESS_KEY / OBJECTS_SECRET_KEY are required (Secret router-secrets-objects), or OBJECTS_MEMORY=1 for a throwaway router")
+	if os.Getenv("OBJECTS_ACCESS_KEY") == "" && os.Getenv("ROUTER_THROWAWAY") != "1" {
+		log.Fatal("OBJECTS_ACCESS_KEY / OBJECTS_SECRET_KEY are required (Secret router-secrets-objects), or ROUTER_THROWAWAY=1 for a throwaway router")
 	}
 	// leader.go: one router process owns the state; a rollout's new pod waits as a standby that proxies to it
 	addr, maddr := env("ADDR", ":8080"), env("MACHINE_ADDR", ":8081")
@@ -172,7 +172,11 @@ func main() {
 	}
 
 	// the first start against an empty database imports state.json (statedb.go)
-	st, err := OpenState(context.Background(), db, cfg.DataDir) // after the lock: the previous leader's last writes
+	seal, err := sealerFromEnv() // sealed.go
+	if err != nil {
+		log.Fatal(err)
+	}
+	st, err := OpenState(context.Background(), db, cfg.DataDir, seal) // after the lock: the previous leader's last writes
 	if err != nil {
 		log.Fatal(err)
 	}

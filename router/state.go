@@ -155,6 +155,7 @@ type State struct {
 	dir  string // the volume: snapshots (docs/STATE.md step 5 moves them)
 	data persisted
 	sdb  *stateDB
+	seal *Sealer // sealed.go: the router's secrets in the database
 }
 
 // Do runs fn under the lock and writes what it changed to the database afterwards

@@ -72,7 +72,7 @@ mkdir -p "$W/data" "$W/web"
 DBURL="$("$ROOT/infra/test-postgres.sh" fresh e2e_kernel)"  # the router's records (router/statedb.go)
 cat > "$W/router-env" <<ENV
 #!/bin/sh
-exec env -i PATH="$PATH" HOME="$HOME" DATABASE_URL="$DBURL" OBJECTS_MEMORY=1 \\
+exec env -i PATH="$PATH" HOME="$HOME" DATABASE_URL="$DBURL" ROUTER_THROWAWAY=1 \\
   CORE_URL=http://127.0.0.1:29090 KERNEL_URL=http://%s.kernel.e2e:8080 NO_ACCESS=1 RECORDS_OFF=1 ADDR=127.0.0.1:29080 DATA_DIR="$W/data" WEB_DIR="$W/web" \\
   WG_CONFIG="$W/wg.conf" MACHINE_URL="$MURL" POLICY_FILE="$W/policy.json" TASKS_DIR="$ROOT/tasks" SESSION_IMAGE="$E2E_SESSION_IMAGE" "$W/router"
 ENV
@@ -81,5 +81,5 @@ chmod 700 "$W/router-env"
 sudo -n unshare -m --propagation private sh -c 'mount --bind "$0" /etc/hosts && exec setpriv --reuid="$1" --regid="$2" --clear-groups "$3"' \
   "$W/hosts" "$(id -u)" "$(id -g)" "$W/router-env" > "$W/router.log" 2>&1 & SUDO_PIDS+=($!)
 for _ in $(seq 1 40); do curl -sf http://127.0.0.1:29080/api/kernel > /dev/null && break; sleep 0.5; done
-(cd "$ROOT/e2e" && E2E_ROUTER=http://127.0.0.1:29080 E2E_SPAWNER=http://127.0.1.5:8080 E2E_DATA_DIR="$W/data" E2E_DATABASE_URL="$DBURL" OBJECTS_MEMORY=1 \
+(cd "$ROOT/e2e" && E2E_ROUTER=http://127.0.0.1:29080 E2E_SPAWNER=http://127.0.1.5:8080 E2E_DATA_DIR="$W/data" E2E_DATABASE_URL="$DBURL" ROUTER_THROWAWAY=1 \
   E2E_MASTER_KEY_FILE="$ROOT/e2e/testdata/master-test.pem" E2E_FLY_TOKEN="$JARVIS2_FLY_TOKEN" go run ./kernel)
