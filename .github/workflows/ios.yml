@@ -245,7 +245,10 @@ jobs:
       - name: The keys branch (the Release build reads the throwaway box and setup keys from it)
         run: |
           B="replica-keys-$REPLICA_RUN"
-          git worktree add -q -b "$B" "$RUNNER_TEMP/keys-wt" HEAD
+          # on main's tip, not this run's commit: only keys/ is read from it, and a branch whose workflows differ from
+          # main's counts as a workflow update, which the job's token may not push
+          git fetch -q --depth 1 origin main
+          git worktree add -q -b "$B" "$RUNNER_TEMP/keys-wt" FETCH_HEAD
           cp "$RUNNER_TEMP/stack/keys/box.pub" "$RUNNER_TEMP/stack/keys/setup.pub" "$RUNNER_TEMP/keys-wt/keys/"
           cd "$RUNNER_TEMP/keys-wt"
           git -c user.name=jarvis4-replica -c user.email=replica@invalid commit -qam "phone replica $REPLICA_RUN: the throwaway box and setup keys [skip ci]"
