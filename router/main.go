@@ -7,7 +7,9 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -43,6 +45,10 @@ func env(k, def string) string {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "m-gateway" {
+		mGatewayCommand() // mgateway.go: the machines' WireGuard peer, in its own Deployment
+		return
+	}
 	if len(os.Args) > 2 && os.Args[1] == "restore-backup" {
 		restoreCommand(os.Args[2:]) // backup.go
 		return
@@ -121,7 +127,20 @@ func main() {
 		moveListener.set(moveLeaderProxy(lock, self))
 		go func() { log.Fatal(http.ListenAndServe(env("MOVE_ADDR", ":8082"), moveListener)) }()
 	}
+	// the machines' port in the pod network (no WireGuard peer here: the m-gateway Deployment runs it, mgateway.go):
+	// the leader serves it, a standby passes it on to the leader's
+	machinePort := &swapHandler{}
+	machineOnPodNet := wgConfigPath(cfg.DataDir) == ""
+	leaderMachineProxy := func() http.Handler {
+		p := newLeaderProxy(lock, self, nil)
+		p.fixed = func() string { return withPort(lock.leaderAddr(), maddr) }
+		return p
+	}
 	standby := !lock.tryLock()
+	if standby && machineOnPodNet {
+		machinePort.set(leaderMachineProxy())
+		go func() { log.Fatal(http.ListenAndServe(maddr, machinePort)) }()
+	}
 	if standby {
 		// listening (and so ready: a TCP probe) at once, every request proxied to the leader
 		log.Printf("standby: another router leads (%s); proxying to it until it hands over", lock.leaderAddr())
@@ -237,7 +256,10 @@ func main() {
 		earlyHold.serve(r.MachineHandler())
 		log.Printf("machines: WireGuard peer from %s, port 8081", wgPath)
 	} else {
-		go func() { log.Fatal(http.ListenAndServe(maddr, r.MachineHandler())) }()
+		machinePort.set(r.MachineHandler())
+		if !standby {
+			go func() { log.Fatal(http.ListenAndServe(maddr, machinePort)) }()
+		}
 	}
 	public.set(r.Handler())
 	listen() // the first leader listens once it serves (ready from here)
@@ -286,10 +308,27 @@ func main() {
 	if ld.quiesce != nil {
 		ld.quiesce() // wg.go: the machines' next dials wait for the next leader's peer
 	}
+	if machineOnPodNet {
+		machinePort.set(leaderMachineProxy()) // what still reaches this pod's machines' port goes to the next leader
+	}
 	r.freezeRequests(newLeaderProxy(lock, self, nil), 10*time.Second)
 	ld.handOver(st)
 	time.Sleep(time.Duration(handoverLingerSeconds()) * time.Second)
 	os.Exit(0)
+}
+
+// withPort: the URL u with the port of addr (":8081")
+func withPort(u, addr string) string {
+	if u == "" {
+		return ""
+	}
+	x, err := url.Parse(u)
+	if err != nil {
+		return ""
+	}
+	_, port, _ := net.SplitHostPort(addr)
+	x.Host = net.JoinHostPort(x.Hostname(), port)
+	return x.String()
 }
 
 // handoverLingerSeconds: how long a pod that handed over keeps proxying what still reaches it (cloudflared's kept-alive

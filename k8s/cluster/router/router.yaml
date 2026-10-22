@@ -1,10 +1,9 @@
 # The Jarvis 4 router on the one cluster (docs/PLAN-cluster.md step 5): the app's API, the web page and setup (through
-# the tunnel jarvis2-cluster, from cloudflared in jarvis2-edge: jarvis4.deyaochen.com behind Access) and the machines' API
-# (/m, only on its own WireGuard peer jarvis4-box in Fly org jarvis2-370, router/wg.go). Reaches the kernel
-# (jarvis4-kernel), the internet (Access certs, Fly, Discord, the Storage Box) and Fly's WireGuard gateway. Its records
-# are in Postgres (jarvis4-db, DATABASE_URL from the Secret router-db: router/statedb.go); snapshots and the other files
-# live on a local-path volume until step 6 moves them, backed up, age-encrypted, to the Storage Box
-# (claude-records/.jarvis4-router, router/backup.go).
+# the tunnel jarvis2-cluster, from cloudflared in jarvis2-edge: jarvis4.deyaochen.com behind Access) and the machines'
+# API (/m on :8081, reached only through m-gateway below, which runs the WireGuard peer jarvis4-box in Fly org
+# jarvis2-370). Reaches the kernel (jarvis4-kernel), Postgres (jarvis4-db: every record, router/statedb.go), the
+# services and the internet (Access certs, Fly, Discord, the Storage Box, the bucket jarvis4-snapshots-de0ch). Its
+# volume holds only the leader's flock and scratch until step 10 (docs/STATE.md).
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata: { name: router-data, namespace: jarvis4-router }
@@ -57,7 +56,6 @@ spec:
             - { name: FLY_REGION, value: lhr }
             # the router's WireGuard peer in Fly org jarvis2-370 (fly wireguard create jarvis2-370 lhr jarvis4-box)
             - { name: MACHINE_URL, value: "http://jarvis4-box._peer.internal:8081" }
-            - { name: WG_CONFIG, value: /wg/wg.conf }
             # Access apps (infra/cloudflare.py --cluster; none is secret): "Jarvis 4", "Jarvis 4 setup", "Jarvis 4 devices",
             # "Jarvis 4 health" (its one service token is Grafana's uptime probe's, jarvis2-health-probe)
             - { name: ACCESS_APP_AUD, value: 964d35b645828a89427a2d56f56322de7022d8e1540c01a8e81d1cf5476027fc }
@@ -80,12 +78,11 @@ spec:
           envFrom: [{ secretRef: { name: router-secrets, optional: true } }, { secretRef: { name: router-secrets-backup, optional: true } }, { secretRef: { name: router-secrets-flyorgs, optional: true } }, { secretRef: { name: router-secrets-flypersonal, optional: true } }, { secretRef: { name: router-secrets-flyvolumes, optional: true } }, { secretRef: { name: router-secrets-browserbase, optional: true } }, { secretRef: { name: router-secrets-devices, optional: true } }, { secretRef: { name: router-db } }, { secretRef: { name: router-secrets-objects } }, { secretRef: { name: router-seal } }, { secretRef: { name: router-secrets-github, optional: true } }]
           ports: [{ containerPort: 8080 }]
           readinessProbe: { tcpSocket: { port: 8080 }, periodSeconds: 2, failureThreshold: 2 }
-          volumeMounts: [{ name: data, mountPath: /data }, { name: wg, mountPath: /wg, readOnly: true }, { name: sigs, mountPath: /sigs, readOnly: true }]
+          volumeMounts: [{ name: data, mountPath: /data }, { name: sigs, mountPath: /sigs, readOnly: true }]
           resources: { requests: { cpu: 200m, memory: 256Mi }, limits: { memory: 1Gi } }
           securityContext: { runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] }, seccompProfile: { type: RuntimeDefault } }
       volumes:
         - { name: data, persistentVolumeClaim: { claimName: router-data } }
-        - { name: wg, secret: { secretName: router-wg, defaultMode: 0440, optional: true } }
         - { name: sigs, configMap: { name: session-image-sigs } }
 ---
 apiVersion: v1
@@ -93,21 +90,25 @@ kind: Service
 metadata: { name: router, namespace: jarvis4-router }
 spec:
   selector: { app: router }
-  ports: [{ port: 8080, targetPort: 8080 }]
+  # 8081: the machines' API, reached only through m-gateway (below)
+  ports: [{ name: http, port: 8080, targetPort: 8080 }, { name: machines, port: 8081, targetPort: 8081 }]
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: router, namespace: jarvis4-router }
 spec:
-  podSelector: {}
+  podSelector: { matchLabels: { app: router } }
   policyTypes: [Ingress, Egress]
   ingress:
     # cloudflared (the tunnel jarvis2-cluster)
     - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis2-edge } }, podSelector: { matchLabels: { app: cloudflared } } }]
       ports: [{ port: 8080 }]
-    # the standby's proxy to the leader (pod to pod)
+    # the standby's proxy to the leader (pod to pod), both ports
     - from: [{ podSelector: { matchLabels: { app: router } } }]
-      ports: [{ port: 8080 }]
+      ports: [{ port: 8080 }, { port: 8081 }]
+    # the machines, through m-gateway
+    - from: [{ podSelector: { matchLabels: { app: m-gateway } } }]
+      ports: [{ port: 8081 }]
   egress:
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }, podSelector: { matchLabels: { k8s-app: kube-dns } } }]
       ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
@@ -122,9 +123,53 @@ spec:
       ports: [{ port: 8090 }, { port: 8091 }, { port: 8095 }]
     # the standby's proxy to the leader
     - to: [{ podSelector: { matchLabels: { app: router } } }]
-      ports: [{ port: 8080 }]
+      ports: [{ port: 8080 }, { port: 8081 }]
     - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16] } }]
       ports: [{ port: 443 }]
+---
+# m-gateway (docs/STATE.md 5, step 9; router/mgateway.go): the Fly org's WireGuard peer jarvis4-box, the machines'
+# only way to the router: every request it takes on :8081 goes to the router Service's :8081 (any replica). One peer
+# can't run in two processes at once (its endpoint would flap), so one replica, replaced Recreate: a gateway rollout is
+# a gap of seconds for the machines (they retry); the router's own rollouts no longer touch the peer.
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: m-gateway, namespace: jarvis4-router }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: m-gateway } }
+  template:
+    metadata: { labels: { app: m-gateway } }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: m-gateway
+          image: ghcr.io/de0ch/jarvis4-router:latest
+          args: [m-gateway]
+          env:
+            - { name: WG_CONFIG, value: /wg/wg.conf }
+            - { name: M_GATEWAY_TO, value: "http://router.jarvis4-router.svc.cluster.local:8081" }
+          readinessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 2, failureThreshold: 2 }
+          volumeMounts: [{ name: wg, mountPath: /wg, readOnly: true }]
+          resources: { requests: { cpu: 20m, memory: 32Mi }, limits: { memory: 128Mi } }
+          securityContext: { runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] }, seccompProfile: { type: RuntimeDefault } }
+      volumes:
+        - { name: wg, secret: { secretName: router-wg, defaultMode: 0440 } }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: m-gateway, namespace: jarvis4-router }
+spec:
+  podSelector: { matchLabels: { app: m-gateway } }
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }, podSelector: { matchLabels: { k8s-app: kube-dns } } }]
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+    - to: [{ podSelector: { matchLabels: { app: router } } }]
+      ports: [{ port: 8081 }]
     # Fly's WireGuard gateway (lhr1.gateway.6pn.dev)
     - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16] } }]
       ports: [{ port: 51820, protocol: UDP }]
