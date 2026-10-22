@@ -714,7 +714,7 @@ Jarvis 4 on the same runner (`ios/ci/replica-stack.sh`):
 
 - this commit's core and router, built from source (the real core, not the fakefly build), the core started again
   whenever it ends (a Reset or the app's restart-and-recover wipes it, as Kubernetes starts an empty one); the router
-  with production's session image and signatures (`k8s/control/apps/router`), `policy/stores.json`, the web page and a
+  with production's session image and signatures (`k8s/cluster/router`), `policy/stores.json`, the web page and a
   read-only Fly token, on 127.0.0.1:18080 with `NO_ACCESS=1` (the simulator talks to it directly: no Cloudflare);
 - real Fly session machines in `jarvis4-sessions`, reaching the router over this run's WireGuard peer
   `jarvis4-replica-<run>-<attempt>`, which the router runs in userspace as production's does; the core's Fly token
