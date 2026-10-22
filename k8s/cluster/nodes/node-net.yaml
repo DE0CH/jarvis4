@@ -21,6 +21,7 @@ data:
   # "<private address> <k3s0 address>" per node (infra/cluster-node.sh appends); GATEWAY is the Network's gateway
   NODES: |
     10.77.0.4 10.254.254.1
+    10.77.0.5 10.254.254.5
   GATEWAY: "10.77.0.1"
   PRIVATE_PREFIX: "10.77."
   K3S_RANGE: "10.254.254.0/24"
