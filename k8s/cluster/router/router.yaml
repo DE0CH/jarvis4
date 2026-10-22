@@ -33,7 +33,7 @@ spec:
       securityContext: { fsGroup: 65532 }
       containers:
         - name: router
-          image: ghcr.io/de0ch/jarvis4-router:sha-7c101d102ae9@sha256:f14c59c2922e5312ec9cfbb2ceffeedc750b083d87731eb80f9a6f0afdab8b48
+          image: ghcr.io/de0ch/jarvis4-router:sha-059bf41d37e4@sha256:7d028159822a6226e175e40cf2c43e3fdfa8b9aae00358d6d6420c5e7ba817f2
           env:
             - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }  # the standby proxies to the leader's
             # the kernel's components (k8s/cluster/kernel): %s is the component's Service name
@@ -48,9 +48,9 @@ spec:
             # its /data, age-encrypted to this key (the same key as Jarvis 2's router backups: the private half is
             # ROUTER_BACKUP_AGE_KEY in the infra store), to the Storage Box claude-records/.jarvis4-router (router/backup.go)
             - { name: ROUTER_BACKUP_AGE_PUB, value: "age1zkvnmh6wu5hyvxppvxf9c83l6q5af7xqqlxtmahkz0l5hhwqq90s8edvu0" }
-            - { name: SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session:sha-7c101d102ae9@sha256:7750b1b89035060171e602514622b6e72c2ab1b0c65da012df0d9789192cdacf" }
+            - { name: SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session:sha-059bf41d37e4@sha256:e4138a0e2589755ba6d5e0f5a764399371b2d02923268c3f21af71f2926f6029" }
             # the CI key's signature over "jarvis2-session-image <SESSION_IMAGE>" (images.yml, keys/ci.pub): the phone checks it
-            - { name: SESSION_IMAGE_SIG, value: "MEQCIA0A93HFN1ndbUyzBJIgYnEH32UkTJjy+7Um3OBjpxZXAiASFV6ZZocpoF3ljzDkzegEVitNafyfFp8MhPcEb2Fqjw==" }
+            - { name: SESSION_IMAGE_SIG, value: "MEUCIQCXX5vyIKUgn/Fg0qAi3pNMG6OvT3Srd15l32DumTBLfAIgSsVQKkmkbhobh7733YtiWj5//IU8YyzjZF+uwJ79jdM=" }
             # every earlier CI-pinned session image with its signature (session-image-sigs.txt here, images.yml)
             - { name: SESSION_IMAGE_SIGS_FILE, value: /sigs/session-image-sigs.txt }
             - { name: FLY_REGION, value: lhr }
@@ -146,7 +146,7 @@ spec:
       terminationGracePeriodSeconds: 20
       containers:
         - name: m-gateway
-          image: ghcr.io/de0ch/jarvis4-router:latest
+          image: ghcr.io/de0ch/jarvis4-router:sha-059bf41d37e4@sha256:7d028159822a6226e175e40cf2c43e3fdfa8b9aae00358d6d6420c5e7ba817f2
           args: [m-gateway]
           env:
             - { name: WG_CONFIG, value: /wg/wg.conf }
