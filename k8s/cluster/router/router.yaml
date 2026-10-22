@@ -2,7 +2,8 @@
 # the tunnel jarvis2-cluster, from cloudflared in jarvis2-edge: jarvis4.deyaochen.com behind Access) and the machines' API
 # (/m, only on its own WireGuard peer jarvis4-box in Fly org jarvis2-370, router/wg.go). Reaches the kernel
 # (jarvis4-kernel), the internet (Access certs, Fly, Discord, the Storage Box) and Fly's WireGuard gateway. Its records
-# live on a local-path volume until step 6 (Postgres) and are backed up, age-encrypted, to the Storage Box
+# are in Postgres (jarvis4-db, DATABASE_URL from the Secret router-db: router/statedb.go); snapshots and the other files
+# live on a local-path volume until step 6 moves them, backed up, age-encrypted, to the Storage Box
 # (claude-records/.jarvis4-router, router/backup.go).
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -71,7 +72,7 @@ spec:
             - { name: BROWSERBASE_BUDGET_WARN_USD, value: "8" }
           # SOPS-encrypted to the cluster's age key (k8s/cluster/secrets, infra/router-secrets.py --box cluster).
           # router-secrets-github stays LAST: with a key in several envFrom sources the last one wins
-          envFrom: [{ secretRef: { name: router-secrets, optional: true } }, { secretRef: { name: router-secrets-backup, optional: true } }, { secretRef: { name: router-secrets-flyorgs, optional: true } }, { secretRef: { name: router-secrets-flypersonal, optional: true } }, { secretRef: { name: router-secrets-flyvolumes, optional: true } }, { secretRef: { name: router-secrets-browserbase, optional: true } }, { secretRef: { name: router-secrets-devices, optional: true } }, { secretRef: { name: router-db, optional: true } }, { secretRef: { name: router-secrets-github, optional: true } }]
+          envFrom: [{ secretRef: { name: router-secrets, optional: true } }, { secretRef: { name: router-secrets-backup, optional: true } }, { secretRef: { name: router-secrets-flyorgs, optional: true } }, { secretRef: { name: router-secrets-flypersonal, optional: true } }, { secretRef: { name: router-secrets-flyvolumes, optional: true } }, { secretRef: { name: router-secrets-browserbase, optional: true } }, { secretRef: { name: router-secrets-devices, optional: true } }, { secretRef: { name: router-db } }, { secretRef: { name: router-secrets-github, optional: true } }]
           ports: [{ containerPort: 8080 }]
           readinessProbe: { tcpSocket: { port: 8080 }, periodSeconds: 2, failureThreshold: 2 }
           volumeMounts: [{ name: data, mountPath: /data }, { name: wg, mountPath: /wg, readOnly: true }, { name: sigs, mountPath: /sigs, readOnly: true }]

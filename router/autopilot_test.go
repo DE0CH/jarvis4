@@ -347,7 +347,7 @@ func TestDowngradeOnceAndDialog(t *testing.T) {
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 
 func TestToggleRoutesAndView(t *testing.T) {
-	st, err := LoadState(t.TempDir())
+	st, err := testState(t, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

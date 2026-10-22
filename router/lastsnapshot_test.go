@@ -182,7 +182,7 @@ func TestCutOffActionsEndWithAReason(t *testing.T) {
 func TestOldPendingStartIsDropped(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "state.json"), []byte(`{"sessions":{"s1":{"id":"s1","state":"resuming","pendingStart":{"upgrade":true,"machine":"m9"}}}}`), 0o600)
-	st, err := LoadState(dir)
+	st, err := testState(t, dir)
 	if err != nil {
 		t.Fatal(err)
 	}

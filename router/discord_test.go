@@ -383,7 +383,7 @@ func TestDestroyExportsAndDeletes(t *testing.T) {
 	var dms []string
 	dmHook = func(t string) { dms = append(dms, t) }
 
-	st, _ := LoadState(t.TempDir())
+	st, _ := testState(t, t.TempDir())
 	r := &Router{st: st}
 	s := &Session{ID: "s1", Label: "My task", Created: time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC)}
 	st.Do(func(d *persisted) { d.Sessions[s.ID] = s })
@@ -425,7 +425,7 @@ func TestTickRenamesAndFillsMissing(t *testing.T) {
 	old := disc
 	defer func() { disc = old }()
 	disc = d
-	st, _ := LoadState(t.TempDir())
+	st, _ := testState(t, t.TempDir())
 	r := &Router{st: st}
 	ch, _, _ := d.ensureChannel("", "s1", "old name")
 	st.Do(func(p *persisted) {

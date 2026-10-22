@@ -2,7 +2,7 @@ package main
 
 // The router's database (docs/STATE.md, step 6): Postgres at DATABASE_URL (the Cluster jarvis4-db, role router; Secret
 // router-db, infra/router-secrets.py --box cluster --part db). Schema changes are the embedded migrations/NNNN_*.sql,
-// applied in order at start under a Postgres advisory lock (so two replicas starting together apply each once), each in
+// applied in order at start under a Postgres advisory lock. The router's records live there (statedb.go); (so two replicas starting together apply each once), each in
 // its own transaction with its row in schema_migrations. GET /healthz and /setup/status report what Status says.
 
 import (
@@ -28,6 +28,7 @@ const migrationLock = 0x6a3473_6d6967
 
 type DB struct {
 	pool *pgxpool.Pool
+	done chan struct{} // closed by Close
 }
 
 type migration struct {
@@ -71,7 +72,7 @@ func OpenDB(ctx context.Context, url string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	db := &DB{pool: pool}
+	db := &DB{pool: pool, done: make(chan struct{})}
 	if err := db.migrate(ctx); err != nil {
 		pool.Close()
 		return nil, err
@@ -79,7 +80,10 @@ func OpenDB(ctx context.Context, url string) (*DB, error) {
 	return db, nil
 }
 
-func (db *DB) Close() { db.pool.Close() }
+func (db *DB) Close() {
+	close(db.done)
+	db.pool.Close()
+}
 
 func (db *DB) migrate(ctx context.Context) error {
 	ms, err := migrations()
@@ -177,27 +181,20 @@ func (db *DB) Status(ctx context.Context) DBStatus {
 	return st
 }
 
-// connectDB: the database at url, connected (and migrated) in the background, retried until it answers; nothing waits
-// for it yet (docs/STATE.md step 2: nothing is stored there)
-func (r *Router) connectDB(url string) {
-	if url == "" {
-		log.Printf("db: DATABASE_URL unset: no database")
-		return
-	}
-	go func() {
-		for wait := time.Second; ; wait = min(2*wait, time.Minute) {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			db, err := OpenDB(ctx, url)
-			cancel()
-			if err == nil {
-				r.db.Store(db)
-				log.Printf("db: connected, schema %d", len(must(migrations())))
-				return
-			}
-			log.Printf("db: %v (again in %s)", err, wait)
-			time.Sleep(wait)
+// openDBWait: the database at url, migrated; until it answers, tried again with a growing wait (a router can do nothing
+// without its records)
+func openDBWait(url string) *DB {
+	for wait := time.Second; ; wait = min(2*wait, 30*time.Second) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		db, err := OpenDB(ctx, url)
+		cancel()
+		if err == nil {
+			log.Printf("db: connected, schema %d", len(must(migrations())))
+			return db
 		}
-	}()
+		log.Printf("db: %v (again in %s)", err, wait)
+		time.Sleep(wait)
+	}
 }
 
 func must[T any](v T, err error) T {
@@ -207,7 +204,12 @@ func must[T any](v T, err error) T {
 	return v
 }
 
-// dbStatus: the database's status, or why there is none
+// dbStatus: the database's status, or why there is none; a record write that keeps failing makes it not ok
 func (r *Router) dbStatus(ctx context.Context) DBStatus {
-	return r.db.Load().Status(ctx)
+	st := r.db.Load().Status(ctx)
+	if err, since := r.st.StoreError(); err != nil {
+		st.OK = false
+		st.Error = fmt.Sprintf("record writes failing since %s: %v", since.UTC().Format(time.RFC3339), err)
+	}
+	return st
 }

@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -17,7 +18,7 @@ import (
 type Config struct {
 	CoreURL         string            // the core, inside the cluster
 	KernelURL       string            // the kernel's components, %s = the role (KERNEL_URL; "" = no kernel on this box)
-	DataDir         string            // state.json + snapshots (a volume on the box)
+	DataDir         string            // snapshots and the other files (a volume); the records are in Postgres (statedb.go)
 	WebDir          string            // the web page (expo export), served at /
 	SessionImage    string            // the image new sessions get (a tag; resume pins what Fly reported)
 	SessionImageSig string            // CI's signature over it (images.yml; keys/ci.pub)
@@ -160,7 +161,12 @@ func main() {
 		}
 	}
 
-	st, err := LoadState(cfg.DataDir) // after the lock: the previous leader's last save
+	// the records are in Postgres (statedb.go); the first start against an empty database imports state.json
+	if os.Getenv("DATABASE_URL") == "" {
+		log.Fatal("DATABASE_URL is required: the router's records are in Postgres (docs/STATE.md)")
+	}
+	db := openDBWait(os.Getenv("DATABASE_URL"))
+	st, err := OpenState(context.Background(), db, cfg.DataDir) // after the lock: the previous leader's last writes
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -169,8 +175,8 @@ func main() {
 		log.Fatal(err)
 	}
 	r := NewRouter(cfg, st, coreClient, policy)
-	r.connectDB(os.Getenv("DATABASE_URL")) // db.go: nothing is stored there yet; health shows it
-	r.applyActiveCore()                    // nextcore.go: the core a flip left serving
+	r.db.Store(db)
+	r.applyActiveCore() // nextcore.go: the core a flip left serving
 	r.startFeatures()
 	r.startStateBackups()
 	drainMax, _ := strconv.Atoi(env("DRAIN_SECONDS", "1740"))

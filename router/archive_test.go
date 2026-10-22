@@ -260,7 +260,7 @@ func newRig(t *testing.T) *rig {
 	ds := httptest.NewServer(dav)
 	core := &fakeCore{key: newTestKey()}
 	cs := httptest.NewServer(core)
-	st, err := LoadState(t.TempDir())
+	st, err := testState(t, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

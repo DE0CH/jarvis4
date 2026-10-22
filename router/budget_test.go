@@ -143,7 +143,7 @@ func machine(id, state string) flyMachine {
 }
 
 func TestBudgetTick(t *testing.T) {
-	st, _ := LoadState(t.TempDir())
+	st, _ := testState(t, t.TempDir())
 	r := NewRouter(Config{}, st, nil, Policy{})
 	st.Do(func(d *persisted) {
 		d.Sessions["s1"] = &Session{ID: "s1", MachineID: "m1", Label: "one", State: "started"}
@@ -246,7 +246,7 @@ func TestTheBudgetCountsVolumeSnapshots(t *testing.T) {
 	if c := hourlySnapshotCost(20e9) * hoursPerMonth; math.Abs(c-0.80) > 1e-9 {
 		t.Fatalf("20 GB stored: USD %v a month, want 0.80", c)
 	}
-	st, _ := LoadState(t.TempDir())
+	st, _ := testState(t, t.TempDir())
 	r := NewRouter(Config{}, st, nil, Policy{})
 	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
 	fly := &snapFly{fakeFly: fakeFly{vs: []flyVolume{{ID: "vol_live", State: "created", SizeGB: 10}, {ID: "vol_rec", State: "created", SizeGB: 10}}},

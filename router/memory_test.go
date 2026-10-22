@@ -78,7 +78,7 @@ func TestMemSilentTick(t *testing.T) {
 }
 
 func TestMemoryReportViewAndUpgradeRefusals(t *testing.T) {
-	st, err := LoadState(t.TempDir())
+	st, err := testState(t, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

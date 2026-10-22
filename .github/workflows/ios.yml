@@ -6,7 +6,7 @@ name: ios
 # only when the walkthrough, the interop test and the replica of this very commit pass.
 on:
   push:
-    paths: [ios/**, core/**, kernel/**, router/**, tasks/**, infra/setup.py, infra/fly-token.sh, infra/fly-read-token.sh, infra/run-volumes.py, infra/run_volumes_test.py, e2e/testdata/**, policy/**, tools/**, .github/workflows/ios.yml, .github/actions/ios-simulator/**]
+    paths: [ios/**, core/**, kernel/**, router/**, tasks/**, infra/setup.py, infra/fly-token.sh, infra/fly-read-token.sh, infra/run-volumes.py, infra/run_volumes_test.py, infra/test-postgres.sh, e2e/testdata/**, policy/**, tools/**, .github/workflows/ios.yml, .github/actions/ios-simulator/**]
   workflow_dispatch:
 concurrency:
   group: ios-${{ github.ref }}-${{ github.event_name }}
@@ -143,8 +143,9 @@ jobs:
               # the core runs again whenever it ends, as under Kubernetes: the walkthrough's Reset wipes it
               (nohup "$W/core-loop.sh" "$PWD/out/core-$a.log" > /dev/null 2>&1 & echo $! > "$W/core.pid")
               for i in $(seq 30); do curl -sf http://127.0.0.1:8090/key > /dev/null && break; sleep 1; done
+              DBURL="$(bash infra/test-postgres.sh fresh router_$a)"  # the router's records (router/statedb.go)
               (set -a; . "$W/router-backup.env"; set +a
-               NO_ACCESS=1 SEARCH_URL=http://127.0.0.1:9 ICLOUD_INDEX_URL=http://127.0.0.1:9 WATCH_URL=http://127.0.0.1:9 SETUP_KEY="$(cat "$W/keys/setup.pub")" CORE_URL=http://127.0.0.1:8090 DATA_DIR=$PWD/data-$a WEB_DIR=$PWD/web TASKS_DIR=$PWD/tasks SNAPSHOT_STALL_SECONDS=2 POLICY_FILE="$W/policy.json" \
+               DATABASE_URL="$DBURL" NO_ACCESS=1 SEARCH_URL=http://127.0.0.1:9 ICLOUD_INDEX_URL=http://127.0.0.1:9 WATCH_URL=http://127.0.0.1:9 SETUP_KEY="$(cat "$W/keys/setup.pub")" CORE_URL=http://127.0.0.1:8090 DATA_DIR=$PWD/data-$a WEB_DIR=$PWD/web TASKS_DIR=$PWD/tasks SNAPSHOT_STALL_SECONDS=2 POLICY_FILE="$W/policy.json" \
                 SESSION_IMAGE=ghcr.io/de0ch/jarvis4-session:ci@sha256:0000000000000000000000000000000000000000000000000000000000000000 ADDR=127.0.0.1:18080 MACHINE_ADDR=127.0.0.1:18081 nohup "$W/router" > out/router-$a.log 2>&1 & echo $! > "$W/router.pid")
               sleep 2 && curl -sf http://127.0.0.1:18080/api/state > /dev/null && echo "router up ($a)"
               xcrun simctl keychain "$SIM_UDID" reset

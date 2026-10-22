@@ -369,7 +369,15 @@ Each step ships alone, keeps the router working, and is a clean cut for what it 
 3. **state.json → Postgres in one cut**: `State.Do` keeps its signature but loads from and writes to the tables
    (inside a transaction, the rows its closure touched); a one-shot import reads the volume's state.json into the
    tables at the first start of that version and renames the file. Still one replica, still the flock: this step is
-   only the storage. The volume backup (backup.go) stops including state.json.
+   only the storage. The volume backup (backup.go) stops including state.json. Done: router/statedb.go,
+   migrations/0002_state.sql. For this step each collection of `persisted` is its own table `(id, doc jsonb)` (records
+   `(ord, doc)`), with generated hot columns where a query already wants them (sessions.state, sessions.machine_id,
+   approvals.kind/session_id); the other fields are `settings` rows `state.<json key>`. Do still runs under one lock
+   on an in-memory copy and writes only the rows its closure changed, in one transaction; a failed write is retried
+   and shows in /healthz and /setup/status. The tables take the outline's shape (2.1: `machines` merging Started,
+   Certs and Machines; `wakeups`/`crons`/`watches` rows; `version` columns) as the jobs of steps 6-8 need queries on
+   them. Every router outside the cluster (CI's stand-ins, the replica, e2e) gets a database from
+   `infra/test-postgres.sh fresh NAME`.
 4. **The other volume files**: logs (`lifecycle/`, `supervisor-log/`), small JSON files (store-docs, repos,
    claim-device, core-certs, line-state, input-log), Claude accounts and holder keys (sealed) into tables; uploads,
    task-run outputs, restores and imports into object storage.

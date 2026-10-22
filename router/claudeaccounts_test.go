@@ -104,7 +104,7 @@ func TestClaudeAccountsManage(t *testing.T) {
 // the clean cut: the one shared login becomes the account claude-<email name>, and the sessions holding the old
 // store `claude` use it
 func TestClaudeAccountsMigrateSharedLogin(t *testing.T) {
-	st, err := LoadState(t.TempDir())
+	st, err := testState(t, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

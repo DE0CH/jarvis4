@@ -4,10 +4,10 @@ package main
 // trusted by anyone else: the certs are core-signed and the snapshots machine-signed.
 
 import (
+	"log"
+
 	"github.com/DE0CH/jarvis4/kernel/gv"
 
-	"encoding/json"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -149,66 +149,15 @@ type persisted struct {
 	MessageRules map[string]*MessageRule    `json:"messageRules,omitempty"`
 }
 
+// State: the router's records, in memory under one lock and in Postgres (statedb.go)
 type State struct {
 	mu   sync.Mutex
-	dir  string
+	dir  string // the volume: snapshots (docs/STATE.md step 5 moves them)
 	data persisted
+	sdb  *stateDB
 }
 
-func LoadState(dir string) (*State, error) {
-	if err := os.MkdirAll(filepath.Join(dir, "snapshots"), 0o700); err != nil {
-		return nil, err
-	}
-	s := &State{dir: dir}
-	b, err := os.ReadFile(filepath.Join(dir, "state.json"))
-	if err == nil {
-		if err := json.Unmarshal(b, &s.data); err != nil {
-			return nil, err
-		}
-	}
-	d := &s.data
-	if d.Sessions == nil {
-		d.Sessions = map[string]*Session{}
-	}
-	if d.Inbox == nil {
-		d.Inbox = map[string]*InboxRequest{}
-	}
-	if d.Approvals == nil {
-		d.Approvals = map[string]*Approval{}
-	}
-	if d.Batches == nil {
-		d.Batches = map[string]*Batch{}
-	}
-	if d.Messages == nil {
-		d.Messages = map[string]*PendingMessage{}
-	}
-	if d.MessageRules == nil {
-		d.MessageRules = map[string]*MessageRule{}
-	}
-	if d.Started == nil {
-		d.Started = map[string]*Started{}
-	}
-	if d.Certs == nil {
-		d.Certs = map[string]*Doc{}
-	}
-	if d.Machines == nil {
-		d.Machines = map[string]string{}
-	}
-	if d.SessCerts == nil {
-		d.SessCerts = map[string]*Doc{}
-	}
-	if d.Grants == nil {
-		d.Grants = map[string]*StoredGrant{}
-	}
-	for id, c := range d.SessCerts {
-		if s := d.Sessions[id]; s != nil {
-			s.Cert = c
-		}
-	}
-	return s, nil
-}
-
-// Do runs fn under the lock and saves afterwards
+// Do runs fn under the lock and writes what it changed to the database afterwards
 func (s *State) Do(fn func(d *persisted)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -216,6 +165,7 @@ func (s *State) Do(fn func(d *persisted)) {
 	s.save()
 }
 
+// save: the changed records to the database (callers hold mu); a failure is kept and tried again (statedb.go)
 func (s *State) save() {
 	d := &s.data
 	d.SessCerts = map[string]*Doc{}
@@ -224,10 +174,21 @@ func (s *State) save() {
 			d.SessCerts[id] = ss.Cert
 		}
 	}
-	b, _ := json.MarshalIndent(d, "", " ")
-	tmp := filepath.Join(s.dir, "state.json.tmp")
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		os.Rename(tmp, filepath.Join(s.dir, "state.json"))
+	if s.sdb == nil {
+		return // a State that was never opened (a test's frozen stand-in)
+	}
+	err := s.sdb.write(d)
+	s.sdb.mu.Lock()
+	defer s.sdb.mu.Unlock()
+	switch {
+	case err != nil && s.sdb.lastErr == nil:
+		s.sdb.lastErr, s.sdb.errAt = err, time.Now()
+		log.Printf("state: writing to the database failed (kept, tried again): %v", err)
+	case err != nil:
+		s.sdb.lastErr = err
+	case s.sdb.lastErr != nil:
+		log.Printf("state: the database has every record again (it failed since %s)", s.sdb.errAt.Format(time.RFC3339))
+		s.sdb.lastErr = nil
 	}
 }
 

@@ -187,8 +187,8 @@ func TestMoveAcrossBoxesNoFailedRequests(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(g.dirB, "snapshots", "m1.carry")); err == nil {
 		t.Fatal("a file deleted on the old box is still on the new one")
 	}
-	if readData(t, g.dirB, "state.json") != readData(t, g.dirA, "state.json") {
-		t.Fatal("state.json differs")
+	if readData(t, g.dirB, "input-log.jsonl") != readData(t, g.dirA, "input-log.jsonl") {
+		t.Fatal("input-log.jsonl differs") // the records themselves are in Postgres (statedb.go): nothing to move
 	}
 	if _, err := os.Stat(filepath.Join(g.dirB, "tmp", "scratch")); err == nil {
 		t.Fatal("tmp/ moved")

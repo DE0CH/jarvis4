@@ -21,7 +21,7 @@ func TestTheClaimsDeviceSignatureIsKeptForTheSetupSession(t *testing.T) {
 
 // R1 audit: an approval for a CI build this router was given carries CI's signature; one for any other image carries none
 func TestOnlyCIBuildsCarryTheirSignature(t *testing.T) {
-	st, err := LoadState(t.TempDir())
+	st, err := testState(t, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

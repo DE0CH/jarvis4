@@ -47,6 +47,23 @@ func testDBURL(t testing.TB) string {
 	return base + sep + "search_path=" + schema
 }
 
+// testDB: a migrated database of its own for this test
+func testDB(t testing.TB) *DB {
+	t.Helper()
+	db, err := OpenDB(context.Background(), testDBURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(db.Close)
+	return db
+}
+
+// testState: the router's records on a database of the test's own (state.json in dir imported, as at a first start)
+func testState(t testing.TB, dir string) (*State, error) {
+	t.Helper()
+	return OpenState(context.Background(), testDB(t), dir)
+}
+
 func TestMigrations(t *testing.T) {
 	url := testDBURL(t)
 	ctx := context.Background()

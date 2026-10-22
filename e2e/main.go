@@ -36,6 +36,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/DE0CH/jarvis4/e2e/routerdb"
 )
 
 var b64 = base64.StdEncoding
@@ -1152,9 +1154,9 @@ func drainStep(id string) {
 	var st struct {
 		Sessions map[string]struct{ State, Error string }
 	}
-	sb, err := os.ReadFile(filepath.Join(os.Getenv("E2E_DATA_DIR"), "state.json"))
+	sb, err := routerdb.StateJSON()
 	if err != nil || json.Unmarshal(sb, &st) != nil {
-		log.Fatalf("the router's state.json: %v", err)
+		log.Fatalf("the router's records: %v", err)
 	}
 	if x := st.Sessions[id]; x.State != "paused" {
 		log.Fatalf("the in-flight pause ended %q (%s)", x.State, x.Error)

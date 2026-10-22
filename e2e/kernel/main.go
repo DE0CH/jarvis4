@@ -21,9 +21,9 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 
+	"github.com/DE0CH/jarvis4/e2e/routerdb"
 	"github.com/DE0CH/jarvis4/kernel/doc"
 	"github.com/DE0CH/jarvis4/kernel/secrets"
 	"github.com/DE0CH/jarvis4/kernel/sig"
@@ -76,7 +76,7 @@ type session struct {
 }
 
 func readSession(id string) (*session, bool) {
-	b, err := os.ReadFile(filepath.Join(os.Getenv("E2E_DATA_DIR"), "state.json"))
+	b, err := routerdb.StateJSON()
 	if err != nil {
 		return nil, false
 	}

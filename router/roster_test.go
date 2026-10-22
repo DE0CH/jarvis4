@@ -19,7 +19,7 @@ import (
 // rosterRig: a router (Access off, a setup key) on the real kernel, every Deployment of it at kerneltest's servers
 // (secrets-blue = kerneltest's secrets, secrets-green = a second, empty secrets)
 func rosterRig(t *testing.T) (*Router, http.Handler, *kerneltest.Kernel, key) {
-	st, err := LoadState(t.TempDir())
+	st, err := testState(t, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
