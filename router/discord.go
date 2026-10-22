@@ -1,14 +1,14 @@
 package main
 
-// Discord (Jarvis 1 parity, its lib/discord.js): Jarvis 2 shares Jarvis 1's bot, lobster.
+// Discord (Jarvis 1 parity, its lib/discord.js): Jarvis 4 shares Jarvis 1's bot, lobster.
 //   DM       → r.DM(text) posts to Deyao's DM with the bot (dmHook)
 //   create   → every session gets a text channel under its own category (DISCORD_SESSIONS_CATEGORY,
-//              default "Jarvis 2"; Jarvis 1's "Sessions" category and its channels are never touched),
+//              default "Jarvis 4"; Jarvis 1's "Sessions" category and its channels are never touched),
 //              made when the router builds the machine's env (envHooks), so a start or resume carries it
 //              as LOBSTER_CHANNEL and the session's scripts/lobster-send.sh posts there. A resume reuses the
 //              channel; one deleted by hand is made again.
-//              name = a slug of the session's title, topic = "Jarvis 2 session <id>" (Jarvis 1 adds the
-//              Remote Control link; Jarvis 2 doesn't know it)
+//              name = a slug of the session's title, topic = "Jarvis 4 session <id>" (Jarvis 1 adds the
+//              Remote Control link; Jarvis 4 doesn't know it)
 //   title    → a tick renames the channel when the session's title changes (Discord allows 2 name/topic
 //              edits per channel per 10 minutes; a third waits for the window)
 //   destroy  → the channel's messages and attachments are exported to the Storage Box,
@@ -92,7 +92,7 @@ func newDiscordFromEnv() *discordClient {
 		api: discordAPI, token: token,
 		guild:    env("DISCORD_GUILD_ID", "1482150592414486748"),
 		dm:       env("DISCORD_DM_CHANNEL", "1531422588247474266"),
-		category: env("DISCORD_SESSIONS_CATEGORY", "Jarvis 2"),
+		category: env("DISCORD_SESSIONS_CATEGORY", "Jarvis 4"),
 		channels: os.Getenv("DISCORD_SESSION_CHANNELS") != "off",
 		http:     &http.Client{Timeout: 30 * time.Second},
 		maxWait:  30 * time.Second, sleep: time.Sleep, now: time.Now,
@@ -232,7 +232,7 @@ func channelName(title, sid string) string {
 	return s
 }
 
-func channelTopic(sid string) string { return "Jarvis 2 session " + sid }
+func channelTopic(sid string) string { return "Jarvis 4 session " + sid }
 
 // sessionTitle: the name a session's card, channel and archive folder carry — Jarvis 1's pickTitle: the Claude
 // app's own title (AppTitle, which follows Deyao's rename in the app) beats a name he pinned in the CLI
@@ -712,7 +712,7 @@ func discordDestroy(r *Router, s Session) {
 	res, err := r.exportSessionChannel(s)
 	if err != nil {
 		log.Printf("[discord] %s: channel %s NOT exported, kept: %v", s.ID, s.DiscordChannel, err)
-		r.DM(fmt.Sprintf("Jarvis 2: the Discord channel of destroyed session %q wasn't exported (%v); it is kept: https://discord.com/channels/%s/%s", sessionTitle(s), err, disc.guild, s.DiscordChannel))
+		r.DM(fmt.Sprintf("Jarvis 4: the Discord channel of destroyed session %q wasn't exported (%v); it is kept: https://discord.com/channels/%s/%s", sessionTitle(s), err, disc.guild, s.DiscordChannel))
 		return
 	}
 	if res == nil {

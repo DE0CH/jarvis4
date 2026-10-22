@@ -23,7 +23,7 @@ enum TrustError: LocalizedError, Equatable {
   case notSetUp, badKit(String), badSignature(String), mismatch(String), stale(String), backup(String)
   var errorDescription: String? {
     switch self {
-    case .notSetUp: return "Jarvis 2 isn't set up on this iPhone yet — open Settings → Reset or recover."
+    case .notSetUp: return "Jarvis 4 isn't set up on this iPhone yet — open Settings → Reset or recover."
     case .badKit(let s): return s
     case .badSignature(let s): return "The signature on \(s) didn't check out — refusing to continue."
     case .mismatch(let s): return "The core's answer doesn't match what you chose (\(s)) — refusing to sign."
@@ -137,7 +137,7 @@ struct RecoveryKit {
   var string: String { RecoveryKit.prefix + master.pkcs8 }
   static func parse(_ raw: String) throws -> RecoveryKit {
     let s = raw.filter { !$0.isWhitespace }
-    if s.hasPrefix("jarvis2-kit:1:") { throw TrustError.badKit("This recovery kit is from an older Jarvis 2 and doesn't work any more.") }
+    if s.hasPrefix("jarvis2-kit:1:") { throw TrustError.badKit("This recovery kit is from an older Jarvis 4 and doesn't work any more.") }
     guard s.hasPrefix(prefix), let m = try? MasterKey(pkcs8: String(s.dropFirst(prefix.count))) else { throw TrustError.badKit("That isn't a recovery kit.") }
     return RecoveryKit(master: m)
   }
@@ -396,7 +396,7 @@ extension Checks {
     guard b.store == repoStore(repo), b.title == "jarvis2 " + b.store else { throw TrustError.mismatch("store") }
     guard b.tokenStore == deployKeyTokenStore else { throw TrustError.mismatch("the store it opens") }
     if action == "add", sensitive, !b.sensitive { throw TrustError.mismatch("sensitive") }
-    // Jarvis 2's own repo can push code that changes Jarvis 2: its store is always sensitive (checked here, not only
+    // Jarvis 4's own repo can push code that changes Jarvis 4: its store is always sensitive (checked here, not only
     // by the core)
     if action == "add", repo.lowercased() == "de0ch/jarvis2", !b.sensitive { throw TrustError.mismatch("DE0CH/jarvis2's store must be sensitive") }
     return b

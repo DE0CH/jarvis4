@@ -208,7 +208,7 @@ struct Rec: Identifiable, Equatable, Hashable {
   var session: Session { Session(j: j) }
   var archive: JSON { j["archive"] }
   var hasArchive: Bool { !archive.isNull }
-  /// an archive indexed by hand has no machine-signed snapshot: nothing Jarvis 2 can restore
+  /// an archive indexed by hand has no machine-signed snapshot: nothing Jarvis 4 can restore
   var restorable: Bool { archive["signer"].text != nil }
   var title: String { archive["title"].text ?? session.title }
   var destroyedAt: Date? { j["destroyedAt"].string?.isoDate }
@@ -248,7 +248,7 @@ struct PendingMessage: Identifiable, Equatable, Hashable {
   var kind: String { j["kind"].string ?? "" }
   var kindLabel: String { j["kindLabel"].text ?? MessageKind.label(kind) }
   /// the specific requester ("Jarvis's watchdog (the stall check)")
-  var from: String { j["from"].text ?? "Jarvis 2" }
+  var from: String { j["from"].text ?? "Jarvis 4" }
   /// the exact text that goes into the session
   var text: String { j["text"].string ?? "" }
   var note: String? { j["note"].text }

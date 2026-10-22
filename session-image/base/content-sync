@@ -23,7 +23,7 @@ before a push sends anything. Sync state lives in ~/.content-sync/<store>.json.
 """
 import hashlib, json, os, shutil, sys, urllib.error, urllib.parse, urllib.request
 
-JARVIS = os.environ.get("JARVIS_URL", "http://127.0.0.1:7171").rstrip("/")  # the machine's local proxy to Jarvis 2 (it signs every call)
+JARVIS = os.environ.get("JARVIS_URL", "http://127.0.0.1:7171").rstrip("/")  # the machine's local proxy to Jarvis 4 (it signs every call)
 TOKEN = os.environ.get("SESSION_API_TOKEN", "jarvis2-local-proxy")  # a constant: the proxy's machine signature authorises
 SID = os.environ.get("SESSION_ID") or os.environ.get("FLY_MACHINE_ID", "")
 CID, CSEC = os.environ.get("CF_ACCESS_CLIENT_ID", ""), os.environ.get("CF_ACCESS_CLIENT_SECRET", "")

@@ -1,6 +1,6 @@
 # The one cluster's way in for setup sessions (docs/PLAN-cluster.md step 2a): the remotely managed tunnel
 # jarvis2-cluster (infra/cloudflare.py --cluster) whose only rule is kernel-id.deyaochen.com → kernel-id below, behind
-# the Access app "Jarvis 2 kernel id" (only the service token jarvis2-kernel-id). kernel-id is a test page until the
+# the Access app "Jarvis 4 kernel id" (only the service token jarvis2-kernel-id). kernel-id is a test page until the
 # kernel's read-only identity endpoints take its place. Its token: the Secret tunnel-token (k8s/cluster/secrets).
 apiVersion: apps/v1
 kind: Deployment

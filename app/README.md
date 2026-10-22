@@ -1,8 +1,8 @@
-# Jarvis 2 — the web page
+# Jarvis 4 — the web page
 
 An Expo (React Native for web) app: the **web page** the router serves at `/`. It talks to the router exactly as
 `docs/API.md` says. The iPhone and iPad app is a separate native SwiftUI app in [`../ios`](../ios) (TestFlight
-"Jarvis 2", `dev.de0ch.jarvis2`). Design choices of both: [DECISIONS.md](DECISIONS.md).
+"Jarvis 4", `dev.de0ch.jarvis2`). Design choices of both: [DECISIONS.md](DECISIONS.md).
 
 ```
 src/       the UI (expo-router): sessions, Inbox, search, stores, previous sessions, tasks, machines, settings, and the

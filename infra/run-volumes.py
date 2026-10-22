@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """run-volumes.py — delete a throwaway run's leftover Fly volumes (ios/ci/replica-stack.sh down, infra/e2e.sh cleanup).
 
-A test run (the phone replica, the e2e) runs its own core, which makes a `jarvis2_state` volume with every session
+A test run (the phone replica, the e2e) runs its own core, which makes a `jarvis4_state` volume with every session
 machine (core/volumes.go). The run's sweep of machines (by the peer their JARVIS2_URL names) deletes the volumes those
 machines mount, but a volume whose machine is already gone is never seen that way: Fly names no machine for it, and a
-volume carries no label of its own (every core names its volumes jarvis2_state, production's too). So the only safe
+volume carries no label of its own (every core names its volumes jarvis4_state, production's too). So the only safe
 way to tell this run's volumes from production's in the same app is the run's own records:
 
   - its router's state (state.json under DATA_DIR): every machine the run's core started, with its volume
@@ -12,14 +12,14 @@ way to tell this run's volumes from production's in the same app is the run's ow
   - its core's log: the volume ids the core logs (each volume it makes, an extend, a failed delete).
 
 Every id found there and nowhere else is a candidate. One is deleted only when Fly lists it in the app, named
-jarvis2_state, in state `created`, attached to nothing and mounted by no machine Fly lists (destroyed ones aside); a
+jarvis4_state, in state `created`, attached to nothing and mounted by no machine Fly lists (destroyed ones aside); a
 candidate still attached (its machine being destroyed) is looked at again for up to ROUNDS × WAIT seconds. An id that
 isn't in these files is never touched, whatever Fly says about it: leftovers of EARLIER runs whose records are gone
 can't be told from production's and stay for Deyao (the Machines tab lists them as "not attached"; docs/RUNBOOK.md
 "Leftover volumes").
 
   run-volumes.py [--rounds N] [--wait S] FILE...     FILE: a router state.json or a core log (missing files are skipped)
-Env: FLY_TOKEN (a token that can delete volumes in the app), FLY_APP (default jarvis2-sessions),
+Env: FLY_TOKEN (a token that can delete volumes in the app), FLY_APP (default jarvis4-sessions),
      FLY_API (default https://api.machines.dev; the test points it at a fake).
 """
 import json
@@ -30,7 +30,7 @@ import time
 import urllib.error
 import urllib.request
 
-VOLUME_NAME = "jarvis2_state"  # core/volumes.go volumeName
+VOLUME_NAME = "jarvis4_state"  # core/volumes.go volumeName
 VOL_ID = re.compile(r"^vol_[a-z0-9]+$")
 LOG_ID = re.compile(r"\bvolume (vol_[a-z0-9]+)\b")
 
@@ -151,7 +151,7 @@ def main(argv):
     if not ids:
         print("run-volumes: this run's records name no volume")
         return 0
-    fly = Fly(os.environ.get("FLY_API", "https://api.machines.dev"), os.environ.get("FLY_APP", "jarvis2-sessions"), token)
+    fly = Fly(os.environ.get("FLY_API", "https://api.machines.dev"), os.environ.get("FLY_APP", "jarvis4-sessions"), token)
     try:
         sweep(fly, ids, max(1, rounds), wait)
     except (urllib.error.URLError, OSError, ValueError) as e:

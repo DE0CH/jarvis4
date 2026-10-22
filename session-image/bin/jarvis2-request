@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Ask Deyao for something that needs his Face ID, from inside a Jarvis 2 session: a request in the Inbox of the
-Jarvis 2 app (docs/API.md "Requests"). He sees exactly what would be signed, the call this made (the router names
+"""Ask Deyao for something that needs his Face ID, from inside a Jarvis 4 session: a request in the Inbox of the
+Jarvis 4 app (docs/API.md "Requests"). He sees exactly what would be signed, the call this made (the router names
 this session as the caller, from the machine's key) and the reason given here, and allows or denies it.
 
   jarvis2-request add-repo OWNER/NAME --why TEXT [--sensitive] [--no-store]
@@ -84,7 +84,7 @@ def upload(paths):
     import secrets, urllib.parse
     sid = os.environ.get("JARVIS2_SESSION_ID") or os.environ.get("SESSION_ID")
     if not sid:
-        raise SystemExit("--attach: no JARVIS2_SESSION_ID in the environment (not a Jarvis 2 session?)")
+        raise SystemExit("--attach: no JARVIS2_SESSION_ID in the environment (not a Jarvis 4 session?)")
     if len(paths) > 20:
         raise SystemExit(f"--attach: {len(paths)} files, at most 20")
     uid, names = "p" + secrets.token_hex(8), []
@@ -257,7 +257,7 @@ def main():
         if not out.get("id"):  # nothing waits: only messages delivered at once (or a restore filed on its own)
             print("Nothing of it waits in the Inbox as a batch: see each item above.", file=sys.stderr)
             return
-        print("Waiting in Deyao's Inbox as one batch (the Jarvis 2 app); nothing happens until he allows it. The outcome of "
+        print("Waiting in Deyao's Inbox as one batch (the Jarvis 4 app); nothing happens until he allows it. The outcome of "
               f"every item arrives in this session as a message once decided (or block: jarvis2-request wait {out.get('id')}).",
               file=sys.stderr)
         return
@@ -316,7 +316,7 @@ def main():
         raise SystemExit(__doc__)
     print(json.dumps(out))
     ref = out.get("id") or os.environ.get("JARVIS2_SESSION_ID", "")
-    print("Waiting in Deyao's Inbox (the Jarvis 2 app); nothing happens until he allows it. The outcome arrives in this "
+    print("Waiting in Deyao's Inbox (the Jarvis 4 app); nothing happens until he allows it. The outcome arrives in this "
           f"session as a message once decided (or block: jarvis2-request wait {ref}).", file=sys.stderr)
 
 

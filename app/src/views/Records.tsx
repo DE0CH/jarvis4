@@ -29,7 +29,7 @@ export const restore = (r: Rec) => exclusive("r:" + r.id, async () => {
     await refreshUntil((s) => !!(a = s.approvals.find((x) => x.session === j.id)) || s.sessions.some((x) => x.id === j.id && x.state !== "approval"), 60000);
     if (getStore().tab === "records") setTab("sessions");
     if (a && hasShell) review(a);
-    else toast(hasShell ? "Restore requested — approve it in the Inbox." : "Restore requested. Approve it in the Inbox of the Jarvis 2 app on the iPhone.", "ok");
+    else toast(hasShell ? "Restore requested — approve it in the Inbox." : "Restore requested. Approve it in the Inbox of the Jarvis 4 app on the iPhone.", "ok");
     settle(120000);
   } catch (e: any) { failed(e); }
   finally { await loadRecords(); pend(key, null); }
@@ -66,7 +66,7 @@ export function Records() {
       <Cards>
         {list.map((m) => {
           const n = (m.restored || []).length, busy = pending.has("r:" + m.id), a = m.archive;
-          // an archive indexed by hand (POST api/records) has no machine-signed snapshot: nothing Jarvis 2 can restore
+          // an archive indexed by hand (POST api/records) has no machine-signed snapshot: nothing Jarvis 4 can restore
           const signed = !!a?.signer;
           return (
             <Card key={m.id} data={{ record: m.id }}>

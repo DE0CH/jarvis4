@@ -1,5 +1,5 @@
 // The conversation around a search hit (api/search/context): the chunks before and after it in the same transcript,
-// with the hit marked. Earlier / Later widen the window. The action brings the session back when it is Jarvis 2's:
+// with the hit marked. Earlier / Later widen the window. The action brings the session back when it is Jarvis 4's:
 // Resume for a paused session, Restore for an archive on the Previous list.
 import SwiftUI
 
@@ -59,7 +59,7 @@ struct SearchContextView: View {
     }
   }
 
-  /// how the hit's session comes back, if it is Jarvis 2's
+  /// how the hit's session comes back, if it is Jarvis 4's
   private var action: (String, () -> Void)? {
     if let mid = hit["machineId"].text, let m = model.session(mid), m.state == "paused" {
       return ("Resume", { model.tab = .sessions; Task { await model.resume(m.id) } })

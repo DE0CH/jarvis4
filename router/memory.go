@@ -137,7 +137,7 @@ func memMessage(name, size string, a *MemAlert) string {
 		msg += " Now " + a.Detail + "."
 	}
 	if next := upgradeTarget(size); next != "" {
-		return msg + fmt.Sprintf("\nOne tap moves it to %s: the Upgrade button on its card in the Jarvis 2 app.", sizeText(next))
+		return msg + fmt.Sprintf("\nOne tap moves it to %s: the Upgrade button on its card in the Jarvis 4 app.", sizeText(next))
 	}
 	cur := size
 	if sizeMemGB(cur) == 0 {

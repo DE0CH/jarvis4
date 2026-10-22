@@ -1,6 +1,6 @@
 package main
 
-// The session-facing API (Jarvis 1's `$JARVIS_URL/api/...` as its session scripts call it). In a Jarvis 2
+// The session-facing API (Jarvis 1's `$JARVIS_URL/api/...` as its session scripts call it). In a Jarvis 4
 // session JARVIS_URL points at the machine's local proxy (the supervisor, `jarvis2-machine supervisor`, machine/apiproxy.go), which
 // signs each request with the machine key and sends it here as /m/api/<rest>. Any session id in the path must
 // be the calling machine's own session.
@@ -110,7 +110,7 @@ func (r *Router) registerSessionAPI(app appRoute, m machineRoute) {
 		r.proposeSession(w, Caller{Kind: "session", Session: sid}, sid, b, signedRequestOf(req, req.Header.Get("X-Machine"), b))
 	})
 	own("/m/api/", func(w http.ResponseWriter, req *http.Request, sid string, _ []byte) {
-		writeJSON(w, 404, map[string]string{"error": fmt.Sprintf("Jarvis 2 doesn't serve %s %s", req.Method, strings.TrimPrefix(req.URL.Path, "/m"))})
+		writeJSON(w, 404, map[string]string{"error": fmt.Sprintf("Jarvis 4 doesn't serve %s %s", req.Method, strings.TrimPrefix(req.URL.Path, "/m"))})
 	})
 }
 
@@ -124,7 +124,7 @@ func init() {
 	envHooks = append(envHooks, func(_ *Router, s *Session, e map[string]string) {
 		sessionAPIEnv(e, s.Harness)
 		// cf-tunnel/agent.js would otherwise name the tunnel after Claude's own conversation id, which the
-		// Worker refuses for Jarvis 2 (only s+16 hex, with this session's proof)
+		// Worker refuses for Jarvis 4 (only s+16 hex, with this session's proof)
 		e["TUNNEL_ID"] = s.ID
 	})
 }

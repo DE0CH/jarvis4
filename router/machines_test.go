@@ -9,13 +9,13 @@ import (
 func flyM(id, state, created, routerURL string) flyMachineDetail {
 	var m flyMachineDetail
 	m.ID, m.State, m.CreatedAt, m.Region = id, state, created, "lhr"
-	m.Config.Image = "ghcr.io/de0ch/jarvis2-session@sha256:abc"
+	m.Config.Image = "ghcr.io/de0ch/jarvis4-session@sha256:abc"
 	m.Config.Guest = &flyGuest{CPUKind: "shared", CPUs: 4, MemoryMB: 4096}
 	m.Config.Env = map[string]string{"JARVIS2_URL": routerURL}
 	return m
 }
 
-const prodURL = "http://jarvis2-box._peer.internal:8081"
+const prodURL = "http://jarvis4-box._peer.internal:8081"
 
 func TestMachinesView(t *testing.T) {
 	r := newTestRouter(t)

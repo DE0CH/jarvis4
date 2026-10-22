@@ -1,5 +1,5 @@
 // Machines: every Fly machine and volume in every Fly org Jarvis can see (api/machines, router/flyorgs.go): this
-// Jarvis's own app (jarvis2-sessions) with each machine's session or "No session", and the other apps read-only (an org
+// Jarvis's own app (jarvis4-sessions) with each machine's session or "No session", and the other apps read-only (an org
 // read through Jarvis 1 says so). Whatever stands out is flagged in amber. Destroy only for a machine of this Jarvis's
 // own app that belongs to no session; the router re-checks that and destroys it through the core's kill.
 import SwiftUI

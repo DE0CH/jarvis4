@@ -72,7 +72,7 @@ func writeChanges() {
 
 // restoreArchived: the archived snapshot into a new line's first machine, only when the cert names it
 // (Config.restore: the old line's machine and the snapshot's sha256, approved on the phone with the new line). The
-// bytes whose hash the cert names are either a destroyed Jarvis 2 session's signed snapshot, or a Jarvis 1 import's
+// bytes whose hash the cert names are either a destroyed Jarvis 4 session's signed snapshot, or a Jarvis 1 import's
 // manifest (jarvis1import.go), told apart by their content: either way they are exactly what the phone approved.
 func restoreArchived(c *client, coreKey, me string, cert *Cert, v Vouched) error {
 	ref := v.Config.Restore
@@ -195,7 +195,7 @@ func checkSnapshotSig(signingKey string, body []byte, sig string) error {
 
 // reimportJarvis1: a successor whose cert names no snapshot (its predecessor left none: e.g. its machine was stopped
 // before it could sign one) while the line's config names a restore takes that restore again, if it is a Jarvis 1
-// import — exactly the bytes the phone approved for the line (DECISIONS 141). A destroyed Jarvis 2 session's snapshot
+// import — exactly the bytes the phone approved for the line (DECISIONS 141). A destroyed Jarvis 4 session's snapshot
 // is not taken again this way.
 func reimportJarvis1(c *client, v Vouched) error {
 	ref := v.Config.Restore

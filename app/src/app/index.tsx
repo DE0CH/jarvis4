@@ -54,7 +54,7 @@ export default function Dashboard() {
   return (
     <View style={{ flex: 1, backgroundColor: t.background }}>
       <TopBar max={wide ? 1320 : 820}>
-        <Heading size={4} lines={1} style={{ flex: 1, minWidth: 0 }}>{wide ? TABS.find(([k]) => k === tab)![1] : "Jarvis 2"}</Heading>
+        <Heading size={4} lines={1} style={{ flex: 1, minWidth: 0 }}>{wide ? TABS.find(([k]) => k === tab)![1] : "Jarvis 4"}</Heading>
         <IconButton id="refreshBtn" variant="soft" color="gray" label="Refresh" onPress={() => refresh(true)}>{refreshing ? <Spinner /> : "↻"}</IconButton>
         {tab === "sessions" && <Button id="newBtn" onPress={openNewSession}>+ New session</Button>}
         {tab === "schedules" && <Button id="newScheduleBtn" onPress={() => openPage("task-schedule", {})}>+ New schedule</Button>}

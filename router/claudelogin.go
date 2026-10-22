@@ -11,7 +11,7 @@ package main
 //   - a session machine whose session uses that account (Session.ClaudeAccount, fixed when the session is made;
 //     /m/claude-login, signed with its machine key);
 //   - Jarvis 1, while it still runs, for its own sessions (/peer/claude-login, behind a path-scoped Access app that
-//     admits one service token, JARVIS1_LOGIN_CLIENT_ID). Jarvis 2 never calls Jarvis 1.
+//     admits one service token, JARVIS1_LOGIN_CLIENT_ID). Jarvis 4 never calls Jarvis 1.
 // The refresh protocol keeps lessons/74's guarantee (a session that gets a 401 mid-refresh waits for the new pair
 // instead of burning its refresh token): before refreshing, the hub answers every waiting poll with
 // {preparing, gen}; each participant takes the CLI's refresh lock (~/.claude/.oauth_refresh.lock) and polls again
@@ -509,7 +509,7 @@ func deadLoginMessage(store, email, why string) string {
 	if email != "" {
 		who += " (" + email + ")"
 	}
-	return "🔑 The Claude login of " + who + " has run out: refreshing it was refused (" + why + "). Only a new sign-in fixes it: Jarvis 2 → Settings → Claude accounts → " + store + " → Re-login. Its sessions stuck on “Please run /login” are resumed once that is done."
+	return "🔑 The Claude login of " + who + " has run out: refreshing it was refused (" + why + "). Only a new sign-in fixes it: Jarvis 4 → Settings → Claude accounts → " + store + " → Re-login. Its sessions stuck on “Please run /login” are resumed once that is done."
 }
 
 // waitAcks: until every participant in want acknowledged gen, or d passed; returns how many did

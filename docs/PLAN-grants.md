@@ -39,7 +39,7 @@ Taken as recommended in the first draft (Claude, 2026-10-21; each is easy to cha
 ## 1. Components
 
 The kernel is a new Go module `kernel/` (stdlib and `filippo.io/nistec` only), one binary per component under
-`kernel/cmd/<role>`, all in one image `ghcr.io/de0ch/jarvis2-kernel`, each run as its own Deployment in namespace
+`kernel/cmd/<role>`, all in one image `ghcr.io/de0ch/jarvis4-kernel`, each run as its own Deployment in namespace
 `jarvis2-kernel` on the control box. Shared code: `kernel/internal/sig` (P-256 signing, sealing, identities, signed
 errors), `kernel/internal/perm` (permission pairs), `kernel/internal/h2c` (hash-to-curve keys of sources and the sink),
 `kernel/internal/doc` (the documents below). Each binary's dependencies are listed in CI (`go list -deps`), so a

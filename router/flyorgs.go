@@ -1,7 +1,7 @@
 package main
 
 // Every Fly org on the Machines view (Deyao, 2026-10-11: "both list all machines so I can see a leak clearly"):
-// besides jarvis2-sessions (machines.go: sessions, Destroy), every app in every org Deyao has, read-only, grouped
+// besides jarvis4-sessions (machines.go: sessions, Destroy), every app in every org Deyao has, read-only, grouped
 // org → app, each machine and volume with why it stands out (a possible leak), if it does.
 //
 // Where each org comes from: Fly directly, with that org's READ-ONLY token. They can change nothing.
@@ -25,20 +25,20 @@ import (
 	"time"
 )
 
-// this router's own org (the one jarvis2-sessions lives in)
+// this router's own org (the one jarvis4-sessions lives in)
 const ownFlyOrg = "jarvis2-370"
 
 // the apps a Jarvis runs sessions in; a machine anywhere else is unexplained
 var knownFlyApps = map[string]string{
 	"de0ch-claude-sessions":   "Jarvis 1 sessions",
-	"jarvis2-sessions":        "Jarvis 2 sessions",
+	"jarvis4-sessions":        "Jarvis 4 sessions",
 	"kamyee-jarvis3-sessions": "KAMYEE's Jarvis 3 sessions",
 }
 
-// the apps Jarvis 2 itself runs that are not session apps: what each is for (the Machines tab's label, with the
+// the apps Jarvis 4 itself runs that are not session apps: what each is for (the Machines tab's label, with the
 // monthly cost of its started machines added); their machines are expected, so not flagged as unexplained
 var jarvisOwnApps = map[string]string{
-	"jarvis2-log-shipper": "Jarvis 2's log shipper: sends the session machines' logs to Grafana Cloud",
+	"jarvis2-log-shipper": "Jarvis 4's log shipper: sends the session machines' logs to Grafana Cloud",
 }
 
 // ownAppLabel: what the app is for, plus what its started machines cost a month at budget.go's rates (Fly's price
@@ -72,8 +72,8 @@ type flyVolumeView struct {
 
 type flyAppView struct {
 	App      string          `json:"app"`
-	Label    string          `json:"label"` // "Jarvis 2 sessions", or "" for an app no Jarvis uses
-	Own      bool            `json:"own"`   // jarvis2-sessions: sessions and Destroy
+	Label    string          `json:"label"` // "Jarvis 4 sessions", or "" for an app no Jarvis uses
+	Own      bool            `json:"own"`   // jarvis4-sessions: sessions and Destroy
 	Status   string          `json:"status"`
 	Machines []machineView   `json:"machines"`
 	Volumes  []flyVolumeView `json:"volumes"`
@@ -176,7 +176,7 @@ func flyGet(token, path string, out any) error {
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-// scanFlyOrg: one org read directly. ownApp (jarvis2-sessions, in the router's own org) is filled by the caller
+// scanFlyOrg: one org read directly. ownApp (jarvis4-sessions, in the router's own org) is filled by the caller
 // with machinesView's session-aware list.
 func scanFlyOrg(org, token string, own func() ([]machineView, error), now time.Time) flyOrgView {
 	o := flyOrgView{Org: org, Via: "fly", CheckedAt: now.UTC().Format(time.RFC3339), Apps: []flyAppView{}}
@@ -258,7 +258,7 @@ func sortApps(as []flyAppView) {
 
 // flyOrgsOverview: every org, the router's own first, then the read-only ones by name (personal among them), and
 // personal with an error when the router has no token for it
-// ownMs: jarvis2-sessions as the caller just listed it (FLY_READ_TOKEN)
+// ownMs: jarvis4-sessions as the caller just listed it (FLY_READ_TOKEN)
 func (r *Router) flyOrgsOverview(ownMs []flyMachineDetail, now time.Time) (orgs []flyOrgView, configErr string) {
 	toks, err := flyOrgTokens()
 	if err != nil {

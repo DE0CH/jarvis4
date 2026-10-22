@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Jarvis 2",
+    "name": "Jarvis 4",
     "slug": "jarvis2",
     "version": "1.0.0",
     "orientation": "default",
@@ -10,7 +10,7 @@
     "web": {
       "output": "single",
       "favicon": "./assets/favicon.png",
-      "name": "Jarvis 2"
+      "name": "Jarvis 4"
     },
     "plugins": [
       "expo-router"

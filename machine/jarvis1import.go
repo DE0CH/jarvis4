@@ -66,7 +66,7 @@ type j1Manifest struct {
 }
 
 // readJ1Manifest: the restore bytes as an import manifest (strictly: known fields and names, for the session the cert
-// names), or false (they are something else: a Jarvis 2 snapshot)
+// names), or false (they are something else: a Jarvis 4 snapshot)
 func readJ1Manifest(p, session string) (*j1Manifest, bool) {
 	fi, err := os.Stat(p)
 	if err != nil || fi.Size() > 1<<20 {
@@ -517,7 +517,7 @@ func j1Schedule(record []byte, sid string, now time.Time) ([]j1Arm, []string) {
 						c.Name, time.UnixMilli(c.NextAt).UTC().Format(time.RFC3339), j1Soon, j1MissedName(c.Name))})
 			}
 		case strings.HasPrefix(k, "watch_"):
-			notes = append(notes, "not armed: "+k+" (a Jarvis 1 watch; Jarvis 2 has no watches yet)")
+			notes = append(notes, "not armed: "+k+" (a Jarvis 1 watch; Jarvis 4 has no watches yet)")
 		}
 	}
 	return out, notes

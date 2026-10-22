@@ -247,7 +247,7 @@ final class AppModel {
   // ---- the on-demand lists ----
   func loadStores() async { await storesRun?.run() }
   private func fetchStores() async {
-    guard CoreTrust.pinned != nil else { stores.error = "Jarvis 2 isn't set up on this iPhone yet."; return }
+    guard CoreTrust.pinned != nil else { stores.error = "Jarvis 4 isn't set up on this iPhone yet."; return }
     do {
       let d = try await RouterClient.shared.storesDoc()
       stores = Loaded(items: d.stores.filter { !$0.isCore }, loaded: true, error: nil)

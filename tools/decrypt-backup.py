@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""decrypt-backup — open an offline copy of Jarvis 2's store backups with the master key from the recovery kit.
+"""decrypt-backup — open an offline copy of Jarvis 4's store backups with the master key from the recovery kit.
 
 Runs fully offline (Python 3.9+ and the `cryptography` package; nothing else, no network):
 
   decrypt-backup.py FILE [--kit-file KIT | -] [--setup-pub keys/setup.pub] [--box-pub keys/box.pub]
                     [--out PATH] [--stdout] [--force] [--skip-bad]
 
-FILE is what the Jarvis 2 app's Settings → Encrypted backup → "Download encrypted backup" saves
+FILE is what the Jarvis 4 app's Settings → Encrypted backup → "Download encrypted backup" saves
 (`jarvis2-backup-<date>.json`, format "jarvis2-backup-export" version 1: the objects exactly as `GET /api/backups`
 served them, the bucket, the fetch time, the setup public key the app checked them with and, when the file has one, the
 box public key `boxKey`). Also taken: the router's raw `GET /api/backups` answer ({bucket, objects}), a single
@@ -178,7 +178,7 @@ def load_input(path):
             body = f.read()
         meta, objs = {"bucket": None, "fetchedAt": None, "setupKey": None}, [{"key": f"{prefix}{name}.json", "body": body}]
     else:
-        raise Usage(f"{path} isn't a Jarvis 2 backup export")
+        raise Usage(f"{path} isn't a Jarvis 4 backup export")
     if not isinstance(objs, list) or not all(isinstance(o, dict) and isinstance(o.get("key"), str) and isinstance(o.get("body"), str) for o in objs):
         raise Usage(f"{path}: objects must be a list of {{key, body}}")
     return objs, meta
@@ -466,7 +466,7 @@ def default_out(meta):
 
 def main(argv=None):
     os.umask(0o077)
-    p = argparse.ArgumentParser(prog="decrypt-backup", description="Open an offline copy of Jarvis 2's store backups "
+    p = argparse.ArgumentParser(prog="decrypt-backup", description="Open an offline copy of Jarvis 4's store backups "
                                 "with the recovery kit (offline; docs/RUNBOOK.md \"Offline copy of the stores\").")
     p.add_argument("file", help="the app's jarvis2-backup-<date>.json (or a raw /api/backups answer, or one stores/<name>.json)")
     p.add_argument("--kit-file", metavar="KIT", help="a file holding the recovery kit; - = stdin (default: asked for, no echo)")

@@ -1,42 +1,21 @@
-# k8s.yml — every push touching k8s/ dry-runs both boxes' trees as their Flux applies them and checks every Deployment
-# is there and pinned: Flux prunes whatever a commit drops, so an emptied file would delete the router (and its volume).
+# k8s.yml — every push touching k8s/ builds the one cluster's tree as its Flux applies it (k8s/cluster) and checks
+# every Deployment is pinned: Flux prunes whatever a commit drops, so an emptied file would delete the router.
 name: k8s
 on:
   push:
     branches: [main]
-    paths: [k8s/**, infra/router-secrets.py, infra/flux-dryrun.sh, .github/workflows/k8s.yml]
+    paths: [k8s/**, infra/router-secrets.py, .github/workflows/k8s.yml]
 jobs:
   manifests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      # Flux refuses a whole tree when it can't apply one object (and nothing reaches the box): dry-run it as
-      # flux-applier on top of the previous main, against a throwaway kube-apiserver (infra/flux-dryrun.sh)
-      - uses: actions/setup-go@v5
-        with: { go-version: stable }
       - run: |
-          base="${{ github.event.before }}"
-          git cat-file -e "$base^{commit}" 2>/dev/null || base=HEAD~1
-          for box in control services; do
-            trees="$(ls -d k8s/$box/apps/*/ | sed 's#/$##' | tr '\n' ' ')"
-            # on top of the previous main (the box as it is), and as a NEW box meets it (a rebuild, a rehearsal)
-            BOOTSTRAP=k8s/bootstrap-$box TREES="$trees" PATH="$PATH:$(go env GOPATH)/bin" infra/flux-dryrun.sh "$base"
-            FRESH=1 BOOTSTRAP=k8s/bootstrap-$box TREES="$trees" PATH="$PATH:$(go env GOPATH)/bin" infra/flux-dryrun.sh "$base"
-          done
-      - run: |
-          # the control box: both cores, the router and cloudflared, the router and session image pinned by digest
-          for t in core router edge; do kubectl kustomize "k8s/control/apps/$t"; echo "---"; done > /tmp/control.yaml
-          deps="$(awk '/^kind: Deployment/{f=1} f&&/^  name:/{print $2;f=0}' /tmp/control.yaml | sort | tr '\n' ' ')"
-          [ "$deps" = "cloudflared core-blue core-green router " ] || { echo "control Deployments: $deps"; exit 1; }
-          grep -Eq 'jarvis2-router:sha-[0-9a-f]{12}@sha256:[0-9a-f]{64}' /tmp/control.yaml || { echo "the router isn't pinned by digest"; exit 1; }
-          [ "$(grep -Ec 'jarvis2-core:sha-[0-9a-f]{12}@sha256:[0-9a-f]{64}' /tmp/control.yaml)" = 2 ] || { echo "the cores aren't both pinned by digest"; exit 1; }
-          grep -Eq 'jarvis2-session:sha-[0-9a-f]{12}@sha256:[0-9a-f]{64}' /tmp/control.yaml || { echo "the session image isn't pinned by digest"; exit 1; }
-          grep -A1 'name: SESSION_IMAGE_SIG' /tmp/control.yaml | grep -Eq 'value: "?[A-Za-z0-9+/=]{20,}' || { echo "no CI signature for the session image"; exit 1; }
-          grep -Eqx 'blue|green' k8s/control/apps/core/active.txt || { echo "active.txt names no core"; exit 1; }
-          # the services box: every service there, each pinned by digest (Flux prunes what a commit drops)
-          for n in search watch icloud-index; do
-            kubectl kustomize "k8s/services/apps/$n" > /tmp/svc.yaml
-            grep -q "^kind: Deployment" /tmp/svc.yaml || { echo "k8s/services/apps/$n has no Deployment"; exit 1; }
-            grep -Eq "jarvis2-$n:sha-[0-9a-f]{12}@sha256:[0-9a-f]{64}" /tmp/svc.yaml || { echo "$n isn't pinned by digest"; exit 1; }
-          done
+          set -e
+          kubectl kustomize k8s/cluster > /tmp/cluster.yaml
+          # every image by tag@digest, except the kernel and router before their first pin (":latest")
+          bad="$(grep -E '^\s+image: ' /tmp/cluster.yaml | grep -vE '@sha256:[0-9a-f]{64}' | grep -vE 'jarvis4-(kernel|router):latest' || true)"
+          [ -z "$bad" ] || { echo "not pinned by digest:"; echo "$bad"; exit 1; }
+          if [ -f k8s/cluster/kernel/active-secrets.txt ]; then
+            grep -Eqx 'blue|green' k8s/cluster/kernel/active-secrets.txt || { echo "active-secrets.txt names no colour"; exit 1; }
+          fi

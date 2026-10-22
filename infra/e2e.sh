@@ -23,12 +23,12 @@ set -euo pipefail
 : "${JARVIS2_FLY_TOKEN:?}"
 PEER="${E2E_PEER:-jarvis2-e2e}"; PP="${E2E_PORT:-28}"
 [ "$PEER" != jarvis2-box ] || { echo "E2E_PEER jarvis2-box is production's" >&2; exit 1; }
-# sweep: destroy every machine in jarvis2-sessions whose JARVIS2_URL names THIS run's peer (earlier runs' leftovers at the
+# sweep: destroy every machine in jarvis4-sessions whose JARVIS2_URL names THIS run's peer (earlier runs' leftovers at the
 # start, this run's own at the end, on success, failure or interruption). Never one naming another peer: production's
 # machines name jarvis2-box. An earlier run's bare volume (its machine gone) can't be told from production's and is
 # left (docs/RUNBOOK.md "Leftover volumes"); cleanup deletes this run's own from its records (infra/run-volumes.py).
 sweep() {
-  curl -fsS -H "Authorization: Bearer $JARVIS2_FLY_TOKEN" https://api.machines.dev/v1/apps/jarvis2-sessions/machines 2>/dev/null \
+  curl -fsS -H "Authorization: Bearer $JARVIS2_FLY_TOKEN" https://api.machines.dev/v1/apps/jarvis4-sessions/machines 2>/dev/null \
     | python3 -I -c '
 import json, sys
 want = "http://" + sys.argv[1] + "._peer.internal:8081"
@@ -37,12 +37,12 @@ for m in json.load(sys.stdin):
         print(m["id"], " ".join(x.get("volume", "") for x in ((m.get("config") or {}).get("mounts") or [])))' "$PEER" \
     | while read -r m vols; do
         curl -fsS -o /dev/null -X DELETE -H "Authorization: Bearer $JARVIS2_FLY_TOKEN" \
-          "https://api.machines.dev/v1/apps/jarvis2-sessions/machines/$m?force=true" && echo "e2e: destroyed leftover machine $m ($PEER)"
+          "https://api.machines.dev/v1/apps/jarvis4-sessions/machines/$m?force=true" && echo "e2e: destroyed leftover machine $m ($PEER)"
         # its state volume (core/volumes.go): a force destroy leaves it behind, unattached
         for v in $vols; do
           for _ in 1 2 3 4 5 6; do
             curl -fsS -o /dev/null -X DELETE -H "Authorization: Bearer $JARVIS2_FLY_TOKEN" \
-              "https://api.machines.dev/v1/apps/jarvis2-sessions/volumes/$v" && { echo "e2e: deleted its volume $v"; break; }
+              "https://api.machines.dev/v1/apps/jarvis4-sessions/volumes/$v" && { echo "e2e: deleted its volume $v"; break; }
             sleep 5
           done
         done
@@ -109,7 +109,7 @@ exit 1
 SH
 chmod 700 "$W/core-restart"
 # the core starts only the session image pinned by its linux/amd64 digest
-E2E_SESSION_IMAGE="$("$ROOT/infra/image-digest.sh" "${E2E_SESSION_IMAGE:-ghcr.io/de0ch/jarvis2-session:latest}")"
+E2E_SESSION_IMAGE="$("$ROOT/infra/image-digest.sh" "${E2E_SESSION_IMAGE:-ghcr.io/de0ch/jarvis4-session:latest}")"
 # stand-ins for the box's other services (e2e/nojarvis1.go serves them): search, the watch runner, and the Storage Box
 # (WebDAV over TLS with a throwaway certificate the router trusts through SSL_CERT_FILE, beside the system roots)
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 2 -subj /CN=127.0.0.1 \
@@ -138,7 +138,7 @@ exec env -i PATH="$PATH" HOME="$HOME" \\
   $MOVE_ENV "$W/router"
 ENV
 chmod 700 "$W/router-env"
-# Jarvis 2 runs without Jarvis 1: the router runs in its own mount namespace whose /etc/hosts sends every Jarvis 1
+# Jarvis 4 runs without Jarvis 1: the router runs in its own mount namespace whose /etc/hosts sends every Jarvis 1
 # hostname to 127.0.0.2, where a listener (root: ports 80/443) logs any connection to $W/j1-hits.log; the test fails
 # on any line there (e2e/nojarvis1.go). The test blackholes the same hostnames on every session machine.
 J1_HOSTS="jarvis.deyaochen.com"

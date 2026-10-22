@@ -1,7 +1,7 @@
 package spawner
 
 // The Fly Machines API, used only by the spawner, the only holder of the Fly token (sealed to it by the setup
-// session: POST /fly-token). The token is narrowed to app jarvis2-sessions and to one command inside a machine:
+// session: POST /fly-token). The token is narrowed to app jarvis4-sessions and to one command inside a machine:
 // jarvis2-init, with no arguments, whose output is the machine's public keys, so their link to the machine is Fly's
 // word, not the machine's or the router's. Volumes are made with Fly's automatic backups off: a session's state is
 // its signed snapshot only (Deyao, 2026-10-21: "let's not keep volume backups").
@@ -45,11 +45,11 @@ type Fly interface {
 const initPath = "/usr/local/bin/jarvis2-init"
 
 // FlyApp: the one Fly app the spawner makes machines in
-const FlyApp = "jarvis2-sessions"
+const FlyApp = "jarvis4-sessions"
 
 const (
 	volumePath = "/data" // where the machine finds its volume (machine/volume.go)
-	volumeName = "jarvis2_state"
+	volumeName = "jarvis4_state"
 )
 
 // ---- machine sizes (the same block is in router/sizes.go, core/fly.go, kernel/spawner/fly.go and machine/deliver.go; TestSizeBlocksMatch) ----

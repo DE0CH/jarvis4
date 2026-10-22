@@ -270,7 +270,7 @@ func (r *Router) FlipCore(drainMax time.Duration) error {
 	}
 	if why != "" && n.final == nil {
 		log.Printf("[flip] aborted, the serving core goes on: %s", why)
-		r.DM("Jarvis 2: the core flip was aborted after its drain, nothing was handed off and the serving core goes on: " + why + ". Recover the next core alongside again for a new flip.")
+		r.DM("Jarvis 4: the core flip was aborted after its drain, nothing was handed off and the serving core goes on: " + why + ". Recover the next core alongside again for a new flip.")
 		return fmt.Errorf("flip aborted, the serving core goes on: %s", why)
 	}
 	final := n.final
@@ -286,7 +286,7 @@ func (r *Router) FlipCore(drainMax time.Duration) error {
 		// the old core is handed-off for good and can't serve: nothing serves until a takeover goes through (the final
 		// state is kept for the retry; POST /handoff on the old core repeats it too)
 		log.Printf("[flip] THE NEXT CORE REFUSED THE TAKEOVER: NO CORE SERVES (retry the flip): %v", err)
-		r.DM("Jarvis 2: the core flip failed half way — the old core is handed off and the next one refused the takeover, so no core serves. Retry: POST /setup/core/flip. " + err.Error())
+		r.DM("Jarvis 4: the core flip failed half way — the old core is handed off and the next one refused the takeover, so no core serves. Retry: POST /setup/core/flip. " + err.Error())
 		return fmt.Errorf("the next core refused the takeover (the old one is handed off: retry the flip): %w", err)
 	}
 	r.switchCores(n)

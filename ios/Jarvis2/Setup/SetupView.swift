@@ -1,4 +1,4 @@
-// Reset or recover: the only two ways to set Jarvis 2 up, both Deyao's alone (Deyao, 2026-10-10).
+// Reset or recover: the only two ways to set Jarvis 4 up, both Deyao's alone (Deyao, 2026-10-10).
 //   Reset    this page makes the master key pair and shows the recovery kit (the ONE string Deyao saves); once he says
 //            it is saved, it sets the empty core up with it. The stores start empty.
 //   Recover  Deyao pastes his kit; the page reads the backups through the router, checks and opens them, and sets the
@@ -15,8 +15,8 @@ func plain(_ e: Error, _ message: String) -> Plain {
   if let p = e as? Plain { return p }
   let d = errText(e)
   if case TrustError.badKit(let s) = e { return Plain(message: s, detail: d) }
-  if e is RouterClient.CoreNotRunning { return Plain(message: "Jarvis 2 isn't answering right now. Try again in a minute.", detail: "the router reports no core (503)") }
-  if e is URLError { return Plain(message: "Couldn't reach Jarvis 2.", detail: d) }
+  if e is RouterClient.CoreNotRunning { return Plain(message: "Jarvis 4 isn't answering right now. Try again in a minute.", detail: "the router reports no core (503)") }
+  if e is URLError { return Plain(message: "Couldn't reach Jarvis 4.", detail: d) }
   return Plain(message: message, detail: d)
 }
 
@@ -60,7 +60,7 @@ struct SetupView: View {
         }
         Section { SigningFooter() }
       }
-      .navigationTitle(next ? "Next core" : step == .done ? "Jarvis 2" : "Reset or recover")
+      .navigationTitle(next ? "Next core" : step == .done ? "Jarvis 4" : "Reset or recover")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { toolbar }
       .interactiveDismissDisabled(busy != nil)
@@ -75,14 +75,14 @@ struct SetupView: View {
       Section { ProgressView() }
     case .unreachable:
       Section {
-        Text("Jarvis 2 isn't answering right now.")
+        Text("Jarvis 4 isn't answering right now.")
         Button("Try again") { Task { await load() } }.accessibilityIdentifier("setup-retry")
       }
     case .choose where next:
       nextChoose
     case .choose:
       Section {
-        LabeledContent("Jarvis 2") { StatusPill(text: statusText, color: unpinned || status == .foreign ? .orange : status == .mine ? .green : .secondary) }
+        LabeledContent("Jarvis 4") { StatusPill(text: statusText, color: unpinned || status == .foreign ? .orange : status == .mine ? .green : .secondary) }
           .accessibilityElement(children: .combine).accessibilityIdentifier("setup-state-\(statusName)")
       }
       Section {
@@ -109,9 +109,9 @@ struct SetupView: View {
         if next {
           Label("Restarts the next core · the running core keeps serving", systemImage: "arrow.clockwise").foregroundStyle(.orange)
         } else if state?.derived == true {
-          Label("Restarts Jarvis 2 · sessions carry on", systemImage: "arrow.clockwise").foregroundStyle(.orange)
+          Label("Restarts Jarvis 4 · sessions carry on", systemImage: "arrow.clockwise").foregroundStyle(.orange)
         } else {
-          Label("Restarts Jarvis 2 · running sessions end", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+          Label("Restarts Jarvis 4 · running sessions end", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
         }
         Button(busy ?? "Restart and recover", role: .destructive) { Task { await recover(restart: true) } }
           .disabled(busy != nil).accessibilityElement(children: .combine).accessibilityIdentifier("setup-restart-confirm")
@@ -133,7 +133,7 @@ struct SetupView: View {
           Button(busy ?? "I've saved it") { Task { await claimNew() } }
             .disabled(busy != nil).bold().accessibilityIdentifier("setup-kit-saved")
         } header: { Text("Your new recovery kit") } footer: {
-          Text("Save it in your password manager: the only way to recover Jarvis 2.")
+          Text("Save it in your password manager: the only way to recover Jarvis 4.")
         }
       }
     case .done:
@@ -268,7 +268,7 @@ struct SetupView: View {
     } catch is RouterClient.CoreNotRunning { step = .unreachable }
     catch {
       step = .unreachable
-      failure = plain(error, error is TrustError ? "This doesn't look like your Jarvis 2, so the app stopped." : "Couldn't reach Jarvis 2.")
+      failure = plain(error, error is TrustError ? "This doesn't look like your Jarvis 4, so the app stopped." : "Couldn't reach Jarvis 4.")
     }
   }
   /// after a wipe: the old core ends and Kubernetes starts a new, empty one (new keys)
@@ -277,12 +277,12 @@ struct SetupView: View {
       try await Task.sleep(for: .seconds(2))
       if let r = try? await look(), r.0 != old, r.1.master.isEmpty { return r }
     }
-    throw Plain(message: "Jarvis 2 didn't come back after the restart. Try again in a few minutes.", detail: "no new, empty core within 3 minutes")
+    throw Plain(message: "Jarvis 4 didn't come back after the restart. Try again in a few minutes.", detail: "no new, empty core within 3 minutes")
   }
   /// end the core that is running, with the kit it was set up with
   private func wipe(with m: MasterKey) async throws {
     guard let old = core else { return }
-    busy = "Restarting Jarvis 2…"
+    busy = "Restarting Jarvis 4…"
     try await RouterClient.shared.wipe(try await withDevice(try CoreSetup.wipe(core: old, master: m, device: try PhoneKeys.shared.devicePublic())), core: old, next: next)
     let (k, st) = try await waitForEmptyCore(after: old)
     core = k; state = st; status = .empty
@@ -291,7 +291,7 @@ struct SetupView: View {
   private func pastedKit(mustMatch: Bool) throws -> MasterKey {
     let m = try RecoveryKit.parse(kitText).master
     if mustMatch, let st = state, !m.matches(st.master) {
-      throw Plain(message: "This isn't the recovery kit Jarvis 2 is set up with.", detail: "the kit's master key \(m.publicKey.prefix(16))… ≠ the core's \(st.master.prefix(16))…")
+      throw Plain(message: "This isn't the recovery kit Jarvis 4 is set up with.", detail: "the kit's master key \(m.publicKey.prefix(16))… ≠ the core's \(st.master.prefix(16))…")
     }
     return m
   }
@@ -376,7 +376,7 @@ struct SetupView: View {
   private func withDevice(_ body: [String: Any]) async throws -> [String: Any] {
     guard let st = body["statement"] as? String else { return body }
     var b = body
-    let sig = try await offMain { try PhoneKeys.shared.deviceSign(st, reason: "Pair this iPhone with Jarvis 2") }
+    let sig = try await offMain { try PhoneKeys.shared.deviceSign(st, reason: "Pair this iPhone with Jarvis 4") }
     b["deviceKey"] = try PhoneKeys.shared.devicePublic()
     b["deviceSig"] = sig.base64EncodedString()
     return b
@@ -391,7 +391,7 @@ struct SetupView: View {
       guard let r = try? await look() else { continue }
       let (k, st) = r
       guard k == derived, m.matches(st.master) else {
-        throw Plain(message: "Jarvis 2 didn't take the keys of your recovery kit.", detail: "the core answers \(k.signingKey.prefix(16))…, the kit derives \(derived.signingKey.prefix(16))…")
+        throw Plain(message: "Jarvis 4 didn't take the keys of your recovery kit.", detail: "the core answers \(k.signingKey.prefix(16))…, the kit derives \(derived.signingKey.prefix(16))…")
       }
       LineWitness.saw(k.signingKey, st.lineSeq)
       core = k; state = st

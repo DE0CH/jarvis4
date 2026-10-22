@@ -2,7 +2,7 @@ package main
 
 // The Machines view (Deyao, 2026-10-11: "I should be able to see all machines"; flyorgs.go adds every other app
 // and org, read-only): every machine in the Fly app
-// jarvis2-sessions, live from Fly with the router's read-only token (FLY_READ_TOKEN, as budget.go), each with
+// jarvis4-sessions, live from Fly with the router's read-only token (FLY_READ_TOKEN, as budget.go), each with
 // the session it belongs to or none, and marked "test" when its JARVIS2_URL is not production's router.
 //
 // Destroying one goes through the core's kill, the same call a pause makes: the core alone holds a Fly token
@@ -26,7 +26,7 @@ import (
 
 // production's router address on the Fly private network (k8s/control/apps/router/router.yaml MACHINE_URL); any other
 // JARVIS2_URL is a test router's (infra/e2e.sh, a rehearsal box)
-const productionRouterHost = "jarvis2-box._peer.internal"
+const productionRouterHost = "jarvis4-box._peer.internal"
 
 // a machine younger than this may be a Start in flight (the core creates it before the router records it)
 const orphanMinAge = 15 * time.Minute

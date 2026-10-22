@@ -1,4 +1,4 @@
-# rehearsal-box.sh — sourced by infra/rehearse-recover.sh: a throwaway Jarvis 2 control box built the way production's
+# rehearsal-box.sh — sourced by infra/rehearse-recover.sh: a throwaway Jarvis 4 control box built the way production's
 # is (infra/cloudflare.py, infra/create.sh BOX_KIND=control, infra/cloud-init.sh, Flux applying ./k8s/control/apps at a
 # pinned commit with the production images), in the Hetzner project "runners", never touching production. No services
 # box and no Hetzner Network (PRIVATE_IP=none): search, the iCloud index and watches don't answer on it. See that script's header for what
@@ -101,12 +101,12 @@ teardown() {
   FLY_API_TOKEN="$JARVIS2_FLY_TOKEN" flyctl wireguard remove jarvis2-370 "$NAME" >/dev/null 2>&1 && echo "WireGuard peer $NAME removed"
   # the session machines the rehearsal's cores started (each machine names its core: JARVIS2_CORE_KEY; cores file)
   if [ -s "$W/cores" ]; then
-    FLY_API_TOKEN="$JARVIS2_FLY_TOKEN" flyctl machines list -a jarvis2-sessions --json 2>/dev/null | python3 -c "
+    FLY_API_TOKEN="$JARVIS2_FLY_TOKEN" flyctl machines list -a jarvis4-sessions --json 2>/dev/null | python3 -c "
 import json,sys
 cores=set(open(sys.argv[1]).read().split())
 for m in json.load(sys.stdin):
     if (m.get('config',{}).get('env') or {}).get('JARVIS2_CORE_KEY') in cores: print(m['id'])" "$W/cores" | while read -r m; do
-      FLY_API_TOKEN="$JARVIS2_FLY_TOKEN" flyctl machines destroy -a jarvis2-sessions --force "$m" >/dev/null 2>&1 && echo "Fly machine $m destroyed"
+      FLY_API_TOKEN="$JARVIS2_FLY_TOKEN" flyctl machines destroy -a jarvis4-sessions --force "$m" >/dev/null 2>&1 && echo "Fly machine $m destroyed"
     done
   fi
   REHEARSAL="$NAME" python3 "$ROOT/infra/cloudflare.py" --delete

@@ -1,4 +1,4 @@
-# Jarvis 2 box bootstrap (create.sh prepends a shebang and the variables). Blank Ubuntu → single-node k3s
+# Jarvis 4 box bootstrap (create.sh prepends a shebang and the variables). Blank Ubuntu → single-node k3s
 # → Flux reconciling the box's tree (k8s/flux/<BOX_KIND>.yaml) from the public repo. After this the box takes changes only from git:
 # no SSH, no k8s API from outside (the firewall has no inbound rules at all), no admin token. A box that
 # git can't fix is replaced, not repaired. Secrets (the tunnel token, the router's WireGuard peer, the box key, the age key) arrive
@@ -30,7 +30,7 @@ warp_host_setup || exit 1
 # table before any of k3s's own rules see it, at every boot, whatever a namespace's NetworkPolicy says (R1 audit)
 cat > /etc/systemd/system/jarvis2-no-metadata.service <<'UNIT'
 [Unit]
-Description=Jarvis 2: pods never reach 169.254.169.254
+Description=Jarvis 4: pods never reach 169.254.169.254
 Before=k3s.service
 [Service]
 Type=oneshot
@@ -67,7 +67,7 @@ mkdir -p /etc/jarvis2
 if [ "$BOX_KIND" = services ]; then echo "10.77.0.2" > /etc/jarvis2/private-allow; else echo "$PRIVATE_ALLOW" > /etc/jarvis2/private-allow; fi
 cat > /etc/systemd/system/jarvis2-private-guard.service <<'UNIT'
 [Unit]
-Description=Jarvis 2: on the private Network, only answers and the allowed peers come in
+Description=Jarvis 4: on the private Network, only answers and the allowed peers come in
 After=network-online.target
 Wants=network-online.target
 Before=k3s.service
@@ -99,7 +99,7 @@ export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 for i in $(seq 1 60); do kubectl get nodes 2>/dev/null | grep -q ' Ready' && break; sleep 5; done
 
 curl -s https://fluxcd.io/install.sh | FLUX_VERSION="$FLUX_VERSION" bash || exit 1
-# only the two controllers Jarvis 2 uses (no Helm, no notifications): less memory on a cx23 control box
+# only the two controllers Jarvis 4 uses (no Helm, no notifications): less memory on a cx23 control box
 flux install --components source-controller,kustomize-controller --timeout 5m || exit 1
 if [ "$BOX_KIND" != cluster ]; then  # the cluster: Flux applies k8s/cluster as the controller (git manages it all)
   # a Kustomization that names no service account applies as the powerless `default`, never as the controller
@@ -183,14 +183,14 @@ CREDS
 chmod 700 /usr/local/sbin/jarvis2-alloy-creds
 cat > /etc/systemd/system/jarvis2-alloy-creds.service <<'UNIT'
 [Unit]
-Description=Jarvis 2: Alloy's Grafana credentials from the cluster
+Description=Jarvis 4: Alloy's Grafana credentials from the cluster
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/jarvis2-alloy-creds
 UNIT
 cat > /etc/systemd/system/jarvis2-alloy-creds.timer <<'UNIT'
 [Unit]
-Description=Jarvis 2: refresh Alloy's Grafana credentials
+Description=Jarvis 4: refresh Alloy's Grafana credentials
 [Timer]
 OnBootSec=1min
 OnUnitActiveSec=5min

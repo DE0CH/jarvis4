@@ -19,7 +19,7 @@ import (
 	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
-const kernelImage = "ghcr.io/de0ch/jarvis2-session:sha-aaaaaaaaaaaa@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+const kernelImage = "ghcr.io/de0ch/jarvis4-session:sha-aaaaaaaaaaaa@sha256:1111111111111111111111111111111111111111111111111111111111111111"
 
 // kernelRig: the archive rig with the real kernel beside the fake core, its root grant in, new sessions on it
 func kernelRig(t *testing.T) (*rig, *kerneltest.Kernel) {

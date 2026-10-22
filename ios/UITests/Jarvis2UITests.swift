@@ -1,7 +1,7 @@
 import CryptoKit
 import XCTest
 
-/// Walks the native Jarvis 2 app on a simulator against the REAL core (fakefly build) and router running on the CI runner,
+/// Walks the native Jarvis 4 app on a simulator against the REAL core (fakefly build) and router running on the CI runner,
 /// with the backups on a local S3 stand-in, keeping a screenshot of every step. ios.yml runs it once per appearance
 /// (light, then dark), each against a fresh, empty core and router and a reset simulator keychain:
 /// Reset or recover (an old kit refused; Recover with the public TEST kit) → stores (create, unlock) → the encrypted
@@ -10,7 +10,7 @@ import XCTest
 /// review, one denied, one forgotten) → schedules (listed, nothing to arm: the session arms its own) → terminal (the
 /// router's page in a WebView) → the session's Log (the boot's start) → pause → transcript → the Log again →
 /// resume with a prompt (signed, shown on the approval) → permission mode → resume with the latest image → destroy →
-/// Previous → search → repos (add with its deploy key, Jarvis 2's own repo comes up sensitive, remove; claude-env
+/// Previous → search → repos (add with its deploy key, Jarvis 4's own repo comes up sensitive, remove; claude-env
 /// pre-selected on New session only when listed) → tasks → Reset (the kit ends the core; a new kit; the stores empty).
 final class Jarvis2UITests: JarvisUITestCase {
 
@@ -213,7 +213,7 @@ final class Jarvis2UITests: JarvisUITestCase {
     el("setup-kit-field").tap(); el("setup-kit-field").typeText("jarvis2-kit:1:AAAA:ak:sk")
     el("setup-recover-go").tap()
     if wait(el("secure-error"), 15, "an old kit is refused") {
-      XCTAssertTrue(el("secure-error").label.contains("older Jarvis 2"), "[\(tag)] plain message: \(el("secure-error").label)")
+      XCTAssertTrue(el("secure-error").label.contains("older Jarvis 4"), "[\(tag)] plain message: \(el("secure-error").label)")
       shot("setup-old-kit")
     }
     el("secure-back").tap()
@@ -493,7 +493,7 @@ final class Jarvis2UITests: JarvisUITestCase {
       if app.buttons["iCloud files"].waitForExistence(timeout: 5) { app.buttons["iCloud files"].tap(); sleep(2); shot("search-icloud") }
     }
 
-    // ---- repos: add DE0CH/china-train (the CI core's fake GitHub takes the key), Jarvis 2's own comes up sensitive, remove
+    // ---- repos: add DE0CH/china-train (the CI core's fake GitHub takes the key), Jarvis 4's own comes up sensitive, remove
     if addRepo("DE0CH/china-train") {
       wait(el("signed-store"), 15, "…naming the repo's store")
       XCTAssertTrue(said(el("signed-store")).contains("github-china-train") && said(el("signed-repo")).contains("DE0CH/china-train"), "[\(tag)] what you sign names the repo and its store: \(said(el("signed-store")))")
@@ -516,7 +516,7 @@ final class Jarvis2UITests: JarvisUITestCase {
       wait(el("signed-store"), 15, "…naming github-jarvis2")
       sleep(1)
       XCTAssertTrue(said(el("signed-store")).contains("github-jarvis2") && said(el("signed-sensitive")).contains("Yes"), "[\(tag)] signed as sensitive: \(said(el("signed-store"))) / \(said(el("signed-sensitive")))")
-      XCTAssertTrue(isOn(el("secure-repo-sensitive")), "[\(tag)] Jarvis 2's own repo comes up sensitive (the core's word)")
+      XCTAssertTrue(isOn(el("secure-repo-sensitive")), "[\(tag)] Jarvis 4's own repo comes up sensitive (the core's word)")
       shot("repo-sensitive")
       el("secure-back").tap()
     }

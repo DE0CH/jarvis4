@@ -11,7 +11,7 @@ export async function openApprovalFor(session: string | null | undefined, kind?:
   let a: Approval | undefined;
   await refreshUntil((s) => !!(a = s.approvals.find((x) => x.session === session && (!kind || x.kind === kind))), 60000);
   if (a && hasShell) review(a);
-  else toast(hasShell ? "No approval appeared yet — it will show in the Inbox." : "Approve it in the Inbox of the Jarvis 2 app on the iPhone.", "ok");
+  else toast(hasShell ? "No approval appeared yet — it will show in the Inbox." : "Approve it in the Inbox of the Jarvis 4 app on the iPhone.", "ok");
 }
 
 // Run now; the button stays "Starting…" until api/tasks lists the new run as this instance's active (or last) run

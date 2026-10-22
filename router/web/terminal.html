@@ -229,7 +229,7 @@
     try {
       const res = await fetch(new URL("api/requests/grant", ROOT).toString(), { method: "POST", credentials: "same-origin",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session: SID, holder: "terminal", minutes: 10 }) });
-      if (res.ok) show("Sent to the Inbox: approve it in the Jarvis 2 app.", false);
+      if (res.ok) show("Sent to the Inbox: approve it in the Jarvis 4 app.", false);
       else { const r = await reason(res); r.kind === "auth" ? signin() : show(r.msg || "This session's terminal needs a grant.", r.kind === "grant"); }
     } catch (e) { signin(); }
     allow.disabled = false;

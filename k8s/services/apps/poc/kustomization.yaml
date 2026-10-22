@@ -1,6 +1,0 @@
-# Experiments and proofs of concept (Deyao, 2026-10-15: an unimportant job must never bring down the control plane):
-# anything goes here, in namespace jarvis2-poc, on the services box only. The bootstrap's ResourceQuota caps the
-# namespace (1.5 GiB, one core), so an experiment can't take the box from search, watch or the iCloud index either.
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources: []

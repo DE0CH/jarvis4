@@ -1,5 +1,5 @@
 name: web
-# The Jarvis 2 web page (app/, an Expo app exported for the web only): typecheck and export; the router serves ../web at /.
+# The Jarvis 4 web page (app/, an Expo app exported for the web only): typecheck and export; the router serves ../web at /.
 on:
   push:
     paths: [app/**, .github/workflows/web.yml]

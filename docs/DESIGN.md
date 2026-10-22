@@ -87,7 +87,7 @@ changes nobody can see — no single compromised component is enough.
 ## Core primitives
 
 The core trusts itself: it does what it signs. It doesn't care who calls or why — the router decides that.
-Its Fly token is narrowed (a Fly macaroon caveat) to app `jarvis2-sessions`: create, read, stop and destroy
+Its Fly token is narrowed (a Fly macaroon caveat) to app `jarvis4-sessions`: create, read, stop and destroy
 machines and their volumes (and the volumes' snapshots), and run exactly one command inside a machine,
 `/usr/local/bin/jarvis2-init` with no arguments.
 
@@ -107,7 +107,7 @@ machines and their volumes (and the volumes' snapshots), and run exactly one com
 | `approve_by_phone(challenge, sig, current?)` | The phone is the highest privilege: any challenge it signs is approved, once. An add-store is always answered onto `current`, the machine's newest cert (above), and refused without it. |
 | `approve_by_dead_machine(challenge)` | Automatic: the predecessor is killed (Fly-confirmed) and not used, and the stores, image and options are identical (the predecessor's `once` left out; this challenge has none) — or it is a burn. Never a new line, never a machine succeeding itself. |
 | `approve_by_old_key(challenge, sig)` | Automatic: a downgrade (same machine, a subset of its stores, a new key pair) signed with the signing key in the cert it continues. |
-| `start(image, region, size, diskGb?)` | Open (normally the router, which guards it; it can't lead to a secret): a new, empty Fly volume (`diskGb`, default 10, at most 500; `core/volumes.go`) and one Fly create with it mounted at `/data` → a created machine, its volume named in the `created` and `started` documents and so in its cert. The image is `ghcr.io/de0ch/jarvis2-session` pinned by digest; `size` is small, medium, large or a doubling past it, `16gb`, `32gb`, … (anything else is refused; `sizeGuest` makes the Fly guest); the machine's Fly config gets only what the core sets (its key, the router's address, the mount). A volume is never made from a snapshot: no machine starts on another's data. |
+| `start(image, region, size, diskGb?)` | Open (normally the router, which guards it; it can't lead to a secret): a new, empty Fly volume (`diskGb`, default 10, at most 500; `core/volumes.go`) and one Fly create with it mounted at `/data` → a created machine, its volume named in the `created` and `started` documents and so in its cert. The image is `ghcr.io/de0ch/jarvis4-session` pinned by digest; `size` is small, medium, large or a doubling past it, `16gb`, `32gb`, … (anything else is refused; `sizeGuest` makes the Fly guest); the machine's Fly config gets only what the core sets (its key, the router's address, the mount). A volume is never made from a snapshot: no machine starts on another's data. |
 | `init(machine)` | One try, for a machine this core created: Fly must report it started, then one run of `jarvis2-init` (its output: the machine's keys) → the signed `started` document. 409 while it isn't up; the router retries and kills a machine that never comes up. |
 | `certify(approval, started, carry?)` | The approval and a started machine (init's signed document) running the approved image (the digest Fly reports is the approval's) → the succession cert, naming the snapshot the predecessor signed at its kill. One machine per approval, one line per machine, one successor per predecessor (killed and not used). The null image: no machine, a burn cert. For a machine succeeding itself the approval is the new cert at once. Given the line's carry blob, certify (and an add-store's or downgrade's answer) answers it rebound to the new cert beside it, keeping only that cert's stores. |
 | `kill(machine, snapshot?)` | One Fly destroy, Fly must report the machine destroyed → killed (409 before: the router asks again), then the machine's volume is deleted. No volume snapshot is taken, and volumes are made with Fly's automatic snapshots off (DECISIONS 222): the machine's signed snapshot is the only copy of its state. `snapshot` = the sha256 of the machine's last snapshot and its signature over it with its current key: kept as what its successor restores. A claim that doesn't check doesn't stop the kill: the record names no snapshot and says why (`snapshotRefused`), and the successor restores nothing; only `snapshot.required` (a pause, which would rather keep the machine) turns it into a 409 with the machine untouched (DECISIONS 190). |
@@ -348,7 +348,7 @@ to it and records `activeCore`. `/setup/status` shows each core's URL, `serving`
 "An unimportant job must never be able to bring down the control plane, because that takes away the tool he uses to
 fix things." On 2026-10-15 the one 4 GB box ran the control plane next to transcript search and the iCloud index; they
 starved it of memory, a Flux backlog landed at once, and the app, the web page and every session lost the router until
-a hard reset. So Jarvis 2 runs on TWO Hetzner boxes (fsn1, IPv6-only with WARP for IPv4, DECISIONS 156), each its
+a hard reset. So Jarvis 4 runs on TWO Hetzner boxes (fsn1, IPv6-only with WARP for IPv4, DECISIONS 156), each its
 own single-node k3s with its own Flux, joined only by a Hetzner Network (`jarvis2`, 10.77.0.0/24):
 
 - **The control box** (`jarvis2-control`, cx23, 10.77.0.2; `k8s/control`, `k8s/bootstrap-control`,
@@ -400,7 +400,7 @@ PEM private keys, the kit's prefix), as a second layer under "the core logs noth
   org's network tap every session's log), label `box="fly"`.
 - **Alerts** (rules as code: `infra/grafana.py`) go to Discord #jarvis2-alerts: memory pressure, OOM kills, disk,
   Flux failing, control-plane restarts, a new core (Deyao Recovers), a box gone quiet, and the external probe: Grafana
-  Synthetic Monitoring calls `https://jarvis2.deyaochen.com/healthz` every minute from London and Frankfurt with its own
+  Synthetic Monitoring calls `https://jarvis4.deyaochen.com/healthz` every minute from London and Frankfurt with its own
   Access service token (path-scoped Access app; `router/healthz.go` answers 200 only while the router and its core
   serve). A rule whose query Grafana itself can't run keeps its last state; two `notice` canaries say when Grafana
   hasn't been able to query its own metrics or logs for 15 min (DECISIONS 211). Each Discord message reads: what is
@@ -432,7 +432,7 @@ old box and copies `/data` every minute (changed files only). At `MOVE_AT` it ta
 (which drains as for a rollout, lets the Claude login's refresh finish, stops the WireGuard peer, saves and freezes its
 state and answers the file list and the peer's `wg.conf`), takes the delta (every file under 1 MB and everything touched
 since the last copy, whatever its size and mtime say), writes the peer into `/data/wg.conf` (it wins over `WG_CONFIG`:
-the peer moves with the leadership, so `jarvis2-box._peer.internal` keeps its address and the machines notice only a
+the peer moves with the leadership, so `jarvis4-box._peer.internal` keeps its address and the machines notice only a
 handshake), starts as the leader and tells the sender done. From then on the old box's routers are only proxies to the
 new one (`/data/router.moved`, kept across restarts: they never load the old state again). Requests that arrive
 meanwhile wait in both boxes' proxies; the gap (sender frozen → new router serving) is logged and shown in
@@ -895,7 +895,7 @@ Deyao handing a feature a shell, and the session's own allow list is the session
 
 | Input | Who vouches |
 |---|---|
-| The image | (a) the approval names `ghcr.io/de0ch/jarvis2-session` pinned by its linux/amd64 digest; certify refuses a machine whose Fly-reported digest differs. A resume runs the predecessor's digest. |
+| The image | (a) the approval names `ghcr.io/de0ch/jarvis4-session` pinned by its linux/amd64 digest; certify refuses a machine whose Fly-reported digest differs. A resume runs the predecessor's digest. |
 | The entry point | the image (Fly config has no init/cmd, no files, mounts or services; only the core's token can create or change machines) |
 | The env | none needed: the core sets only `JARVIS2_CORE_KEY` and `JARVIS2_URL` (from its own deployment); the machine also throws away anything else at boot (keeps the image's own ENV, recorded at build, and Fly's `FLY_*`) |
 | Title, first prompt, model, repos, one-shot, API proxy, attachments (by sha256), a restore (machine + snapshot sha256), task parameters | (a) `Options.Config`, fixed for the line; the first prompt and attachments only for its first machine; each attachment also carries the core's attestation (input log) and is taken only when its bytes match |

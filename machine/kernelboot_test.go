@@ -10,7 +10,7 @@ import (
 	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
-const kImage = "ghcr.io/de0ch/jarvis2-session:sha-aaaaaaaaaaaa@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+const kImage = "ghcr.io/de0ch/jarvis4-session:sha-aaaaaaaaaaaa@sha256:1111111111111111111111111111111111111111111111111111111111111111"
 
 func bootDocs(t *testing.T, k *kerneltest.Kernel) (kernelBootDocs, *kerneltest.FakeMachine) {
 	settings := json.RawMessage(`{"v":1,"harness":"claude","permissionMode":"auto","config":{"v":1,"label":"x","model":"claude-opus-5-5"}}`)

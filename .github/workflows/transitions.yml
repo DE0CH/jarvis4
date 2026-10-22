@@ -53,7 +53,7 @@ jobs:
               for i in $(seq 30); do curl -sf http://127.0.0.1:8090/key > /dev/null && break; sleep 1; done
               (set -a; . "$W/router-backup.env"; set +a
                NO_ACCESS=1 SETUP_KEY="$(cat "$W/keys/setup.pub")" CORE_URL=http://127.0.0.1:8090 DATA_DIR=$PWD/data-$a WEB_DIR=$PWD/web TASKS_DIR=$PWD/tasks SNAPSHOT_STALL_SECONDS=2 POLICY_FILE="$W/policy.json" \
-                SESSION_IMAGE=ghcr.io/de0ch/jarvis2-session:ci@sha256:0000000000000000000000000000000000000000000000000000000000000000 ADDR=127.0.0.1:18080 MACHINE_ADDR=127.0.0.1:18081 nohup "$W/router" > out/router-$a.log 2>&1 & echo $! > "$W/router.pid")
+                SESSION_IMAGE=ghcr.io/de0ch/jarvis4-session:ci@sha256:0000000000000000000000000000000000000000000000000000000000000000 ADDR=127.0.0.1:18080 MACHINE_ADDR=127.0.0.1:18081 nohup "$W/router" > out/router-$a.log 2>&1 & echo $! > "$W/router.pid")
               sleep 2
               xcrun simctl keychain "$SIM_UDID" reset
               xcrun simctl uninstall "$SIM_UDID" dev.de0ch.jarvis2 || true

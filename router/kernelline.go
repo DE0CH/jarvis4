@@ -202,7 +202,7 @@ func (r *Router) kernelSpawn(sid string) {
 	if err != nil {
 		if strings.Contains(err.Error(), "no Fly token") && r.kernelTokenDMed.CompareAndSwap(false, true) {
 			// a restarted spawner: its token comes again with the app's Recover of the kernel, or from the setup session
-			r.DM("🔴 Jarvis 2 needs you — the kernel's spawner has no Fly token (it restarted), so no kernel session starts. Settings → Kernel → Recover gives it the token again (or the setup session: infra/setup.py kernel-fly-token).")
+			r.DM("🔴 Jarvis 4 needs you — the kernel's spawner has no Fly token (it restarted), so no kernel session starts. Settings → Kernel → Recover gives it the token again (or the setup session: infra/setup.py kernel-fly-token).")
 		}
 		fail("start: " + err.Error())
 		return

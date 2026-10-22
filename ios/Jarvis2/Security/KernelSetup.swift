@@ -151,7 +151,7 @@ enum KernelJSON: Codable, Equatable {
 }
 
 enum KernelChecks {
-  static let sessionImageRepo = "ghcr.io/de0ch/jarvis2-session"
+  static let sessionImageRepo = "ghcr.io/de0ch/jarvis4-session"
 
   /// a cert into a new source the phone signs (a new session, a restore, a resume on another image): from the sink, by
   /// the phone, its stores for exactly this session, the session image pinned by digest

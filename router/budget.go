@@ -15,7 +15,7 @@ package main
 // router lists the snapshots of each volume Fly has, sums their sizes once each, takes off Fly's free 10 GB and adds
 // that GB-month rate to the burn.
 //
-// The budget uses FLY_READ_TOKEN, read-only on app jarvis2-sessions (infra/fly-read-token.sh): it lists machines,
+// The budget uses FLY_READ_TOKEN, read-only on app jarvis4-sessions (infra/fly-read-token.sh): it lists machines,
 // volumes and the volumes' snapshots, nothing else. The router's only Fly token that changes anything is
 // FLY_VOLUME_TOKEN, which can only delete volumes (volsweep.go, DECISIONS 195).
 
@@ -37,7 +37,7 @@ const (
 	hoursPerMonth = 730
 	maxDeltaH     = 6 // the longest gap one sample may bill for
 	budgetTickDur = 2 * time.Minute
-	sessionsApp   = "jarvis2-sessions"
+	sessionsApp   = "jarvis4-sessions"
 )
 
 // rates (USD) from fly.io/docs/about/pricing (its "Started Fly Machines" calculator, read 2026-10-15; volumes and
@@ -468,7 +468,7 @@ func (r *Router) budgetTick(fly flyReader, now time.Time, capUSD, warnUSD float6
 			paused = append(paused, name)
 		}
 		if act.CapDM || len(paused) > 0 {
-			msg := fmt.Sprintf("Fly budget cap (Jarvis 2): an estimated %s of %s spent in %s. ", usd(state.SpentUSD), usd(capUSD), state.Month)
+			msg := fmt.Sprintf("Fly budget cap (Jarvis 4): an estimated %s of %s spent in %s. ", usd(state.SpentUSD), usd(capUSD), state.Month)
 			if len(paused) > 0 {
 				msg += fmt.Sprintf("Paused %d running session(s): %s. They resume from the app. ", len(paused), strings.Join(paused, ", "))
 			} else {
@@ -481,7 +481,7 @@ func (r *Router) budgetTick(fly flyReader, now time.Time, capUSD, warnUSD float6
 			budgetDM(r, msg)
 		}
 	} else if act.WarnDM {
-		budgetDM(r, fmt.Sprintf("Fly spend (Jarvis 2): an estimated %s of %s in %s (%d%%), %d session(s) running at %s a month. At %s running sessions are paused.",
+		budgetDM(r, fmt.Sprintf("Fly spend (Jarvis 4): an estimated %s of %s in %s (%d%%), %d session(s) running at %s a month. At %s running sessions are paused.",
 			usd(state.SpentUSD), usd(capUSD), state.Month, int(state.SpentUSD/capUSD*100), b.Running, usd(b.RatePerHour*hoursPerMonth), usd(capUSD)))
 	}
 	return act, paused, nil

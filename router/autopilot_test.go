@@ -672,9 +672,9 @@ func TestStatusSetsHarnessClock(t *testing.T) {
 // a session the harness check failed resumes on the newest image when its own is older; any other failure, or the
 // newest image itself, resumes as it is
 func TestHarnessRetryUpgrade(t *testing.T) {
-	cert := &Doc{Payload: `{"machine":{"id":"m1","image":"ghcr.io/de0ch/jarvis2-session@sha256:aaa"}}`}
-	newest := "ghcr.io/de0ch/jarvis2-session:sha-1@sha256:bbb"
-	s := Session{State: "failed", Cert: cert, StuckImage: "ghcr.io/de0ch/jarvis2-session@sha256:aaa"}
+	cert := &Doc{Payload: `{"machine":{"id":"m1","image":"ghcr.io/de0ch/jarvis4-session@sha256:aaa"}}`}
+	newest := "ghcr.io/de0ch/jarvis4-session:sha-1@sha256:bbb"
+	s := Session{State: "failed", Cert: cert, StuckImage: "ghcr.io/de0ch/jarvis4-session@sha256:aaa"}
 	if !harnessRetryUpgrade(s, newest) {
 		t.Fatal("not upgraded")
 	}
@@ -682,7 +682,7 @@ func TestHarnessRetryUpgrade(t *testing.T) {
 	if !harnessRetryUpgrade(s, newest) {
 		t.Fatal("not upgraded after a lapsed approval")
 	}
-	if harnessRetryUpgrade(s, "ghcr.io/de0ch/jarvis2-session:sha-0@sha256:aaa") {
+	if harnessRetryUpgrade(s, "ghcr.io/de0ch/jarvis4-session:sha-0@sha256:aaa") {
 		t.Fatal("upgraded onto its own image")
 	}
 	s.StuckImage = ""
@@ -696,7 +696,7 @@ func TestHarnessRetryUpgrade(t *testing.T) {
 	r.harnessStuck(pilotAction{Kind: "harness-stuck", Session: "s1", Machine: "m1", Text: harnessStuckText(time.Minute, "")})
 	var got Session
 	r.st.Do(func(p *persisted) { got = *p.Sessions["s1"] })
-	if got.State != "failed" || got.StuckImage != "ghcr.io/de0ch/jarvis2-session@sha256:aaa" {
+	if got.State != "failed" || got.StuckImage != "ghcr.io/de0ch/jarvis4-session@sha256:aaa" {
 		t.Fatalf("%+v", got)
 	}
 	r.st.Do(func(p *persisted) { p.Sessions["s1"].State = "started" })

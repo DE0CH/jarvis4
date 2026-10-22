@@ -93,7 +93,7 @@ struct KernelSetupView: View {
       guard let k = next ? nextKeys : keys else { return }
       busy = "Checking the kit…"
       let m = try RecoveryKit.parse(kitText).master
-      guard let cm = CoreTrust.master, m.matches(cm) else { throw TrustError.badKit("This isn't the recovery kit Jarvis 2 is set up with.") }
+      guard let cm = CoreTrust.master, m.matches(cm) else { throw TrustError.badKit("This isn't the recovery kit Jarvis 4 is set up with.") }
       busy = "Reading the backups…"
       let setupKey = try await KeySource.key("setup.pub"), boxKey = try await KeySource.key("box.pub")
       let stores = try CoreSetup.readBackups(try await RouterClient.shared.backups(), master: m, setupKey: setupKey, boxKey: boxKey)

@@ -77,7 +77,7 @@ check(kit?.master.publicKey == master.publicKey, "the kit round-trips")
 let wrapped = String(kitString.enumerated().map { $0.offset > 0 && $0.offset % 64 == 0 ? "\n\($0.element)" : "\($0.element)" }.joined()) + "\n"
 check((try? RecoveryKit.parse("  " + wrapped))?.master.publicKey == master.publicKey, "a kit pasted with line breaks and spaces still parses")
 func kitError(_ s: String) -> String { do { _ = try RecoveryKit.parse(s); return "" } catch { return (error as? LocalizedError)?.errorDescription ?? "?" } }
-check(kitError("jarvis2-kit:1:\(master.pkcs8):AK:SK").contains("older Jarvis 2"), "a version-1 kit is refused with a plain message (\(kitError("jarvis2-kit:1:x")))")
+check(kitError("jarvis2-kit:1:\(master.pkcs8):AK:SK").contains("older Jarvis 4"), "a version-1 kit is refused with a plain message (\(kitError("jarvis2-kit:1:x")))")
 check(kitError(master.pkcs8) == "That isn't a recovery kit.", "a bare master key is not a kit")
 check(!kitError("jarvis2-kit:2:AAAA").isEmpty, "a kit with a broken master key is refused")
 check(!kitError("jarvis2-kit:3:" + master.pkcs8).isEmpty, "another kit version is refused")
@@ -473,8 +473,8 @@ func start(_ image: String) -> (machine: StartedMachine, started: SignedDoc) {
 }
 
 // the core starts only the session image pinned by digest (core/vouch.go)
-let img = "ghcr.io/de0ch/jarvis2-session:1@sha256:" + String(repeating: "1", count: 64)
-let img2 = "ghcr.io/de0ch/jarvis2-session:2@sha256:" + String(repeating: "2", count: 64)
+let img = "ghcr.io/de0ch/jarvis4-session:1@sha256:" + String(repeating: "1", count: 64)
+let img2 = "ghcr.io/de0ch/jarvis4-session:2@sha256:" + String(repeating: "2", count: 64)
 
 // a core that vouches for inputs carries the session's settings in the challenge; the page checks them and refuses
 // a key it can't show
@@ -671,12 +671,12 @@ let dk1 = dk1b.flatMap { try? Checks.deployKeyAnswer(doc(dk1d), coreKey: coreKey
 check(dk1s == 200 && dk1?.kind == "deploy-key-added" && dk1?.store == "github-china-train" && dk1?.sensitive == false && dk1?.publicKey != nil && dk1?.publicKey == dk1b?.publicKey, "add a repo: the core adds the app's key, the store github-china-train (HTTP \(dk1s))")
 check(list().first { $0.name == "github-china-train" }.map { !$0.sensitive && !$0.empty && !$0.unlocked } == true, "…the repo's store: not sensitive, with contents, locked")
 check(list().first { $0.name == "github-deploy-keys" }?.unlocked == false, "…and the token store was opened for that call only")
-// Jarvis 2's own repo: the app always asks for it sensitive (RepoKeyView) and refuses a begin that isn't (the core
+// Jarvis 4's own repo: the app always asks for it sensitive (RepoKeyView) and refuses a begin that isn't (the core
 // takes what is asked)
 let (bjBody, bjSent) = keyBegin("add", "DE0CH/jarvis2", sensitive: true)
 let (bjs, bjd) = call("/deploy-keys/begin", bjBody)
 let bj = bjs == 200 ? try? Checks.deployKeyBegin(doc(bjd), coreKey: coreKey, action: "add", repo: "DE0CH/jarvis2", sensitive: true, sent: bjSent) : nil
-check(bj?.sensitive == true && bj?.store == "github-jarvis2", "Jarvis 2's own repo asked for sensitive: the begin document says so before Face ID")
+check(bj?.sensitive == true && bj?.store == "github-jarvis2", "Jarvis 4's own repo asked for sensitive: the begin document says so before Face ID")
 let (bnBody, bnSent) = keyBegin("add", "DE0CH/jarvis2", sensitive: false)
 let (bns, bnd) = call("/deploy-keys/begin", bnBody)
 check(bns == 200 && throwsErr { _ = try Checks.deployKeyBegin(doc(bnd), coreKey: coreKey, action: "add", repo: "DE0CH/jarvis2", sensitive: false, sent: bnSent) }, "…and the app refuses a begin for it that isn't sensitive")

@@ -20,8 +20,8 @@ struct SignedOut: LocalizedError { var errorDescription: String? { "Signed out o
 final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProviding {
   static let shared = RouterClient()
   let base: URL = {
-    let s = (Bundle.main.object(forInfoDictionaryKey: "JarvisBase") as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "https://jarvis2.deyaochen.com/"
-    return URL(string: s.hasSuffix("/") ? s : s + "/") ?? URL(string: "https://jarvis2.deyaochen.com/")!
+    let s = (Bundle.main.object(forInfoDictionaryKey: "JarvisBase") as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "https://jarvis4.deyaochen.com/"
+    return URL(string: s.hasSuffix("/") ? s : s + "/") ?? URL(string: "https://jarvis4.deyaochen.com/")!
   }()
   var token: String { Keychain.string("access-token") ?? "" }
   /// told when sign-in failed or came back (AppModel shows the signed-out screen)

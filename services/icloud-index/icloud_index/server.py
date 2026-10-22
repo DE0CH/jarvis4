@@ -1,6 +1,6 @@
 """iCloud index service: answers searches, and (on the replica holding the writer lease) runs the indexer.
 
-Jarvis 2: the router forwards /api/icloud/* (the app) and /m/api/icloud/* (sessions) here. Never exposed on its own.
+Jarvis 4: the router forwards /api/icloud/* (the app) and /m/api/icloud/* (sessions) here. Never exposed on its own.
 API: docs/API.md "iCloud index".
   GET  /search?q=…&limit=&kind=&ext=&under=&after=&before=&mode=hybrid|keyword|semantic&rerank=&full=
   GET  /file?path=…      one file's record and all its extracted text

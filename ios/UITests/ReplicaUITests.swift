@@ -1,7 +1,7 @@
 import XCTest
 
 /// The phone replica (ios.yml job `replica`): the RELEASE build of the native app on the simulator matching Deyao's
-/// iPhone, against a real throwaway Jarvis 2 on the runner (ios/ci/replica-stack.sh: this commit's core and router,
+/// iPhone, against a real throwaway Jarvis 4 on the runner (ios/ci/replica-stack.sh: this commit's core and router,
 /// backups) and real Fly sessions, every flow tapped as a person would. Face ID is enrolled on the simulator and each
 /// match or failure is sent by the runner (ios/ci/replica-host.py on 127.0.0.1:18300), which also passes messages to the
 /// setup session's part on the same runner (ios/ci/replica-setup.sh: "reset done" → the stores are written;

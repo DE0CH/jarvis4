@@ -1,7 +1,7 @@
-# Jarvis 2 — runbook
+# Jarvis 4 — runbook
 
-Everything here runs from a Jarvis 2 session holding the `infra` store (JARVIS2_* keys, HETZNER_JARVIS2_MOCK_API,
-HETZNER_S3_*, CF tokens), with `JARVIS2_URL=https://jarvis2.deyaochen.com` for `infra/setup.py`. Jarvis 2 runs on two
+Everything here runs from a Jarvis 4 session holding the `infra` store (JARVIS2_* keys, HETZNER_JARVIS2_MOCK_API,
+HETZNER_S3_*, CF tokens), with `JARVIS2_URL=https://jarvis4.deyaochen.com` for `infra/setup.py`. Jarvis 4 runs on two
 Hetzner boxes (DESIGN "The boxes"): the control box (`jarvis2-control`: the blue and green cores, the router,
 cloudflared) and the services box (`jarvis2-services`: transcript search, the watch runner, the iCloud index). Neither
 has SSH or a reachable k8s API: they change only through git, and a box git can't fix is replaced.
@@ -334,7 +334,7 @@ state, after checking its keys against `keys/box.pub`.
 
 Keys lost or overwritten by a write (a session's `put-key`, a delete, a mistaken `write`): no kit, no Recover.
 
-1. `JARVIS2_URL=https://jarvis2.deyaochen.com infra/setup.py versions STORE` — find the version before the mistake (each
+1. `JARVIS2_URL=https://jarvis4.deyaochen.com infra/setup.py versions STORE` — find the version before the mistake (each
    line: number, time, what made it, the key names it held).
 2. `infra/setup.py request restore STORE VERSION --why "…"` and Discord Deyao "waiting on you: restore STORE in the
    Inbox". He reviews exactly what the core will put back and remove, and allows it with one Face ID (or does it
@@ -372,7 +372,7 @@ The control box (`k8s/control/secrets/`, annotations in `k8s/control/apps/router
   credential, with which the router serves the locked backups to the app's Recover (`infra/backup-read-key.py install`
   writes it; below).
 - `--part flyorgs FLY_ORG_READ_TOKENS=file:…` → `router-flyorgs.enc.yaml`: the Machines view's other orgs, JSON
-  `{"jarvis2-370": "<token>", …}`, each `fly tokens create readonly -o <org>` (named "Jarvis 2 Machines tab
+  `{"jarvis2-370": "<token>", …}`, each `fly tokens create readonly -o <org>` (named "Jarvis 4 Machines tab
   (read-only)"; revoke with `fly tokens list -o <org>` + `fly tokens revoke`). The empty org kamyee has none (no store
   holds a token for it).
 - `--part flypersonal FLY_PERSONAL_READ_TOKEN=file:…` → `router-flypersonal.enc.yaml`: org personal for the Machines
@@ -381,8 +381,8 @@ The control box (`k8s/control/secrets/`, annotations in `k8s/control/apps/router
   personal, env included (DECISIONS 138); it dies only with the token it was made from.
 - `--part flyvolumes FLY_VOLUME_TOKEN=file:…` → `router-flyvolumes.enc.yaml`: the leftover-volume sweep's token
   (`router/volsweep.go`). `JARVIS2_FLY_TOKEN=… infra/fly-volume-token.sh OUT` attenuates the org token to delete on app
-  jarvis2-sessions plus a Volumes caveat (any volume, delete), which refuses every call that names no volume: it can
-  only `DELETE /v1/apps/jarvis2-sessions/volumes/<id>` (proof: DECISIONS 195). It dies with the token it was made from.
+  jarvis4-sessions plus a Volumes caveat (any volume, delete), which refuses every call that names no volume: it can
+  only `DELETE /v1/apps/jarvis4-sessions/volumes/<id>` (proof: DECISIONS 195). It dies with the token it was made from.
 - `--part browserbase BROWSERBASE_API_KEY` → `router-browserbase.enc.yaml`: the Browserbase spend DM
   (`router/bbbudget.go`; cap and warn line are `BROWSERBASE_BUDGET_USD` / `_WARN_USD` in the router's env).
 - `--part devices CF_DEVICE_TOKENS_API=file:…` → `router-devices.enc.yaml`: the Cloudflare token with which the router
@@ -449,7 +449,7 @@ HETZNER_USER,HETZNER_PASSWORD --exec python3 infra/backup-read-key.py login` whe
 Each Claude account is the core store `claude-<name>` (`router/claudeaccounts.go`, `router/claudestores.go`,
 `router/claudelogin.go`, API.md "Claude accounts", DECISIONS 115-121, 185 and 190): the router writes each account's pair
 and record into it at every change (the core's writer `router`), keeps its working copy on its volume
-(`claude-accounts/<store>.json`), and it is the ONLY refresher of each (Jarvis 2 never calls Jarvis 1; Jarvis 1, while it
+(`claude-accounts/<store>.json`), and it is the ONLY refresher of each (Jarvis 4 never calls Jarvis 1; Jarvis 1, while it
 still runs, follows one account through `/peer/claude-login`). `infra/setup.py claude-accounts` shows them (no secrets):
 per account its email, expiry, last refresh, the participants of its refresh protocol (`m:<machine>` per session,
 `jarvis1`), the sessions using it, and the default.
@@ -489,7 +489,7 @@ On the services box, in jarvis2-services (`services/search`, `services/icloud-in
 `k8s/services/apps/icloud-index/`), built by `.github/workflows/services.yml` (only the service that changed; its unit
 tests run inside the image build) and pinned by digest like the router. The router reaches them on the box's NodePorts
 over the Network (`SEARCH_URL` http://10.77.0.3:30090, `ICLOUD_INDEX_URL` …:30091, `WATCH_URL` …:30095). Only the router reaches them (`router/searchsvc.go`); API.md "Transcript search"
-and "iCloud index" for the calls. Check them from any Jarvis 2 session:
+and "iCloud index" for the calls. Check them from any Jarvis 4 session:
 `curl -s "$JARVIS_URL/api/search/status"` and `curl -s "$JARVIS_URL/api/icloud/status"`.
 
 - **Search has no downtime on a rollout or a crash**: two replicas share the SQLite file, the rolling update starts
@@ -522,17 +522,17 @@ and "iCloud index" for the calls. Check them from any Jarvis 2 session:
   `error: not read: stopped the indexer N times`; images over 40 megapixels are decoded small (JPEG) or skipped.
 - **Moving from Jarvis 1** (done 2026-10-13): Jarvis 1's session token can't exec into its pods, so a temporary
   read-only Job in claude-env (`selfhost/k8s/jarvis2-export`) copied both databases (SQLite online backup) and the
-  iCloud pod's own rclone session to the Storage Box; the Jarvis 2 pods seeded from it. Jarvis 1's two pods keep running until its freeze: scale them to 0 then, so only one index reads
+  iCloud pod's own rclone session to the Storage Box; the Jarvis 4 pods seeded from it. Jarvis 1's two pods keep running until its freeze: scale them to 0 then, so only one index reads
   iCloud and spends on embeddings.
 
 ## Importing a paused Jarvis 1 session
 
 Jarvis 1's paused sessions stay where they are (`claude-records/.paused/<id>/`, read only). From the setup session
-(`JARVIS2_URL=https://jarvis2.deyaochen.com`):
+(`JARVIS2_URL=https://jarvis4.deyaochen.com`):
 
 1. `infra/setup.py jarvis1` lists them with their import state; `infra/setup.py jarvis1 prepare ID… --wait` hashes
    each one's files (minutes for a few GB; the router streams them, nothing is staged).
-2. Pick each one's Jarvis 2 stores: `default` for Jarvis 1's `default`, plus whatever split-off store the session's
+2. Pick each one's Jarvis 4 stores: `default` for Jarvis 1's `default`, plus whatever split-off store the session's
    transcript shows it used (the store layout is private: claude-env `.claude/skills/jarvis2/`), plus the repo stores
    (`github-<repo>`) for its repos. Say the mapping in the reason.
 3. Only when all are prepared (an approval lapses after 10 minutes): `infra/setup.py jarvis1 import ID --stores a,b
@@ -568,12 +568,12 @@ credentials. A task picks them with a field `optionsFrom: "content"` (`tasks/enc
 ## Paired apps (OpenClaw, Paseo)
 
 Deyao's OpenClaw and Paseo apps pair with `GET /api/devices/pair` (his Access login) and get their own Access service token;
-Settings → Paired apps (web) lists and removes them. The Access app "Jarvis 2 devices" (`infra/cloudflare.py --devices`;
+Settings → Paired apps (web) lists and removes them. The Access app "Jarvis 4 devices" (`infra/cloudflare.py --devices`;
 paths `/api/remotes`, `/api/sessions/*/start`; audience `ACCESS_DEVICES_AUD` in the router's env) lets any service
 token through to those two paths and the router admits only paired ones. Check from outside: a service token that isn't
 a paired app gets the router's 403 `{"error":"Access login required"}` on `/api/remotes` (not Cloudflare's login page).
 The apps call `JarvisConfig.baseURL` (DE0CH/openclaw `apps/ios/Sources/Jarvis/JarvisModels.swift`) and `jarvis.url`
-(DE0CH/paseo `packages/app/app.config.js`): both name jarvis2.deyaochen.com (TestFlight builds through claude-env skills
+(DE0CH/paseo `packages/app/app.config.js`): both name jarvis4.deyaochen.com (TestFlight builds through claude-env skills
 `openclaw-ios`, `paseo-ios`). Deyao pairs each app once: OpenClaw: Settings → Gateway → Jarvis → Sign In with Jarvis;
 Paseo: Settings → Jarvis → Pair; each opens the Access sign-in sheet for this host. Paseo's CI simulator test runs its
 Jarvis checks only with a paired device token (`JARVIS_E2E_CLIENT_ID/SECRET` in the fork's secrets); while the old
@@ -593,7 +593,7 @@ Every box has no public IPv4 (Deyao, 2026-10-13: the Hetzner account is at its l
 Cloudflare's WARP client in mode `tunnel_only` with IPv6 excluded (`tunnel ip add-range ::/0`): IPv4 (GitHub, GHCR,
 Fly's WireGuard gateways, 1.1.1.1 for CoreDNS) goes through WARP, IPv6 stays native. k3s's node IP is `10.254.254.1`
 on the dummy interface `k3s0` (`/etc/rancher/k3s/config.yaml`), so the cluster stays IPv4. Everything the pods reach goes through WARP (they have no IPv6), the cloudflared tunnel included. Signs that WARP
-is down: jarvis2.deyaochen.com unreachable (tunnel down), Flux "failed to checkout" from github.com, ImagePullBackOff on ghcr.io, machines unable to reach the router over the
+is down: jarvis4.deyaochen.com unreachable (tunnel down), Flux "failed to checkout" from github.com, ImagePullBackOff on ghcr.io, machines unable to reach the router over the
 peer. There is no way in to look; WARP reconnects by itself (warp-svc, always on), and a box git can't fix is
 rebuilt. The same WARP steps for every other Hetzner server Claude makes: claude-env `scripts/hetzner-warp.sh`.
 
@@ -606,7 +606,7 @@ Built and tested; not yet on the box. Each step in order:
    (k8s/bootstrap-control, infra/cloud-init.sh's `kernel-box-key`, k8s/flux/control.yaml's `control-kernel`): a rebuild or
    a move ("Rebuilding a box"). Deyao's call when.
 2. **Pin the kernel image** in k8s/control/apps/kernel/kernel.yaml (it names `:latest` until the pin job moves it) and set
-   the router's `KERNEL_URL=http://%s.jarvis2-kernel.svc.cluster.local:8080` (router.yaml).
+   the router's `KERNEL_URL=http://%s.jarvis4-kernel.svc.cluster.local:8080` (router.yaml).
 3. **The spawner's Fly token** comes with Deyao's Recover of the kernel (step 4: the core store's backup, sealed to the
    spawner), or from the setup session: `infra/setup.py kernel-fly-token <file from infra/fly-token.sh>`. A spawner
    restart loses it; the router DMs when a spawn is refused for want of it.
@@ -710,13 +710,13 @@ The `ios` workflow's job `replica` (main only, about 70 minutes, on GitHub's fre
 outside GitHub and Fly): the app's Release build (the TestFlight configuration of the native app in `ios/`; only
 `JARVIS_BASE` = the runner's router and `JARVIS_KEYS_REF` = this run's keys branch differ) on an iPhone 17 simulator
 (Deyao's iPhone18,3) on iOS 27.0, Face ID enrolled and driven by `ios/ci/replica-host.py`, against a real throwaway
-Jarvis 2 on the same runner (`ios/ci/replica-stack.sh`):
+Jarvis 4 on the same runner (`ios/ci/replica-stack.sh`):
 
 - this commit's core and router, built from source (the real core, not the fakefly build), the core started again
   whenever it ends (a Reset or the app's restart-and-recover wipes it, as Kubernetes starts an empty one); the router
   with production's session image and signatures (`k8s/control/apps/router`), `policy/stores.json`, the web page and a
   read-only Fly token, on 127.0.0.1:18080 with `NO_ACCESS=1` (the simulator talks to it directly: no Cloudflare);
-- real Fly session machines in `jarvis2-sessions`, reaching the router over this run's WireGuard peer
+- real Fly session machines in `jarvis4-sessions`, reaching the router over this run's WireGuard peer
   `jarvis2-replica-<run>-<attempt>`, which the router runs in userspace as production's does; the core's Fly token
   narrowed as production's and expiring after 6 hours (`infra/fly-token.sh`);
 - a throwaway box key and setup key (their public halves on the branch `replica-keys-<run>-<attempt>`, which the
@@ -740,7 +740,7 @@ not running in time. The video, screenshots and logs (core, router, the setup an
 `replica`; failed assertions are also the job's annotations.
 
 - **Its secrets:** the GitHub environment `replica` (deployment branches: main only), used by that job alone:
-  `REPLICA_FLY_TOKEN` (`infra/fly-replica-token.sh`: the org token narrowed to app `jarvis2-sessions`, the org's
+  `REPLICA_FLY_TOKEN` (`infra/fly-replica-token.sh`: the org token narrowed to app `jarvis4-sessions`, the org's
   WireGuard peers and read on the rest: the peer, the machines and volumes, `flyctl machine exec`; the job narrows it
   further for the core and the router) and `REPLICA_REPO_TOKEN` (a fine-grained token, no expiry, for the private test
   repo `DE0CH/jarvis2-replica-test` only, Administration read and write: its deploy keys; Contents is refused). Both
@@ -778,7 +778,7 @@ not running in time. The video, screenshots and logs (core, router, the setup an
 - What a boot, pause, resume, Upgrade or destroy did, step by step (the router's steps, Fly's events and platform log,
   the supervisor's lines): the same Log, each operation from its start mark to its end mark; archived as
   `jarvis2/lifecycle.json`.
-- A session machine's log: `FLY_API_TOKEN=$JARVIS2_FLY_TOKEN flyctl logs -a jarvis2-sessions --machine <id> --no-tail`
+- A session machine's log: `FLY_API_TOKEN=$JARVIS2_FLY_TOKEN flyctl logs -a jarvis4-sessions --machine <id> --no-tail`
 - The supervisor stopped answering (a pause waits on "the machine never reported"): the keeper (Fly's main child,
   `jarvis2-machine boot`, root) restarts the worker within 30 s; the restarts are in the supervisor log ("supervisor
   worker exited …"). Both are out of the OOM killer's reach (`oom_score_adj` -1000) and out of the session's reach
@@ -799,13 +799,13 @@ not running in time. The video, screenshots and logs (core, router, the setup an
 
 ### Leftover volumes
 
-A session volume (`jarvis2_state`, core/volumes.go) whose machine is gone shows on the Machines tab under
-jarvis2-sessions' volumes as "not attached". The core deletes a machine's volume at its kill only while it remembers the
+A session volume (`jarvis4_state`, core/volumes.go) whose machine is gone shows on the Machines tab under
+jarvis4-sessions' volumes as "not attached". The core deletes a machine's volume at its kill only while it remembers the
 volume, so one can be left by a kill whose delete failed, a line from before a core restart or Reset, or a test core that
 exited (DECISIONS 194).
 - **The router sweeps them** (`router/volsweep.go`, DECISIONS 195): every 10 minutes (the first 2 minutes after a leader
   starts) it lists the app's volumes and machines with `FLY_READ_TOKEN` and deletes, with `FLY_VOLUME_TOKEN`, each volume
-  named `jarvis2_state`, state `created`, attached to nothing, in no listed machine's `config.mounts`, at least 15 minutes
+  named `jarvis4_state`, state `created`, attached to nothing, in no listed machine's `config.mounts`, at least 15 minutes
   old, and named by no session it knows (a session's current or booted machine's cert or start record). At most 20 a
   sweep; a failed delete is looked at again next sweep, 404 counts as done. Each sweep logs one line, `[volsweep] N volumes, M machines …: deleted [...], failed map[...], kept map[category:count]` (Grafana:
   `{box="control",container="router"} |= "volsweep"`), and `infra/setup.py status` shows the last one as `volumeSweep`

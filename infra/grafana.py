@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""grafana.py — Jarvis 2's alerting in Grafana Cloud, as code (docs/RUNBOOK.md "Logs, metrics and alerts").
+"""grafana.py — Jarvis 4's alerting in Grafana Cloud, as code (docs/RUNBOOK.md "Logs, metrics and alerts").
 
     GRAFANA_ADMIN_TOKEN=… GRAFANA_DISCORD_WEBHOOK=… infra/grafana.py apply [--boxes control,services]
     GRAFANA_ADMIN_TOKEN=… infra/grafana.py show
@@ -8,11 +8,11 @@
 Stack jumboshortbread1389 (EU Germany, prod-eu-west-2). GRAFANA_ADMIN_TOKEN is the stack's service account token
 `jarvis2-admin`; GRAFANA_DISCORD_WEBHOOK is the webhook "Grafana" of the Discord channel #jarvis2-alerts (both in the
 `jarvis2-ops` store). `apply` makes or updates, idempotently: the message template `jarvis2` (what is wrong, what it
-means, what to do), the contact point (Discord), the notification policy (every alert to it), the folder "Jarvis 2"
+means, what to do), the contact point (Discord), the notification policy (every alert to it), the folder "Jarvis 4"
 and the rule group "boxes" below, for the boxes named (a box that doesn't exist yet would fire "silent"). The rules read what Alloy ships from each box (infra/alloy/box.alloy) and what the external
 probe reports (Synthetic Monitoring, `probe` below). Prints names, never a token.
 
-`probe` makes or updates the Synthetic Monitoring HTTP check `jarvis2-healthz`: GET https://jarvis2.deyaochen.com/healthz
+`probe` makes or updates the Synthetic Monitoring HTTP check `jarvis2-healthz`: GET https://jarvis4.deyaochen.com/healthz
 once a minute from London and Frankfurt (2 × 43,200 = 86,400 runs a month, inside the free 100k), with the Access
 service token jarvis2-health-probe (infra/cloudflare.py --health), 200 required. GRAFANA_SM_TOKEN is the Synthetic
 Monitoring access token of the stack (`jarvis2-ops` store).
@@ -93,17 +93,17 @@ def rules(boxes):
         rule("j2-restarts", "Control plane restarting",
              "A control-plane container (core, router, cloudflared) was restarted by the kubelet in the last 10 min.",
              LOKI, 'sum by (box) (count_over_time({box="control", source="journal", unit="k3s.service"} |~ "(?i)(back-off restarting|liveness probe failed|readiness probe failed).*(core|router|cloudflared)" [10m]))', 3, for_="0s", kind="loki",
-             meaning="Jarvis 2 may have dropped out briefly; if it keeps restarting, it is down.",
+             meaning="Jarvis 4 may have dropped out briefly; if it keeps restarting, it is down.",
              action="Read that container's logs in Grafana for why it failed its probe."),
         rule("j2-core-change", "A new core on the control box",
              "The router saw a new core (a restart, a release or a reboot).",
              LOKI, 'sum(count_over_time({box="control", container="router"} |= "a new core (" [10m]))', 0, for_="0s", kind="loki", severity="critical",
              meaning="If the new core is empty, sessions can't get their secrets until it is Recovered.",
-             action="Open the Jarvis 2 app: if it asks for Recover, do it."),
-        rule("j2-probe", "jarvis2.deyaochen.com /healthz failing",
-             "The external probe gets no 200 from https://jarvis2.deyaochen.com/healthz for 3 min.",
+             action="Open the Jarvis 4 app: if it asks for Recover, do it."),
+        rule("j2-probe", "jarvis4.deyaochen.com /healthz failing",
+             "The external probe gets no 200 from https://jarvis4.deyaochen.com/healthz for 3 min.",
              PROM, '1 - min(probe_success{job="jarvis2-healthz"})', 0, for_="3m", severity="critical",
-             meaning="Jarvis 2 isn't serving: the router, the tunnel or the core is down, so the app and sessions can't reach it.",
+             meaning="Jarvis 4 isn't serving: the router, the tunnel or the core is down, so the app and sessions can't reach it.",
              action="Open the app to confirm, then check the control box's logs in Grafana."),
         # canaries: the only rules that page on a query error, after it has lasted 15 min, as a notice. A real
         # series keeps them Normal (gt a value never reached); an empty result is No data = OK.
@@ -124,8 +124,8 @@ def rules(boxes):
                       f"No metrics have arrived from the {b} box for 5 min.",
                       PROM, f'absent_over_time(node_time_seconds{{box="{b}"}}[5m])', 0, for_="0s", severity="critical",
                       meaning=f"The {b} box, its Alloy (the shipper) or its WARP link is down"
-                              + (": Jarvis 2 itself may be down." if b == "control" else ": transcript search, the iCloud index and watches may be down."),
-                      action="Check whether Jarvis 2 answers in the app; if the box is gone, it is rebuilt from git (RUNBOOK)."))
+                              + (": Jarvis 4 itself may be down." if b == "control" else ": transcript search, the iCloud index and watches may be down."),
+                      action="Check whether Jarvis 4 answers in the app; if the box is gone, it is rebuilt from git (RUNBOOK)."))
     return r
 
 
@@ -164,7 +164,7 @@ def apply(boxes):
                           "group_wait": "30s", "group_interval": "5m", "repeat_interval": "4h"})[0])
     st, _ = call("GET", f"/api/folders/{FOLDER}")
     if st != 200:
-        print("folder", call("POST", "/api/folders", {"uid": FOLDER, "title": "Jarvis 2"})[0])
+        print("folder", call("POST", "/api/folders", {"uid": FOLDER, "title": "Jarvis 4"})[0])
     st, body = call("PUT", f"/api/v1/provisioning/folder/{FOLDER}/rule-groups/boxes",
                     {"title": "boxes", "interval": 60, "rules": rules(boxes)})
     print("rule group boxes", st, "" if st < 300 else body)
@@ -184,7 +184,7 @@ def sm(method, path, body=None):
 
 
 def probe(enabled=True):
-    check = {"job": "jarvis2-healthz", "target": "https://jarvis2.deyaochen.com/healthz", "frequency": 60000,
+    check = {"job": "jarvis2-healthz", "target": "https://jarvis4.deyaochen.com/healthz", "frequency": 60000,
              "timeout": 10000, "enabled": enabled, "probes": [1, 14], "alertSensitivity": "none", "basicMetricsOnly": True,
              "labels": [{"name": "system", "value": "jarvis2"}],
              "settings": {"http": {"method": "GET", "ipVersion": "Any", "noFollowRedirects": True, "failIfNotSSL": True,

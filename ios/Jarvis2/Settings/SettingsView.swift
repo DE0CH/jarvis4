@@ -1,5 +1,5 @@
 // Settings: the Claude accounts (the router holds each: Refresh, Re-login, Make default, Remove, Add) and their usage, Stores, Repos and Machines, the Fly spend against the
-// cap, and Jarvis 2 itself with Reset or recover and the encrypted backup (an offline copy of the stores).
+// cap, and Jarvis 4 itself with Reset or recover and the encrypted backup (an offline copy of the stores).
 import SwiftUI
 
 enum SettingsRoute: Hashable { case stores, repos, addRepo, machines, backup, content, pairedApps, kernel }
@@ -36,7 +36,7 @@ struct SettingsView: View {
             .accessibilityIdentifier("open-backup")
           NavigationLink(value: SettingsRoute.kernel) { Label("Kernel", systemImage: "cpu") }
             .accessibilityIdentifier("open-kernel")
-        } header: { Text("Jarvis 2") } footer: {
+        } header: { Text("Jarvis 4") } footer: {
           Text("Either pairs this iPhone again.")
         }
         if model.coreNext != .null { NextCoreSection() }
@@ -185,7 +185,7 @@ private struct ClaudeAccountSection: View {
     }
     .confirmationDialog("Remove \(store)?", isPresented: $confirmRemove, titleVisibility: .visible) {
       Button("Remove", role: .destructive) { Task { await remove() } }
-    } message: { Text("Jarvis 2 forgets this account's login and stops refreshing it.") }
+    } message: { Text("Jarvis 4 forgets this account's login and stops refreshing it.") }
   }
   private func run(_ key: String, _ path: String) async {
     busy = key; defer { busy = nil }
@@ -313,7 +313,7 @@ private struct FlySection: View {
         LabeledContent("Running machines", value: "\(b["running"].int ?? 0)")
         LabeledContent("Volumes", value: "\(b["volumes"].int ?? 0)")
       }
-      LabeledContent("Fly app") { Text(model.flyApp ?? "jarvis2-sessions").font(.footnote.monospaced()) }
+      LabeledContent("Fly app") { Text(model.flyApp ?? "jarvis4-sessions").font(.footnote.monospaced()) }
     } header: { Text("Fly spend") } footer: {
       Text("An estimate, not Fly's invoice.")
     }

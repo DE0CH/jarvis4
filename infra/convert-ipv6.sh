@@ -1,5 +1,5 @@
 #!/bin/bash
-# convert-ipv6.sh — turn an existing Jarvis 2 box (built with a public IPv4) into an IPv6-only one with Cloudflare WARP
+# convert-ipv6.sh — turn an existing Jarvis 4 box (built with a public IPv4) into an IPv6-only one with Cloudflare WARP
 # for the outgoing IPv4 (infra/warp-host.sh), keeping its disk: the box key, age key, k8s Secrets and Flux state stay,
 # so nothing is re-minted. The box reboots twice, so the core restarts EMPTY: Deyao Recovers afterwards, as after a
 # power failure. Only with Deyao's go for production (docs/RUNBOOK.md "Converting the box to IPv6-only").
@@ -59,7 +59,7 @@ for i in $(seq 1 60); do "${S[@]}" true 2>/dev/null && break; sleep 5; done
 "${S[@]}" 'set -e; R=/mnt/r
 cat > $R/etc/systemd/system/jarvis2-warp-host.service <<"UNIT"
 [Unit]
-Description=Jarvis 2: IPv4 out through Cloudflare WARP, k3s on its dummy-interface IPv4 (infra/warp-host.sh)
+Description=Jarvis 4: IPv4 out through Cloudflare WARP, k3s on its dummy-interface IPv4 (infra/warp-host.sh)
 Wants=network-online.target
 After=network-online.target
 Before=k3s.service

@@ -1,5 +1,5 @@
 #!/bin/sh
-# `openclaw` for an OpenClaw session (Jarvis 2's copy of Jarvis 1's wrapper). OpenClaw and its Node are a runtime
+# `openclaw` for an OpenClaw session (Jarvis 4's copy of Jarvis 1's wrapper). OpenClaw and its Node are a runtime
 # bundle fetched on first use (Fly's 8 GB image limit), from the GitHub release pinned in
 # /opt/jarvis2/openclaw-runtime.json — by URL AND sha256, so the code that runs is fixed by this image's digest,
 # not by whatever the release serves later (docs/DESIGN.md "Inputs to a machine"). A bundle that doesn't match is

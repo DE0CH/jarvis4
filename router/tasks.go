@@ -1,7 +1,7 @@
 package main
 
 // Tasks (Jarvis 1's lib/tasks.js, DECISIONS 29 and 32-37): templates instantiated with values into INSTANCES,
-// run on a click or on a daily SCHEDULE. In Jarvis 2 an instance is a session LINE:
+// run on a click or on a daily SCHEDULE. In Jarvis 4 an instance is a session LINE:
 //
 //   template  tasks/<name>/task.json + its files, in this repo. Baked into the session image
 //             (/opt/jarvis2/tasks) and the router image (/tasks, for the forms). task.json: {title, description?,
@@ -232,7 +232,7 @@ func parseTemplate(name string, spec []byte, files []string) (*TaskTemplate, err
 			return nil, fmt.Errorf("field %s: type must be one of text, textarea, number, select, multiselect, checkbox", f.Name)
 		}
 		if f.SecretKeys != nil {
-			return nil, fmt.Errorf("field %s: secretKeys is Jarvis 1's; in Jarvis 2 a picked store brings all its keys", f.Name)
+			return nil, fmt.Errorf("field %s: secretKeys is Jarvis 1's; in Jarvis 4 a picked store brings all its keys", f.Name)
 		}
 		out := TaskField{Name: f.Name, Label: f.Label, Type: f.Type, Required: f.Required, Help: f.Help, Placeholder: f.Placeholder, Default: f.Default}
 		if out.Label == "" {
@@ -841,7 +841,7 @@ func (r *Router) CreateTask(in instanceIn) (map[string]any, error) {
 		return nil, bad("a name is required")
 	}
 	if len(in.Hide) > 0 {
-		return nil, bad("hidden values are Jarvis 1's; in Jarvis 2 secrets go in a store the task picks")
+		return nil, bad("hidden values are Jarvis 1's; in Jarvis 4 secrets go in a store the task picks")
 	}
 	t, err := templateByName(in.Template)
 	if err != nil {
@@ -911,7 +911,7 @@ func (r *Router) newTaskLine(inst *TaskInstance, requestID string) error {
 // UpdateTask: name, params, size. The line's stores are fixed: a change of picked stores needs a new task.
 func (r *Router) UpdateTask(id string, in instanceIn) (map[string]any, error) {
 	if len(in.Hide) > 0 {
-		return nil, bad("hidden values are Jarvis 1's; in Jarvis 2 secrets go in a store the task picks")
+		return nil, bad("hidden values are Jarvis 1's; in Jarvis 4 secrets go in a store the task picks")
 	}
 	var tmpl string
 	var cur map[string]any

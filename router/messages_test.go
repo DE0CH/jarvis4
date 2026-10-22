@@ -486,7 +486,7 @@ func TestATextTheMachineRendersDifferentlyIsHeldAgain(t *testing.T) {
 func TestAPeerMessageIntoASensitiveSessionIsHeld(t *testing.T) {
 	m := newMsgRig(t, "mmsg8", true, func(d Delivery) DeliveryResult {
 		if d.Preview {
-			return DeliveryResult{OK: true, Text: "[Message from another Jarvis 2 session] " + d.Peer.Text}
+			return DeliveryResult{OK: true, Text: "[Message from another Jarvis 4 session] " + d.Peer.Text}
 		}
 		return DeliveryResult{OK: true}
 	})
@@ -548,7 +548,7 @@ func oldImageMachine(d Delivery) DeliveryResult {
 
 // An upward peer message into a sensitive session whose machine can't preview was reported FAILED to its sender
 // within 0.2 s, before Deyao ever saw it ("It was approved but carrying it out failed", the Paseo test session's two
-// replies to "Jarvis 2 works", 2026-10-20). It is held with Jarvis's own rendering instead, and delivered once Deyao
+// replies to "Jarvis 4 works", 2026-10-20). It is held with Jarvis's own rendering instead, and delivered once Deyao
 // delivers it.
 func TestAMessageIntoAnOldImageMachineIsHeldWithJarvisText(t *testing.T) {
 	m := newMsgRig(t, "mmsg9", true, oldImageMachine)

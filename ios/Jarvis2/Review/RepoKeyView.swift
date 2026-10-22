@@ -59,7 +59,7 @@ struct RepoKeyView: View {
     }
     .interactiveDismissDisabled(busy != nil)
     .task {
-      // Jarvis 2's own repo is always asked for as sensitive (Checks.deployKeyBegin refuses it otherwise)
+      // Jarvis 4's own repo is always asked for as sensitive (Checks.deployKeyBegin refuses it otherwise)
       let want = sensitiveAsked || repo.lowercased() == "de0ch/jarvis2"
       sensitive = want
       await begin(sensitive: want)

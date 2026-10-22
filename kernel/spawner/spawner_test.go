@@ -15,7 +15,7 @@ import (
 	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
-const img = "ghcr.io/de0ch/jarvis2-session@sha256:" + "2222222222222222222222222222222222222222222222222222222222222222"
+const img = "ghcr.io/de0ch/jarvis4-session@sha256:" + "2222222222222222222222222222222222222222222222222222222222222222"
 
 type fakeM struct {
 	image, state, volume string
@@ -262,7 +262,7 @@ func TestSpawnRefuses(t *testing.T) {
 	}
 	id := out.(map[string]any)["id"].(string)
 	r.fly.start(id)
-	r.fly.swap = "ghcr.io/de0ch/jarvis2-session@sha256:" + strings.Repeat("4", 64)
+	r.fly.swap = "ghcr.io/de0ch/jarvis4-session@sha256:" + strings.Repeat("4", 64)
 	if _, err := r.sp.Init(id); err == nil || !strings.Contains(err.Error(), "not its source's") {
 		t.Fatal(err)
 	}

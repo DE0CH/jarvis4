@@ -218,7 +218,7 @@ enum BatchPrepare {
     }
   }
 
-  /// as RepoKeyView.begin / go (the sensitivity asked for; Jarvis 2's own repo always sensitive). A repo a session asked
+  /// as RepoKeyView.begin / go (the sensitivity asked for; Jarvis 4's own repo always sensitive). A repo a session asked
   /// for (into): the add-store the router files once the key is made is signed under the same Face ID
   static func repoKey(_ action: String, _ repo: String, _ sensitiveAsked: Bool, inbox: String? = nil, into: RepoInto? = nil,
                       model: AppModel) async throws -> BatchPrepared {

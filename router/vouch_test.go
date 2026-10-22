@@ -105,7 +105,7 @@ func v2Rig(t *testing.T) (*rig, *v2Core) {
 
 func v2Cert(rg *rig, machine, config string) *Doc {
 	return rg.core.key.doc(map[string]any{"kind": "succession-cert", "line": "m1", "vouch": 2,
-		"machine": map[string]string{"id": machine, "signingKey": rg.mkey.pub(), "image": "ghcr.io/de0ch/jarvis2-session@sha256:" + strings.Repeat("1", 64)},
+		"machine": map[string]string{"id": machine, "signingKey": rg.mkey.pub(), "image": "ghcr.io/de0ch/jarvis4-session@sha256:" + strings.Repeat("1", 64)},
 		"stores":  []string{"claude", "default"}, "options": map[string]string{"harness": "claude", "permissionMode": "auto", "config": config}})
 }
 
@@ -139,7 +139,7 @@ func TestAnUnattendedResumeCarriesTheCertsConfigAndOnlyThat(t *testing.T) {
 	conf := `{"v":1,"label":"x"}`
 	rg.r.st.Do(func(d *persisted) {
 		s := d.Sessions["s1"]
-		s.Cert, s.Image, s.Prompt, s.Label = v2Cert(rg, "m1", conf), "ghcr.io/de0ch/jarvis2-session@sha256:"+strings.Repeat("1", 64), "a new prompt", "a new label"
+		s.Cert, s.Image, s.Prompt, s.Label = v2Cert(rg, "m1", conf), "ghcr.io/de0ch/jarvis4-session@sha256:"+strings.Repeat("1", 64), "a new prompt", "a new label"
 	})
 	if err := rg.r.Resume("s1", false); err != nil {
 		t.Fatal(err)

@@ -66,7 +66,7 @@ func oneShotLostDM(title string, changes map[string]any, archived *ArchiveInfo, 
 	if len(lost) == 0 && checked && aerr == nil {
 		return ""
 	}
-	lines := []string{fmt.Sprintf("Jarvis 2: one-shot session “%s” was destroyed with work lost:", title)}
+	lines := []string{fmt.Sprintf("Jarvis 4: one-shot session “%s” was destroyed with work lost:", title)}
 	for _, l := range lost {
 		lines = append(lines, "• "+l)
 	}

@@ -1,7 +1,7 @@
-# Jarvis 2 session image, base layer: the tools, harnesses, entrypoint and harness launchers every session machine runs.
-# session-image/Dockerfile puts Jarvis 2's machine side (jarvis2-machine) on top of it, FROM this image pinned by digest.
+# Jarvis 4 session image, base layer: the tools, harnesses, entrypoint and harness launchers every session machine runs.
+# session-image/Dockerfile puts Jarvis 4's machine side (jarvis2-machine) on top of it, FROM this image pinned by digest.
 # Built by .github/workflows/images.yml (job `base`) only when session-image/base/ changes, pushed to the public
-# package ghcr.io/de0ch/jarvis2-session as tag base-sha-<commit>; the pin job moves session-image/Dockerfile's BASE.
+# package ghcr.io/de0ch/jarvis4-session as tag base-sha-<commit>; the pin job moves session-image/Dockerfile's BASE.
 # Size: Fly refuses an image that needs more than 8 GiB ON DISK once unpacked (block-rounded, not tar bytes; the
 # machine is destroyed before it boots), and the CI checks the final image against 8.0e9. Trim in the same RUN that installs.
 # age-plugin-tag: lets sops encrypt to an age1tag1 recipient (a Secure Enclave key); age ships it as source only

@@ -160,7 +160,7 @@ func pl(t *testing.T) func(SignedDoc, error) map[string]any {
 	}
 }
 
-const img = "ghcr.io/de0ch/jarvis2-session:1@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+const img = "ghcr.io/de0ch/jarvis4-session:1@sha256:1111111111111111111111111111111111111111111111111111111111111111"
 
 var testValues = map[string]map[string]string{
 	"default":    {"A": "1", "B": "2"},
@@ -683,12 +683,12 @@ func TestAnApprovalMakesOneMachine(t *testing.T) {
 		t.Fatal("initialised a machine this core didn't create")
 	}
 	for _, bad := range []string{"ghcr.io/de0ch/other:1", "ghcr.io/de0ch/other@sha256:" + strings.Repeat("1", 64),
-		"ghcr.io/de0ch/jarvis2-session:1", "ghcr.io/de0ch/jarvis2-session:latest", "evil.io/de0ch/jarvis2-session@sha256:" + strings.Repeat("1", 64)} {
+		"ghcr.io/de0ch/jarvis4-session:1", "ghcr.io/de0ch/jarvis4-session:latest", "evil.io/de0ch/jarvis4-session@sha256:" + strings.Repeat("1", 64)} {
 		if _, err := c.Start(StartRequest{Image: bad, Size: "small"}); err == nil {
 			t.Fatalf("started %s (another repository, or not pinned by digest)", bad)
 		}
 	}
-	other, err := startMachine(c, "ghcr.io/de0ch/jarvis2-session:3@sha256:"+strings.Repeat("3", 64))
+	other, err := startMachine(c, "ghcr.io/de0ch/jarvis4-session:3@sha256:"+strings.Repeat("3", 64))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -762,7 +762,7 @@ func TestApproveByDeadMachineRefusesChanges(t *testing.T) {
 	for _, in := range []SuccessionInput{
 		{Predecessor: &cert, Image: oc.Machine.Image, Stores: []string{"default", "gmail"}},
 		{Predecessor: &cert, Image: oc.Machine.Image, Stores: []string{"default"}, Options: Options{Harness: "opencode"}},
-		{Predecessor: &cert, Image: "ghcr.io/de0ch/jarvis2-session:2@sha256:2222222222222222222222222222222222222222222222222222222222222222", Stores: []string{"default"}},
+		{Predecessor: &cert, Image: "ghcr.io/de0ch/jarvis4-session:2@sha256:2222222222222222222222222222222222222222222222222222222222222222", Stores: []string{"default"}},
 	} {
 		ch, _ := routerSuccession(c, in)
 		if _, err := c.ApproveByDeadMachine(&ch); err == nil {
@@ -775,13 +775,13 @@ func TestUpgradeIsApprovedBeforeTheOldMachineGoes(t *testing.T) {
 	c, _, p := setup(t)
 	cert, old := newLine(t, c, p, "default")
 	// the iPhone approves the new image before the old machine is killed
-	a := approve(t, c, p, SuccessionInput{Predecessor: &cert, Image: "ghcr.io/de0ch/jarvis2-session:2@sha256:2222222222222222222222222222222222222222222222222222222222222222", Stores: []string{"default"}})
+	a := approve(t, c, p, SuccessionInput{Predecessor: &cert, Image: "ghcr.io/de0ch/jarvis4-session:2@sha256:2222222222222222222222222222222222222222222222222222222222222222", Stores: []string{"default"}})
 	if _, err := tryStart(c, a); err == nil {
 		t.Fatal("started a successor while the predecessor runs")
 	}
 	c.KillWithSnapshot(old, nil)
 	start(t, c, a)
-	a2 := approve(t, c, p, SuccessionInput{Predecessor: &cert, Image: "ghcr.io/de0ch/jarvis2-session:2@sha256:2222222222222222222222222222222222222222222222222222222222222222", Stores: []string{"default"}})
+	a2 := approve(t, c, p, SuccessionInput{Predecessor: &cert, Image: "ghcr.io/de0ch/jarvis4-session:2@sha256:2222222222222222222222222222222222222222222222222222222222222222", Stores: []string{"default"}})
 	if _, err := tryStart(c, a2); err == nil {
 		t.Fatal("a used predecessor got a second successor")
 	}

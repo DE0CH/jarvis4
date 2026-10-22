@@ -132,10 +132,10 @@ export async function fileFromWeb(kind: string, o: Record<string, unknown>): Pro
     else body.minutes = o.minutes || 10;
   } else if (kind === "unlock") { path = "api/requests/unlock"; body = { session: o.sessionId }; }
   else if (kind === "restore") { path = "api/requests/restore"; body = { store: o.store, seq: o.seq }; }
-  else { toast("This needs the Jarvis 2 app on the iPhone.", "info"); return false; }
+  else { toast("This needs the Jarvis 4 app on the iPhone.", "info"); return false; }
   try {
     const r = await api<{ id: string; duplicate: boolean }>("POST", path, body);
-    toast(r.duplicate ? "Already in the Inbox on the iPhone." : "Sent to the Inbox: approve it in the Jarvis 2 app.", "ok");
+    toast(r.duplicate ? "Already in the Inbox on the iPhone." : "Sent to the Inbox: approve it in the Jarvis 4 app.", "ok");
     refresh(false); settle(5000);
     return true;
   } catch (e: any) { toast(e.message, "error"); return false; }

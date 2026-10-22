@@ -2,7 +2,7 @@
 """How big an OCI image is once unpacked onto a filesystem, measured straight from the registry.
 
 Usage: image-unpacked-size.py <repo> <tag-or-digest> [--layers] [--top]
-  e.g. image-unpacked-size.py de0ch/jarvis2-session sha-7e19307df2e7
+  e.g. image-unpacked-size.py de0ch/jarvis4-session sha-7e19307df2e7
 
 Prints three numbers for the FLATTENED image (later layers' whiteouts and overwrites applied):
   tar_bytes   sum of the gunzipped layer blobs (what the old CI check measured)

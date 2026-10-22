@@ -1,6 +1,6 @@
 export const meta = {
   name: 'jarvis2-grant-audit',
-  description: 'Audit Jarvis 2: nothing advertised as core-gated can happen without the core; the core is minimal and stateless',
+  description: 'Audit Jarvis 4: nothing advertised as core-gated can happen without the core; the core is minimal and stateless',
   phases: [
     { title: 'Inventory', detail: 'every advertised core-gated action and the core surface' },
     { title: 'Audit', detail: 'bypass hunt per component + core minimality' },

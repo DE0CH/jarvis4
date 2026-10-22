@@ -7,7 +7,7 @@
 # Leaves nothing behind but the logs (in $E2E_LOGS, default /tmp/jarvis2-e2e-kernel-logs): every machine naming this
 # run's peer is destroyed with its volume, the peer removed, the processes stopped. Never touches production.
 #   JARVIS2_FLY_TOKEN   the jarvis2-370 org token (the spawner's here, and the sweep's)
-#   E2E_SESSION_IMAGE   the session image (default ghcr.io/de0ch/jarvis2-session:latest), pinned by digest here
+#   E2E_SESSION_IMAGE   the session image (default ghcr.io/de0ch/jarvis4-session:latest), pinned by digest here
 set -euo pipefail
 : "${JARVIS2_FLY_TOKEN:?}"
 PEER=jarvis2-e2e-kernel
@@ -15,7 +15,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 W="$(mktemp -d)"; chmod 700 "$W"
 PIDS=(); SUDO_PIDS=()
 sweep() {
-  curl -fsS -H "Authorization: Bearer $JARVIS2_FLY_TOKEN" https://api.machines.dev/v1/apps/jarvis2-sessions/machines 2>/dev/null \
+  curl -fsS -H "Authorization: Bearer $JARVIS2_FLY_TOKEN" https://api.machines.dev/v1/apps/jarvis4-sessions/machines 2>/dev/null \
     | python3 -I -c '
 import json, sys
 want = "http://" + sys.argv[1] + "._peer.internal:8081"
@@ -24,11 +24,11 @@ for m in json.load(sys.stdin):
         print(m["id"], " ".join(x.get("volume", "") for x in ((m.get("config") or {}).get("mounts") or [])))' "$PEER" \
     | while read -r m vols; do
         curl -fsS -o /dev/null -X DELETE -H "Authorization: Bearer $JARVIS2_FLY_TOKEN" \
-          "https://api.machines.dev/v1/apps/jarvis2-sessions/machines/$m?force=true" && echo "e2e-kernel: destroyed leftover machine $m"
+          "https://api.machines.dev/v1/apps/jarvis4-sessions/machines/$m?force=true" && echo "e2e-kernel: destroyed leftover machine $m"
         for v in $vols; do
           for _ in 1 2 3 4 5 6; do
             curl -fsS -o /dev/null -X DELETE -H "Authorization: Bearer $JARVIS2_FLY_TOKEN" \
-              "https://api.machines.dev/v1/apps/jarvis2-sessions/volumes/$v" && { echo "e2e-kernel: deleted its volume $v"; break; }
+              "https://api.machines.dev/v1/apps/jarvis4-sessions/volumes/$v" && { echo "e2e-kernel: deleted its volume $v"; break; }
             sleep 5
           done
         done
@@ -67,7 +67,7 @@ for r in notary notarizer mover merger spawner identity gullible secrets; do
 done
 # the old core beside it (the router still needs one)
 BOX_KEY_FILE="$W/box-key.pem" ADDR=127.0.0.1:29090 MACHINE_URL="$MURL" "$W/core" > "$W/core.log" 2>&1 & PIDS+=($!)
-E2E_SESSION_IMAGE="$("$ROOT/infra/image-digest.sh" "${E2E_SESSION_IMAGE:-ghcr.io/de0ch/jarvis2-session:latest}")"
+E2E_SESSION_IMAGE="$("$ROOT/infra/image-digest.sh" "${E2E_SESSION_IMAGE:-ghcr.io/de0ch/jarvis4-session:latest}")"
 mkdir -p "$W/data" "$W/web"
 cat > "$W/router-env" <<ENV
 #!/bin/sh

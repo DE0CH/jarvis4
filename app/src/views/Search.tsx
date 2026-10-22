@@ -1,7 +1,7 @@
 // Search (Jarvis 1's Search tab): every conversation ever had with Claude — archived, paused and running
 // sessions of both Jarvises, what Claude did in them (commands, edits, their output) and the task records — and
 // Deyao's iCloud Drive by name and content. The router forwards both to Jarvis 1's services (api/search,
-// api/icloud/search) with its own confined token; nothing is indexed by Jarvis 2 itself. A conversation hit opens
+// api/icloud/search) with its own confined token; nothing is indexed by Jarvis 4 itself. A conversation hit opens
 // the conversation around it (pages/SearchContext); a file hit opens what the index read from the file.
 import { useRef, useState } from "react";
 import { Pressable, View } from "react-native";

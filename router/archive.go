@@ -830,7 +830,7 @@ func (r *Router) RecordTail(id string) (*Tail, int, error) {
 // ---- forget / purge a record ------------------------------------------------------------------------
 
 // DeleteRecord: off the list (and the box's index); with purge its archive too — the whole dir unless
-// another Jarvis 2 record shares it, then only this session's own files
+// another Jarvis 4 record shares it, then only this session's own files
 func (r *Router) DeleteRecord(id string, purge bool) (map[string]any, error) {
 	rec := r.record(id)
 	if rec == nil {

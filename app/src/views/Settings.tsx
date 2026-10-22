@@ -1,5 +1,5 @@
 // Settings: the Claude accounts (the router holds each: status, usage, Refresh, Re-login, Make default, Remove, Add), the repos and their deploy
-// keys (Repos.tsx), the Fly spend against the cap, and whether Jarvis 2 runs, with
+// keys (Repos.tsx), the Fly spend against the cap, and whether Jarvis 4 runs, with
 // the way into the shell's Reset or recover page (the app only).
 import { Linking } from "react-native";
 import { useEffect, useRef, useState } from "react";
@@ -108,7 +108,7 @@ function AccountCard({ a, reload }: { a: ClaudeAccount; reload: () => void }) {
   }
   const relogin = () => run(k("login"), "Opening…", async () => { const r = await api<{ url: string }>("POST", `api/claude-accounts/${a.store}/login`); setSigning(true); open(r.url); });
   async function remove() {
-    if (!(await ask({ title: `Remove ${a.store}?`, detail: "Jarvis 2 forgets this account's login and stops refreshing it. Sessions can't use it any more.", action: "Remove", danger: true }))) return;
+    if (!(await ask({ title: `Remove ${a.store}?`, detail: "Jarvis 4 forgets this account's login and stops refreshing it. Sessions can't use it any more.", action: "Remove", danger: true }))) return;
     run(k("remove"), "Removing…", () => api("DELETE", `api/claude-accounts/${a.store}`));
   }
   const login = a.needLogin ? <Badge color="red">Re-login needed</Badge> : a.expired ? <Badge color="red">expired</Badge> : <Badge color="green">ok</Badge>;
@@ -198,7 +198,7 @@ function FlyCard() {
           </Rows>
         </>}
       <Rows mt={2}>
-        <Row label="Fly app">{app || "jarvis2-sessions"}</Row>
+        <Row label="Fly app">{app || "jarvis4-sessions"}</Row>
         <Row label="Org">jarvis2-370</Row>
       </Rows>
       <Muted mt={2}>At the cap, every running session is paused. An estimate, not Fly's invoice.</Muted>
@@ -215,7 +215,7 @@ export function Settings() {
       <FlyCard />
       <PairedAppsCard />
       <Card data={{ settings: "setup" }}>
-        <Heading size={3} mb={1}>Jarvis 2</Heading>
+        <Heading size={3} mb={1}>Jarvis 4</Heading>
         <Rows><Row label="Core" id="core-status">{core.up ? <Pill kind="ok">running</Pill> : <Pill kind="bad">not answering</Pill>}</Row></Rows>
         {hasShell && <>
           <Flex mt={3}><Button id="open-setup" variant="soft" onPress={() => requestSecure("setup", {})}>Reset or recover…</Button></Flex>

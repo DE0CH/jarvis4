@@ -1,4 +1,4 @@
-Public keys Jarvis 2 trusts (docs/DESIGN.md):
+Public keys Jarvis 4 trusts (docs/DESIGN.md):
 - `box.pub` — the control box's key (private half only on that box, from user-data at creation). Signs each core's
   identity; the app and `infra/setup.py` check it before they trust a core. A new control box = a new key:
   infra/create.sh writes `box-next.pub`, which becomes `box.pub` (a commit) before Deyao sets the new box's core up.

@@ -1,5 +1,5 @@
 #!/bin/bash
-# create.sh — make a Jarvis 2 box: BOX_KIND=control|services (docs/DESIGN.md "The boxes"; docs/RUNBOOK.md "Rebuilding a
+# create.sh — make a Jarvis 4 box: BOX_KIND=control|services (docs/DESIGN.md "The boxes"; docs/RUNBOOK.md "Rebuilding a
 # box") or BOX_KIND=cluster, the first node of the one cluster (docs/PLAN-cluster.md step 1: no tunnel, no peer, no box
 # key; git manages the whole cluster).
 #   HETZNER_JARVIS2_MOCK_API  the jarvis2 Hetzner project's token

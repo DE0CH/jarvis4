@@ -27,15 +27,15 @@ func mounting(id, state string, vols ...string) sweepMachine {
 
 func TestSweepSelect(t *testing.T) {
 	vols := []flyVolume{
-		vol("vol_leftover", "jarvis2_state", "created", "", 2*time.Hour),
-		vol("vol_young", "jarvis2_state", "created", "", 14*time.Minute),
-		vol("vol_attached", "jarvis2_state", "created", "m1", 2*time.Hour),
-		vol("vol_mounted", "jarvis2_state", "created", "", 2*time.Hour),
-		vol("vol_named", "jarvis2_state", "created", "", 2*time.Hour),
+		vol("vol_leftover", "jarvis4_state", "created", "", 2*time.Hour),
+		vol("vol_young", "jarvis4_state", "created", "", 14*time.Minute),
+		vol("vol_attached", "jarvis4_state", "created", "m1", 2*time.Hour),
+		vol("vol_mounted", "jarvis4_state", "created", "", 2*time.Hour),
+		vol("vol_named", "jarvis4_state", "created", "", 2*time.Hour),
 		vol("vol_other", "data", "created", "", 2*time.Hour),
-		vol("vol_destroying", "jarvis2_state", "pending_destroy", "", 2*time.Hour),
-		vol("vol_deadmount", "jarvis2_state", "created", "", 2*time.Hour),
-		{ID: "vol_notime", Name: "jarvis2_state", State: "created", CreatedAt: "yesterday"},
+		vol("vol_destroying", "jarvis4_state", "pending_destroy", "", 2*time.Hour),
+		vol("vol_deadmount", "jarvis4_state", "created", "", 2*time.Hour),
+		{ID: "vol_notime", Name: "jarvis4_state", State: "created", CreatedAt: "yesterday"},
 	}
 	ms := []sweepMachine{mounting("m2", "stopped", "vol_mounted"), mounting("m3", "destroyed", "vol_deadmount")}
 	ch := sweepSelect(vols, ms, map[string]string{"vol_named": "session s1's machine m9"}, sweepNow)
@@ -51,13 +51,13 @@ func TestSweepSelect(t *testing.T) {
 }
 
 func TestSweepSelectBoundaryAndLimit(t *testing.T) {
-	ch := sweepSelect([]flyVolume{vol("vol_15", "jarvis2_state", "created", "", 15*time.Minute)}, nil, nil, sweepNow)
+	ch := sweepSelect([]flyVolume{vol("vol_15", "jarvis4_state", "created", "", 15*time.Minute)}, nil, nil, sweepNow)
 	if len(ch.Delete) != 1 {
 		t.Fatalf("a volume exactly 15 minutes old is a leftover: %+v", ch)
 	}
 	vols := []flyVolume{}
 	for i := 0; i < volSweepMaxPerGo+5; i++ {
-		vols = append(vols, vol(fmt.Sprintf("vol_%02d", i), "jarvis2_state", "created", "", time.Hour))
+		vols = append(vols, vol(fmt.Sprintf("vol_%02d", i), "jarvis4_state", "created", "", time.Hour))
 	}
 	ch = sweepSelect(vols, nil, nil, sweepNow)
 	if len(ch.Delete) != volSweepMaxPerGo || len(ch.Kept) != 5 {
@@ -103,8 +103,8 @@ func TestVolumeSweepDeletesAndRetries(t *testing.T) {
 	oldR, oldD := volSweepReader, volumeDelete
 	defer func() { volSweepReader, volumeDelete = oldR, oldD }()
 	volSweepReader = func() ([]flyVolume, []sweepMachine, error) {
-		return []flyVolume{vol("vol_live", "jarvis2_state", "created", "", time.Hour), vol("vol_a", "jarvis2_state", "created", "", time.Hour),
-			vol("vol_b", "jarvis2_state", "created", "", time.Hour)}, nil, nil
+		return []flyVolume{vol("vol_live", "jarvis4_state", "created", "", time.Hour), vol("vol_a", "jarvis4_state", "created", "", time.Hour),
+			vol("vol_b", "jarvis4_state", "created", "", time.Hour)}, nil, nil
 	}
 	calls := []string{}
 	volumeDelete = func(token, id string) error {

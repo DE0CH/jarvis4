@@ -26,7 +26,7 @@ function Sidebar() {
   const go = (k: Tab) => { setTab(k); if (!onList) router.dismissTo("/"); };
   return (
     <View nativeID="sidebar" accessibilityRole="menu" style={{ width: 220, paddingTop: 20 + ins.top, paddingHorizontal: 12, paddingLeft: 12 + ins.left, paddingBottom: 20, gap: 2, borderRightWidth: 1, borderRightColor: t.gray.a[5], backgroundColor: t.background }}>
-      <View style={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: 16 }}><Heading size={4}>Jarvis 2</Heading></View>
+      <View style={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: 16 }}><Heading size={4}>Jarvis 4</Heading></View>
       {TABS.map(([k, l]) => {
         const on = tab === k && onList;
         return (
@@ -49,7 +49,7 @@ function SignIn() {
   const t = useTheme(), a = useAuthState();
   return (
     <View style={{ flex: 1, backgroundColor: t.background, alignItems: "center", justifyContent: "center", padding: 24, gap: 16 }}>
-      <Heading size={6}>Jarvis 2</Heading>
+      <Heading size={6}>Jarvis 4</Heading>
       {a.note ? <P size={2} color="gray" align="center" id="auth-note">{a.note}</P> : <P size={2} color="gray" align="center">Sign in with your Cloudflare login (Google or an email code).</P>}
       {a.phase === "signingIn" ? <Flex gap={2} align="center"><Spinner /><P size={2} color="gray">Signing in…</P></Flex>
         : <Button size={3} id="sign-in" onPress={() => signIn()}>Sign in</Button>}

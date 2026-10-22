@@ -1,4 +1,4 @@
-// jarvis2-machine: the session machine's side of Jarvis 2 (docs/DESIGN.md,
+// jarvis2-machine: the session machine's side of Jarvis 4 (docs/DESIGN.md,
 // "Machine side"). It is the image's entry point and its fixed init entry point:
 //
 //	jarvis2-machine boot       ENTRYPOINT, as root: the keeper (keeper.go), Fly's main child for the machine's
@@ -867,7 +867,7 @@ func addStore(name string) error {
 	if err := c.json("POST", "/m/add-store", map[string]string{"store": name}, nil); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "asked Deyao to add %s to this session (approval in the Jarvis 2 app)\n", name)
+	fmt.Fprintf(os.Stderr, "asked Deyao to add %s to this session (approval in the Jarvis 4 app)\n", name)
 	return awaitStore(name)
 }
 
@@ -882,7 +882,7 @@ func awaitStore(name string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "waiting up to 1 h for %s (Deyao's approval in the Jarvis 2 app)\n", name)
+	fmt.Fprintf(os.Stderr, "waiting up to 1 h for %s (Deyao's approval in the Jarvis 4 app)\n", name)
 	me := c.me
 	deadline := time.Now().Add(time.Hour)
 	for time.Now().Before(deadline) {

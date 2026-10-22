@@ -5,12 +5,12 @@ package main
 // (POST /api/sessions/:id/start), with no Access login of its own.
 //
 //   - Pairing: the app opens GET /api/devices/pair?state=…&name=…&model=…&app=openclaw|paseo in the system sign-in
-//     sheet, where Access logs Deyao in (the Jarvis 2 app's own Access app: his email only). The router mints a
+//     sheet, where Access logs Deyao in (the Jarvis 4 app's own Access app: his email only). The router mints a
 //     Cloudflare Access service token for that one device (CF_DEVICE_TOKENS_API: a Cloudflare token that can manage
 //     Access service tokens and nothing else) and hands its credentials back through the app's own URL scheme
 //     (302 <scheme>://paired?state=…&id=…&clientId=…&clientSecret=…), which only the app that opened the sheet gets.
 //     The secret is never stored; the router keeps the device's name, its service token's id and client id.
-//   - Use: the Access app "Jarvis 2 devices" (infra/cloudflare.py --devices) covers only /api/remotes and
+//   - Use: the Access app "Jarvis 4 devices" (infra/cloudflare.py --devices) covers only /api/remotes and
 //     /api/sessions/*/start, and admits Deyao's email or any service token of the account (ACCESS_DEVICES_AUD). The
 //     router then admits a service token only when its client id (the JWT's common_name) is a paired device's.
 //     The same device token passes the session hosts' Access (<id>-s.deyaochen.com admits any service token), where
@@ -223,7 +223,7 @@ func (r *Router) deviceOfClient(clientID string, now time.Time) *Device {
 }
 
 // requireDeyaoOrDevice: Deyao's own Access login, or a paired device's service token; the JWT's audience is the
-// Jarvis 2 app or the devices' Access app (ACCESS_DEVICES_AUD)
+// Jarvis 4 app or the devices' Access app (ACCESS_DEVICES_AUD)
 func (r *Router) requireDeyaoOrDevice(fn http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if !r.cfg.NoAccess && !r.deyaoOrDevice(req.Header.Get("Cf-Access-Jwt-Assertion")) {

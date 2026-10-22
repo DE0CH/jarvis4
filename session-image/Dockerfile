@@ -1,10 +1,10 @@
-# Jarvis 2 session image: the base (session-image/base/: tools, harnesses, entrypoint, supervisor, carried over from
-# Jarvis 1's session image) with Jarvis 2's machine side in front of it. jarvis2-machine is the entry point: it makes the machine's key pairs, waits
+# Jarvis 4 session image: the base (session-image/base/: tools, harnesses, entrypoint, supervisor, carried over from
+# Jarvis 1's session image) with Jarvis 4's machine side in front of it. jarvis2-machine is the entry point: it makes the machine's key pairs, waits
 # for the core's init (which prints them), takes the core's key from its Fly config (the core sets it), checks the succession cert, restores the predecessor's snapshot, pulls the secrets,
 # then runs the base's entrypoint as its child (the keeper: machine/keeper.go). The base is pinned by digest in BASE below; moving it is a visible commit (the
 # images workflow's pin job writes it after building a changed session-image/base/, and builds this image from that
 # new base in the same run through --build-arg BASE).
-ARG BASE=ghcr.io/de0ch/jarvis2-session:base-sha-f20627d5fd29@sha256:1cbb3c2faabb370d27277e9f532768ff15b98526072ecae770bdeb71f5ed0983
+ARG BASE=ghcr.io/de0ch/jarvis4-session:base-sha-f20627d5fd29@sha256:1cbb3c2faabb370d27277e9f532768ff15b98526072ecae770bdeb71f5ed0983
 FROM golang:1.25-bookworm AS build
 WORKDIR /src/machine
 COPY kernel/ /src/kernel/

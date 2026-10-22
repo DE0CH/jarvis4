@@ -1,6 +1,6 @@
-# Jarvis 2 — router API
+# Jarvis 4 — router API
 
-The router (`router/`) is the only thing reachable from outside: `https://jarvis2.deyaochen.com`, through a
+The router (`router/`) is the only thing reachable from outside: `https://jarvis4.deyaochen.com`, through a
 Cloudflare Tunnel behind Cloudflare Access. It is untrusted: everything security-relevant it relays is a
 document signed by the core (`{payload, sig}`) or by the iPhone, and the receiving end checks the signature.
 
@@ -14,8 +14,8 @@ that come from the core are relayed as the core's signed error document `{payloa
 
 | Prefix | Caller | Access |
 |---|---|---|
-| `/api/*`, `/` (web page) | Deyao's app / browser | Access app `jarvis2.deyaochen.com`, Deyao's email only. The iPhone app sends the Access token in the `cf-access-token` header (got once from `/api/auth/start`). The router also verifies the `Cf-Access-Jwt-Assertion` header itself. |
-| `/setup/*` | the trusted setup session | Access app `jarvis2.deyaochen.com/setup`, service token `jarvis2-setup` only (kept in Jarvis 1's `default` store, never on a machine). The router then checks the setup key's signature on each call (below). |
+| `/api/*`, `/` (web page) | Deyao's app / browser | Access app `jarvis4.deyaochen.com`, Deyao's email only. The iPhone app sends the Access token in the `cf-access-token` header (got once from `/api/auth/start`). The router also verifies the `Cf-Access-Jwt-Assertion` header itself. |
+| `/setup/*` | the trusted setup session | Access app `jarvis4.deyaochen.com/setup`, service token `jarvis2-setup` only (kept in Jarvis 1's `default` store, never on a machine). The router then checks the setup key's signature on each call (below). |
 | `/m/*` | session machines | Not on the public hostname at all: the router serves `/m` on a second port (8081) that only Fly's private network reaches (the box is a WireGuard peer of org `jarvis2-370`). The router checks the machine's own signature on each request. |
 
 ## App sign-in
@@ -108,9 +108,9 @@ session a router crash left mid-action comes back `failed` with `error` "the …
 | `POST /api/sessions/:id/harness` | `{action: "pause" \| "resume"}`: the supervisor SIGSTOPs or SIGCONTs the Claude process (`pause-harness` / `resume-harness` in `GET /m/commands`, not guarded, like `snapshot` and `free`); recorded as an operation `harness-pause` / `harness-resume` (its supervisor lines follow in its log). No app button. → `{ok, machine, command, op}`; 400 another action, 409 no machine. |
 | `GET /term/:id` | The terminal as a web page (`router/web/terminal.html`, one self-contained file: no outside scripts, strict CSP, `no-store`): polls the snapshot above once a second, sends keys and text in order, fits the window to the screen. The iPhone app shows it in a WKWebView and listens on the message handler `jarvis2`: `{action: "grant", holder: "terminal"}` (open the app's Face ID grant review) and `{action: "signin"}` (the Access login expired); it calls `window.jarvis2Refresh()` once the grant is signed or the login renewed. In a plain browser the grant button files `POST /api/requests/grant` (minutes 10) and an expired login reloads the page once. The id must be `[A-Za-z0-9-]` (else 404). |
 | `GET /api/sessions/:id/tail` | A paused session's conversation end, from its snapshot: `{title, sessionId, messages: [{role, text, at}], stale?}`; while it runs, its last pause snapshot's tail with `stale: true` (404 without a snapshot). |
-| `GET /api/state` (extra fields) | `budget` (the Fly cap: `capUsd` 50 pauses every running session, `warnUsd` 45 sends one DM; `FLY_BUDGET_USD` / `FLY_BUDGET_WARN_USD` on the router): `{month, spentUsd, capUsd, warnUsd, warned, capped, cappedAt, ratePerHour, perMonth, running, volumes, snapshots, snapshotGb /* the volume snapshots Fly stores and bills, past 10 GB free, DECISIONS 180 */, sampledAt}` or null; `fly`: `{apps, app, machines, volumes, other: [{kind, app, id, name, state, region, created, detail}], error, checkedAt}` ("Also on Fly": machines in app jarvis2-sessions that are no running session of the router's, and volumes); `flyApp`. |
+| `GET /api/state` (extra fields) | `budget` (the Fly cap: `capUsd` 50 pauses every running session, `warnUsd` 45 sends one DM; `FLY_BUDGET_USD` / `FLY_BUDGET_WARN_USD` on the router): `{month, spentUsd, capUsd, warnUsd, warned, capped, cappedAt, ratePerHour, perMonth, running, volumes, snapshots, snapshotGb /* the volume snapshots Fly stores and bills, past 10 GB free, DECISIONS 180 */, sampledAt}` or null; `fly`: `{apps, app, machines, volumes, other: [{kind, app, id, name, state, region, created, detail}], error, checkedAt}` ("Also on Fly": machines in app jarvis4-sessions that are no running session of the router's, and volumes); `flyApp`. |
 | `GET /api/state` (`browserbaseBudget`) | `{month, capUsd, warnUsd, overUsd, parts: {time, proxyMb, proxyBytes, total}, usage: {count, minutes, proxyMb, proxyBytes}, warned, capped, sampledAt}` or null (`router/bbbudget.go`: the month re-priced from Browserbase's session list every 10 min; one DM at the warn line, one at the cap; nothing is blocked). |
-| `GET /api/machines` | The Machines tab (`router/machines.go`): every machine in Fly app jarvis2-sessions, live from Fly with the read-only `FLY_READ_TOKEN`, newest first: `{app, machines: [{id, name, state, region, size /* small\|medium\|large\|16gb\|32gb… or "" (a guest no size has) */, guest, image, created, updated, sessionId /* "" = no session */, current /* the session's machine now; false = an earlier one */, routerUrl /* its JARVIS2_URL */, test /* routerUrl isn't jarvis2-box's */, noDestroy /* why Destroy isn't offered, "" = it is */, attention /* why it stands out (stopped, failed, stuck, no session), "" = it doesn't */}], orgs: [{org, via /* "fly" */, error, checkedAt, apps: [{app, label /* "Jarvis 2 sessions"…, "" = an app no Jarvis uses */, own /* jarvis2-sessions */, status, error, machines: [same fields; other apps: no session/router, noDestroy "read-only", otherSession /* a Jarvis 1 session id */], volumes: [{id, name, state, region, sizeGb, attachedTo, created, attention}]}]}], attention /* how many things stand out */, configError, checkedAt}`. Every org Deyao has (`router/flyorgs.go`): jarvis2-370 and kamyee read from Fly with READ-ONLY org tokens (`FLY_ORG_READ_TOKENS`), personal with its own read-only token (`FLY_PERSONAL_READ_TOKEN`, DECISIONS 138). An org that can't be read comes back with `error`. 502 `{error}` when jarvis2-sessions can't be listed. |
+| `GET /api/machines` | The Machines tab (`router/machines.go`): every machine in Fly app jarvis4-sessions, live from Fly with the read-only `FLY_READ_TOKEN`, newest first: `{app, machines: [{id, name, state, region, size /* small\|medium\|large\|16gb\|32gb… or "" (a guest no size has) */, guest, image, created, updated, sessionId /* "" = no session */, current /* the session's machine now; false = an earlier one */, routerUrl /* its JARVIS2_URL */, test /* routerUrl isn't jarvis2-box's */, noDestroy /* why Destroy isn't offered, "" = it is */, attention /* why it stands out (stopped, failed, stuck, no session), "" = it doesn't */}], orgs: [{org, via /* "fly" */, error, checkedAt, apps: [{app, label /* "Jarvis 4 sessions"…, "" = an app no Jarvis uses */, own /* jarvis4-sessions */, status, error, machines: [same fields; other apps: no session/router, noDestroy "read-only", otherSession /* a Jarvis 1 session id */], volumes: [{id, name, state, region, sizeGb, attachedTo, created, attention}]}]}], attention /* how many things stand out */, configError, checkedAt}`. Every org Deyao has (`router/flyorgs.go`): jarvis2-370 and kamyee read from Fly with READ-ONLY org tokens (`FLY_ORG_READ_TOKENS`), personal with its own read-only token (`FLY_PERSONAL_READ_TOKEN`, DECISIONS 138). An org that can't be read comes back with `error`. 502 `{error}` when jarvis4-sessions can't be listed. |
 | `POST /api/machines/:id/destroy` | Destroy a machine that belongs to NO session, re-checked on a fresh Fly list: no session names it (no live session's mapping; a machine the router started that no session names any more, such as a destroyed session's left behind by Destroy anyway, counts as an orphan) and it is at least 15 minutes old (a Start's machine exists before the router records it). The router asks the core's `kill` (the call a pause makes; the core alone holds a destroying Fly token). → `{ok, id}`; 409 `{error}` for a session machine or a too-new one; 400 for an unknown id; the core's signed error when the kill fails. |
 | `GET /api/records` | Destroyed sessions `{records: [...]}`; each has `archive: {dir, title, transcripts, artifacts, signer, snapshotAt, last}` when it was archived, `archiveError`, `restored: [{sessionId, at}]`. |
 | `POST /api/records` | Index an archive ALREADY on the Storage Box, by hand (Jarvis 1's call): `{archiveDir: "claude-records/<folder>", transcripts: [file…], artifacts?, title?, environment? \| stores?, repos?, permissionMode?, model?, size?, harness?, created?, destroyedAt?}` → `{ok, record}` (id `archive-<the first transcript's uuid prefix>`; one already on the list answers that record). The transcripts must exist; nothing is scanned. Such a record has no machine-signed snapshot (`archive.signer` empty), so its tail, Remove and Delete work and Restore is refused (400). |
@@ -172,7 +172,7 @@ line, approved on the phone like a new session, whose first machine restores it 
 | Call | Does |
 |---|---|
 | `GET /api/jarvis1/paused` (`/setup/…` too) | `{sessions: [{id, title, pausedAt, size, model, environment, repos, prepare?, sha256?, sessions: [{id, state}], imported?}]}` from Jarvis 1's index `claude-records/.index/paused-sessions.json`, with each one's import state here. |
-| `GET /api/jarvis1/paused/{id}` | That one's state: `prepare {state preparing\|ready\|failed, file, bytesDone, bytesTotal, error, sha256}`, `sha256` (the prepared manifest's), the Jarvis 2 sessions made from it, `imported {session, at}` once one came up. |
+| `GET /api/jarvis1/paused/{id}` | That one's state: `prepare {state preparing\|ready\|failed, file, bytesDone, bytesTotal, error, sha256}`, `sha256` (the prepared manifest's), the Jarvis 4 sessions made from it, `imported {session, at}` once one came up. |
 | `POST /api/jarvis1/paused/{id}/prepare` | 202: the router streams every file once (the names above; `changes.txt` and `artifacts-manifest.txt` are not taken) and hashes it, then writes the import manifest `{kind: "jarvis1-import", v: 1, session, files: [{name, sha256, size}]}` and Jarvis 1's record onto its volume (`jarvis1-imports/<id>/`). Refused without `manifest.txt` (an incomplete snapshot). |
 | `POST /api/jarvis1/paused/{id}/import` | Body `{stores?: [...], explanation, prompt?, size?}` (the harness's stores come with it, so `stores` may be empty; `explanation` required from the setup session) → `{id, from, approval: true}`: a new session in `approval` (Inbox kind `new-session`, `options.restore` = "Jarvis 1 session “title” (id, paused date)"). Its cert's config: `label` = Jarvis 1's app title, `prompt` = a move notice typed into the resumed conversation (or the given one), Jarvis 1's model, repos, auto-pause, permission mode bypass (the only start mode, whatever Jarvis 1 ran in); `size` Jarvis 1's (`xlarge` → `large`); `restore = {machine: <Jarvis 1 id>, sha256: <the manifest's sha256>}`. The same import again answers the same session (`createRequestId` `jarvis1-import:<id>:<sha prefix>`). A session nobody prepared is prepared first (the call waits for it, up to 10 min). |
 
@@ -268,7 +268,7 @@ item = { id, kind: "repo-key" | "grant" | "unlock" | "restore" | "peer-message" 
          batch /* the batch it was filed in, if any */,
          params: {action, repo, sensitive, session, holder, minutes, days, store, seq}, session, sessionName,
          caller: {kind: "web" | "app" | "session" | "setup" | "router", session}, callerText /* "session “X” (s…)",
-         "Deyao, from the web page", "Deyao, from the Jarvis 2 app", "Claude (setup session)" */, call: {method, path, args},
+         "Deyao, from the web page", "Deyao, from the Jarvis 4 app", "Claude (setup session)" */, call: {method, path, args},
          explanation, created, expires, options /* an approval's form fields */,
          viaCall /* an approval an approved api-call brought about: that request's id */,
          does /* an api-call's effect in words where its path doesn't say it (an account switch: session, from → to) */,
@@ -503,7 +503,7 @@ share}}` (one share for each key the begin named).
 
 ## Actions (`/m/api/actions/*`, `router/actions.go`)
 
-A session's actions (Deyao, 2026-10-13): what a session may do to Jarvis 2 beyond its own business. Each session's key
+A session's actions (Deyao, 2026-10-13): what a session may do to Jarvis 4 beyond its own business. Each session's key
 is its own machine key (minted when the core starts the machine; the machine's local proxy signs every
 `$JARVIS_URL/api/actions/…` call with it), so every action is that session's: Inbox entries name the caller "the
 actions of session “title” (id)", and the router logs each non-GET action with its session. The key works only while
@@ -623,7 +623,7 @@ expiresAt}`.
 | Path | Who |
 |---|---|
 | `GET/POST /m/claude-login` | a session machine, for its session's account (404 `{noAccount: true}` when it has none); participant `m:<machine>` of that account. `GET/POST /m/api/credentials` (the push-claude-credentials script of session images from before 2026-10-13, through `$JARVIS_URL`) is the same pair and push. |
-| `GET/POST /peer/claude-login`, `GET /peer/claude-login/status` | Jarvis 1 (one account: the one the shared login became, else the default): Access app `jarvis2.deyaochen.com/peer`, service token `jarvis1-claude-login` only (router env `ACCESS_PEER_AUD`, `JARVIS1_LOGIN_CLIENT_ID`; `infra/cloudflare.py --peer`); participant `jarvis1`. Its push may carry `relogin: true` (a Re-login in Jarvis 1's Settings), which may change the account. |
+| `GET/POST /peer/claude-login`, `GET /peer/claude-login/status` | Jarvis 1 (one account: the one the shared login became, else the default): Access app `jarvis4.deyaochen.com/peer`, service token `jarvis1-claude-login` only (router env `ACCESS_PEER_AUD`, `JARVIS1_LOGIN_CLIENT_ID`; `infra/cloudflare.py --peer`); participant `jarvis1`. Its push may carry `relogin: true` (a Re-login in Jarvis 1's Settings), which may change the account. |
 | `GET /setup/claude-login`, `GET /setup/claude-accounts` | the setup session (signed): the default account's status, every account's. |
 | `/api/claude-accounts*`, `/api/claude-login*`, `/api/usage` | the app (above). |
 
@@ -886,13 +886,13 @@ Deyao's builds of the OpenClaw and Paseo apps pair once and then list and start 
 | `GET /api/devices` | `{devices: [{id, name, model, app, createdAt, lastSeenAt}]}` (no token ids). |
 | `DELETE /api/devices/:id` | Deletes its service token at Cloudflare and forgets it. |
 
-`/api/remotes` and `/api/sessions/:id/start` are behind the Access app "Jarvis 2 devices" (`ACCESS_DEVICES_AUD`), which admits
+`/api/remotes` and `/api/sessions/:id/start` are behind the Access app "Jarvis 4 devices" (`ACCESS_DEVICES_AUD`), which admits
 Deyao's email or any service token of the account; the router then admits a token only when its client id (the JWT's
 `common_name`) is a paired device's.
 
 ## Session-facing API (`/m/api/*`)
 
-Jarvis 1's session scripts call `$JARVIS_URL/api/…`. A Jarvis 2 machine gets `JARVIS_URL=http://127.0.0.1:7171`
+Jarvis 1's session scripts call `$JARVIS_URL/api/…`. A Jarvis 4 machine gets `JARVIS_URL=http://127.0.0.1:7171`
 (plus placeholder `CF_ACCESS_CLIENT_ID/SECRET` and `SESSION_API_TOKEN`, which the scripts insist on; not for
 OpenCode/OpenClaw, whose harness scripts read CF_ACCESS_* as "publish the web UI"). There `jarvis2-machine supervisor --worker`
 serves a proxy that drops the scripts' headers and sends `/m/api/<rest>` (query kept, unsigned; the path is

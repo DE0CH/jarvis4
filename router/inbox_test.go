@@ -91,7 +91,7 @@ func TestInboxFromEachCaller(t *testing.T) {
 	if u := byKind["unlock "]; u.CallerText != "Deyao, from the web page" || u.Explanation != "" {
 		t.Fatalf("unlock: %+v", u)
 	}
-	if rm := byKind["repo-key remove"]; rm.CallerText != "Deyao, from the Jarvis 2 app" {
+	if rm := byKind["repo-key remove"]; rm.CallerText != "Deyao, from the Jarvis 4 app" {
 		t.Fatalf("remove: %+v", rm)
 	}
 	// a session lists only its own

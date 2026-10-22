@@ -1,19 +1,19 @@
 package main
 
-// Importing a paused Jarvis 1 session (Deyao, 2026-10-13: "move all paused Jarvis 1 sessions to Jarvis 2, so each
+// Importing a paused Jarvis 1 session (Deyao, 2026-10-13: "move all paused Jarvis 1 sessions to Jarvis 4, so each
 // continues there as the same conversation with its working tree").
 //
 // Jarvis 1 left each paused session on the Storage Box at claude-records/.paused/<id>/: its transcripts (<uuid>.jsonl),
 // ~/.claude.json (claude.json), ~/workspace and ~/artifacts (workspace.tar.gz, artifacts.tar.gz), an optional harness
 // tarball, the record (session.json: title, model, size, repos, armed wakeups and crons) and manifest.txt, written
-// last (its presence = the snapshot is complete). None of it is signed by anything Jarvis 2 trusts, so an import is a
+// last (its presence = the snapshot is complete). None of it is signed by anything Jarvis 4 trusts, so an import is a
 // NEW line whose cert vouches for exactly those bytes (DESIGN "Inputs to a machine" (a)):
 //
 //  1. prepare: the router streams every file once and hashes it, and writes the import manifest
 //     {kind "jarvis1-import", session, files: [{name, sha256, size}]} onto its volume;
 //  2. import: a new session whose config carries restore = {machine: the Jarvis 1 session id (its first machine's
 //     id), sha256: the manifest's sha256}, waiting for the phone like any new session (the app shows "Restores
-//     machine <id>" and the hash, as for a restore of a destroyed Jarvis 2 session). Deyao's Face ID signs that hash,
+//     machine <id>" and the hash, as for a restore of a destroyed Jarvis 4 session). Deyao's Face ID signs that hash,
 //     so it vouches for every byte the manifest lists;
 //  3. the line's first machine fetches the manifest (/m/restore-snapshot), checks its hash against the cert, then
 //     fetches each file through the router (/m/import-file/<name>, streamed from the Storage Box: the machine holds
@@ -47,7 +47,7 @@ const (
 	j1PausedIndex  = "claude-records/.index/paused-sessions.json"
 	j1ManifestFile = "manifest.json" // the import manifest, on the router's volume
 	j1RecordFile   = "record.json"   // Jarvis 1's session.json as read at prepare (the router's own use: label, model…)
-	j1ImportedFile = "imported.json" // the Jarvis 2 session the import became, once it came up
+	j1ImportedFile = "imported.json" // the Jarvis 4 session the import became, once it came up
 )
 
 var (
@@ -364,7 +364,7 @@ func (r *Router) preparedJarvis1(id string) ([]byte, string, *j1Record, error) {
 // ---- import: a new session, waiting for the phone ---------------------------------------------------------
 
 type J1ImportIn struct {
-	Stores      []string `json:"stores"` // Jarvis 2 stores (the harness's come with it)
+	Stores      []string `json:"stores"` // Jarvis 4 stores (the harness's come with it)
 	Prompt      string   `json:"prompt"` // typed into the resumed conversation once it is up ("" = j1DefaultPrompt)
 	Size        string   `json:"size"`   // "" = Jarvis 1's size (xlarge → large)
 	Explanation string   `json:"explanation"`
@@ -381,9 +381,9 @@ type J1ImportRef struct {
 
 // j1DefaultPrompt: what the resumed conversation is told first (the phone shows it; Deyao signs it)
 func j1DefaultPrompt(id string, stores []string) string {
-	return "[Jarvis 2] This conversation was moved from Jarvis 1 to Jarvis 2 on " + time.Now().UTC().Format("2006-01-02") +
+	return "[Jarvis 4] This conversation was moved from Jarvis 1 to Jarvis 4 on " + time.Now().UTC().Format("2006-01-02") +
 		" (Jarvis 1 session " + id + "). Its transcript, ~/workspace and ~/artifacts were restored from the Jarvis 1 pause snapshot, and " +
-		"any wakeups or crons it had armed were re-armed on Jarvis 2 (see ~/artifacts/jarvis1-import/rearmed.txt). It now runs on Jarvis 2 with " +
+		"any wakeups or crons it had armed were re-armed on Jarvis 4 (see ~/artifacts/jarvis1-import/rearmed.txt). It now runs on Jarvis 4 with " +
 		"the stores " + strings.Join(stores, ", ") + " (`jarvis2 stores` lists them; `jarvis2-request add-store` asks for another). " +
 		"Jarvis 1 is being frozen, so don't use its API. Nothing to do now: reply with one short line and wait for Deyao."
 }

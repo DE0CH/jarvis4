@@ -20,7 +20,7 @@ import (
 
 // SessionRepo: the one image repository machines run (built by CI from git; images.yml). An approval names it
 // pinned by digest, so nothing can be swapped between the approval and Fly's pull.
-const SessionRepo = "ghcr.io/de0ch/jarvis2-session"
+const SessionRepo = "ghcr.io/de0ch/jarvis4-session"
 
 var imageRE = regexp.MustCompile(`^` + regexp.QuoteMeta(SessionRepo) + `(:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@(sha256:[0-9a-f]{64})$`)
 

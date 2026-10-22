@@ -397,7 +397,7 @@ func peerTwinText(n *PeerNote) (string, bool) {
 		}
 		return strings.Join(ss, ", ")
 	}
-	return fmt.Sprintf("[Message from another Jarvis 2 session, relayed by Jarvis]\n"+
+	return fmt.Sprintf("[Message from another Jarvis 4 session, relayed by Jarvis]\n"+
 		"From: session “%s” (%s), verified by Jarvis from that session's machine key; its stores: %s; its mode: %s\n"+
 		"To: this session; its stores: %s; its mode: %s\n"+
 		"Direction: %s\n"+

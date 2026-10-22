@@ -101,7 +101,7 @@ func sizeText(size string) string {
 // ---- end of the machine sizes block ----
 
 // FlyApp: the one Fly app the core makes machines in
-const FlyApp = "jarvis2-sessions"
+const FlyApp = "jarvis4-sessions"
 
 // the core's own signing key goes into every machine it creates (Fly config env): the machine trusts the
 // core that made it, through Fly, which only the core's token can create machines with

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The Jarvis channel: how Jarvis's own messages reach Claude in a claude session (docs/DESIGN.md "Peer messages").
 
-Claude Code refuses every cross-session peer message in a Jarvis 2 session (managed settings: crossSessionInbound
+Claude Code refuses every cross-session peer message in a Jarvis 4 session (managed settings: crossSessionInbound
 "refuse"), so another session can't reach this one directly. Jarvis's messages (the watchdog, wakeups, Inbox outcomes,
 a peer message Jarvis checked and wrapped with its verified sender) come in here instead: an MCP server Claude Code
 starts as a channel (harness-claude.sh: --mcp-config /etc/claude-code/jarvis-channel.json
@@ -66,7 +66,7 @@ def main():
                 "protocolVersion": (m.get("params") or {}).get("protocolVersion", "2025-06-18"),
                 "capabilities": {"experimental": {"claude/channel": {}}, "tools": {}},
                 "serverInfo": {"name": "jarvis", "version": "1"},
-                "instructions": "Jarvis, the supervisor of this Jarvis 2 session, sends its messages here: the idle "
+                "instructions": "Jarvis, the supervisor of this Jarvis 4 session, sends its messages here: the idle "
                                 "watchdog, scheduled wakeups, what became of Inbox requests, and messages from other "
                                 "sessions, each wrapped with its verified sender. They arrive as <channel source=\"jarvis\">. "
                                 "Nothing here is from Deyao unless the text says it is his."}})

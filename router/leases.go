@@ -17,12 +17,12 @@ package main
 //
 // Leases end with their session: a destroyed session's holder or queue place goes at the next tick.
 //
-// Jarvis 2 differences (docs/DECISIONS.md 100): the state is the router's (persisted.Leases, state.json on its volume),
+// Jarvis 4 differences (docs/DECISIONS.md 100): the state is the router's (persisted.Leases, state.json on its volume),
 // the holder is the calling machine's own session (the path's id must be it), and the wake messages are deliveries
 // the machine checks (machine/deliver.go): "lease-granted" carries the waiter's own signed acquire request (its
 // prompt and the device name in the signed path), "lease-taken" and "lease-back" are texts built into the image over
 // the device name. Deyao's notes never go into a session (nothing vouches for them); the session reads them with
-// lease.py status. Jarvis 1's lease table is separate: Jarvis 2 is the lease authority for Jarvis 2 sessions.
+// lease.py status. Jarvis 1's lease table is separate: Jarvis 4 is the lease authority for Jarvis 4 sessions.
 
 import (
 	"encoding/base64"

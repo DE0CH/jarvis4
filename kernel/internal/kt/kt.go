@@ -72,7 +72,7 @@ func Source() doc.Object {
 	return doc.NewSource(b)
 }
 
-const Image = "ghcr.io/de0ch/jarvis2-session@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+const Image = "ghcr.io/de0ch/jarvis4-session@sha256:1111111111111111111111111111111111111111111111111111111111111111"
 
 // SourceContent: a source with settings {"title": title}
 func SourceContent(title string) *doc.Source {

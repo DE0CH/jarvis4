@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The trusted setup session's side of Jarvis 2 (docs/DESIGN.md, docs/API.md "Setup"), through the router's
+"""The trusted setup session's side of Jarvis 4 (docs/DESIGN.md, docs/API.md "Setup"), through the router's
 /setup/* (Access service token jarvis2-setup + a signature by the setup key on every call; the router checks
 both). Values never print.
 
@@ -52,7 +52,7 @@ both). Values never print.
   infra/setup.py jarvis1 prepare ID… [--wait]
                                        the router hashes each paused Jarvis 1 session's files (in the background)
   infra/setup.py jarvis1 import ID [ID…] --stores a,b [--size S] [--prompt-file F] --why TEXT [--summary TEXT]
-                                       a prepared one as a new Jarvis 2 session, waiting in the Inbox for Face ID
+                                       a prepared one as a new Jarvis 4 session, waiting in the Inbox for Face ID
                                        (its cert names the import manifest's sha256; docs/API.md "Jarvis 1 import");
                                        several IDs (or --summary) file them as ONE batch, allowed under one Face ID
   infra/setup.py request add-repo OWNER/NAME --why TEXT [--sensitive]
@@ -60,7 +60,7 @@ both). Values never print.
   infra/setup.py request grant SESSION HOLDER [--minutes N | --days N] --why TEXT
   infra/setup.py request unlock SESSION --why TEXT
   infra/setup.py request restore STORE VERSION --why TEXT
-                                       a request in the Inbox of the Jarvis 2 app (docs/API.md "Requests"): Deyao
+                                       a request in the Inbox of the Jarvis 4 app (docs/API.md "Requests"): Deyao
                                        reviews what would be signed and allows it with Face ID, or denies it. The
                                        router records it as from "Claude (setup session)"; --why is required
   infra/setup.py request batch (--file FILE | --item INTENT,key=value,…) --summary TEXT
@@ -80,7 +80,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-BASE = os.environ.get("JARVIS2_URL", "https://jarvis2.deyaochen.com")
+BASE = os.environ.get("JARVIS2_URL", "https://jarvis4.deyaochen.com")
 D = os.path.expanduser("~/.jarvis2")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUCKET = os.environ.get("JARVIS2_BACKUP_BUCKET", "jarvis2-backup-de0ch")

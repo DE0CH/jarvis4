@@ -2,7 +2,7 @@ package main
 
 // Only vouched inputs shape this machine (docs/DESIGN.md "Inputs to a machine", Deyao 2026-10-11). The machine
 // gets secrets, so everything that decides what it runs or what its agent reads at its entry points (start,
-// resume, restore, and what Jarvis 2 delivers later) must be vouched for by one of:
+// resume, restore, and what Jarvis 4 delivers later) must be vouched for by one of:
 //
 //	(a) the cert: what the phone approved, or what an unattended resume carried over unchanged;
 //	(b) the predecessor machine's signature (its snapshot, whose hash the cert names);

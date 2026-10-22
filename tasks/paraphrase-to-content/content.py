@@ -1,4 +1,4 @@
-# Content stores from a Jarvis 2 task (router/content.go): through the machine's local API ($JARVIS_URL), which signs
+# Content stores from a Jarvis 4 task (router/content.go): through the machine's local API ($JARVIS_URL), which signs
 # each call with the machine's key; the router reads and writes only the content stores the task line's cert names
 # (its content fields), and the proxy takes a downloaded file only with the core's attestation. (Identical copy in
 # each template that uses it.)

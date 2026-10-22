@@ -15,7 +15,7 @@ package main
 //     (/data/router.moved-in), the pod holding the local flock is the CANDIDATE: it loads no state, proxies every
 //     request to the sender (MOVE_PUBLIC), and copies /data every minute (only changed files). At MOVE_AT: a last
 //     copy, freeze, the delta, the peer's wg.conf into /data (it wins over WG_CONFIG: the peer moves with the
-//     leadership, so the machines' jarvis2-box._peer.internal keeps its address), then the normal leader start and
+//     leadership, so the machines' jarvis4-box._peer.internal keeps its address), then the normal leader start and
 //     done. Requests that arrive in between wait in both boxes' proxies; the gap is logged and kept in the status.
 //
 // What still waits, as in any rollout: a new lifecycle action asked for during the sender's drain gets 503 "router

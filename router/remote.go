@@ -11,7 +11,7 @@ package main
 // Deyao can let the router read a session's remote without giving it the terminal. Never in /api/state.
 //
 // The tunnel agent on the machine needs an Access service token: the store `tunnel` (CF_ACCESS_CLIENT_ID/SECRET =
-// the token jarvis2-tunnel, which the cf-tunnel Worker confines to registering agents for Jarvis 2 session ids),
+// the token jarvis2-tunnel, which the cf-tunnel Worker confines to registering agents for Jarvis 4 session ids),
 // brought by these harnesses through the policy. The Worker also wants a proof for that one id, which the router
 // (JARVIS2_TUNNEL_KEY) hands each machine for its own session id only (GET /m/tunnel-proof → TUNNEL_AGENT_SECRET,
 // sent by agent.js as x-agent-secret), so one session can't take over another's tunnel id: proof = hex

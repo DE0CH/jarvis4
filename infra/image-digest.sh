@@ -1,5 +1,5 @@
 #!/bin/bash
-# infra/image-digest.sh <ghcr.io/de0ch/jarvis2-session:tag> → ghcr.io/de0ch/jarvis2-session:tag@sha256:<linux/amd64
+# infra/image-digest.sh <ghcr.io/de0ch/jarvis4-session:tag> → ghcr.io/de0ch/jarvis4-session:tag@sha256:<linux/amd64
 # manifest>, from GHCR's registry API (anonymous: the package is public). The core starts only images pinned by
 # digest and checks that Fly reports that digest (core/vouch.go). Fly reports the PLATFORM manifest's digest
 # (linux/amd64), not the multi-arch index's that `docker push` prints, so this resolves the index to that manifest.

@@ -113,7 +113,7 @@ func peerText(n *PeerNote, myStores []string, myMode string) (string, []byte, er
 		}
 		return strings.Join(ss, ", ")
 	}
-	t := fmt.Sprintf("[Message from another Jarvis 2 session, relayed by Jarvis]\n"+
+	t := fmt.Sprintf("[Message from another Jarvis 4 session, relayed by Jarvis]\n"+
 		"From: session “%s” (%s), verified by Jarvis from that session's machine key; its stores: %s; its mode: %s\n"+
 		"To: this session; its stores: %s; its mode: %s\n"+
 		"Direction: %s\n"+

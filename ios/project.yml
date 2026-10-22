@@ -1,5 +1,5 @@
 name: Jarvis2
-# The Jarvis 2 iPhone and iPad app: one native SwiftUI app (Deyao, 2026-10-11), Apple frameworks and our Swift only (no
+# The Jarvis 4 iPhone and iPad app: one native SwiftUI app (Deyao, 2026-10-11), Apple frameworks and our Swift only (no
 # packages, no pods). `xcodegen generate` makes Jarvis2.xcodeproj (not in git).
 options:
   bundleIdPrefix: dev.de0ch
@@ -16,7 +16,7 @@ settings:
     MARKETING_VERSION: "2.0"
     CURRENT_PROJECT_VERSION: "1"
     # the router the app talks to; CI's simulator build overrides it on the xcodebuild line with the router on the runner
-    JARVIS_BASE: "https://jarvis2.deyaochen.com/"
+    JARVIS_BASE: "https://jarvis4.deyaochen.com/"
     # CI only (the simulator walkthrough's xcodebuild sets these): JARVIS_CI_FLAG=JARVIS_CI compiles in the code that
     # reads the key stand-in's address (KeySource.swift) and the router's test policy (PinnedPolicy); release builds
     # leave both empty
@@ -41,12 +41,12 @@ targets:
         PRODUCT_NAME: Jarvis2
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: Jarvis2/Info.plist
-        INFOPLIST_KEY_CFBundleDisplayName: "Jarvis 2"
+        INFOPLIST_KEY_CFBundleDisplayName: "Jarvis 4"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_NSCameraUsageDescription: "The camera takes a photo to send with a new session's first prompt."
-        INFOPLIST_KEY_NSFaceIDUsageDescription: "Face ID approves what Jarvis 2 asks you to sign and unlocks secret stores."
+        INFOPLIST_KEY_NSFaceIDUsageDescription: "Face ID approves what Jarvis 4 asks you to sign and unlocks secret stores."
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # iPhone and iPad

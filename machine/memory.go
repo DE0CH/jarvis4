@@ -186,7 +186,7 @@ func freeProcesses(self, main, uid int) []proc {
 		}
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Jarvis 2 Upgrade, %s: the processes the old machine stopped to free memory for its snapshot (resident memory, name):\n", time.Now().UTC().Format(time.RFC3339))
+	fmt.Fprintf(&b, "Jarvis 4 Upgrade, %s: the processes the old machine stopped to free memory for its snapshot (resident memory, name):\n", time.Now().UTC().Format(time.RFC3339))
 	for _, p := range killed {
 		fmt.Fprintf(&b, "%d MB\t%s\n", p.rssKb/1024, p.comm)
 	}

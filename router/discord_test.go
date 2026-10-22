@@ -113,7 +113,7 @@ func testDiscord(t *testing.T) (*fakeDiscord, *discordClient, *[]time.Duration) 
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	slept := &[]time.Duration{}
-	d := &discordClient{api: srv.URL, token: "tok", guild: "g1", dm: "dm1", category: "Jarvis 2", channels: true,
+	d := &discordClient{api: srv.URL, token: "tok", guild: "g1", dm: "dm1", category: "Jarvis 4", channels: true,
 		http: srv.Client(), maxWait: 30 * time.Second, sleep: func(x time.Duration) { *slept = append(*slept, x) },
 		now: time.Now, names: map[string]*discordChanInfo{}}
 	return f, d, slept
@@ -121,7 +121,7 @@ func testDiscord(t *testing.T) (*fakeDiscord, *discordClient, *[]time.Duration) 
 
 func TestChannelName(t *testing.T) {
 	for in, want := range map[string]string{
-		"Fix the Jarvis 2 router!": "fix-the-jarvis-2-router",
+		"Fix the Jarvis 4 router!": "fix-the-jarvis-2-router",
 		"  --Café déjà vu-- ":      "cafe-deja-vu",
 		"深圳 hotel":                 "深圳-hotel",
 		"":                         "session-89abcdef",
@@ -212,7 +212,7 @@ func TestEnsureChannelAndCategory(t *testing.T) {
 		t.Fatal(err, created)
 	}
 	cat := f.channels[ch.ParentID]
-	if cat == nil || cat.Name != "Jarvis 2" || cat.Type != 4 || ch.Name != "my-task" || ch.Topic != "Jarvis 2 session s1" {
+	if cat == nil || cat.Name != "Jarvis 4" || cat.Type != 4 || ch.Name != "my-task" || ch.Topic != "Jarvis 4 session s1" {
 		t.Fatalf("channel %+v category %+v", ch, cat)
 	}
 	// the category is reused

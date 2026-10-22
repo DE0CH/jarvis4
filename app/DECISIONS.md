@@ -1,4 +1,4 @@
-# Design decisions in the Jarvis 2 apps (for Deyao to review)
+# Design decisions in the Jarvis 4 apps (for Deyao to review)
 
 Two codebases (Deyao, 2026-10-11): the **iPhone and iPad app** is one native SwiftUI app in `ios/` (Apple frameworks and
 our Swift only); the **web page** is the Expo app in `app/`, web only. Items 1–22 are about the iOS app, 23–29 the
@@ -78,7 +78,7 @@ fixes, 34–40 carried over from the old app and still true, 41–43 the web pag
 22. **Tests**: the walkthrough (`UITests/Jarvis2UITests.swift`, light and dark against the real core and router on the
     runner), the transitions run (`TransitionsUITests`: every tab, push, pop, edge swipe, sheet, background and relaunch,
     recorded; a blank screen over 1.5 s or a near-uniform screenshot fails it), the phone replica (`ReplicaUITests`, the
-    Release build against a real throwaway Jarvis 2 on the runner and real Fly sessions, Face ID driven by the runner; 75) and the crypto interop test against the real core.
+    Release build against a real throwaway Jarvis 4 on the runner and real Fly sessions, Face ID driven by the runner; 75) and the crypto interop test against the real core.
     The old Back-stress test (an extension killed or slow) has nothing left to test and is gone.
 
 ## The audit's app findings (2026-10-11) and their fixes
@@ -159,7 +159,7 @@ fixes, 34–40 carried over from the old app and still true, 41–43 the web pag
 41. **Web only**: no iOS build, no shell bridge; the `.native.*` files, the React Native extension and the Radix-to-Swift
     generator are gone.
 42. It can view everything, request a new session (any stores, sensitive ones badged; docs/DECISIONS.md 164), reject approvals, pause, resume and destroy;
-    where the app would open a review, it files an Inbox request ("approve it in the Jarvis 2 app").
+    where the app would open a review, it files an Inbox request ("approve it in the Jarvis 4 app").
 43. `web.yml` typechecks it, runs its tests (`npm test`: node's test runner over `app/test/*.test.mjs`) and exports it; the router
     serves the export at `/`.
 
@@ -254,7 +254,7 @@ fixes, 34–40 carried over from the old app and still true, 41–43 the web pag
 
 ## The offline copy (2026-10-13)
 
-64. **Settings → Encrypted backup** is its own page under "Jarvis 2" (beside Reset or recover…): one button, Download
+64. **Settings → Encrypted backup** is its own page under "Jarvis 4" (beside Reset or recover…): one button, Download
     encrypted backup, which shows "Reading the backups…" until the file exists (nothing optimistic), then the facts as
     rows (Bucket, Fetched, Stores, Sensitive markers, Checked against keys/setup.pub, Valid n of n or Not valid with
     each failing object and its problem in red) and the File section (Name, Size, Save file…, a `ShareLink`, so Save to

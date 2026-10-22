@@ -51,7 +51,7 @@ wait_empty() { # → the new empty core's key, recorded for teardown
 on_machine() { # on_machine MACHINE CMD → stdout (Machines API exec, the org token)
   python3 - "$1" "$2" <<'PY'
 import json, os, sys, urllib.request
-req = urllib.request.Request(f"https://api.machines.dev/v1/apps/jarvis2-sessions/machines/{sys.argv[1]}/exec", method="POST",
+req = urllib.request.Request(f"https://api.machines.dev/v1/apps/jarvis4-sessions/machines/{sys.argv[1]}/exec", method="POST",
     data=json.dumps({"command": ["sh", "-c", sys.argv[2]], "timeout": 60}).encode(),
     headers={"Authorization": "Bearer " + os.environ["JARVIS2_FLY_TOKEN"], "Content-Type": "application/json"})
 print(json.load(urllib.request.urlopen(req, timeout=90)).get("stdout", "").strip())

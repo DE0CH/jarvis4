@@ -26,7 +26,7 @@ made around it; the app's own list is `app/DECISIONS.md`.
 6. **The app signs in by carrying the Access JWT** (`/api/auth/start` → `jarvis2://auth#token=…`, sent as
    `cf-access-token`); the router verifies it too. Access sessions last 30 days.
 7. **Pause snapshots sit on the router's volume**, signed by the machine, not encrypted at rest.
-8. **The Fly token is narrowed** (`infra/fly-token.sh`): app jarvis2-sessions only, read/write/create/delete/
+8. **The Fly token is narrowed** (`infra/fly-token.sh`): app jarvis4-sessions only, read/write/create/delete/
    control (Fly refuses to create a machine without write), and exec of exactly `/usr/local/bin/jarvis2-init`
    with no arguments. Tested on a real machine: create and destroy allowed, `cat` refused, `jarvis2-init` with an
    argument refused. Write also lets a holder change a running machine's config; the machine then restarts
@@ -44,7 +44,7 @@ made around it; the app's own list is `app/DECISIONS.md`.
     `jarvis2-backup-de0ch`. A store is not sensitive after a Recover only if its backup says so and no marker exists.
 14. **The box changes only through git:** no SSH (sshd off, a throwaway key so Hetzner mails no root
     password), no k8s API from outside, a Hetzner firewall with no inbound rules. Flux applies as a limited
-    identity (admin in the three Jarvis 2 namespaces only). Secrets (tunnel token, WireGuard peer, box key)
+    identity (admin in the three Jarvis 4 namespaces only). Secrets (tunnel token, WireGuard peer, box key)
     arrive once in user-data; Hetzner keeps serving user-data from the metadata address, which every pod's
     network policy blocks.
 15. **The core restarts only when `core/` changes** (CI pins its image separately), because a restart means a
@@ -54,7 +54,7 @@ made around it; the app's own list is `app/DECISIONS.md`.
 
 16. **Box**: Hetzner cx23 (2 vCPU, 4 GB, 40 GB) in fsn1, EUR 6.588/month gross, IPv6-only (DECISIONS 156), in the
     `jarvis2-mock` project (renaming a Hetzner project needs the console).
-17. **Fly**: app `jarvis2-sessions` in org `jarvis2-370`, region `lhr`, sizes small/medium/large = 2/4/8 shared
+17. **Fly**: app `jarvis4-sessions` in org `jarvis2-370`, region `lhr`, sizes small/medium/large = 2/4/8 shared
     CPUs with 2/4/8 GB, then every doubling past large, named by its memory (16gb, 32gb, …; DECISIONS 167). The router's budget cap (DM at USD 45, pause all at USD 50 a month; Deyao raised it from Jarvis 1's 25/30 to 35/40 on 2026-10-20, then to 45/50 on 2026-10-21) reads the app with a
     read-only Fly token (`infra/fly-read-token.sh`).
 18. **Images** on GHCR (public, like the repo), with GitHub build attestations (the phone doesn't check them
@@ -66,9 +66,9 @@ made around it; the app's own list is `app/DECISIONS.md`.
     service token `jarvis2-tunnel` for the web UI's cf-tunnel agent: a store, not the router's machine env, so the
     router never holds it and it never sits in a Fly machine config; the per-id proof comes over `/m`).
 21. **Stores that can reach a code push are sensitive** (Deyao, 2026-10-09). Each repo's push access is its own
-    deploy-key store `github-<repo>` (items 58–66): `github-jarvis2` is sensitive (Jarvis 2's own push path),
+    deploy-key store `github-<repo>` (items 58–66): `github-jarvis2` is sensitive (Jarvis 4's own push path),
     every other repo's store isn't unless Deyao picks it so (he asked for non-sensitive repo stores). claude-env
-    holds no Jarvis 2 code or design.
+    holds no Jarvis 4 code or design.
 22. **The Claude login is shared with Jarvis 1** (Deyao, 2026-10-09). The store `claude` holds an Access service
     token (`jarvis2-claude-credentials`, keys `JARVIS1_CREDENTIALS_ID/SECRET`) that Jarvis 1's Worker lets
     reach only `GET/POST jarvis.deyaochen.com/api/credentials`; tested: 403 on any other path and on session
@@ -76,7 +76,7 @@ made around it; the app's own list is `app/DECISIONS.md`.
     when that expires later (`machine/claudelogin.go`). Holding the store gives the Claude login and nothing
     else in Jarvis 1. Not sensitive.
 23. **Jarvis 1 stays a push path into jarvis2** (Deyao, 2026-10-09, "leave it"): Jarvis 1's `default` store holds
-    the account-wide GitHub token, so whoever can start a Jarvis 1 session can push Jarvis 2's code.
+    the account-wide GitHub token, so whoever can start a Jarvis 1 session can push Jarvis 4's code.
 24. **Grants** (Deyao, 2026-10-09; DESIGN "Grants"): router features get a shell in a session through a phone
     grant (≤ 10 min), a standing rule, or the session's own allow list; the machine checks them against its
     core-signed cert. Holders are per feature. Shell is arbitrary (as Fly exec was in Jarvis 1). A session with a
@@ -84,10 +84,10 @@ made around it; the app's own list is `app/DECISIONS.md`.
 25. **The router's secrets live in git, SOPS-encrypted to the box's age key** (`k8s/secrets`, `infra/router-secrets.py`):
     lobster's token, the Storage Box keys, a read-only Fly token, a GitHub token that only lists repos, and the
     Jarvis 1 tokens the cf-tunnel Worker confines (`CONFINED_TOKENS`): `jarvis2-claude-credentials`,
-    `jarvis2-services` (credentials, search, iCloud, usage), `jarvis2-tunnel` (Jarvis 2 tunnel agents, per-id proof).
-26. **Discord**: lobster (shared with Jarvis 1, Deyao's answer), channels under a "Jarvis 2" category.
+    `jarvis2-services` (credentials, search, iCloud, usage), `jarvis2-tunnel` (Jarvis 4 tunnel agents, per-id proof).
+26. **Discord**: lobster (shared with Jarvis 1, Deyao's answer), channels under a "Jarvis 4" category.
 27. **Archives** go to the Storage Box in Jarvis 1's layout (`claude-records/<date> <title>/`), so Jarvis 1's
-    transcript search indexes them, with the machine-signed snapshot and its cert chain under `jarvis2/`; Jarvis 2's
+    transcript search indexes them, with the machine-signed snapshot and its cert chain under `jarvis2/`; Jarvis 4's
     own index is `.index/jarvis2-destroyed-sessions.json`.
 28. **Restore of a destroyed session** is a new line (phone approval) whose first machine restores the archived
     snapshot after checking it against the old core-signed cert. Which snapshot is the router's choice, not
@@ -148,9 +148,9 @@ made around it; the app's own list is `app/DECISIONS.md`.
     paused; the repos' state comes from the final snapshot (the machine records it just before tarring), so no `archive`
     grant is needed; Deyao gets a DM only when work was lost (dirty repos, an unchecked state, a failed archive).
 41. **Indexing an archive by hand** (`POST /api/records`, Jarvis 1's) puts a folder already on the Storage Box on the
-    Previous list (tail, Remove, Delete). It can't be restored in Jarvis 2: restore trusts only a machine-signed
+    Previous list (tail, Remove, Delete). It can't be restored in Jarvis 4: restore trusts only a machine-signed
     snapshot with its core-signed cert, which such a folder doesn't have.
-42. **Search and the iCloud index were forwarded to Jarvis 1** until they moved to the Jarvis 2 box (2026-10-13, entries
+42. **Search and the iCloud index were forwarded to Jarvis 1** until they moved to the Jarvis 4 box (2026-10-13, entries
     106-111).
 43. **When the core can't be reached the router answers 503 `{coreDown}`** (it said 502 "core unreachable"): while
     its pod restarts (after a wipe) that is the normal state, and the app waits or shows it as a plain note.
@@ -199,7 +199,7 @@ stores, filled later by normal writes.
     sensitive. Accepted as Deyao chose this split; the app's Stores page shows each store's sensitivity, and
     marking one again is one tap.
 51. **The kit is `jarvis2-kit:2:<master private key, base64 PKCS#8 DER>`**; a version-1 kit is refused with "This
-    recovery kit is from an older Jarvis 2 and doesn't work any more." The master private key lives only in the
+    recovery kit is from an older Jarvis 4 and doesn't work any more." The master private key lives only in the
     setup page's memory: Reset shows the kit first and claims only on "I've saved it" (a failed claim keeps the
     same kit for a retry; leaving the page before claiming means nothing was claimed, and the next Reset shows a
     new kit). A pasted kit is forgotten when the page goes or after 10 minutes; Copy puts the kit on this device's
@@ -215,11 +215,11 @@ stores, filled later by normal writes.
     on its volume (`recovery-keys.json`) is unread.
 54. **The earlier build's held master key is deleted** from the iPhone's Keychain at launch (it went into the
     version-1 kit; no core trusts it).
-55. **Settings has one entry**: "Jarvis 2" (running or not) with "Reset or recover…"; the core's keys are no longer
+55. **Settings has one entry**: "Jarvis 4" (running or not) with "Reset or recover…"; the core's keys are no longer
     shown. The app opens the page by itself when it isn't set up from this iPhone or the core has changed.
 56. **This change restarted the production core** (a `core/` change): it held no stores, and it is now empty, waiting
     for Reset. The backups sealed to the previous master key stay in the versioned bucket; the next
-    `fill-stores.sh` re-mints or rotates every Jarvis 2 token in them. A new read credential `jarvis2-backup-read`
+    `fill-stores.sh` re-mints or rotates every Jarvis 4 token in them. A new read credential `jarvis2-backup-read`
     is in the router's secrets (both bucket policies moved to it, the permission test passed, the previous one
     deleted in the Console, no local copy kept).
 57. **The setup session is fully trusted** (Deyao, 2026-10-10: "I don't really care what the setup person can do"). It
@@ -279,7 +279,7 @@ shouldnt unlock the whole infra [store] for that one task."
     Recover brings the stores back, so the deploy-key core waits for his go: remove the annotation (a commit), run the
     `images` workflow (it pins the core), Flux restarts it, Deyao recovers, then adds claude-env and jarvis2 in Settings → Repos.
     Until then the router and app ship (the router answers 501 "the running core predates deploy keys") and sessions
-    have no push access to any repo: the old per-repo PATs (`jarvis2-sessions-*-push`) are deleted and their store
+    have no push access to any repo: the old per-repo PATs (`jarvis4-sessions-*-push`) are deleted and their store
     backups removed (delete markers; the versions stay in the versioned bucket).
 67. **Requests (the Inbox), Claude's choices** (Deyao, 2026-10-11 asked for the Inbox and the three fields; the rest is
     Claude's): a request, and an approval shown in the Inbox, goes after **10 minutes** (Deyao, 2026-10-12; an expired
@@ -382,14 +382,14 @@ entry points only ("if I decide to break it later then it's fine").
 85. **Repos of a cert whose config names none = the deploy-key stores in the cert** (their `GITHUB_DEPLOY_REPO_*`
     value), never the router's list.
 86. **The OpenClaw runtime bundle is pinned by sha256** in the image (`session-image/openclaw-runtime.json`), and
-    Jarvis 1's `restore-snapshot` is a no-op in the Jarvis 2 image.
+    Jarvis 1's `restore-snapshot` is a no-op in the Jarvis 4 image.
 87. **A pause right after a start waits up to 90 s for the machine to finish booting** when it already has its
     secrets (it is seconds from booted): its successor's cert names only the snapshot this machine signs, so a kill
     mid-boot would leave the line with no state at all. A machine still waiting on a locked store isn't waited for.
 88. **Orphan machines are destroyed through the core's existing kill** (Machines tab, 2026-10-11): the kill already takes
     any machine of the app, so no core change or restart; the router offers it only for a machine it never started, with
     no session mapping or cert, at least 15 minutes old. No separate destroy token for the router (one more credential
-    that could destroy session machines). A machine is "test" when its JARVIS2_URL host isn't `jarvis2-box._peer.internal`.
+    that could destroy session machines). A machine is "test" when its JARVIS2_URL host isn't `jarvis4-box._peer.internal`.
 89. **A session logs into Claude by itself** (Deyao, 2026-10-11: no grant, no Face ID). Decision 22's boot step was
     written (`machine/claudelogin.go`) but never called for sessions, so every session's first login was the
     router's `login` exec — which a vouching machine refuses without a grant: after the core release every new
@@ -529,7 +529,7 @@ session setting (`Checks.configKeys`) if a session should keep its screen from t
     successor reads it, so the router's word never reaches the agent; the `upgraded` message itself is an image text
     over two sizes. Change: make Upgrade phone-approved if Deyao wants a Face ID on it.
 
-## The session image's base moves into Jarvis 2, 2026-10-13
+## The session image's base moves into Jarvis 4, 2026-10-13
 
 100. **The base is its own image, rebuilt only when `session-image/base/` changes** (not one combined Dockerfile). It is
     ~7 GB and takes 20-30 min to build, so rebuilding it for every `machine/` or `tasks/` push would slow every deploy.
@@ -542,7 +542,7 @@ session setting (`Checks.configKeys`) if a session should keep its screen from t
     (`selfhost/session-image/` at claude-env 32e9a0f, the base of Jarvis 1's last image sha-32e9a0f7c8c6) plus the
     cf-tunnel agent (`cf-tunnel-agent.js`, was a second build context); every Dockerfile command is the same. The
     comments had notes about other projects and private workflows, now generic. Jarvis 1 code paths stay where they are
-    inert or harmless in a Jarvis 2 machine, so the move is mechanical: `restore-snapshot` (replaced by a no-op in the
+    inert or harmless in a Jarvis 4 machine, so the move is mechanical: `restore-snapshot` (replaced by a no-op in the
     session layer), the kubeconfig the entrypoint writes only when a store carries KUBE_SERVER + KUBE_TOKEN, the
     `jarvis.deyaochen.com` default of `JARVIS_URL` in pull-secrets / content-sync / push-claude-credentials (never used:
     jarvis2-machine always sets `JARVIS_URL` to its local proxy), `sync-live-transcripts` (runs only when a store carries
@@ -579,9 +579,9 @@ key to decrypt it offline"; the download in the iPhone app, the decryptor a comm
     in the Release build and the runner opens the saved file with that run's throwaway kit. The production master key
     is never used (no session has it).
 
-## Transcript search and the iCloud index move to the Jarvis 2 box, 2026-10-13
+## Transcript search and the iCloud index move to the Jarvis 4 box, 2026-10-13
 
-106. **Transcript search and the iCloud index run on the Jarvis 2 box, in jarvis2-edge** (`services/search`,
+106. **Transcript search and the iCloud index run on the Jarvis 4 box, in jarvis2-edge** (`services/search`,
     `services/icloud-index`, ported from Jarvis 1 with the same API shapes, so the app and session scripts change only
     their base URL). They read untrusted content (transcripts, PDFs, images through ffmpeg), so they sit next to the
     news pod rather than the router or the core, and their NetworkPolicies admit only the router's pod: they have no
@@ -625,15 +625,15 @@ key to decrypt it offline"; the download in the iPhone app, the decryptor a comm
     import is read once (`SEED_PLAIN_OK=1`) and deleted by the first encrypted backup. Change: keep that key in the
     `identity` store itself instead (a full rewrite of that store, so Deyao's or the orchestrator's call).
 
-## Device leases and watches in Jarvis 2, 2026-10-13
+## Device leases and watches in Jarvis 4, 2026-10-13
 
 113. **Device leases are the router's own** (Jarvis 1's lib/leases.js ported to `router/leases.go`; nothing forwarded
     to Jarvis 1). Same rules and request shapes: one holder and a FIFO queue per device (`wechat-phone`, `iphone`,
     `mac` always listed), acquire / renew / describe / return, `lowPriority` never queued, a 1 h renewable lease, expiry
     and gone sessions swept every 30 s, Deyao's take-over / hand-back and force return. The state is in the router's
     `state.json`. The holder is the calling machine's own session (its path id must be its own, as for every `/m/api`
-    call). **Jarvis 1's lease table is separate and not consulted**: while both run, a Jarvis 1 session and a Jarvis 2
-    session could each hold the same device; after the cutover Jarvis 2 is the only authority. Change: a one-way check
+    call). **Jarvis 1's lease table is separate and not consulted**: while both run, a Jarvis 1 session and a Jarvis 4
+    session could each hold the same device; after the cutover Jarvis 4 is the only authority. Change: a one-way check
     of Jarvis 1's table before granting, if Deyao wants the overlap closed while both run.
     - **Wake messages are deliveries the machine checks**, never router text: `lease-granted` carries the waiter's own
       signed acquire request (its prompt, and the device in the signed path; the machine refuses a device that isn't
@@ -643,16 +643,16 @@ key to decrypt it offline"; the download in the iPhone app, the decryptor a comm
     - **Scripts that drive a device by themselves** (tunnel button pages, pay buttons) run inside a session and take
       the lease as that session through `$JARVIS_URL` (`lease.holding`), so no separate lease token exists; the
       `shopping` store's `JARVIS1_LEASE_ACCESS_ID/SECRET` (Jarvis 1's Worker-confined token) is no longer used by
-      Jarvis 2 sessions. A Jarvis 2 session is queued and woken like a Jarvis 1 session was (Jarvis 1 could only answer
+      Jarvis 4 sessions. A Jarvis 4 session is queued and woken like a Jarvis 1 session was (Jarvis 1 could only answer
       it "busy").
     - The app's take-over, hand-back and force return are Deyao's Access login (no Face ID): they only move a lease,
       never a secret. Change: phone-signed if he wants it.
     - **Deyao's Jarvis 1 take-overs were carried over** (2026-10-13, by the setup session through
       `/setup/leases/:name/take-over`): `iphone` with his note "Unavailable to agents long term …" and `mac`, both
-      held by him in Jarvis 1, are held by "deyao" in Jarvis 2 too, so a Jarvis 2 session can't take them. He hands
+      held by him in Jarvis 1, are held by "deyao" in Jarvis 4 too, so a Jarvis 4 session can't take them. He hands
       them back in the web page's Devices tab (or `infra/setup.py lease hand-back`).
 114. **Watches run on the box, with no secrets** (`router/watches.go`, `services/watch`, `k8s/apps/watch.yaml`).
-    Jarvis 1 ran each check on its box with the session's store plaintext; Jarvis 2's box never holds store plaintext,
+    Jarvis 1 ran each check on its box with the session's store plaintext; Jarvis 4's box never holds store plaintext,
     and a watch must fire while its session is paused (no machine). So the router runs each due check on a **watch
     runner** pod in `jarvis2-edge` that holds nothing: no secrets, no service account token, no volume; its
     NetworkPolicy admits only the router and lets it reach only DNS and public addresses on 80/443/993 (never a
@@ -676,9 +676,9 @@ key to decrypt it offline"; the download in the iPhone app, the decryptor a comm
       no automatic destroy) until it fires, gives up, or is cancelled. Script limit 32 KB (Jarvis 1's 4000 characters
       was a Fly metadata limit).
 
-## The Claude login moves into Jarvis 2, 2026-10-13
+## The Claude login moves into Jarvis 4, 2026-10-13
 
-Jarvis 2 stops depending on Jarvis 1 for the shared Claude login (PLAN "Before Jarvis 1 retires"). Replaces 22 and the
+Jarvis 4 stops depending on Jarvis 1 for the shared Claude login (PLAN "Before Jarvis 1 retires"). Replaces 22 and the
 Jarvis 1 half of 89.
 
 115. **The router holds the Claude login**, on its volume (`claude-login.json`, 0600), not in the core and not in a
@@ -708,24 +708,24 @@ Jarvis 1 half of 89.
      router waits for every participant seen in the last 2 minutes (at most 10 s), refreshes, and answers every poll
      with the new pair; a participant writes it and then releases the lock (released after 45 s regardless). Jarvis 1
      is one participant for all its sessions (it locks them through Fly exec, as before). Replaces Jarvis 1's exec-based
-     guard for Jarvis 2 sessions, which had none (they polled Jarvis 1 every 30 s).
+     guard for Jarvis 4 sessions, which had none (they polled Jarvis 1 every 30 s).
 119. **Re-login is the CLI's OAuth flow in Go** (`router/claudelogin.go`), not a PTY around `claude auth login`
      (lessons/39 drove the real CLI): the router image is distroless with no CLI, and a pending sign-in kept on the volume
      (the PKCE verifier, 15 minutes) survives a rollout, which Jarvis 1 needed a separate broker for. The parameters
      (authorize URL, client id, scopes, manual redirect, token endpoint, the `code#state` paste) are read from claude
      2.1.296; after a CLI upgrade that changes them, update the vars at the top of the file.
-120. **Jarvis 1 reads the login from Jarvis 2** (`/peer/claude-login`): a path-scoped Access app
-     `jarvis2.deyaochen.com/peer` admitting one service token, `jarvis1-claude-login` (router env `ACCESS_PEER_AUD`,
+120. **Jarvis 1 reads the login from Jarvis 4** (`/peer/claude-login`): a path-scoped Access app
+     `jarvis4.deyaochen.com/peer` admitting one service token, `jarvis1-claude-login` (router env `ACCESS_PEER_AUD`,
      `JARVIS1_LOGIN_CLIENT_ID`; its secret only in Jarvis 1's Secret `jarvis-claude-login`). Jarvis 1 stores each newer
-     pair in its own Secret, so its sessions, its `/api/credentials` (still used by Jarvis 2 sessions on older images)
+     pair in its own Secret, so its sessions, its `/api/credentials` (still used by Jarvis 4 sessions on older images)
      and its usage card keep working unchanged; it pushes its sessions' own refreshes and its Settings Re-login
-     (`relogin: true`, which may change the account) to Jarvis 2. The token reaches nothing else on the router.
+     (`relogin: true`, which may change the account) to Jarvis 4. The token reaches nothing else on the router.
 121. **A refused refresh DMs once and isn't retried**: only a newer pair (a Re-login or a push) clears it, as in
      Jarvis 1. Usage is read with the stored access token and cached a minute.
 
 ## Importing paused Jarvis 1 sessions, 2026-10-13
 
-Deyao: move every paused Jarvis 1 session to Jarvis 2, so each continues there as the same conversation with its working
+Deyao: move every paused Jarvis 1 session to Jarvis 4, so each continues there as the same conversation with its working
 tree; Face ID is unavoidable, the approval burden should be small.
 
 122. **An import is a new line whose cert's `restore` names the Jarvis 1 session id and the sha256 of an import
@@ -733,7 +733,7 @@ tree; Face ID is unavoidable, the approval burden should be small.
      `{name, sha256, size}` for each; Deyao's Face ID signs the manifest's hash, so it vouches for every byte (DESIGN
      "Inputs to a machine" (a)). It reuses the `restore` key the app already shows ("Restores machine <id>", the hash;
      a Jarvis 1 id is its first machine's id), so no app release is needed. The machine tells the two kinds apart by the
-     bytes the cert names (an import manifest is JSON naming that id; anything else must be a signed Jarvis 2
+     bytes the cert names (an import manifest is JSON naming that id; anything else must be a signed Jarvis 4
      snapshot), so the router can't switch one for the other. Change: a separate `import` config key the app labels
      "Imports Jarvis 1 session" (an app release through the phone replica).
 123. **Which bytes are hashed is the router's choice** (as with attachments, 78): the phone binds what the router read
@@ -766,14 +766,14 @@ tree; Face ID is unavoidable, the approval burden should be small.
      conversation: the environment changed, the stores it now has, Jarvis 1's API is going away, reply in one line and
      wait. One short turn per session; the reply also shows in the transcript that the resume worked.
 128. **Settings carried over**: label = Jarvis 1's app title (else its label), which names the Remote Control entry;
-     model, permission mode, repos and auto-pause as in Jarvis 1; size `xlarge` → `large` (Jarvis 2's largest; the core
+     model, permission mode, repos and auto-pause as in Jarvis 1; size `xlarge` → `large` (Jarvis 4's largest; the core
      refuses others).
 129. **Snapshots stream** (a session can be several GB): the machine writes its final snapshot to disk while hashing it
      and uploads it streamed, the signature over that hash; the router streams the body onto its volume while hashing
      and checks the signature after (it read up to 4 GB into a pod with 1 GiB of memory); a restore (predecessor or
      archive) streams to disk and unpacks from the file. A file that shrinks while the snapshot is taken is padded
      instead of failing the whole snapshot.
-130. **Disk**: Jarvis 2 machines get Fly's default 8 GB root disk (the core's create sets no size; Jarvis 1 set 16 GB).
+130. **Disk**: Jarvis 4 machines get Fly's default 8 GB root disk (the core's create sets no size; Jarvis 1 set 16 GB).
      The largest paused Jarvis 1 session unpacks to 4.3 GB; with its pause snapshot (about 1.8 GB compressed) it fits, with
      little room. Change: `rootfs: {size_gb: 16}` in the core's create, with the next core release (a core change).
 131. **A new core destroys imported lines like any other** (once paused, archived in Previous; Restore is a new line).
@@ -782,7 +782,7 @@ tree; Face ID is unavoidable, the approval burden should be small.
 
 ## Content stores, paired apps, Browserbase and Fly personal leave Jarvis 1, 2026-10-13
 
-Deyao is retiring Jarvis 1 (2026-10-13); these were the last pieces Jarvis 2 took from it besides the login, search, the
+Deyao is retiring Jarvis 1 (2026-10-13); these were the last pieces Jarvis 4 took from it besides the login, search, the
 iCloud index and leases (decided while Deyao was away; the safe, reversible default each time).
 
 132. **Content stores: the pick is signed, the router serves the files.** A session's content stores are a field of its
@@ -801,16 +801,16 @@ iCloud index and leases (decided while Deyao was away; the safe, reversible defa
      push with the line's key and have the reader check it, if a store should only ever hold what sessions wrote.
 134. **Jarvis 1's task templates: the content ones are ported, nothing is scheduled.** `encrypt-to-content`,
      `paraphrase-to-content` and `proton-send` read and write content stores through the local API (`content.py`) and take
-     `AES_KEY` from a key store picked in a `optionsFrom: "stores"` field (Jarvis 1's `secretKeys` has no Jarvis 2 form: the
+     `AES_KEY` from a key store picked in a `optionsFrom: "stores"` field (Jarvis 1's `secretKeys` has no Jarvis 4 form: the
      whole picked store reaches the task, as every store does). `new-session` is not ported: a scheduled new line would
      need the phone each day; a session proposes one instead (`jarvis2-request new-session`). Jarvis 1's five instances
      and three schedules (all disabled since 2026-10-04) are not recreated: each instance is a new line approved on the
-     phone, and no Jarvis 2 store holds the `AES_KEY` they use. Change: Deyao makes them from the Tasks tab when he wants
+     phone, and no Jarvis 4 store holds the `AES_KEY` they use. Change: Deyao makes them from the Tasks tab when he wants
      them.
-135. **Paired apps: Jarvis 2 mints their tokens itself.** Jarvis 1's design (its `/api/remotes` appending Jarvis 2's list)
+135. **Paired apps: Jarvis 4 mints their tokens itself.** Jarvis 1's design (its `/api/remotes` appending Jarvis 4's list)
      dies with Jarvis 1, so the router answers pairing as Jarvis 1 did: one Access service token per app, minted with a
      Cloudflare token that can manage Access service tokens and nothing else (`jarvis2-device-tokens`, router SOPS part
-     `devices`; it can't change an Access app, policy, DNS or Worker). The Access app "Jarvis 2 devices" covers only
+     `devices`; it can't change an Access app, policy, DNS or Worker). The Access app "Jarvis 4 devices" covers only
      `/api/remotes` and `/api/sessions/*/start` and admits any service token of the account, and the router admits a token
      only when its client id is a paired device's; pairing itself needs Deyao's email login. Trade-off: that Cloudflare
      token can also delete or mint any service token of the account (a broken router could revoke the setup or tunnel
@@ -845,7 +845,7 @@ iCloud index and leases (decided while Deyao was away; the safe, reversible defa
      is a Jarvis 1 import, fetches that manifest and its files again and checks them as the first machine did
      (`machine/restore.go` reimportJarvis1; the router serves them to such a successor). The cost: a router that withholds
      a later snapshot can bring the line back to the imported state instead of an empty one; both were already in its power
-     (withholding, and the import's bytes are what Deyao signed). A destroyed Jarvis 2 session's archive is not taken again.
+     (withholding, and the import's bytes are what Deyao signed). A destroyed Jarvis 4 session's archive is not taken again.
 142. **`/setup/sessions/{id}/pause` cancels the session's wakeups and crons first** (they would resume it by themselves);
      the imports' re-armed ones are armed again by the re-import at the next resume.
 
@@ -1013,7 +1013,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
 
 ## The box is IPv6-only, 2026-10-13
 
-159. **Every Jarvis 2 box is IPv6-only, with Cloudflare's free WARP client for the outgoing IPv4** (Deyao, 2026-10-13:
+159. **Every Jarvis 4 box is IPv6-only, with Cloudflare's free WARP client for the outgoing IPv4** (Deyao, 2026-10-13:
      every Hetzner server, because the account is at its limit of 10 primary IPs). `infra/create.sh` creates with
      `public_net: {enable_ipv4: false, enable_ipv6: true}`; `infra/warp-host.sh` (ahead of `cloud-init.sh` in the
      user-data) installs WARP from Cloudflare's apt repo (reachable over IPv6), registers, `mode tunnel_only` and
@@ -1043,10 +1043,10 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
      the reboot WARP installed by the unit, the node Ready on 10.254.254.1, every pod Running, Flux fetching GitHub,
      a new GHCR image pulled and a pod reaching api.github.com.
 
-161. **The apps' server URL moved to Jarvis 2 now, not at retirement** (Deyao, 2026-10-13: "make sure Jarvis 2 runs fully
-     without Jarvis 1"; supersedes 139). OpenClaw and Paseo name jarvis2.deyaochen.com from their next TestFlight build;
+161. **The apps' server URL moved to Jarvis 4 now, not at retirement** (Deyao, 2026-10-13: "make sure Jarvis 4 runs fully
+     without Jarvis 1"; supersedes 139). OpenClaw and Paseo name jarvis4.deyaochen.com from their next TestFlight build;
      Deyao pairs each once. They no longer see Jarvis 1's OpenClaw/OpenCode sessions (Jarvis 1 is frozen). Paseo's CI
-     e2e token is a Jarvis 1 device: Jarvis 2 admits only devices paired through `/api/devices/pair` (Deyao's Access
+     e2e token is a Jarvis 1 device: Jarvis 4 admits only devices paired through `/api/devices/pair` (Deyao's Access
      login), and the setup session can't pair one (giving it that would hand it every OpenClaw gateway token), so the
      fork's simulator test skips its Jarvis checks (a warning) until a paired token is in its secrets. Change: a
      setup-signed device registration for a CI token, or Deyao pairs a "Paseo CI" device once.
@@ -1093,7 +1093,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
      just overwrite the whole key store (with the public half of the key)"; "any session with a valid machine key, this
      is part of the api endpoints they can use, and since writing a key is perfectly safe (has backup, so can't
      overwrite, and also can't read), no approval is needed"; "pulling keys for newly written keys require my approval
-     on iphone"; the explanations of each key surfaced on the web and iPhone portal, kept in Jarvis 2).
+     on iphone"; the explanations of each key surfaced on the web and iPhone portal, kept in Jarvis 4).
      *What happened*: after the add-store race (157) the YYC session was restarted (a phone-approved resume to bypass);
      `yyc` had gained keys since its last unlock (`YYC_CLUSTER_SSH_KEY` and others, written by another session with
      `store-put.py`, which rewrote the whole store from its own copy), and the resumed session came back with the old
@@ -1468,7 +1468,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      (less if Fly's incremental storage shares blocks); each failed-snapshot backup adds ~3 GB × 2 months ≈ USD 0.50
      once. The budget cap counts both (180). Needs the
      held core release (the `core-pin: hold`), and the core's narrowed Fly token must allow volume calls: its caveat is
-     `Apps {jarvis2-sessions: rwcdC}` with no per-resource limit, which should cover volumes; check on the first start
+     `Apps {jarvis4-sessions: rwcdC}` with no per-resource limit, which should cover volumes; check on the first start
      after the release (a refusal shows as `start: fly create: volume: … 403`). *Not chosen*: restoring from the backup
      automatically or from Fly's daily snapshots (Deyao: recovery from them is his decision, by hand); one volume per
      session kept across pauses (it would bill while paused, and a router could then start any machine on it).
@@ -1497,7 +1497,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      network reaches); *size + mtime for the pre-copies, and the final delta refetches every file under 1 MB and
      everything touched since the last copy* (a same-size rewrite within one mtime tick, state.json's case, would
      otherwise be missed); *the peer moves in `/data/wg.conf`, which wins over `WG_CONFIG`* (the machines'
-     `jarvis2-box._peer.internal` must keep its address, and a new peer of the same name would cut them off until it
+     `jarvis4-box._peer.internal` must keep its address, and a new peer of the same name would cut them off until it
      is made); *a trigger in git (`MOVE_AT`)*, not an API call (the box changes only through git); *a failed freeze or
      delta aborts and thaws the old box* (state, peer and drain back); *a refused takeover is not undone* (core
      continuity: a handed-off core stays handed off; the final state is kept for the retry and Deyao is DMed).
@@ -1516,7 +1516,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      10 GB free. Every 30 min the router lists the snapshots of each volume Fly still has and of each deleted volume a
      session or record names a backup of while its retention runs (Fly keeps those snapshots, and bills them, after the
      volume is gone); each snapshot is counted once by id, failed ones not at all, and the stored GB past the free 10
-     add to the hourly burn the cap sums. The read-only token (`Apps {jarvis2-sessions: r}`) can list snapshots. A
+     add to the hourly burn the cap sums. The read-only token (`Apps {jarvis4-sessions: r}`) can list snapshots. A
      failed list keeps the last one it got (logged). `GET /api/state` `budget` shows `snapshots` and `snapshotGb`.
      *Not chosen*: Fly's billing API (the org's invoice needs a token that can see billing, more than read on one app);
      counting snapshots at their volume's size (Fly bills the stored, incremental size, which its list reports).
@@ -1525,7 +1525,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
 ## Failed sessions, repo stores and API calls in a batch, 2026-10-15
 
 181. **A failed session comes back with one tap and can always be destroyed** (Deyao, 2026-10-15). Stuck that day:
-     "Jarvis Core rebuild" (start: core /start timed out), "Jarvis 2" (start cut off by a router restart), "Draft reply
+     "Jarvis Core rebuild" (start: core /start timed out), "Jarvis 4" (start cut off by a router restart), "Draft reply
      to image" (kill: a Fly destroy timed out), and five sessions whose kill the core refused ("the snapshot isn't signed
      by machine …'s current key": machines certified by the core from before the 2026-10-15 Recover, for which this
      core has no key, so it refuses every snapshot claim). *Resume* takes any failed session: with no machine as 168
@@ -1648,7 +1648,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      cleared from a session (Browserbase out of credit, IPRoyal's residential balance empty), and DE0CH's GitHub carries
      chendeyao000@gmail.com. *The log read token lives in the new store `jarvis2-ops`, not `infra`* (the decision said
      `infra`): `infra` held keys this session didn't, so the old core's whole-store write would have dropped them, and the
-     tokens had to be stored before the core release; `jarvis2-ops` holds all of Jarvis 2's operations credentials
+     tokens had to be stored before the core release; `jarvis2-ops` holds all of Jarvis 4's operations credentials
      (Grafana tokens, the alert webhook, the probe token, the router's backup key), written only by the setup path.
      *Alerts to Discord #jarvis2-alerts* through a webhook; rules as code (`infra/grafana.py`). *The external probe on
      `/healthz`* with its own path-scoped Access app and one service token, never past Access.
@@ -1842,8 +1842,8 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
 ## Leftover volumes: test runs delete their own, the router sweeps the rest, 2026-10-19
 
 194. **Session volumes no machine mounts any more are cleaned up in two places: each test run deletes its own, and the
-     production router sweeps every leftover (195).** On 2026-10-19 two unattached `jarvis2_state` volumes (state
-     `created`, made 2026-10-16 by a phone-replica run) were found in `jarvis2-sessions` and deleted by hand with the org
+     production router sweeps every leftover (195).** On 2026-10-19 two unattached `jarvis4_state` volumes (state
+     `created`, made 2026-10-16 by a phone-replica run) were found in `jarvis4-sessions` and deleted by hand with the org
      token as a one-time exception. Why they leak: the test teardowns (`ios/ci/replica-stack.sh` down/sweep,
      `infra/e2e.sh`) find volumes only through the machines Fly still lists (`config.mounts`), so a volume whose machine
      is already gone is never seen; and the core's kill (`dropVolume`, `core/volumes.go`) deletes only the volumes it
@@ -1852,10 +1852,10 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      forgotten.
      - **Each test run deletes its own leftover volumes from its own records** (`infra/run-volumes.py`, called by the
        replica's `down` and the e2e's cleanup). A volume carries no label (every core names its volumes
-       `jarvis2_state`, production's too, in the same app, with tokens of the same org), so Fly alone can't tell a run's
+       `jarvis4_state`, production's too, in the same app, with tokens of the same org), so Fly alone can't tell a run's
        volume from production's. What can: the run's router state (`state.json`: `started[*].volume`, every kill's
        backup) and its core's log (the ids it logs at a kill), which name only volumes the run's own core made. A volume
-       is deleted only when its id is in those files AND Fly lists it named `jarvis2_state`, state `created`, attached
+       is deleted only when its id is in those files AND Fly lists it named `jarvis4_state`, state `created`, attached
        to nothing and mounted by no machine; one still attached (its machine going away) is looked at again for a
        minute. An id the run didn't record is never touched.
      - **Everything else: the production router's sweep (195)**, with the checks first designed here for a Destroy
@@ -1871,13 +1871,13 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
 ## Leftover volumes are swept by the router with a token that can only delete volumes, 2026-10-20
 
 195. **The router holds a fourth Fly token, `FLY_VOLUME_TOKEN`, which can do nothing but delete volumes in
-     `jarvis2-sessions`, and sweeps leftover session volumes with it every 10 minutes (`router/volsweep.go`).** Deyao
+     `jarvis4-sessions`, and sweeps leftover session volumes with it every 10 minutes (`router/volsweep.go`).** Deyao
      decided (2026-10-20) against a core release for 194's Destroy volume, since a core release needs his Recover. 194
      had weighed this router-only design and noted what it costs: until now the router held no Fly write power at all
      (`FLY_READ_TOKEN`, `FLY_ORG_READ_TOKENS`, `FLY_PERSONAL_READ_TOKEN` are read-only), and DESIGN puts every Fly change
      that matters in the core, which signs it.
      - **The token** (`infra/fly-volume-token.sh`): the org token attenuated with two caveats,
-       `Apps {<jarvis2-sessions id>: "d"}` and `Volumes {"": "d"}` (`""` = any volume id). Fly's resource-set check
+       `Apps {<jarvis4-sessions id>: "d"}` and `Volumes {"": "d"}` (`""` = any volume id). Fly's resource-set check
        refuses an access that names no resource of a caveat's kind (`resset.ErrResourceUnspecified`), so the Volumes
        caveat alone shuts out everything that isn't about one volume: machines, the app itself, its secrets, other apps,
        org features, GraphQL mutations; and `d` only leaves no read, create, extend or snapshot. **Tested 2026-10-20**
@@ -1885,7 +1885,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
        volumes, a second app with a volume; all deleted afterwards with the org token). Refused, 403 `unauthorized`:
        list, get, create, update, stop, start, exec, force-delete a machine; create, list, get, extend, update, snapshot
        a volume; list and set secrets; get the app, list the org's apps, create an app, delete the app; list machines or
-       volumes of `jarvis2-sessions`, create a volume in `jarvis2-log-shipper`, delete the second app's real volume.
+       volumes of `jarvis4-sessions`, create a volume in `jarvis2-log-shipper`, delete the second app's real volume.
        GraphQL: read the app ("Not authorized to access this firecrackerapp"), `deleteApp` ("Not authorized to destroy
        this app"), `createApp` and `addWireGuardPeer` ("Not authorized to access this organization"), `setSecrets`
        ("Not authorized to manage this app"). Allowed: deleting an unattached volume (200, state `destroyed`; a repeated
@@ -1894,7 +1894,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
        with harmless calls only: list machines, get the app, list volumes, list secrets, create a machine or a volume
        (invalid bodies), list `jarvis2-log-shipper`'s machines, GraphQL read: all refused; ids that don't exist answer
        404 before any permission check, which shows nothing. Listing stays the read-only token's job.
-     - **What the sweep deletes** (194's checks, made on fresh Fly lists each time): named `jarvis2_state`, state
+     - **What the sweep deletes** (194's checks, made on fresh Fly lists each time): named `jarvis4_state`, state
        `created`, attached to nothing, in no listed machine's `config.mounts`, at least 15 minutes old, and named by no
        session the router knows. "Named" means: the volume in the cert or start record of a session's current machine
        (`MachineID`) or booted machine (`Booted`), the line's latest cert, or a backup (of a session or a record) whose
@@ -1940,12 +1940,12 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      403 "this needs a fresh phone grant for terminal" and nothing reached the Inbox: only the iPhone app turned that
      403 into its grant review. Now the router does it for every caller but the app: it files the 10-minute `terminal`
      grant request as that caller's (named from its credential: "Deyao, from the web page", "the actions of session
-     “X” (s…)", never Jarvis 2 itself; the reason names the session and the mode), answers 202 `{waiting: "inbox"}`,
+     “X” (s…)", never Jarvis 4 itself; the reason names the session and the mode), answers 202 `{waiting: "inbox"}`,
      shows the switch as the session's `modeAfterGrant`, and runs it when the phone signs that grant. The app keeps
      its 403 and its in-place review (one Face ID, no Inbox round trip).
      - **Not chosen:** a separate Inbox item for the switch itself. The grant is the only thing the phone signs (the
        mode in a running session is not in the core's cert); a second item would be a tap that signs nothing.
-     - The caller texts of Deyao's own logins became "Deyao, from the web page" / "Deyao, from the Jarvis 2 app", so
+     - The caller texts of Deyao's own logins became "Deyao, from the web page" / "Deyao, from the Jarvis 4 app", so
        every Inbox item says who asked.
 198. **Jarvis's own messages go in the permission class claude actually runs in (2026-10-20).** The machine sent its
      deliveries (watchdog, wakeups, Inbox outcomes) with `from-mode` from the session's cert, but a switch to bypass
@@ -2136,7 +2136,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
 207. **A message held for Deyao into a session whose machine predates message approvals is held with Jarvis's own
      rendering (Claude, 2026-10-20).** Such a machine knows no preview: it took the router's preview as a delivery and
      refused it for want of the core's attestation, and the router reported the message FAILED to its sender within a
-     second, before Deyao ever saw it (the Claude Code · Paseo test session's replies to "Jarvis 2 works", whose outcome
+     second, before Deyao ever saw it (the Claude Code · Paseo test session's replies to "Jarvis 4 works", whose outcome
      read "approved but carrying it out failed"). The router now recognises that answer and holds the message with its
      twin of the text (the canned kinds, the peer wrapper, an Inbox outcome summary), noted as Jarvis's rendering. Once
      delivered, the attested delivery goes in as before. Such a machine checks no phone signature, so in those sessions
@@ -2147,7 +2147,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
 
 208. **A volume Fly lists as `pending_destroy` or `destroying` is already deleted: the Machines view leaves it out and
      the budget doesn't bill it (`volumeGone`, `router/budget.go`).** Deyao saw 30 "Not attached to a machine: billed for
-     nothing" volumes in `jarvis2-sessions` on 2026-10-21. Every one was in state `pending_destroy`: the core's kill had
+     nothing" volumes in `jarvis4-sessions` on 2026-10-21. Every one was in state `pending_destroy`: the core's kill had
      deleted it (DECISIONS 177) and Fly keeps a deleted volume listed, soft-deleted, until it purges it. The only volumes
      in `created` were the three of the three running machines; kamyee and personal had none. So no volume had
      outlived its machine; the view and `burnRate` both treated every state but `destroyed` as a live, billed volume
@@ -2158,13 +2158,13 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      (DECISIONS 180: the snapshot lister reads each volume a session or record names). The sweep (195) already acts
      only on `created` volumes. *Not chosen*: showing deleted volumes greyed out with a note, since Fly itself hides
      them and there is nothing to do about one.
-209. **The Machines view names the apps Jarvis 2 itself runs that aren't session apps, with their monthly cost
+209. **The Machines view names the apps Jarvis 4 itself runs that aren't session apps, with their monthly cost
      (Deyao, 2026-10-21; `jarvisOwnApps`, `router/flyorgs.go`).** `jarvis2-log-shipper` showed "Used by: No Jarvis" and
-     its machine the amber "In an app no Jarvis runs sessions in". Its label is now "Jarvis 2's log shipper: sends the
+     its machine the amber "In an app no Jarvis runs sessions in". Its label is now "Jarvis 4's log shipper: sends the
      session machines' logs to Grafana Cloud · USD 2.52/month" and its machine isn't flagged for being there (a stopped
      or failed one still is). The cost is computed from its started machines' guests at budget.go's rates (Fly's
      lhr prices, the ones the budget uses), not hard-coded, so a resize shows; RUNBOOK's USD 2.19 was the price
-     without lhr's markup. It is the only such app (jarvis2-370 holds just it and `jarvis2-sessions`).
+     without lhr's markup. It is the only such app (jarvis2-370 holds just it and `jarvis4-sessions`).
 
 210. **Only an upward peer message (and a resume prompt) waits for Deyao; Jarvis's own messages go straight in (Deyao,
      2026-10-21).** Message approvals (203) held every delivery into a session holding a sensitive store, so the
@@ -2268,7 +2268,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      an Upgrade) went silent right after "session stopped for the final snapshot": no progress line for 10 min, so the
      snapshot never began (DECISIONS 214's "mid-snapshot" was wrong). Because the machine had a volume, the kill went on,
      and the core's volume backup was its only copy; Fly then refused to restore it ("didn't reach a mountable state",
-     every encrypted volume snapshot of app jarvis2-sessions). Now:
+     every encrypted volume snapshot of app jarvis4-sessions). Now:
      - `router/snapsafe.go`: any failed final snapshot keeps the machine (and its volume), the session `failed`,
        Deyao DMed, exactly as DECISIONS 176 did for machines without a volume; Destroy anyway still goes on.
      - `machine/restore.go` `writeChanges` (the only step between the freeze and the snapshot's first progress line: a

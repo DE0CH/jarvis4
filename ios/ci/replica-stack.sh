@@ -1,6 +1,6 @@
 #!/bin/bash
-# replica-stack.sh — the phone replica's throwaway Jarvis 2, on the macOS runner itself (ios.yml job `replica`):
-# the real core and router built from this commit (no fakefly), real Fly session machines in jarvis2-sessions, and
+# replica-stack.sh — the phone replica's throwaway Jarvis 4, on the macOS runner itself (ios.yml job `replica`):
+# the real core and router built from this commit (no fakefly), real Fly session machines in jarvis4-sessions, and
 # the machines' way back to the router over a WireGuard peer of the Fly org that the router runs in userspace (as
 # production's does, router/wg.go). Everything is this run's own and throwaway:
 #   - a box key and a setup key (ios/ci/standin.py keys): the Release build reads their public halves from the keys
@@ -21,7 +21,7 @@
 #   replica-stack.sh sweep     every earlier replica run's leftovers (machines naming a jarvis2-replica-* peer, and
 #                              those peers): one run at a time (ios.yml's concurrency group), so none is in flight.
 #                              NOT an earlier run's bare volume (its machine gone): Fly keeps no label on a volume and
-#                              every core names its volumes jarvis2_state, so it can't be told from production's
+#                              every core names its volumes jarvis4_state, so it can't be told from production's
 #                              (docs/RUNBOOK.md "Leftover volumes"); `down` deletes them while the run's records exist
 # Env: REPLICA_FLY_TOKEN (an org token of jarvis2-370: peers, machines, exec), REPLICA_RUN (digits and dashes).
 set -euo pipefail
@@ -29,7 +29,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CMD="${1:?usage: replica-stack.sh up|down W | sweep}"
 : "${REPLICA_FLY_TOKEN:?}"
 export JARVIS2_FLY_TOKEN="$REPLICA_FLY_TOKEN"   # what infra/fly-token.sh and fly-read-token.sh narrow
-ORG=jarvis2-370; APP=jarvis2-sessions; MAPI=https://api.machines.dev/v1/apps/$APP
+ORG=jarvis2-370; APP=jarvis4-sessions; MAPI=https://api.machines.dev/v1/apps/$APP
 
 # machines whose router address names a peer matching the regex $1, then their volumes (a force destroy leaves a
 # machine's state volume behind, core/volumes.go)

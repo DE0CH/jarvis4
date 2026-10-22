@@ -1,6 +1,6 @@
 package main
 
-// The Browserbase spend guard (Jarvis 1's lib/bbbudget.js, moved here so Jarvis 2 doesn't depend on Jarvis 1): DM only
+// The Browserbase spend guard (Jarvis 1's lib/bbbudget.js, moved here so Jarvis 4 doesn't depend on Jarvis 1): DM only
 // (Deyao, 2026-10-01: cap USD 10 overage, warn at 80%); nothing is blocked.
 //
 // Browserbase has no spend limit, and its project usage API doesn't follow the billing cycle, so the router re-prices

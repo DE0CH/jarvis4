@@ -1,6 +1,6 @@
 package main
 
-// Inputs Jarvis 2 delivers into a running session after it started (docs/DESIGN.md "Inputs to a machine"): a
+// Inputs Jarvis 4 delivers into a running session after it started (docs/DESIGN.md "Inputs to a machine"): a
 // wakeup's or cron's prompt, the router's watchdog nudge, a "continue" after a re-login. Each arrives in
 // /m/commands as a delivery and is taken only when it is
 //

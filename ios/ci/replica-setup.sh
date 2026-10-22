@@ -28,7 +28,7 @@ machine_of() { # the router's record of the session's current machine, up to 90 
   done
   printf '%s' "$m"
 }
-fexec() { FLY_API_TOKEN="$REPLICA_FLY_TOKEN" flyctl machine exec "$1" -a jarvis2-sessions "$2"; }
+fexec() { FLY_API_TOKEN="$REPLICA_FLY_TOKEN" flyctl machine exec "$1" -a jarvis4-sessions "$2"; }
 msg="${1:?usage: replica-setup.sh MSG}"
 echo "$(date -u +%H:%M:%S) $msg" >> "$L"
 case "$msg" in

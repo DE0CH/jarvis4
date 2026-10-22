@@ -24,7 +24,7 @@ every key of that part (nobody can read the old values back: only the box holds 
   --part flypersonal  router-flypersonal.enc.yaml — FLY_PERSONAL_READ_TOKEN only: org personal's read-only
                  token for the Machines view (infra/fly-personal-read-token.sh; router/flyorgs.go)
   --part flyvolumes  router-flyvolumes.enc.yaml — FLY_VOLUME_TOKEN only: the token that can do nothing but
-                 delete volumes in jarvis2-sessions (infra/fly-volume-token.sh), for the leftover-volume sweep
+                 delete volumes in jarvis4-sessions (infra/fly-volume-token.sh), for the leftover-volume sweep
                  (router/volsweep.go, DECISIONS 195)
   --part browserbase  router-browserbase.enc.yaml — BROWSERBASE_API_KEY only (router/bbbudget.go: the
                  spend DM reads the session list)

@@ -65,7 +65,7 @@ func TestFlyOrgsOverviewEveryOrgReadOnly(t *testing.T) {
 	now := time.Now().UTC()
 	old := now.Add(-48 * time.Hour).Format(time.RFC3339)
 	srv, seen := fakeFlyOrgs(t, map[string]string{"jarvis2-370": "tok-j2", "kamyee": "tok-k", "personal": "tok-p"},
-		map[string][]string{"jarvis2-370": {"jarvis2-sessions", "zz-stray"}, "kamyee": {"kamyee-jarvis3-sessions"}, "personal": {"de0ch-claude-sessions"}},
+		map[string][]string{"jarvis2-370": {"jarvis4-sessions", "zz-stray"}, "kamyee": {"kamyee-jarvis3-sessions"}, "personal": {"de0ch-claude-sessions"}},
 		map[string][]map[string]any{"zz-stray": {rawM("st1", "started", old)}, "kamyee-jarvis3-sessions": {rawM("k1", "stopped", old), rawM("k2", "started", old)},
 			"de0ch-claude-sessions": {rawM("p1", "started", old), rawM("p2", "stopped", old)}},
 		map[string][]map[string]any{"zz-stray": {{"id": "vol_1", "state": "created", "size_gb": 1, "created_at": old},
@@ -87,7 +87,7 @@ func TestFlyOrgsOverviewEveryOrgReadOnly(t *testing.T) {
 		t.Fatalf("orgs %+v", orgs)
 	}
 	j2 := orgs[0]
-	if len(j2.Apps) != 2 || !j2.Apps[0].Own || j2.Apps[0].App != "jarvis2-sessions" || len(j2.Apps[0].Machines) != 2 {
+	if len(j2.Apps) != 2 || !j2.Apps[0].Own || j2.Apps[0].App != "jarvis4-sessions" || len(j2.Apps[0].Machines) != 2 {
 		t.Fatalf("own org %+v", j2)
 	}
 	if m := j2.Apps[0].Machines[1]; m.ID != "m-orphan" && j2.Apps[0].Machines[0].ID != "m-orphan" {
@@ -159,14 +159,14 @@ func TestFlyOrgsOverviewFailuresAreShown(t *testing.T) {
 	}
 }
 
-// an app Jarvis 2 itself runs (the log shipper) says what it is and what it costs, and its machine isn't flagged
+// an app Jarvis 4 itself runs (the log shipper) says what it is and what it costs, and its machine isn't flagged
 func TestFlyOrgsOverviewOwnInfraApp(t *testing.T) {
 	now := time.Now().UTC()
 	old := now.Add(-48 * time.Hour).Format(time.RFC3339)
 	ship := rawM("ls1", "started", old)
 	ship["config"].(map[string]any)["guest"] = map[string]any{"cpu_kind": "shared", "cpus": 1, "memory_mb": 256}
 	srv, _ := fakeFlyOrgs(t, map[string]string{"jarvis2-370": "tok-j2"},
-		map[string][]string{"jarvis2-370": {"jarvis2-sessions", "jarvis2-log-shipper"}},
+		map[string][]string{"jarvis2-370": {"jarvis4-sessions", "jarvis2-log-shipper"}},
 		map[string][]map[string]any{"jarvis2-log-shipper": {ship}}, nil)
 	oldBase := flyAPIBase
 	defer func() { flyAPIBase = oldBase }()
@@ -182,7 +182,7 @@ func TestFlyOrgsOverviewOwnInfraApp(t *testing.T) {
 		}
 	}
 	// shared-cpu-1x 256 MB at budget.go's lhr rates: 8.465e-7 × 3600 × 1.134615385 × 730 h
-	want := "Jarvis 2's log shipper: sends the session machines' logs to Grafana Cloud · USD 2.52/month"
+	want := "Jarvis 4's log shipper: sends the session machines' logs to Grafana Cloud · USD 2.52/month"
 	if a == nil || a.Label != want || len(a.Machines) != 1 || a.Machines[0].Attention != "" {
 		t.Fatalf("log shipper %+v", a)
 	}

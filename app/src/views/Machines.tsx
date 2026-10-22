@@ -1,5 +1,5 @@
 // Machines tab: every Fly machine in every org Deyao has (api/machines, router/machines.go + flyorgs.go), grouped
-// org → app, so a leak anywhere shows (Deyao, 2026-10-11). jarvis2-sessions is this Jarvis's own: each machine with
+// org → app, so a leak anywhere shows (Deyao, 2026-10-11). jarvis4-sessions is this Jarvis's own: each machine with
 // the session it belongs to or "No session", and "test" when it points at a test router (its JARVIS2_URL is not
 // production's); Destroy only for a machine with no session (the router re-checks and destroys it through the
 // core's kill). Every other app and org is read-only: jarvis2-370 and kamyee read from Fly, personal from Jarvis 1's
@@ -144,7 +144,7 @@ export function Machines() {
         <Row label="Machines" id="machines-total">{String(total)}</Row>
         <Row label="Stand out" id="machines-attention" data={{ machinesAttention: String(fo.attention) }}>{fo.attention > 0 ? <Pill kind="wait">{String(fo.attention)}</Pill> : <Pill kind="ok">none</Pill>}</Row>
       </Rows>
-      <Muted mt={2}>Destroy: jarvis2-sessions machines with no session only.</Muted>
+      <Muted mt={2}>Destroy: jarvis4-sessions machines with no session only.</Muted>
       {!!fo.configError && <P size={2} color="red" mt={2}>{fo.configError}</P>}
       {!!ms.err && <P size={2} color="red" mt={2}>{"Could not refresh: " + ms.err}</P>}
       {fo.orgs.map((o) => <OrgSection key={o.org} o={o} />)}

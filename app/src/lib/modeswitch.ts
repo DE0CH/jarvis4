@@ -15,11 +15,11 @@ const modeName = (mode: string) => (mode === "bypass" ? "bypass" : "auto");
 
 /** the toast for a switch waiting in the Inbox */
 export function inboxToast(j: ModeAnswer, mode: string): string {
-  return `${j.duplicate ? "Already waiting" : "Waiting on you"} in the Inbox: allow the terminal in the Jarvis 2 app on the iPhone; the switch to ${modeName(mode)} runs once it is signed.`;
+  return `${j.duplicate ? "Already waiting" : "Waiting on you"} in the Inbox: allow the terminal in the Jarvis 4 app on the iPhone; the switch to ${modeName(mode)} runs once it is signed.`;
 }
 
 /** the session card's line while the switch waits (null when nothing waits, or it lapsed) */
 export function modeWaitingText(w: ModeAfterGrant | null | undefined, now = Date.now()): string | null {
   if (!w || !(Date.parse(w.until) > now)) return null;
-  return `Switch to ${modeName(w.mode)} waits for the terminal grant in the Inbox (approve it in the Jarvis 2 app on the iPhone).`;
+  return `Switch to ${modeName(w.mode)} waits for the terminal grant in the Inbox (approve it in the Jarvis 4 app on the iPhone).`;
 }

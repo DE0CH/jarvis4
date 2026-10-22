@@ -168,7 +168,7 @@ func TestMachineAPINothingGoesToJarvis1(t *testing.T) {
 	if code, _ := newTestMachine(r, "mNone").do(t, h, "GET", "/m/api/search?q=x", ""); code != 403 {
 		t.Fatalf("no session: %d", code)
 	}
-	// leases are Jarvis 2's own (leases.go): never forwarded
+	// leases are Jarvis 4's own (leases.go): never forwarded
 	if code, out := m.do(t, h, "POST", "/m/api/sessions/sA/leases/iphone", `{"purpose":"x"}`); code != 200 || out["status"] != "granted" || seen != nil {
 		t.Fatalf("%d %v", code, out)
 	}

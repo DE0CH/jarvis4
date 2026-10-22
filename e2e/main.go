@@ -1,4 +1,4 @@
-// e2e: drives a real Jarvis 2 (core + router + Fly machines running the session image) through every
+// e2e: drives a real Jarvis 4 (core + router + Fly machines running the session image) through every
 // flow with a SOFTWARE phone standing in for the iPhone. It sets the core up (a Recover with test stores),
 // which an empty core accepts once — so run it against a fresh core of its own, never the production one.
 //
@@ -1016,7 +1016,7 @@ func dumpState() {
 
 // flyMachineEnv: the env in a machine's Fly config
 func flyMachineEnv(m string) map[string]string {
-	req, _ := http.NewRequest("GET", "https://api.machines.dev/v1/apps/jarvis2-sessions/machines/"+m, nil)
+	req, _ := http.NewRequest("GET", "https://api.machines.dev/v1/apps/jarvis4-sessions/machines/"+m, nil)
 	req.Header.Set("Authorization", "Bearer "+os.Getenv("E2E_FLY_TOKEN"))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -1035,7 +1035,7 @@ func flyMachineEnv(m string) map[string]string {
 // flyExec: a command on a machine through the Machines API → its stdout and exit code
 func flyExec(m string, cmd []string) (string, int, error) {
 	body, _ := json.Marshal(map[string]any{"command": cmd, "timeout": 60})
-	req, _ := http.NewRequest("POST", "https://api.machines.dev/v1/apps/jarvis2-sessions/machines/"+m+"/exec", bytes.NewReader(body))
+	req, _ := http.NewRequest("POST", "https://api.machines.dev/v1/apps/jarvis4-sessions/machines/"+m+"/exec", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+os.Getenv("E2E_FLY_TOKEN"))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)

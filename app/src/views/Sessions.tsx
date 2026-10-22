@@ -144,7 +144,7 @@ export const resumeSession = (id: string) => exclusive("s:" + id, async () => {
 
 /** Open an approval on the shell's secure page (the app); the web page only points to the app. */
 export function review(a: Approval) {
-  if (!hasShell) { toast("Approve it on your iPhone: Jarvis 2 app → Inbox. The web page can only deny it."); return; }
+  if (!hasShell) { toast("Approve it on your iPhone: Jarvis 4 app → Inbox. The web page can only deny it."); return; }
   requestSecure("approval", { approvalId: a.id }, (r) => { if (r.result === "done") { refresh(false); settle(60000); } });
 }
 // resume on the newest image: the router asks for an approval first

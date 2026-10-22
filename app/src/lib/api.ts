@@ -1,4 +1,4 @@
-// Thin JSON client for the Jarvis 2 router (docs/API.md), shared by the web page and the app. Paths are
+// Thin JSON client for the Jarvis 4 router (docs/API.md), shared by the web page and the app. Paths are
 // written "api/state"; auth.ts / auth.native.ts say where they go and how the request is authorised.
 import { base, fetchInit, authHeaders, checkRefused } from "./auth";
 
@@ -180,10 +180,10 @@ export type Grant = { id: string; session: string; holder: string; kind: "grant"
 export type Budget = { month: string; spentUsd: number; capUsd: number; warnUsd: number; warned: boolean; capped: boolean; cappedAt?: string | null; ratePerHour: number; perMonth: number; running: number; volumes: number; sampledAt?: string | null };
 export type FlyOther = { kind: string; app: string; id: string; name?: string; state?: string; region?: string; created?: string; detail?: string };
 export type FlyView = { apps: number; machines: number; volumes: number; other: FlyOther[]; error?: string | null; checkedAt?: string | null };
-// every Fly machine in jarvis2-sessions (api/machines, router/machines.go): its session or none ("" ), and
+// every Fly machine in jarvis4-sessions (api/machines, router/machines.go): its session or none ("" ), and
 // test = its JARVIS2_URL is a test router's; noDestroy = why Destroy isn't offered ("" = it is)
-// GET /api/machines: `machines` = jarvis2-sessions (sessions, Destroy); `orgs` = every Fly org → app, read-only outside
-// jarvis2-sessions (router/flyorgs.go). `attention`: why a machine stands out (a possible leak), "" = it doesn't.
+// GET /api/machines: `machines` = jarvis4-sessions (sessions, Destroy); `orgs` = every Fly org → app, read-only outside
+// jarvis4-sessions (router/flyorgs.go). `attention`: why a machine stands out (a possible leak), "" = it doesn't.
 export type Machine = { id: string; name: string; state: string; region: string; size: string; guest: string; image: string; created: string; updated: string; sessionId: string; current: boolean; routerUrl: string; test: boolean; noDestroy: string; attention: string; otherSession?: string };
 export type FlyVolumeView = { id: string; name: string; state: string; region: string; sizeGb: number; attachedTo: string; created: string; attention: string };
 export type FlyAppView = { app: string; label: string; own: boolean; status: string; machines: Machine[]; volumes: FlyVolumeView[]; error: string };
@@ -358,7 +358,7 @@ export const RUN_ACTIVE = (p: TaskRunPhase) => p === "queued" || p === "starting
 export const isTaskLine = (m: Session) => (m.harness || "").startsWith("task:");
 
 // ---- search (api/search, api/icloud/*): forwarded by the router to Jarvis 1's services, Jarvis 1's shapes ----
-// every archived, paused and running conversation (Jarvis 1's and Jarvis 2's: a running Jarvis 2 session's live
+// every archived, paused and running conversation (Jarvis 1's and Jarvis 4's: a running Jarvis 4 session's live
 // copy is under .live/<its id>, so `machineId` is that session's id) plus the task records
 export type SearchHit = {
   id: number; score: number; via: ("keyword" | "semantic")[]; kind: "msg" | "tool" | "doc"; date: string | null; ts: string | null;

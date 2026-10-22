@@ -1,4 +1,4 @@
-// The Jarvis 2 router (docs/API.md): chains the core's primitives into sessions and serves the app, the web
+// The Jarvis 4 router (docs/API.md): chains the core's primitives into sessions and serves the app, the web
 // page and the session machines. It is untrusted by design (docs/DESIGN.md): a
 // bug here can fail or stall an action, but every document that matters is signed by the core or the
 // iPhone and checked at the far end, so it can't move a store to a machine nobody approved.
@@ -52,7 +52,7 @@ func main() {
 		KernelURL:       os.Getenv("KERNEL_URL"),
 		DataDir:         env("DATA_DIR", "/data"),
 		WebDir:          env("WEB_DIR", "/web"),
-		SessionImage:    env("SESSION_IMAGE", "ghcr.io/de0ch/jarvis2-session:latest"),
+		SessionImage:    env("SESSION_IMAGE", "ghcr.io/de0ch/jarvis4-session:latest"),
 		SessionImageSig: os.Getenv("SESSION_IMAGE_SIG"),
 		ImageSigs:       loadImageSigs(os.Getenv("SESSION_IMAGE_SIGS_FILE")),
 		ImageOrder:      loadImageOrder(os.Getenv("SESSION_IMAGE_SIGS_FILE")),

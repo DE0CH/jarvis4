@@ -93,7 +93,7 @@ func TestPeerEqualAndDownwardAreDeliveredAtOnce(t *testing.T) {
 	}
 }
 
-// upward waits in the Inbox, named as the sending session (never Jarvis 2), and goes once Deyao approves it
+// upward waits in the Inbox, named as the sending session (never Jarvis 4), and goes once Deyao approves it
 func TestPeerUpwardWaitsForDeyao(t *testing.T) {
 	r, m, got, mu := peerRig(t)
 	mh := r.MachineHandler()

@@ -1,6 +1,6 @@
 package main
 
-// The actions (Deyao, 2026-10-13): what a session may do to Jarvis 2 beyond its own business — list sessions and the
+// The actions (Deyao, 2026-10-13): what a session may do to Jarvis 4 beyond its own business — list sessions and the
 // Inbox, resume a paused session with no prompt (same image: approve_by_dead_machine), pause one, move a running one
 // to the next size, destroy one (the app's Destroy), deny a request or approval, and file requests (a new session,
 // an added store, a repo, a grant, an unlock, or any app API call: apicalls.go), which only wait in Deyao's Inbox.

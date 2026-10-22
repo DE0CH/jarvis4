@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cloudflare side of Jarvis 2 (idempotent): the tunnel, its DNS name, the two Access apps, the setup
+"""Cloudflare side of Jarvis 4 (idempotent): the tunnel, its DNS name, the two Access apps, the setup
 session's service token. Writes TUNNEL_TOKEN (for the box) and SETUP_ACCESS_ID/SECRET (for the setup
 session, Jarvis 1's default store as JARVIS2_SETUP_ACCESS_ID/SECRET) to OUT (mode 600); prints nothing secret.
 The apps' audiences are not secret: they are in k8s/control/apps/router/router.yaml (the script prints them to check).
@@ -11,28 +11,28 @@ The apps' audiences are not secret: they are in k8s/control/apps/router/router.y
   infra/cloudflare.py --peer OUT
                                Jarvis 1's way to the Claude login (router/claudelogin.go /peer/*): the service token
                                jarvis1-claude-login (kept unless ROTATE=1; a new one's JARVIS2_LOGIN_ID/SECRET go to
-                               OUT, mode 600) and the Access app jarvis2.deyaochen.com/peer admitting only it; prints
+                               OUT, mode 600) and the Access app jarvis4.deyaochen.com/peer admitting only it; prints
                                the app's audience and the token's client id (k8s/control/apps/router/router.yaml ACCESS_PEER_AUD,
                                JARVIS1_LOGIN_CLIENT_ID; neither is secret)
   infra/cloudflare.py --devices  only the paired apps' Access app (CF_JARVIS2_INFRA_TOKEN); prints its audience
   infra/cloudflare.py --cluster OUT
                                the one cluster's tunnel jarvis2-cluster (docs/PLAN-cluster.md step 2a): only
                                kernel-id.deyaochen.com → the kernel's read-only identity endpoints, behind the Access app
-                               "Jarvis 2 kernel id" admitting only the service token jarvis2-kernel-id (the setup
+                               "Jarvis 4 kernel id" admitting only the service token jarvis2-kernel-id (the setup
                                session's; kept unless ROTATE=1). A new token's KERNEL_ID_ACCESS_ID/SECRET and the
                                tunnel's TUNNEL_TOKEN go to OUT (mode 600)
   infra/cloudflare.py --health OUT
                                the external uptime probe's way in (router/healthz.go GET /healthz): the service token
                                jarvis2-health-probe (kept unless ROTATE=1; a new one's HEALTH_PROBE_ID/SECRET go to OUT,
-                               mode 600, for Grafana Synthetic Monitoring) and the Access app jarvis2.deyaochen.com/healthz
+                               mode 600, for Grafana Synthetic Monitoring) and the Access app jarvis4.deyaochen.com/healthz
                                admitting only it; prints the app's audience and the token's client id
                                (k8s/control/apps/router/router.yaml ACCESS_HEALTH_AUD, HEALTH_CLIENT_ID; neither is secret)
 Access apps (created Access first, then DNS, so the hostname is never reachable ungated):
-  "Jarvis 2"        jarvis2.deyaochen.com         Deyao's email only (the app + web page)
-  "Jarvis 2 setup"  jarvis2.deyaochen.com/setup   service token jarvis2-setup only (the setup session)
-  "Jarvis 2 peer"   jarvis2.deyaochen.com/peer    service token jarvis1-claude-login only (Jarvis 1 reads the Claude login)
-  "Jarvis 2 health" jarvis2.deyaochen.com/healthz service token jarvis2-health-probe only (Grafana's uptime probe)
-  "Jarvis 2 devices" jarvis2.deyaochen.com/api/remotes and /api/sessions/*/start: Deyao's email, or ANY service token
+  "Jarvis 4"        jarvis4.deyaochen.com         Deyao's email only (the app + web page)
+  "Jarvis 4 setup"  jarvis4.deyaochen.com/setup   service token jarvis2-setup only (the setup session)
+  "Jarvis 4 peer"   jarvis4.deyaochen.com/peer    service token jarvis1-claude-login only (Jarvis 1 reads the Claude login)
+  "Jarvis 4 health" jarvis4.deyaochen.com/healthz service token jarvis2-health-probe only (Grafana's uptime probe)
+  "Jarvis 4 devices" jarvis4.deyaochen.com/api/remotes and /api/sessions/*/start: Deyao's email, or ANY service token
                     of the account (Deyao's paired OpenClaw/Paseo apps); the router admits a token only when it is a
                     paired device's (router/devices.go). Audience: ACCESS_DEVICES_AUD in k8s/control/apps/router/router.yaml
 Session machines don't come through Cloudflare at all (Fly's private network, docs/API.md).
@@ -48,9 +48,9 @@ import json, os, sys, urllib.request, urllib.error
 
 ACCOUNT = "ee3b4deef856baf11e1a67b242438325"
 ZONE = "f51ca95ee5e6c664372000f887c96a92"
-HOST = "jarvis2.deyaochen.com"
+HOST = "jarvis4.deyaochen.com"
 EMAIL = "chendeyao000@gmail.com"
-ORIGIN = "http://router.jarvis2-router.svc.cluster.local:8080"
+ORIGIN = "http://router.jarvis4-router.svc.cluster.local:8080"
 API = "https://api.cloudflare.com/client/v4"
 
 
@@ -113,7 +113,7 @@ def peer(out):
     elif not tok:
         tok = call("POST", f"/accounts/{ACCOUNT}/access/service_tokens", {"name": "jarvis1-claude-login", "duration": "8760h"}, token=big)
         write_out(out, {"JARVIS2_LOGIN_ID": tok["client_id"], "JARVIS2_LOGIN_SECRET": tok["client_secret"]})
-    aud = access_app("Jarvis 2 peer", HOST + "/peer", {
+    aud = access_app("Jarvis 4 peer", HOST + "/peer", {
         "name": "Jarvis 1", "decision": "non_identity", "include": [{"service_token": {"token_id": tok["id"]}}]})
     print(f"ok (k8s/control/apps/router/router.yaml): ACCESS_PEER_AUD={aud} JARVIS1_LOGIN_CLIENT_ID={tok['client_id']}")
 def health(out):
@@ -127,7 +127,7 @@ def health(out):
     elif not tok:
         tok = call("POST", f"/accounts/{ACCOUNT}/access/service_tokens", {"name": "jarvis2-health-probe", "duration": "8760h"}, token=big)
         write_out(out, {"HEALTH_PROBE_ID": tok["client_id"], "HEALTH_PROBE_SECRET": tok["client_secret"]})
-    aud = access_app("Jarvis 2 health", HOST + "/healthz", {
+    aud = access_app("Jarvis 4 health", HOST + "/healthz", {
         "name": "uptime probe", "decision": "non_identity", "include": [{"service_token": {"token_id": tok["id"]}}]})
     print(f"ok (k8s/control/apps/router/router.yaml): ACCESS_HEALTH_AUD={aud} HEALTH_CLIENT_ID={tok['client_id']}")
 
@@ -140,8 +140,8 @@ def devices():
     the tokens to its paired devices)"""
     uris = [HOST + p for p in DEVICE_PATHS]
     apps = call("GET", f"/accounts/{ACCOUNT}/access/apps")
-    app = next((a for a in apps if a.get("name") == "Jarvis 2 devices"), None)
-    body = {"name": "Jarvis 2 devices", "domain": uris[0], "type": "self_hosted", "session_duration": "24h",
+    app = next((a for a in apps if a.get("name") == "Jarvis 4 devices"), None)
+    body = {"name": "Jarvis 4 devices", "domain": uris[0], "type": "self_hosted", "session_duration": "24h",
             "destinations": [{"type": "public", "uri": u} for u in uris],
             "app_launcher_visible": False, "auto_redirect_to_identity": False}
     app = call("PUT" if app else "POST", f"/accounts/{ACCOUNT}/access/apps" + (f"/{app['id']}" if app else ""), body)
@@ -152,7 +152,7 @@ def devices():
     call("POST", f"/accounts/{ACCOUNT}/access/apps/{app['id']}/policies",
          {"name": "paired apps (the router checks the device)", "decision": "non_identity",
           "include": [{"any_valid_service_token": {}}], "precedence": 2})
-    print(f"ok: Access app 'Jarvis 2 devices' on {', '.join(uris)}; ACCESS_DEVICES_AUD={app['aud']}")
+    print(f"ok: Access app 'Jarvis 4 devices' on {', '.join(uris)}; ACCESS_DEVICES_AUD={app['aud']}")
 
 
 CLUSTER_ID_HOST = "kernel-id.deyaochen.com"
@@ -171,7 +171,7 @@ def cluster(out):
     elif not tok:
         tok = call("POST", f"/accounts/{ACCOUNT}/access/service_tokens", {"name": "jarvis2-kernel-id", "duration": "8760h"}, token=big)
         vals |= {"KERNEL_ID_ACCESS_ID": tok["client_id"], "KERNEL_ID_ACCESS_SECRET": tok["client_secret"]}
-    access_app("Jarvis 2 kernel id", CLUSTER_ID_HOST, {
+    access_app("Jarvis 4 kernel id", CLUSTER_ID_HOST, {
         "name": "setup session", "decision": "non_identity", "include": [{"service_token": {"token_id": tok["id"]}}]})
     tunnels = call("GET", f"/accounts/{ACCOUNT}/cfd_tunnel?name=jarvis2-cluster&is_deleted=false")
     tun = tunnels[0] if tunnels else call("POST", f"/accounts/{ACCOUNT}/cfd_tunnel", {"name": "jarvis2-cluster", "config_src": "cloudflare"})
@@ -216,7 +216,7 @@ def rehearsal(name, out):
             call("DELETE", f"/accounts/{ACCOUNT}/access/service_tokens/{t['id']}", token=big)
     t = call("POST", f"/accounts/{ACCOUNT}/access/service_tokens", {"name": name, "duration": "24h"}, token=big)
     vals = {"SETUP_ACCESS_ID": t["client_id"], "SETUP_ACCESS_SECRET": t["client_secret"]}
-    access_app(f"Jarvis 2 rehearsal ({name})", host, {
+    access_app(f"Jarvis 4 rehearsal ({name})", host, {
         "name": "rehearsal client", "decision": "non_identity", "include": [{"service_token": {"token_id": t["id"]}}]})
     tid, vals["TUNNEL_TOKEN"] = tunnel_and_dns(host, name)
     write_out(out, vals)
@@ -254,8 +254,8 @@ def main():
         vals["SETUP_ACCESS_ID"], vals["SETUP_ACCESS_SECRET"], tok_id = t["client_id"], t["client_secret"], t["id"]
 
     # 2. Access apps first
-    aud = access_app("Jarvis 2", HOST, {"name": "Deyao", "decision": "allow", "include": [{"email": {"email": EMAIL}}]})
-    setup_aud = access_app("Jarvis 2 setup", HOST + "/setup", {
+    aud = access_app("Jarvis 4", HOST, {"name": "Deyao", "decision": "allow", "include": [{"email": {"email": EMAIL}}]})
+    setup_aud = access_app("Jarvis 4 setup", HOST + "/setup", {
         "name": "setup session", "decision": "non_identity", "include": [{"service_token": {"token_id": tok_id}}]})
     print(f"audiences (k8s/control/apps/router/router.yaml): ACCESS_APP_AUD={aud} ACCESS_SETUP_AUD={setup_aud}")
 

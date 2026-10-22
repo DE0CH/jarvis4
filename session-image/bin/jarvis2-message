@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Tell another Jarvis 2 session something: the only way one session's words reach another (docs/API.md
-"Peer messages"). Claude Code's own SendMessage between sessions is refused in every Jarvis 2 session.
+"""Tell another Jarvis 4 session something: the only way one session's words reach another (docs/API.md
+"Peer messages"). Claude Code's own SendMessage between sessions is refused in every Jarvis 4 session.
 
   jarvis2-message SESSION "text"        SESSION: its id (s…) or its exact title
   jarvis2-message SESSION < file

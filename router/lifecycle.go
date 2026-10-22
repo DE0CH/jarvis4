@@ -8,7 +8,7 @@ package main
 //   - the router's own steps (source "router"): asked the core to start a machine, the machine is up, the cert, asked
 //     the machine for its final snapshot, the snapshot arrived, asked the core to destroy the machine, the archive…;
 //   - what Fly did (source "fly"), read by the router itself with its READ-ONLY token (FLY_READ_TOKEN, app
-//     jarvis2-sessions; no core change): the machine's Fly events (launch, start, exit, destroy, with their source and
+//     jarvis4-sessions; no core change): the machine's Fly events (launch, start, exit, destroy, with their source and
 //     exit code), polled every 2 s while the operation runs and for 30 s after it (Fly keeps only a few
 //     events per machine, so each is kept the first time it is seen), and Fly's own platform log lines for the machine
 //     (image pull, "Machine started in …", the VM's exit), from Fly's logs API (the app's stdout is left out);

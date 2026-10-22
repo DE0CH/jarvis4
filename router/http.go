@@ -885,7 +885,7 @@ func (r *Router) requireDeyao(fn http.HandlerFunc) http.Handler {
 	})
 }
 
-// requireSetup: the setup session's Access service token (app jarvis2.deyaochen.com/setup); the core then
+// requireSetup: the setup session's Access service token (app jarvis4.deyaochen.com/setup); the core then
 // checks the setup key's own signature, so this gate only keeps strangers away from the code
 func (r *Router) requireSetup(fn http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {

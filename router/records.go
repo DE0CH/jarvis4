@@ -5,8 +5,8 @@ package main
 // read and it can be removed or deleted like any other. Nothing is scanned or guessed: the caller names the
 // folder and its transcripts, and the router checks they exist.
 //
-// Such a record can't be restored in Jarvis 2: a restore needs the machine-signed snapshot and its core-signed
-// cert (jarvis2/ in an archive made by a Jarvis 2 destroy), which a hand-uploaded folder doesn't have.
+// Such a record can't be restored in Jarvis 4: a restore needs the machine-signed snapshot and its core-signed
+// cert (jarvis2/ in an archive made by a Jarvis 4 destroy), which a hand-uploaded folder doesn't have.
 
 import (
 	"encoding/json"
@@ -22,7 +22,7 @@ var (
 	archiveDirRE = regexp.MustCompile(`^claude-records/[^/.][^/]*$`)
 	recFileRE    = regexp.MustCompile(`^[^/\\]+$`)
 	uuidRE       = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
-	errHandIndex = errors.New("this archive was indexed by hand: it has no machine-signed snapshot, so Jarvis 2 can't restore it (read its transcript, or restore it in Jarvis 1 if it is Jarvis 1's)")
+	errHandIndex = errors.New("this archive was indexed by hand: it has no machine-signed snapshot, so Jarvis 4 can't restore it (read its transcript, or restore it in Jarvis 1 if it is Jarvis 1's)")
 )
 
 // IndexInput: Jarvis 1's body (environment → stores; repos a list or a space-separated string)

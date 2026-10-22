@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """run_volumes_test.py — infra/run-volumes.py against a fake Fly Machines API: it deletes only the run's own
-unattached jarvis2_state volumes, waits for one still attached, and never touches a volume its records don't name."""
+unattached jarvis4_state volumes, waits for one still attached, and never touches a volume its records don't name."""
 import http.server
 import importlib.util
 import json
@@ -23,7 +23,7 @@ class FakeFly:
         self.lists = 0
         self.lock = threading.Lock()
 
-    def vol(self, vid, state="created", attached="", name="jarvis2_state"):
+    def vol(self, vid, state="created", attached="", name="jarvis4_state"):
         self.volumes[vid] = {"id": vid, "name": name, "state": state, "attached_machine_id": attached}
 
 
@@ -43,13 +43,13 @@ def serve(fake):
         def do_GET(self):
             assert self.headers["Authorization"] == "Bearer tok"
             with fake.lock:
-                if self.path == "/v1/apps/jarvis2-sessions/volumes":
+                if self.path == "/v1/apps/jarvis4-sessions/volumes":
                     fake.lists += 1
                     # the attached one's machine finishes going away after the first look
                     if fake.lists == 2 and "vol_attached" in fake.volumes:
                         fake.volumes["vol_attached"]["attached_machine_id"] = ""
                     return self.reply(200, list(fake.volumes.values()))
-                if self.path == "/v1/apps/jarvis2-sessions/machines":
+                if self.path == "/v1/apps/jarvis4-sessions/machines":
                     return self.reply(200, fake.machines)
             self.reply(404, {})
 
@@ -96,7 +96,7 @@ def main():
     assert ids == {"vol_leaked", "vol_attached", "vol_gone", "vol_renamed", "vol_mounted", "vol_fromlog"}, ids
 
     srv = serve(fake)
-    fly = rv.Fly(f"http://127.0.0.1:{srv.server_address[1]}", "jarvis2-sessions", "tok")
+    fly = rv.Fly(f"http://127.0.0.1:{srv.server_address[1]}", "jarvis4-sessions", "tok")
     deleted = rv.sweep(fly, ids, rounds=3, wait=0.01)
     assert sorted(fake.deleted) == ["vol_attached", "vol_fromlog", "vol_leaked"], fake.deleted
     assert sorted(deleted) == sorted(fake.deleted)

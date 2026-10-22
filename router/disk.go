@@ -103,7 +103,7 @@ func diskMessage(name string, a *DiskAlert, vol *Volume) string {
 	if vol == nil {
 		return msg + "\nIts machine has no volume, so More disk can't grow it yet (that comes with the core release that adds volumes): free space in it, or ask it to."
 	}
-	return msg + fmt.Sprintf("\nOne tap gives it %d GB: the More disk button on its card in the Jarvis 2 app.", nextDisk(vol.SizeGB))
+	return msg + fmt.Sprintf("\nOne tap gives it %d GB: the More disk button on its card in the Jarvis 4 app.", nextDisk(vol.SizeGB))
 }
 
 // diskView: the session's disk, diskAlert and diskGb in /api/state (under the state lock)

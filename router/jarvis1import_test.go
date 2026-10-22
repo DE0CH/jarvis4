@@ -132,7 +132,7 @@ func TestJarvis1ImportPrepareAndImport(t *testing.T) {
 		strings.Join(s.Stores, ",") != "default,tunnel" || s.Live == nil || s.Live.AutoPauseOff {
 		t.Fatalf("session %+v", s)
 	}
-	if !strings.Contains(s.Prompt, "moved from Jarvis 1 to Jarvis 2") || !strings.Contains(s.Prompt, j1TestID) {
+	if !strings.Contains(s.Prompt, "moved from Jarvis 1 to Jarvis 4") || !strings.Contains(s.Prompt, j1TestID) {
 		t.Fatalf("prompt %q", s.Prompt)
 	}
 	if appr.Kind != "new-session" || !strings.HasPrefix(appr.Options["restore"], "Jarvis 1 session “OWCS ticket cron” ("+j1TestID+", paused 2026-10-12)") ||

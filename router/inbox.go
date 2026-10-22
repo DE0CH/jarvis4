@@ -359,7 +359,7 @@ func callerText(d *persisted, c Caller) string {
 	case "web":
 		return "Deyao, from the web page"
 	case "app":
-		return "Deyao, from the Jarvis 2 app"
+		return "Deyao, from the Jarvis 4 app"
 	case "setup":
 		return "Claude (setup session)"
 	case "actions":
@@ -380,7 +380,7 @@ func callerText(d *persisted, c Caller) string {
 		}
 		return fmt.Sprintf("session “%s” (%s)", title, c.Session)
 	}
-	return "Jarvis 2 itself"
+	return "Jarvis 4 itself"
 }
 
 // originNotes: the caller of an action whose approval the router makes later, in a goroutine (resume, restore)

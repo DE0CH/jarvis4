@@ -1,6 +1,6 @@
 package main
 
-// Watches (conditional wakeups; Jarvis 1's lib/watch.js and its server.js loop, in Jarvis 2's shape). A session arms a
+// Watches (conditional wakeups; Jarvis 1's lib/watch.js and its server.js loop, in Jarvis 4's shape). A session arms a
 // watch with its own signed request: a check script, the prompt for when the condition is met, a "fail" prompt for when
 // it gives up, an interval and a maximum age. The router runs the check on the box's watch runner (k8s/services/apps/watch/watch.yaml,
 // services/watch) every interval, whether the session is running or paused; the runner holds no secrets and reaches

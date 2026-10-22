@@ -1,6 +1,6 @@
 package main
 
-// Jarvis 2 runs without Jarvis 1 (Deyao, 2026-10-13): the whole test runs with every Jarvis 1 hostname unreachable.
+// Jarvis 4 runs without Jarvis 1 (Deyao, 2026-10-13): the whole test runs with every Jarvis 1 hostname unreachable.
 //   - the router: infra/e2e.sh starts it in its own mount namespace whose /etc/hosts sends jarvis.deyaochen.com to
 //     127.0.0.2, where a listener records every connection (E2E_J1_HITS); checkNoJarvis1 asserts it saw none;
 //   - each session machine: blackholeMachines adds `0.0.0.0 jarvis.deyaochen.com` to its /etc/hosts as soon as Fly
@@ -42,7 +42,7 @@ func blackholeMachines() {
 	}
 	cmd := fmt.Sprintf("grep -q '%s' /etc/hosts || printf '%%s' '%s' >> /etc/hosts; test -e /run/jarvis2/booted && echo after || echo before", jarvis1Hosts[0], line)
 	for {
-		req, _ := http.NewRequest("GET", "https://api.machines.dev/v1/apps/jarvis2-sessions/machines", nil)
+		req, _ := http.NewRequest("GET", "https://api.machines.dev/v1/apps/jarvis4-sessions/machines", nil)
 		req.Header.Set("Authorization", "Bearer "+os.Getenv("E2E_FLY_TOKEN"))
 		if resp, err := http.DefaultClient.Do(req); err == nil {
 			var ms []struct {

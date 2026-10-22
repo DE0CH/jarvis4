@@ -5,7 +5,7 @@ import { stateFrom } from "../src/lib/state.ts";
 
 // an api/state answer as the router sends it (router/leases.go leaseView; the iPhone taken over with a note, a waiter)
 const answer = {
-  sessions: [{ id: "sd6ffa6e31fad20fa", state: "running" }], approvals: [], core: { up: true }, budget: null, fly: null, flyApp: "jarvis2-sessions",
+  sessions: [{ id: "sd6ffa6e31fad20fa", state: "running" }], approvals: [], core: { up: true }, budget: null, fly: null, flyApp: "jarvis4-sessions",
   repos: [], inbox: [], inboxBatches: [], browserbaseBudget: { spentUsd: 1 },
   leases: [
     { name: "wechat-phone", holder: null, queue: [], log: [] },

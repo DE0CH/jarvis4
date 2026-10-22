@@ -19,7 +19,7 @@ func cert(c doc.Cert) string {
 }
 
 func main() {
-	const img = "ghcr.io/de0ch/jarvis2-session:sha-aaaaaaaaaaaa@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+	const img = "ghcr.io/de0ch/jarvis4-session:sha-aaaaaaaaaaaa@sha256:1111111111111111111111111111111111111111111111111111111111111111"
 	settings := json.RawMessage(`{"config":{"label":"x","model":"claude-opus-5-5","prompt":"hi"},"harness":"claude","permissionMode":"auto","v":1}`)
 	src := doc.Object("source-0123456789abcdef0123456789abcdef")
 	add := doc.Object("source-fedcba9876543210fedcba9876543210")

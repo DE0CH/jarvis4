@@ -25,24 +25,24 @@ func TestOnlyCIBuildsCarryTheirSignature(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &Router{cfg: Config{SessionImage: "ghcr.io/de0ch/jarvis2-session:sha-1@sha256:aa", SessionImageSig: "c2ln"}, st: st}
+	r := &Router{cfg: Config{SessionImage: "ghcr.io/de0ch/jarvis4-session:sha-1@sha256:aa", SessionImageSig: "c2ln"}, st: st}
 	ch := func(img string) *Doc { return &Doc{Payload: `{"kind":"challenge","request":{"image":"` + img + `"}}`} }
-	a := &Approval{Challenge: ch("ghcr.io/de0ch/jarvis2-session:sha-1@sha256:aa"), Origin: &Origin{}}
+	a := &Approval{Challenge: ch("ghcr.io/de0ch/jarvis4-session:sha-1@sha256:aa"), Origin: &Origin{}}
 	r.addApproval(a)
-	b := &Approval{Challenge: ch("ghcr.io/de0ch/jarvis2-session:x@sha256:bb"), Origin: &Origin{}}
+	b := &Approval{Challenge: ch("ghcr.io/de0ch/jarvis4-session:x@sha256:bb"), Origin: &Origin{}}
 	r.addApproval(b)
 	if a.ImageSig != "c2ln" || b.ImageSig != "" {
 		t.Fatalf("got %q and %q", a.ImageSig, b.ImageSig)
 	}
 	// a newer image is pinned: a resume on the old image gets the old signature from the list (the file images.yml keeps)
 	f := filepath.Join(t.TempDir(), "sigs.txt")
-	os.WriteFile(f, []byte("ghcr.io/de0ch/jarvis2-session:sha-1@sha256:aa c2ln\n"), 0o600)
-	r2 := &Router{cfg: Config{SessionImage: "ghcr.io/de0ch/jarvis2-session:sha-2@sha256:cc", SessionImageSig: "bmV3", ImageSigs: loadImageSigs(f)}, st: st}
-	c := &Approval{Challenge: ch("ghcr.io/de0ch/jarvis2-session:sha-1@sha256:aa"), Origin: &Origin{}}
+	os.WriteFile(f, []byte("ghcr.io/de0ch/jarvis4-session:sha-1@sha256:aa c2ln\n"), 0o600)
+	r2 := &Router{cfg: Config{SessionImage: "ghcr.io/de0ch/jarvis4-session:sha-2@sha256:cc", SessionImageSig: "bmV3", ImageSigs: loadImageSigs(f)}, st: st}
+	c := &Approval{Challenge: ch("ghcr.io/de0ch/jarvis4-session:sha-1@sha256:aa"), Origin: &Origin{}}
 	r2.addApproval(c)
-	d := &Approval{Challenge: ch("ghcr.io/de0ch/jarvis2-session:sha-2@sha256:cc"), Origin: &Origin{}}
+	d := &Approval{Challenge: ch("ghcr.io/de0ch/jarvis4-session:sha-2@sha256:cc"), Origin: &Origin{}}
 	r2.addApproval(d)
-	e := &Approval{Challenge: ch("ghcr.io/de0ch/jarvis2-session:x@sha256:bb"), Origin: &Origin{}}
+	e := &Approval{Challenge: ch("ghcr.io/de0ch/jarvis4-session:x@sha256:bb"), Origin: &Origin{}}
 	r2.addApproval(e)
 	if c.ImageSig != "c2ln" || d.ImageSig != "bmV3" || e.ImageSig != "" {
 		t.Fatalf("got %q, %q and %q", c.ImageSig, d.ImageSig, e.ImageSig)

@@ -1,13 +1,13 @@
 name: images
-# core, router and session images to GHCR, tagged sha-<12> and latest. The router image carries the
-# app's web export. k8s/ pins the core and router tags (a commit by this workflow), the router is
-# told the session image's tag through its deployment. The session image's base (session-image/base/: the tools,
-# harnesses, entrypoint) is built only when that directory changed since the base it pins (or on a dispatch with
-# base=true), pushed as jarvis2-session:base-sha-<12>, and pinned in session-image/Dockerfile's BASE by the pin job.
+# Jarvis 4's kernel, router and session images to GHCR (ghcr.io/de0ch/jarvis4-*), tagged sha-<12> and latest, and the
+# pin job's commit that moves k8s/cluster/ onto them by digest (Flux rolls them out on the one cluster). The router
+# image carries the app's web export. The session image's base (session-image/base/: the tools, harnesses, entrypoint)
+# is built only when that directory changed since the base it pins (or on a dispatch with base=true), pushed as
+# jarvis4-session:base-sha-<12>, and pinned in session-image/Dockerfile's BASE by the pin job.
 on:
   push:
     branches: [main]
-    paths: [core/**, kernel/**, router/**, machine/**, session-image/**, policy/**, tasks/**, app/**, infra/setup.py, infra/setup_trust_test.py, infra/setup_write_test.py, infra/image-unpacked-size.py, .github/workflows/images.yml]
+    paths: [kernel/**, router/**, machine/**, session-image/**, policy/**, tasks/**, app/**, infra/setup.py, infra/setup_trust_test.py, infra/setup_write_test.py, infra/image-unpacked-size.py, .github/workflows/images.yml]
   workflow_dispatch:
     inputs:
       base:
@@ -27,7 +27,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version: "1.25" }
-      - run: cd core && go vet ./... && go test ./... && go build -tags fakefly ./...
       - run: cd kernel && go vet ./... && go test ./... && test -z "$(gofmt -l .)"
       - run: cd router && go vet ./... && go test ./...
       - run: cd machine && go vet ./... && go test ./...
@@ -42,7 +41,7 @@ jobs:
         with: { fetch-depth: 0 }  # compares session-image/base/ against the commit of the pinned base
       - id: need
         run: |
-          cur="$(grep -o 'jarvis2-session:base-sha-[0-9a-f]*' session-image/Dockerfile | head -1 | cut -d- -f4)"
+          cur="$(grep -oE 'jarvis[24]-session:base-sha-[0-9a-f]*' session-image/Dockerfile | head -1 | cut -d- -f4)"
           if [ "${{ github.event_name }}" = workflow_dispatch ] && [ "${{ inputs.base }}" = true ]; then b=1
           elif [ -z "$cur" ] || ! full="$(git rev-parse -q --verify "$cur^{commit}")" || ! git diff --quiet "$full" "$GITHUB_SHA" -- session-image/base/; then b=1
           else b=0; fi
@@ -66,21 +65,20 @@ jobs:
           context: session-image/base
           file: session-image/base/Dockerfile
           push: true
-          tags: ghcr.io/de0ch/jarvis2-session:${{ steps.tag.outputs.base }}
+          tags: ghcr.io/de0ch/jarvis4-session:${{ steps.tag.outputs.base }}
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           cache-from: type=gha,scope=session-base
           cache-to: type=gha,mode=max,scope=session-base
       - id: ref
         if: steps.need.outputs.build == '1'
-        run: echo "ref=$(infra/image-digest.sh "ghcr.io/de0ch/jarvis2-session:${{ steps.tag.outputs.base }}")" >> "$GITHUB_OUTPUT"
+        run: echo "ref=$(infra/image-digest.sh "ghcr.io/de0ch/jarvis4-session:${{ steps.tag.outputs.base }}")" >> "$GITHUB_OUTPUT"
   build:
     needs: [test, base]
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          - { name: core, context: core, file: core/Dockerfile }
-          - { name: kernel, context: kernel, file: kernel/Dockerfile }  # built, not pinned yet: no box runs it (PLAN-grants §5)
+          - { name: kernel, context: kernel, file: kernel/Dockerfile }
           - { name: router, context: ., file: router/Dockerfile }
           - { name: session, context: ., file: session-image/Dockerfile }
     steps:
@@ -92,7 +90,7 @@ jobs:
           if [ -f app/package.json ]; then
             cd app && npm ci --no-audit --no-fund && npx expo export --platform web --output-dir ../web
           else
-            echo '<!doctype html><title>Jarvis 2</title><p>Jarvis 2: the web page is not built yet.' > web/index.html
+            echo '<!doctype html><title>Jarvis 4</title><p>Jarvis 4: the web page is not built yet.' > web/index.html
           fi
       - if: matrix.name == 'session'
         name: free disk space (the base image is large)
@@ -110,144 +108,101 @@ jobs:
           push: true
           # the session image on the base this run built (when it built one), else on the BASE the Dockerfile pins
           build-args: ${{ (matrix.name == 'session' && needs.base.outputs.ref) && format('BASE={0}', needs.base.outputs.ref) || '' }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           tags: |
-            ghcr.io/de0ch/jarvis2-${{ matrix.name }}:${{ steps.tag.outputs.sha }}
-            ghcr.io/de0ch/jarvis2-${{ matrix.name }}:latest
+            ghcr.io/de0ch/jarvis4-${{ matrix.name }}:${{ steps.tag.outputs.sha }}
+            ghcr.io/de0ch/jarvis4-${{ matrix.name }}:latest
       - name: build attestation (what the iPhone will check for "CI build from <date>")
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: ghcr.io/de0ch/jarvis2-${{ matrix.name }}
+          subject-name: ghcr.io/de0ch/jarvis4-${{ matrix.name }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
       # Fly pulls the session image with no credentials, so the package must be public; and Fly refuses an image that
-      # doesn't fit 8 GiB once unpacked onto its filesystem: the machine is created, the pull fails ("Not enough space
-      # to unpack image, possibly exceeds maximum of 8GiB uncompressed") and Fly destroys it, so EVERY new session
-      # breaks. What counts is ON-DISK size (files rounded up to 4 KiB blocks + a block per directory + inodes, after
-      # whiteouts), not the tar bytes: 8.340e9 disk bytes booted, 8.380e9 was refused (2026-10-11). A failure here
-      # stops the pin job, so nothing is pinned.
+      # doesn't fit 8 GiB once unpacked onto its filesystem (lessons/72): a failure here stops the pin job.
       - if: matrix.name == 'session'
         name: session image anonymously pullable and under Fly's unpack limit
         run: |
           set -e
           T="${{ steps.tag.outputs.sha }}"
-          tok=$(curl -fsSL "https://ghcr.io/token?scope=repository:de0ch/jarvis2-session:pull" | jq -r .token)
+          tok=$(curl -fsSL "https://ghcr.io/token?scope=repository:de0ch/jarvis4-session:pull" | jq -r .token)
           curl -fsS -o /dev/null -H "Authorization: Bearer $tok" \
             -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
-            "https://ghcr.io/v2/de0ch/jarvis2-session/manifests/$T" \
-            || { echo "::error::ghcr.io/de0ch/jarvis2-session:$T is not anonymously pullable: the package must be PUBLIC (Fly pulls without credentials)"; exit 1; }
-          out=$(python3 infra/image-unpacked-size.py de0ch/jarvis2-session "$T" --top)
+            "https://ghcr.io/v2/de0ch/jarvis4-session/manifests/$T" \
+            || { echo "::error::ghcr.io/de0ch/jarvis4-session:$T is not anonymously pullable: the package must be PUBLIC (Fly pulls without credentials)"; exit 1; }
+          out=$(python3 infra/image-unpacked-size.py de0ch/jarvis4-session "$T" --top)
           echo "$out"
           disk=$(echo "$out" | tail -1 | jq .disk_bytes)
-          echo "on disk: $disk bytes ($(awk "BEGIN{printf \"%.3f\", $disk/1e9}") GB); Fly refused 8.380e9, limit here 8.0e9"
           if [ "$disk" -gt 8000000000 ]; then
-            echo "::error::the session image needs $disk bytes on disk, too close to or over Fly's 8 GiB unpack limit: sessions would not boot. Not pinned. Make session-image/base/ smaller."
+            echo "::error::the session image needs $disk bytes on disk, over Fly's 8 GiB unpack limit: not pinned. Make session-image/base/ smaller."
             exit 1
           fi
   pin:
     needs: [base, build]
-    # only main pins (R1 audit): a dispatch on another ref builds images but never moves main. The environment
-    # `release` admits refs/heads/main only, and holds the pin job's deploy key (the one CI identity the main ruleset
-    # lets push) and the key that signs the session image for the phone (keys/ci.pub)
+    # only main pins: the environment `release` admits refs/heads/main only, and holds the pin job's deploy key (the
+    # one CI identity the main ruleset lets push) and the key that signs the session image for the phone (keys/ci.pub)
     if: github.ref == 'refs/heads/main'
     environment: release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0, ssh-key: "${{ secrets.PIN_DEPLOY_KEY }}" }  # the pin checks compare against older commits
-      - name: pin the new images in k8s/ by digest (Flux rolls them out); never over a newer pin
+      - name: pin the new images in k8s/cluster/ by digest (Flux rolls them out); never over a newer pin
         env: { CI_IMAGE_KEY: "${{ secrets.CI_IMAGE_KEY }}" }
         run: |
           T="sha-${GITHUB_SHA::12}"
           git fetch -q origin main
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "$GITHUB_SHA isn't on main: nothing pinned"; exit 1; }
           git reset -q --hard origin/main
-          [ -d k8s ] || exit 0
-          RF=k8s/control/apps/router/router.yaml
-          cur="$(grep -ho 'jarvis2-router:sha-[0-9a-f]*' "$RF" | head -1 | cut -d- -f3)"
-          [ -n "$cur" ] || { echo "$RF pins no router image"; exit 1; }
-          if [ -n "$cur" ] && full="$(git rev-parse -q --verify "$cur^{commit}")" && [ "$full" != "$GITHUB_SHA" ] \
-             && git merge-base --is-ancestor "$GITHUB_SHA" "$full"; then echo "main already pins a newer build ($cur)"; exit 0; fi
-          # every image by digest (its linux/amd64 manifest): a tag pushed again from elsewhere changes nothing that runs
-          R="$(infra/image-digest.sh "ghcr.io/de0ch/jarvis2-router:$T")"
-          # the router runs on the control box (k8s/control/apps/router; docs/DESIGN.md "The boxes")
-          sed -i -E "s#ghcr.io/de0ch/jarvis2-router:sha-[0-9a-f]{12}(@sha256:[0-9a-f]{64})?#$R#g" "$RF"
-          # the kernel (k8s/control/apps/kernel): its components move when kernel/ changed since the image it pins (not applied
-          # on a box yet: RUNBOOK "Bringing the kernel up"; before it serves, secrets gets the cores' blue/green)
-          KF=k8s/control/apps/kernel/kernel.yaml
+          RF=k8s/cluster/router/router.yaml
+          KF=k8s/cluster/kernel/kernel.yaml
+          # never over a newer pin: the router's (or, before the router is on the cluster, the kernel's) pinned build
+          for f in "$RF" "$KF"; do
+            [ -f "$f" ] || continue
+            cur="$(grep -hoE 'jarvis4-(router|kernel):sha-[0-9a-f]{12}' "$f" | head -1 | grep -oE '[0-9a-f]{12}$')"
+            if [ -n "$cur" ] && full="$(git rev-parse -q --verify "$cur^{commit}")" && [ "$full" != "$GITHUB_SHA" ] \
+               && git merge-base --is-ancestor "$GITHUB_SHA" "$full"; then echo "main already pins a newer build ($cur)"; exit 0; fi
+            break
+          done
+          if [ -f "$RF" ]; then
+            R="$(infra/image-digest.sh "ghcr.io/de0ch/jarvis4-router:$T")"
+            sed -i -E "s#ghcr.io/de0ch/jarvis4-router:(latest|sha-[0-9a-f]{12}(@sha256:[0-9a-f]{64})?)#$R#g" "$RF"
+            # the session image: the spawner starts only a source's own image, and the phone shows it as a CI build only
+            # with this signature (the CI key, environment release; keys/ci.pub)
+            S="$(infra/image-digest.sh "ghcr.io/de0ch/jarvis4-session:$T")"
+            sed -i -E "s#ghcr.io/de0ch/jarvis4-session:(latest|sha-[0-9a-f]{12}(@sha256:[0-9a-f]{64})?)#$S#g" "$RF"
+            k="$(mktemp)"; printf '%s\n' "$CI_IMAGE_KEY" > "$k"
+            SIG="$(printf '%s' "jarvis2-session-image $S" | openssl dgst -sha256 -sign "$k" | base64 -w0)"; rm -f "$k"
+            sed -i -E "s#(name: SESSION_IMAGE_SIG, value: \")[^\"]*#\1$SIG#" "$RF"
+            grep -q "SESSION_IMAGE_SIG, value: \"$SIG\"" "$RF" || { echo "$RF has no SESSION_IMAGE_SIG line"; exit 1; }
+            f=k8s/cluster/router/session-image-sigs.txt
+            grep -q "^$S " "$f" || echo "$S $SIG" >> "$f"
+          fi
+          # the kernel: its components move when kernel/ changed since the image it pins, every one but the secrets that
+          # serves (active-secrets.txt): a secrets restart empties it, so a release goes only into the next colour
           if [ -f "$KF" ]; then
-            kcur="$(grep -ho 'jarvis2-kernel:sha-[0-9a-f]*' "$KF" | head -1 | cut -d- -f3)"
+            kcur="$(grep -hoE 'jarvis4-kernel:sha-[0-9a-f]{12}' "$KF" | head -1 | grep -oE '[0-9a-f]{12}$')"
             if [ -z "$kcur" ] || ! kfull="$(git rev-parse -q --verify "$kcur^{commit}")" || ! git diff --quiet "$kfull" "$GITHUB_SHA" -- kernel/; then
-              K="$(infra/image-digest.sh "ghcr.io/de0ch/jarvis2-kernel:$T")"
-              # every component but the secrets that serves (active-secrets.txt): a secrets restart empties it, so a
-              # release goes only into the next colour (blue/green, as the cores)
-              python3 - "$KF" "$(tr -d '[:space:]' < k8s/control/apps/kernel/active-secrets.txt)" "$K" <<'PY'
+              K="$(infra/image-digest.sh "ghcr.io/de0ch/jarvis4-kernel:$T")"
+              python3 - "$KF" "$(tr -d '[:space:]' < k8s/cluster/kernel/active-secrets.txt)" "$K" <<'PY'
           import re,sys
           f,active,img=sys.argv[1:4]; s=open(f).read()
           parts=s.split("\n---\n")
           for i,p in enumerate(parts):
               if "kind: Deployment" in p and "name: secrets-"+active+"," not in p:
-                  parts[i]=re.sub(r"ghcr.io/de0ch/jarvis2-kernel:(latest|sha-[0-9a-f]{12}(@sha256:[0-9a-f]{64})?)", img, p)
+                  parts[i]=re.sub(r"ghcr.io/de0ch/jarvis4-kernel:(latest|sha-[0-9a-f]{12}(@sha256:[0-9a-f]{64})?)", img, p)
           open(f,"w").write("\n---\n".join(parts))
           PY
             fi
           fi
-          # the session image: the core starts only that digest, and the phone shows it as a CI build only with this
-          # signature (the CI key, environment release; keys/ci.pub)
-          S="$(infra/image-digest.sh "ghcr.io/de0ch/jarvis2-session:$T")"
-          sed -i -E "s#ghcr.io/de0ch/jarvis2-session:sha-[0-9a-f]{12}(@sha256:[0-9a-f]{64})?#$S#g" "$RF"
-          k="$(mktemp)"; printf '%s\n' "$CI_IMAGE_KEY" > "$k"
-          SIG="$(printf '%s' "jarvis2-session-image $S" | openssl dgst -sha256 -sign "$k" | base64 -w0)"; rm -f "$k"
-          sed -i -E "s#(name: SESSION_IMAGE_SIG, value: \")[^\"]*#\1$SIG#" "$RF"
-          grep -q "SESSION_IMAGE_SIG, value: \"$SIG\"" "$RF" || { echo "$RF has no SESSION_IMAGE_SIG line"; exit 1; }
           # the base this run built: the session image above stands on it, so session-image/Dockerfile's BASE moves to it
           B="${{ needs.base.outputs.ref }}"
           if [ -n "$B" ]; then
             sed -i -E "s#^ARG BASE=.*#ARG BASE=$B#" session-image/Dockerfile
             grep -qxF "ARG BASE=$B" session-image/Dockerfile || { echo "session-image/Dockerfile has no ARG BASE line"; exit 1; }
           fi
-          # and keep it in the list of every pinned image, so a resume on a session's own older image still shows as a CI build
-          f=k8s/control/apps/router/session-image-sigs.txt
-          grep -q "^$S " "$f" || echo "$S $SIG" >> "$f"
-          # the cores (blue/green, k8s/control/apps/core): the core moves ONLY when core/ changed (the CI-only fake and the
-          # tests don't count), and a core release goes ONLY into the core that doesn't serve (active.txt names the serving
-          # one), never while that core is held (jarvis2/core-pin: hold on its Deployment): a core restart is a new, empty
-          # core, so the serving core is never restarted by CI. Deyao then Recovers the new one alongside and the router
-          # flips (docs/DESIGN.md "Core continuity"); after a flip, active.txt is changed to the new serving colour.
-          # A release HOLDS the core it lands on, in the same commit: from then on Deyao may Recover it alongside (a
-          # standby) and the router may flip to it, which this job can't see (it can't reach the router), so no later
-          # release may restart it (DECISIONS 223: on 2026-10-22 one restarted the standby during the flip's drain). The
-          # commit after the flip deletes the hold (RUNBOOK "A core release"). The annotation sits on the Deployment's own
-          # metadata, not the pod template, so adding or deleting it restarts nothing.
-          CF=k8s/control/apps/core/core.yaml
-          if [ -f "$CF" ]; then
-            active="$(tr -d '[:space:]' < k8s/control/apps/core/active.txt)"; other=blue; [ "$active" = blue ] && other=green
-            ccur="$(python3 - "$CF" "$other" <<'PY'
-          import re,sys
-          s=open(sys.argv[1]).read(); col=sys.argv[2]
-          m=re.search(r"name: core-"+col+r", namespace: jarvis2-core[^\n]*\n(.*?)\n---", s, re.S)
-          print(re.search(r"jarvis2-core:sha-([0-9a-f]{12})", m.group(1)).group(1) if m else "")
-          PY
-          )"
-            if python3 -c "import re,sys; s=open('$CF').read(); sys.exit(0 if re.search(r'name: core-$other, namespace: jarvis2-core, annotations: \{[^}]*core-pin: hold', s) else 1)"; then
-              echo "core-$other is held: its new image is built, not pinned"
-            elif ! cfull="$(git rev-parse -q --verify "$ccur^{commit}")" || ! git diff --quiet "$cfull" "$GITHUB_SHA" -- core/ ':!core/fakefly.go' ':!core/*_test.go'; then
-              C="$(infra/image-digest.sh "ghcr.io/de0ch/jarvis2-core:$T")"
-              python3 - "$CF" "$other" "$C" <<'PY'
-          import re,sys
-          f,col,img=sys.argv[1:4]; s=open(f).read()
-          parts=s.split("\n---\n")
-          for i,p in enumerate(parts):
-              if "kind: Deployment" in p and "name: core-"+col+"," in p:
-                  p=re.sub(r"ghcr.io/de0ch/jarvis2-core:sha-[0-9a-f]{12}(@sha256:[0-9a-f]{64})?", img, p)
-                  p,n=re.subn(r"metadata: \{ name: core-"+col+r", namespace: jarvis2-core \}",
-                              "metadata: { name: core-"+col+", namespace: jarvis2-core, annotations: { jarvis2/core-pin: hold } }", p)
-                  if n!=1: sys.exit("core-"+col+": no plain metadata line to put the hold on")
-                  parts[i]=p
-          open(f,"w").write("\n---\n".join(parts))
-          PY
-            fi
-          fi
           git diff --quiet && exit 0
-          git config user.name "jarvis2-ci"; git config user.email "ci@jarvis2.invalid"
+          git config user.name "jarvis4-ci"; git config user.email "ci@jarvis4.invalid"
           git commit -qam "images: pin $T${B:+ + session base $(echo "$B" | grep -o "base-sha-[0-9a-f]*")} [skip ci]"
-          git push -q origin HEAD:main
+          for i in 1 2 3 4 5; do git push -q origin HEAD:main && exit 0; git pull -q --rebase origin main; done
+          exit 1

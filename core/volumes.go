@@ -22,7 +22,7 @@ import "fmt"
 
 const (
 	volumePath    = "/data" // where the machine finds its volume (machine/volume.go)
-	volumeName    = "jarvis2_state"
+	volumeName    = "jarvis4_state"
 	defaultDiskGB = 10  // a session's volume when the router asks for no size
 	maxDiskGB     = 500 // the largest volume a start or Extend makes
 )

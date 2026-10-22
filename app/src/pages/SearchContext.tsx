@@ -1,6 +1,6 @@
 // The conversation around a search hit (api/search/context, Jarvis 1's page): the chunks before and after it in
 // the same transcript — what was said and what Claude did, in order — with the hit marked. "Earlier" / "Later"
-// widen the window. The action brings the session back when it is one of Jarvis 2's: Resume for a paused
+// widen the window. The action brings the session back when it is one of Jarvis 4's: Resume for a paused
 // session (a live copy is kept under the session's id), Restore for an archive on the Previous list.
 import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
@@ -35,7 +35,7 @@ function Chunk({ c, terms, onLayoutY }: { c: ContextChunk; terms: string[]; onLa
   return <View {...({ dataSet: { ctx: c.hit ? "hit" : "chunk" } } as any)} onLayout={onLayoutY ? (e) => onLayoutY(e.nativeEvent.layout.y) : undefined}>{c.hit ? <Card size={1} variant="surface">{body}</Card> : body}</View>;
 }
 
-// how the hit's session comes back, if it is Jarvis 2's (a hook: the button follows the lists as they change)
+// how the hit's session comes back, if it is Jarvis 4's (a hook: the button follows the lists as they change)
 function useHitAction(h: SearchHit): Action {
   const sessions = useStore((s) => s.state.sessions), records = useStore((s) => s.records.items);
   const m = h.machineId ? sessions.find((x) => x.id === h.machineId) : undefined;

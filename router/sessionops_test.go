@@ -602,9 +602,9 @@ func TestBypassFromTheWebWaitsInTheInbox(t *testing.T) {
 		it.Call.Path != "/api/sessions/sW/permission-mode" || it.Call.Args["mode"] != "bypass" || it.Open["kind"] != "grant" {
 		t.Fatalf("%+v", it)
 	}
-	// who and what asked, never "Jarvis 2" itself (Deyao, 2026-10-20)
+	// who and what asked, never "Jarvis 4" itself (Deyao, 2026-10-20)
 	if it.CallerText != "Deyao, from the web page" || it.SessionName != "label sW" ||
-		!strings.HasPrefix(it.Explanation, "Switch session “label sW” (sW) to bypass permission mode") || strings.Contains(it.CallerText, "Jarvis 2") {
+		!strings.HasPrefix(it.Explanation, "Switch session “label sW” (sW) to bypass permission mode") || strings.Contains(it.CallerText, "Jarvis 4") {
 		t.Fatalf("named as %q: %q", it.CallerText, it.Explanation)
 	}
 	if code, out := appDo(t, r, "POST", "/api/sessions/sW/permission-mode", `{"mode":"bypass"}`); code != 202 || out["inboxId"] != qid || out["duplicate"] != true {

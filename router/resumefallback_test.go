@@ -12,9 +12,9 @@ import (
 const refusedSame = "store set, image or options differ from the predecessor's (or a one-time input is asked for)"
 
 var (
-	bareImage   = "ghcr.io/de0ch/jarvis2-session@sha256:" + strings.Repeat("1", 64)
-	pinnedOfIt  = "ghcr.io/de0ch/jarvis2-session:sha-0123456789ab@sha256:" + strings.Repeat("1", 64)
-	newestImage = "ghcr.io/de0ch/jarvis2-session:sha-ba9876543210@sha256:" + strings.Repeat("2", 64)
+	bareImage   = "ghcr.io/de0ch/jarvis4-session@sha256:" + strings.Repeat("1", 64)
+	pinnedOfIt  = "ghcr.io/de0ch/jarvis4-session:sha-0123456789ab@sha256:" + strings.Repeat("1", 64)
+	newestImage = "ghcr.io/de0ch/jarvis4-session:sha-ba9876543210@sha256:" + strings.Repeat("2", 64)
 )
 
 func successionImages(vc *v2Core) []string {
@@ -216,7 +216,7 @@ func TestAFailedNewLineStartsAgain(t *testing.T) {
 	rg.r.cfg.SessionImage = newestImage
 	rg.r.st.Do(func(d *persisted) {
 		s := d.Sessions["s1"]
-		s.Cert, s.State, s.Error, s.Prompt, s.Label = nil, "failed", "the start was cut off by a router crash: start it again", "do the thing", "Jarvis 2"
+		s.Cert, s.State, s.Error, s.Prompt, s.Label = nil, "failed", "the start was cut off by a router crash: start it again", "do the thing", "Jarvis 4"
 	})
 	if err := rg.r.Resume("s1", false); err != nil {
 		t.Fatal(err)

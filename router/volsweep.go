@@ -1,13 +1,13 @@
 package main
 
-// The leftover-volume sweep (DECISIONS 195, which builds on 194). A session machine's volume (`jarvis2_state`,
+// The leftover-volume sweep (DECISIONS 195, which builds on 194). A session machine's volume (`jarvis4_state`,
 // core/volumes.go) is deleted by the core at the machine's kill, but only while the core remembers it (`vol.live`,
 // `vol.orphans`, both in its memory): after a core restart or Reset, or when a test run's core exits, a volume whose
-// machine is gone stays in jarvis2-sessions forever, billed. Every 10 minutes the leader router lists the app's
+// machine is gone stays in jarvis4-sessions forever, billed. Every 10 minutes the leader router lists the app's
 // volumes and machines with its read-only FLY_READ_TOKEN and deletes, with FLY_VOLUME_TOKEN (infra/fly-volume-token.sh:
-// a token that can do nothing but delete volumes in jarvis2-sessions), each volume that is
+// a token that can do nothing but delete volumes in jarvis4-sessions), each volume that is
 //
-//   - named `jarvis2_state` and in state `created`,
+//   - named `jarvis4_state` and in state `created`,
 //   - attached to nothing and in no listed machine's `config.mounts`,
 //   - at least 15 minutes old (a volume between its create and its machine's create looks like a leftover), and
 //   - named by no session the router knows: neither its current machine's nor its booted machine's volume (the
@@ -35,7 +35,7 @@ const (
 	volSweepFirst    = 2 * time.Minute // after the router starts: its first look, so a rollout shows it working
 	volSweepMinAge   = 15 * time.Minute
 	volSweepMaxPerGo = 20 // a bug can't empty the app in one sweep
-	sessionVolume    = "jarvis2_state"
+	sessionVolume    = "jarvis4_state"
 )
 
 // sweepMachine: a machine as the sweep needs it (its mounts)
