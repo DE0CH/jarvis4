@@ -58,13 +58,30 @@ func writeErr(w http.ResponseWriter, err error) {
 // MachineHandler: /m only, for the listener that only Fly's private network reaches
 func (r *Router) MachineHandler() http.Handler {
 	r.handlers()
-	return r.machineMux
+	return stateWriteGuard(r.machineMux)
 }
 
 // Handler: the public listener behind cloudflared — the app, the web page and setup
 func (r *Router) Handler() http.Handler {
 	r.handlers()
-	return r.publicMux
+	return stateWriteGuard(r.publicMux)
+}
+
+// stateWriteGuard: a request whose change the records couldn't take (state.go Do) answers 503 with why, never a 200
+func stateWriteGuard(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		defer func() {
+			if v := recover(); v != nil {
+				if e, ok := v.(stateWriteError); ok {
+					log.Printf("%s %s: %v", req.Method, req.URL.Path, e)
+					writeJSON(w, 503, map[string]string{"error": e.Error() + ": nothing of this request was kept, try again"})
+					return
+				}
+				panic(v)
+			}
+		}()
+		h.ServeHTTP(w, req)
+	})
 }
 
 func (r *Router) handlers() {

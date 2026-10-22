@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"log"
+	"sync/atomic"
 
 	"github.com/DE0CH/jarvis4/kernel/gv"
 	"github.com/jackc/pgx/v5"
@@ -161,8 +162,11 @@ type State struct {
 
 // Do runs fn on the records under the lock of every replica (the state_version row, taken FOR UPDATE: Do's are
 // serialised across the replicas) and writes what it changed in the same transaction; a replica whose copy is older
-// than the database's reloads it first. A failed transaction leaves the database as it was: the copy here is thrown
-// away (reloaded next time) and the error is shown in /healthz and /setup/status.
+// than the database's reloads it first. A transaction the database refuses leaves it as it was: Do reloads and runs fn
+// again (doAttempts times, backing off). A change it still can't write never vanishes quietly: Do panics with a
+// stateWriteError, which the HTTP handlers answer as a 503 to their caller (stateWriteGuard) and which ends this
+// replica otherwise (a job in flight is then carried on by another replica: its holder marks it neither done nor
+// failed, jobs.go jobUnlock).
 func (s *State) Do(fn func(d *persisted)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -170,6 +174,41 @@ func (s *State) Do(fn func(d *persisted)) {
 		fn(&s.data) // a State that was never opened (a test's frozen stand-in)
 		return
 	}
+	select {
+	case <-s.sdb.db.done:
+		return // the database was closed: the process (or a test) is ending
+	default:
+	}
+	var err error
+	for i, wait := range doBackoff {
+		time.Sleep(wait)
+		if err = s.doOnce(fn); err == nil {
+			stateWriteFailing.Store(false)
+			return
+		}
+		log.Printf("state: a change wasn't written (attempt %d of %d; the records are read again): %v", i+1, len(doBackoff), err)
+	}
+	select {
+	case <-s.sdb.db.done:
+		return
+	default:
+	}
+	stateWriteFailing.Store(true)
+	panic(stateWriteError{err})
+}
+
+// doBackoff: the waits before each attempt of a Do
+var doBackoff = []time.Duration{0, 200 * time.Millisecond, time.Second, 3 * time.Second}
+
+// stateWriteFailing: a Do just gave up (jobs.go: a job ending now isn't marked done: another replica carries it on)
+var stateWriteFailing atomic.Bool
+
+// stateWriteError: what a Do panics with when it can't write a change
+type stateWriteError struct{ err error }
+
+func (e stateWriteError) Error() string { return "the records couldn't be written: " + e.err.Error() }
+
+func (s *State) doOnce(fn func(d *persisted)) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	var written rows
@@ -212,12 +251,12 @@ func (s *State) Do(fn func(d *persisted)) {
 			s.sdb.errAt = time.Now()
 		}
 		s.sdb.lastErr = err
-		log.Printf("state: a change wasn't written (the database refused it; the records are read again): %v", err)
-		return
+		return err
 	}
 	s.sdb.written, s.sdb.ver = written, ver
 	if s.sdb.lastErr != nil {
 		log.Printf("state: writes go through again (they failed since %s)", s.sdb.errAt.Format(time.RFC3339))
 		s.sdb.lastErr = nil
 	}
+	return nil
 }

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -104,8 +106,8 @@ func TestStateImport(t *testing.T) {
 	}
 }
 
-// a change the database refuses isn't half-kept: the copy is read again from the database, the status says so until
-// a write goes through again
+// a change the database keeps refusing never vanishes quietly: Do retries it on a fresh copy, then panics with a
+// stateWriteError, which an HTTP caller gets as a 503 (and a job holder leaves its job for another replica)
 func TestStateWriteRefused(t *testing.T) {
 	url := testDBURL(t)
 	ctx := context.Background()
@@ -118,21 +120,42 @@ func TestStateWriteRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	old := doBackoff
+	doBackoff = []time.Duration{0, time.Millisecond, time.Millisecond}
+	t.Cleanup(func() { doBackoff = old; stateWriteFailing.Store(false) })
 	r := &Router{st: st}
 	r.db.Store(db)
 	db.pool.Exec(ctx, "ALTER TABLE sessions RENAME TO sessions_away")
-	st.Do(func(d *persisted) { d.Sessions["s1"] = &Session{ID: "s1", State: "started"} })
-	if err, _ := st.StoreError(); err == nil || r.dbStatus(ctx).OK {
-		t.Fatal("a refused write isn't reported")
+	tries := 0
+	func() {
+		defer func() {
+			if _, ok := recover().(stateWriteError); !ok {
+				t.Fatal("a refused change didn't panic with a stateWriteError")
+			}
+		}()
+		st.Do(func(d *persisted) { tries++; d.Sessions["s1"] = &Session{ID: "s1", State: "started"} })
+	}()
+	if tries > 3 || r.dbStatus(ctx).OK || !stateWriteFailing.Load() {
+		t.Fatalf("%d tries, status %+v", tries, r.dbStatus(ctx))
+	}
+	// an HTTP caller gets a 503 saying nothing was kept
+	h := stateWriteGuard(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		st.Do(func(d *persisted) { d.Sessions["s9"] = &Session{ID: "s9"} })
+		w.WriteHeader(200)
+	}))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "/api/x", nil))
+	if w.Code != 503 || !strings.Contains(w.Body.String(), "nothing of this request was kept") {
+		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	db.pool.Exec(ctx, "ALTER TABLE sessions_away RENAME TO sessions")
 	st.Do(func(d *persisted) {
-		if d.Sessions["s1"] != nil {
-			t.Fatal("the refused change stayed in the copy")
+		if d.Sessions["s1"] != nil || d.Sessions["s9"] != nil {
+			t.Fatal("a refused change stayed in the copy")
 		}
 		d.Sessions["s2"] = &Session{ID: "s2"}
 	})
-	if err, _ := st.StoreError(); err != nil || !r.dbStatus(ctx).OK {
+	if err, _ := st.StoreError(); err != nil || !r.dbStatus(ctx).OK || stateWriteFailing.Load() {
 		t.Fatalf("after a write went through: %v", err)
 	}
 }
