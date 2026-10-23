@@ -423,43 +423,15 @@ Secure Enclave key, kept across Reset and Recover — inside the master-signed s
 device's signature over the statement (`deviceKey`/`deviceSig` on POST /api/core/claim). A claim under the pinned master
 pins the device key it names; a claim countersigned by the pinned device key moves the master pin (a Reset).
 
-**The router moves between boxes with no gap (Deyao, 2026-10-15; `router/move.go`).** Leader and standby (leader.go)
-share one node's volume; a move to another box is the same handover over the boxes' private network. The old box's
-leader (the SENDER, with `MOVE_KEY`) answers the move calls on its own port (`MOVE_ADDR`, 8082; bearer `MOVE_KEY`):
-the file list of `/data`, one file, freeze, done, abort. The new box's router (the JOINER: `MOVE_FROM`, `MOVE_PUBLIC`,
-`MOVE_SELF`, `MOVE_AT`, `MOVE_KEY`) is a CANDIDATE until it has moved: it loads no state, proxies every request to the
-old box and copies `/data` every minute (changed files only). At `MOVE_AT` it takes a last copy and freezes the sender
-(which drains as for a rollout, lets the Claude login's refresh finish, stops the WireGuard peer, saves and freezes its
-state and answers the file list and the peer's `wg.conf`), takes the delta (every file under 1 MB and everything touched
-since the last copy, whatever its size and mtime say), writes the peer into `/data/wg.conf` (it wins over `WG_CONFIG`:
-the peer moves with the leadership, so `jarvis4-box._peer.internal` keeps its address and the machines notice only a
-handshake), starts as the leader and tells the sender done. From then on the old box's routers are only proxies to the
-new one (`/data/router.moved`, kept across restarts: they never load the old state again). Requests that arrive
-meanwhile wait in both boxes' proxies; the gap (sender frozen → new router serving) is logged and shown in
-`/setup/status` (`move`). A failed freeze or delta aborts: the sender thaws (state, peer, drain) and the candidate goes
-on proxying. **The core moves along:** when the new box's core is a standby (Recovered alongside, `?core=next` on the
-old router: `NEXT_CORE_URL`), the freeze also hands the old core off (`POST /handoff`) and the joiner's core takes over
-(`POST /takeover`) before the new router serves.
-
-**A handover never makes a running session wait longer than its gap (`router/movegate.go`; Deyao, 2026-10-15).**
-Both handovers — a rollout's and a move's — do the same before the state freezes: deliveries stop (the ones in flight
-finish, so a wakeup is neither lost nor made twice; one coming due waits for the next leader, whose scheduler ticks at
-once and then sleeps until the next item is due); the machines' peer is quiesced (its SYNs to 8081 dropped, so a
-machine's new dial waits in TCP's retries for the next peer instead of being refused; idle connections closed with a
-FIN); requests in flight end at once (the machine's `/m/commands` answers "nothing" and polls again, the Claude login's
-long poll answers what it has, an unanswered app GET goes to the next leader, anything else 503 with
-`Connection: close`). The next leader's peer comes up during the delta and holds the machines' connections until it
-serves. Measured on Fly (`E2E_ONLY=move`, two runs): a 396 ms / 1.36 s gap with no failed call from the session; RUNBOOK "Moving to the
-two boxes: what a running session sees". A standby's move port proxies to the leader's, so one Service with both ports
-may select every router pod.
-
-**The router's state is backed up to the Storage Box (`router/backup.go`).** Every 15 minutes (and at a drain or a
-move's freeze) a tar.gz of `/data` without the snapshots, `tmp/`, uploads over 200 MB and the lock, encrypted with age
-to `ROUTER_BACKUP_AGE_PUB` (the private half, `ROUTER_BACKUP_AGE_KEY`, lives in the `infra` store, not on the box), as
-`claude-records/.jarvis2-router/state-<UTC>.tar.gz.age`; the newest 48 are kept, and nothing is sent when nothing
-changed. Each session snapshot goes once, encrypted the same way, to `.jarvis2-router/snapshots/`, and goes from there
-once gone from `/data`. A rebuilt box's router restores the newest state and every snapshot before it starts
-(`ROUTER_RESTORE=1` with the key), so a lost control box keeps its paused sessions.
+**The router is two stateless replicas (docs/STATE.md step 10).** Every record is in Postgres (`router/statedb.go`):
+a `State.Do` takes the `state_version` row FOR UPDATE, so changes are serialised across the replicas, and a replica whose
+copy is older reloads it first; a write the database refuses is retried on a fresh copy and never dropped quietly (an
+HTTP caller gets a 503, a job is left for another replica). Any replica serves anything: the app, the web page, setup
+and the machines' API (through m-gateway); the periodic loops run on the replica holding the scheduler's lease
+(`router/leaderlease.go`), and a job another replica began is carried on from the records (`router/jobs.go`). A rollout
+replaces one pod at a time (`maxUnavailable: 0`): a stopping replica answers `GET /readyz` with 503 so it leaves the
+Service, hands the lease on, lets its jobs end, then closes its listeners. The pods keep nothing (scratch is an
+emptyDir); the database has its own backups.
 
 ## The path between iPhone and core
 
@@ -574,16 +546,11 @@ by the core, approved by the phone; the box alone can never make one, and no AI 
   dead machine → `certify(approval, none)` → burn cert. The router deletes the carried blob with the snapshots;
   burnt, it could open for nothing anyway (no successor can be certified, the killed machine's certs read none).
 
-- **A router rollout drains first (Deyao, 2026-10-13; `router/drain.go`).** Every flow above runs in a goroutine of the
-  router that began it; each is tracked (the session lifecycle lock and the approval answer begin one). On SIGTERM the
-  router refuses new lifecycle actions (503 "router updating, try again shortly"; the schedulers back off as from a busy
-  session), lets every running one finish while it keeps serving reads, the machines' reports and the login's long
-  polls, then exits; the pod's grace period (30 min) covers the longest one. A crash still cuts actions off: at start
-  the router turns each session it left mid-action into a `failed` (or, for a resume whose line is intact, `paused`)
-  session with the reason, and Deyao runs the action again. Nothing is saved to be redone.
-  The next pod waits as a standby that proxies to the draining one and takes the state over through the flock on the
-  shared volume (`router/leader.go`); between boxes the same handover runs over the private network (`router/move.go`,
-  "The box").
+- **A router rollout never cuts a flow off (Deyao, 2026-10-13).** Every flow above runs in a goroutine of the replica
+  that began it; each is tracked (the session lifecycle lock and the approval answer begin one), and the long ones are
+  jobs in the records (`router/jobs.go`). On SIGTERM the replica leaves the Service, lets its running jobs end (the
+  pod's grace period, 30 min, covers the longest one) and exits; a job still running then, or one cut off by a crash,
+  is carried on by the other replica from the records ("The router is two stateless replicas").
 
 ## Carried secrets (Deyao, 2026-10-11)
 

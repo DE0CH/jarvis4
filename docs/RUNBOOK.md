@@ -78,67 +78,15 @@ core (`NEXT_CORE_URL`): empty, or Recovered alongside as a standby. A core resta
 
 `infra/setup.py identity` says which core is live and what it serves; the pin annotations and PLAN.md don't.
 
-A router rollout drains (`router/drain.go`): the rollout's surge pod starts next to the leader as its standby and
-proxies to it; the old pod refuses new lifecycle actions with 503 "router updating, try again shortly", lets the
-running ones finish (its log: `draining: … waiting for N running: [...]`, every minute `still running`, then
-`drained`), then hands over and the standby leads (`terminationGracePeriodSeconds: 1800`, `DRAIN_SECONDS` 1740). Its
-log is in Grafana (`namespace="jarvis2-router"`, "Logs, metrics and alerts"). A start waiting out Fly's machine limit
-ends when the drain begins ("…start it again"). After a crash (OOM, node reboot), sessions cut off mid-action show
-`failed` (a resume: `paused`) with "cut off by a router crash" and are started, paused or destroyed again from the app;
-a cut-off start may leave an uncertified machine that the Machines tab flags with no session (Destroy it there).
-
-### Moving the router (and the core) to another box: the move
-
-`router/move.go` (DESIGN "The router moves between boxes with no gap") hands the router's leadership, its `/data` and
-the machines' WireGuard peer from one box's router to another's over the private Network, with a gap of about a
-second; the serving core can go along (the old router's `NEXT_CORE_URL` = the new box's core, Recovered alongside). It
-is how a control box is replaced with no gap. The control box's manifests carry no move settings; a move adds them:
-
-1. On both routers: a Secret with the same `MOVE_KEY` (a `move` part in `infra/router-secrets.py` for each box) in the
-   router's `envFrom`, and container port 8082.
-2. The old router: a NodePort Service for 8080 and 8082 (NodePorts listen on the private address only) and NetworkPolicy
-   ingress from the new box's private address; `/setup/status` → `move.role` = `sender`.
-3. The new router: `MOVE_FROM` (`http://<old private IP>:<8082 NodePort>`), `MOVE_PUBLIC` (`…:<8080 NodePort>`),
-   `MOVE_SELF` (its own address as the old box reaches it), the same `MOVE_KEY`, no `MOVE_AT`: it proxies to the old
-   router and copies `/data` every minute (`move.role` = `candidate`, `lastPrecopy`). Both boxes' private guards
-   (`/etc/jarvis2/private-allow`, set by `create.sh`'s `PRIVATE_ALLOW` at creation) must let the other in, and the
-   services box's NetworkPolicies must admit the new router's address.
-4. `MOVE_AT` (RFC3339, a few minutes ahead) on the new router, pushed. At that time it freezes the old router, takes
-   the delta and the peer, and serves; `move.gapMs` is the gap. The old routers are proxies from then on
-   (`/data/router.moved`); the new box's cloudflared goes to 2 and the old box's to 0 (one commit), and its
-   `keys/box-next.pub` becomes `keys/box.pub` before Deyao Recovers or flips onto its core.
-5. A failed move logs `[move] … FAILED` and aborts: the old router serves again. A new `MOVE_AT` tries again.
-6. Afterwards: the move settings out of both trees, the old box and its tree deleted.
-
-`E2E_ONLY=move infra/e2e.sh` measures it (two routers on one host, a real session machine on Fly over Fly's private
-network, the WireGuard peer moving between them): on 2026-10-15 the gap was **396 ms / 1.36 s** in two runs with no
-failed call, and production's move on 2026-10-16 had a gap of 746 ms. What a running session sees:
-
-| Step | What a running session sees | How long |
-|---|---|---|
-| The new router is a candidate (pre-copying `/data` every minute) | nothing: every app request is proxied to the old router; the machine still talks to the old peer | until `MOVE_AT` |
-| The old router drains (as for a rollout) | a new lifecycle action (pause, resume, destroy, restart) asked for now gets 503 "router updating, try again shortly"; everything else is served | until the running actions end: seconds, or as long as a pause's snapshot keeps making progress (cut off past `DRAIN_SECONDS`) |
-| Deliveries stop on the old router | a wakeup, cron, watch, lease or outcome delivery in flight finishes; one coming due now waits for the new router (`busy: the router is handing over — next tick`) | — |
-| Freeze (the gap starts): requests held, the old peer quiesced and taken down | the machine's `/m/commands` long poll answers "nothing" (it polls again at once); its new connection's SYN is dropped, so the dial waits in TCP's retries for the new peer — no error; pooled connections were closed with a FIN first. The app's requests wait in the old router's proxy. An app `exec` waiting for the machine's answer ends with 400 "the router is moving: run it again" (the answer goes to the new router) | the gap: 396 ms / 1.36 s (freeze 235 / 480 ms, the delta of 9 files, the new router's start) |
-| The new router serves (its peer came up during the delta and held the machines' connections) | every call goes through; the session API, a lease and transcript search never failed (450–550 calls each per run, every 200 ms across the move; the longest call 1.2–1.6 s, i.e. one SYN retry); an exec through `/m/commands` answered 0.8 s after the move (both runs) | — |
-| Wakeups and crons | the new router's scheduler ticks at once and then sleeps until the next one is due: one due inside the gap fires right after it (exactly once: the old router stopped before, the new one has its state; measured 3.7 s after it was due) | the gap + its delivery |
-| Status reports | the machine reports on a change or its heartbeat; the first one after the move reached the new router 3 s / 37 s later | its own cadence |
-| Remote Control | unaffected: the `claude --remote-control` host talks to claude.ai directly, never through the router; only the Claude login's credentials come through the router (`/m/claude-login`, a long poll that answers what it has at the freeze), and the old router lets a refresh in flight finish before it freezes | none |
-
-The session is never restarted, paused or destroyed: the same Fly machine, boot and supervisor before and after (the
-e2e checks it). Pitfalls the move's rehearsals found (all fixed, keep them in mind when changing `move.go`): a POST
-racing the FIN of a pooled connection at the freeze (connections are one-shot from the drain on, 3 s before the
-freeze); the old machine listener refusing a request after the freeze (it serves until its peer goes); a search in
-flight cancelled at the freeze (only the long polls end); a wakeup into a harness still booting burned by the machine
-(machine `38ac038` on).
-
-### The router's state backup
-
-`/setup/status` → `backup` (`at`, `path`, `size`, `snapshots`, `error`). Needs `ROUTER_BACKUP_AGE_PUB` and the Storage
-Box keys in the router's env. On a rebuilt box: give the router `ROUTER_RESTORE=1` and `ROUTER_BACKUP_AGE_KEY` (from
-the `infra` store, its own secret part) for its first start — it restores the newest state and every snapshot before
-it loads, and refuses to start if it can't — then remove both. Offline: `router restore-backup DIR` with the Storage
-Box env and `ROUTER_BACKUP_AGE_KEY`.
+A router rollout replaces the two replicas one at a time (`maxUnavailable: 0`, readiness on `GET /readyz`, a
+PodDisruptionBudget of 1; DESIGN "The router is two stateless replicas"): the stopping pod answers `/readyz` with 503 so
+it leaves the Service (its log: `stopping: out of the Service, …`), hands the scheduler's lease on, lets its running
+jobs end (`JOB_GRACE_SECONDS` 1740, under `terminationGracePeriodSeconds: 1800`), then exits (`stopped`); a job still
+running then is carried on by the other replica once its lease lapses. Its log is in Grafana
+(`namespace="jarvis4-router"`, "Logs, metrics and alerts"). After a crash (OOM, node reboot) the other replica serves
+on and carries the crashed one's jobs on; a cut-off start may leave an uncertified machine that the Machines tab flags
+with no session (Destroy it there). Moving the router to other nodes is a rollout like any other: the pods hold
+nothing, the records are in Postgres (its own backups).
 
 ## The keys (`keys/`)
 
