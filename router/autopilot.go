@@ -193,8 +193,6 @@ func (r *Router) registerAutopilot(app appRoute, m machineRoute) {
 		var in struct {
 			Raw      string `json:"raw"`
 			AppTitle string `json:"appTitle"` // the Claude app's title of the Remote Control entry (machine/apptitle.go)
-			// machine/main.go keepOwnKeys: it keeps its key pair on its volume (lostmachine.go: it can start again in place)
-			KeysOnVolume string `json:"keysOnVolume"`
 		}
 		json.Unmarshal(body, &in)
 		reg := parseRegistry(in.Raw)
@@ -208,9 +206,6 @@ func (r *Router) registerAutopilot(app appRoute, m machineRoute) {
 				s.Live = &Liveness{}
 			}
 			s.Live.Reg, s.Live.LastReport = reg, time.Now().UTC()
-			if st := d.Started[machine]; st != nil && in.KeysOnVolume == "1" {
-				st.KeysOnVolume = true
-			}
 			if s.Booted != machine || s.Live.BootedAt.IsZero() {
 				s.Live.BootedAt = s.Live.LastReport // the harness check's clock (planTick)
 			}

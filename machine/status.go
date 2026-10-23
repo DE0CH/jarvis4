@@ -11,7 +11,6 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"path/filepath"
 	"time"
 )
 
@@ -64,11 +63,7 @@ func statusReporter(c *client) {
 		if raw == last && title == lastTitle && time.Since(sent) < statusHeartbeat {
 			continue
 		}
-		in := map[string]string{"raw": raw, "appTitle": title}
-		if fileExists(filepath.Join(selfDir(), "machine")) {
-			in["keysOnVolume"] = "1" // main.go keepOwnKeys: started again on its volume, it is the same machine (router/lostmachine.go)
-		}
-		if err := c.json("POST", "/m/status", in, nil); err != nil {
+		if err := c.json("POST", "/m/status", map[string]string{"raw": raw, "appTitle": title}, nil); err != nil {
 			log.Printf("status report failed: %v", err)
 			continue
 		}

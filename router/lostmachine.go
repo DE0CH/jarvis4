@@ -9,15 +9,12 @@ package main
 //     failed or destroyed, or no longer lists, on two looks in a row, is marked lost: state failed, Session.Lost, and an
 //     error saying plainly what happened (Fly's own stop or exit event, when), what is kept, and what Resume does. The
 //     session's event stream gets it as a "machine lost" operation with Fly's events, and Deyao gets a DM.
-//   - Resume of a lost kernel line goes through the kernel like any start:
-//     in place  the machine still exists with its volume, and it keeps its key pair there (it said so in its status
-//               report: machine/main.go keepOwnKeys): the spawner starts the same machine again (kernel/spawner
-//               Start). It is the same Fly machine with the same keys, so its cert and grant still hold; its boot finds
-//               its own state on the volume and restores nothing. Nothing is lost.
-//     otherwise (destroyed, no volume, or an image from before keys were kept on the volume) the spawner kills it
-//               into the line's next source, naming the newest signed snapshot (the machine's own if it sent one,
-//               else the one its source named), and a new machine starts from that source, as after a pause. A line
-//               with no signed snapshot at all is refused (it would start empty), as snapsafe.go refuses.
+//   - Resume of a lost kernel line goes through the kernel like any start: the spawner kills the machine into the
+//     line's next source, naming the newest signed snapshot (the machine's own if it sent one, else the one its source
+//     named), and a new machine starts from that source, as after a pause. What the session did after that snapshot
+//     is lost. A line with no signed snapshot at all is refused (it would start empty), as snapsafe.go refuses. The
+//     stopped machine is never started again: its key pair lived in its memory only (DECISIONS 228), so started again
+//     it couldn't prove it is the machine its cert names.
 
 import (
 	"fmt"
@@ -29,13 +26,11 @@ import (
 // LostMachine: what became of a session's machine that stopped without Jarvis doing it
 type LostMachine struct {
 	Machine  string    `json:"machine"`
-	At       time.Time `json:"at"`               // when it stopped, by Fly's event (else when the router saw it)
-	Seen     time.Time `json:"seen"`             // when the router noticed
-	FlyState string    `json:"flyState"`         // stopped | suspended | failed | destroyed | destroying | gone (Fly lists it no more)
-	Fly      string    `json:"fly,omitempty"`    // Fly's own event for it (the stop or exit)
-	Volume   string    `json:"volume,omitempty"` // its volume, kept ("" = none, or gone with the machine)
-	InPlace  bool      `json:"inPlace"`          // Resume starts this same machine again on its volume: nothing is lost
-	Resume   string    `json:"resume"`           // what Resume does, in plain words
+	At       time.Time `json:"at"`            // when it stopped, by Fly's event (else when the router saw it)
+	Seen     time.Time `json:"seen"`          // when the router noticed
+	FlyState string    `json:"flyState"`      // stopped | suspended | failed | destroyed | destroying | gone (Fly lists it no more)
+	Fly      string    `json:"fly,omitempty"` // Fly's own event for it (the stop or exit)
+	Resume   string    `json:"resume"`        // what Resume does, in plain words
 }
 
 // lostEvery: how often the leader looks; a machine is lost once it is down on two looks in a row
@@ -44,11 +39,6 @@ var lostEvery = 20 * time.Second
 // machineDown: a Fly state of a machine that isn't running
 func machineDown(state string) bool {
 	return slices.Contains([]string{"stopped", "suspended", "failed", "destroyed", "destroying", "gone"}, state)
-}
-
-// startable: a down machine Fly can start again
-func startable(state string) bool {
-	return state == "stopped" || state == "suspended" || state == "failed"
 }
 
 func (r *Router) lostLoop() {
@@ -126,25 +116,14 @@ func (r *Router) lostEvent(machine string) *flyEvent {
 	return best
 }
 
-// lostResume: what Resume will do for a lost machine, in plain words (and whether it is in place)
+// lostResume: what Resume will do for a lost machine, in plain words
 func (r *Router) lostResume(sid string, l *LostMachine) string {
-	if l.InPlace {
-		return fmt.Sprintf("Nothing is lost: its volume %s is kept with everything the session wrote, and Resume starts the same machine again on it.", l.Volume)
-	}
-	why := ""
-	switch {
-	case !startable(l.FlyState):
-		why = "Its volume can't be used again (the machine is gone). "
-	case l.Volume == "":
-		why = "It had no volume. "
-	default:
-		why = fmt.Sprintf("Its volume %s is kept, but its image predates starting a machine again on its volume, so Resume can't use it. ", l.Volume)
-	}
+	const gone = "The machine isn't started again (its keys were in its memory only). "
 	older, _, olderAt := r.latestSnapshot(sid)
 	if older == "" {
-		return why + "There is no signed snapshot of the session, so Resume would start it empty and refuses; Destroy archives the live copies of its transcripts."
+		return gone + "There is no signed snapshot of the session, so Resume would start it empty and refuses; Destroy archives the live copies of its transcripts."
 	}
-	return why + fmt.Sprintf("The newest signed snapshot (machine %s's, from %s) is kept: Resume starts a new machine from it; what the session did after it is lost.",
+	return gone + fmt.Sprintf("Resume starts a new machine from the newest signed snapshot (machine %s's, from %s); what the session did after that snapshot is lost.",
 		older, olderAt.UTC().Format("2006-01-02 15:04 UTC"))
 }
 
@@ -178,16 +157,6 @@ func (r *Router) markLost(sid, machine, flyState string) {
 	if ev := r.lostEvent(machine); ev != nil {
 		l.At, l.Fly = time.UnixMilli(ev.Timestamp).UTC(), eventText(*ev)
 	}
-	if v := r.machineVolume(machine); v != nil && v.ID != "" && startable(flyState) {
-		l.Volume = v.ID
-	}
-	keys := false
-	r.st.Do(func(d *persisted) {
-		if st := d.Started[machine]; st != nil {
-			keys = st.KeysOnVolume
-		}
-	})
-	l.InPlace = r.isKernelMachine(machine) && l.Volume != "" && keys
 	l.Resume = r.lostResume(sid, l)
 	msg := lostText(l)
 	// the operation first, so the failure below is its end, not a second event (failures.go). An operation already
@@ -223,35 +192,13 @@ func (r *Router) markLost(sid, machine, flyState string) {
 	r.DM(fmt.Sprintf("🔴 Session “%s” — %s", r.dmName(sid), msg))
 }
 
-// kernelResumeLost: a lost kernel line's Resume (run by kernelResume). true: handled (started again in place, or
-// failed with the reason); false: the machine is killed into the line's next source and the caller spawns from it.
+// kernelResumeLost: a lost kernel line's Resume (run by kernelResume). true: handled (failed with the reason); false:
+// the machine is killed into the line's next source and the caller spawns from it.
 func (r *Router) kernelResumeLost(s Session, op *lcHandle) bool {
 	id, l := s.ID, s.Lost
 	m := l.Machine
 	op.machine(m)
-	if l.InPlace {
-		since := time.Now().UTC()
-		op.note(m, "its machine stopped outside Jarvis: asked the kernel's spawner to start machine "+m+" again on its volume "+l.Volume)
-		if _, err := r.kernel.Doc("spawner", "/start", map[string]string{"id": m}); err != nil {
-			msg := fmt.Sprintf("Resume couldn't start machine %s again (%v). It and its volume %s are kept, nothing is lost: Resume tries again.", m, err, l.Volume)
-			r.setState(id, "failed", msg)
-			op.note(m, msg)
-			return true
-		}
-		r.st.Do(func(d *persisted) {
-			if x := d.Sessions[id]; x != nil && x.MachineID == m {
-				x.State, x.Error, x.Lost, x.Status = "initialising", "", nil, ""
-				if x.Live != nil {
-					x.Live.BootedAt = time.Time{} // the harness check's clock starts again (autopilot.go)
-				}
-			}
-		})
-		op.note(m, "the spawner started the machine again: it boots on its own volume with the keys its cert names")
-		op.run.handed.Store(true)
-		go r.lcAwaitReport(op, id, m, since)
-		return true
-	}
-	op.note(m, "its machine stopped outside Jarvis and can't start again ("+lostWhat(l.FlyState)+"): asked the kernel's spawner to kill it into the line's next source, with the newest signed snapshot")
+	op.note(m, "its machine "+lostWhat(l.FlyState)+" outside Jarvis: asked the kernel's spawner to kill it into the line's next source, with the newest signed snapshot")
 	snap, err := r.kernelKill(id, m, false)
 	if err != nil {
 		r.setState(id, "failed", fmt.Sprintf("Resume couldn't take machine %s off the line (%v): Resume tries again.", m, err))
@@ -276,34 +223,4 @@ func (r *Router) kernelResumeLost(s Session, op *lcHandle) bool {
 		return true
 	}
 	return false
-}
-
-// lcAwaitReport: a machine started again ends its operation when it reports after since (it booted again), fails, or
-// lcBootMax passes (lcAwaitBoot's check is Booted, which a machine started again already is)
-func (r *Router) lcAwaitReport(op *lcHandle, sid, machine string, since time.Time) {
-	for end := time.Now().Add(lcBootMax); ; time.Sleep(time.Second) {
-		var reported bool
-		var state, errMsg, cur string
-		r.st.Do(func(d *persisted) {
-			if s := d.Sessions[sid]; s != nil {
-				reported = s.Live != nil && s.Live.LastReport.After(since)
-				state, errMsg, cur = s.State, s.Error, s.MachineID
-			}
-		})
-		switch {
-		case reported:
-			op.note(machine, "the machine reported in again: the session goes on where it stopped")
-			op.endJoined("done", "")
-			return
-		case cur != machine || state == "failed":
-			op.endJoined("failed", orStr(errMsg, "the session moved on from machine "+machine+" ("+orState(state)+")"))
-			return
-		case r.draining():
-			op.endJoined("done", "")
-			return
-		case time.Now().After(end):
-			op.endJoined("failed", "the machine hasn't reported in within "+waitText(lcBootMax)+" of starting again")
-			return
-		}
-	}
 }

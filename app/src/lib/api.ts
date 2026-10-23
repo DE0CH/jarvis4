@@ -382,7 +382,5 @@ export interface LostMachine {
   seen: string;
   flyState: string; // stopped | suspended | failed | destroyed | destroying | gone
   fly?: string; // Fly's own event for it
-  volume?: string; // kept
-  inPlace: boolean; // Resume starts the same machine again on its volume: nothing is lost
   resume: string; // what Resume does, in plain words
 }

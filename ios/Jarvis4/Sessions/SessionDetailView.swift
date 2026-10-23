@@ -327,11 +327,10 @@ private struct LostMachineSection: View {
       LabeledContent("Machine", value: "\(l.machine) · \(l.what.lowercased())")
       if let at = l.at { LabeledContent("When", value: Fmt.past(at)) }
       if let f = l.fly { Text(f).font(.footnote).foregroundStyle(.secondary) }
-      if let v = l.volume { LabeledContent("Volume", value: "\(v) · kept") }
       Text(l.resume).font(.subheadline)
         .accessibilityIdentifier("lost-resume-\(m.id)")
       if busy == nil, m.resumable {
-        Button(l.inPlace ? "Resume (start the same machine again)" : "Resume from the snapshot", systemImage: "play.circle") { Task { await model.resume(m.id) } }
+        Button("Resume from the snapshot", systemImage: "play.circle") { Task { await model.resume(m.id) } }
           .accessibilityIdentifier("lost-resume-button-\(m.id)")
       }
     } header: {

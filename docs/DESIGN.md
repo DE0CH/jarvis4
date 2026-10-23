@@ -42,7 +42,8 @@ changes nobody can see — no single compromised component is enough.
 - **iPhone:** the highest privilege: approves any challenge after Deyao's click on a hardened path; sets the core
   up (Reset or Recover).
 - **Session machine (Fly):** its image generates at boot an **encryption key pair** and a **signing key pair**;
-  private halves never leave the machine. It trusts the core that created it: the core puts its signing key in
+  private halves never leave the machine and live in its memory only (`/run/jarvis2` is a tmpfs; never on a disk, its
+  volume or a snapshot), so they end with the machine's run. It trusts the core that created it: the core puts its signing key in
   the machine's Fly config.
 - **Box key:** made by the trusted setup session when it creates the box and delivered in Hetzner user-data
   (the only channel into the box we already trust); its public half is in git. On the box it is a secret only
@@ -1121,12 +1122,10 @@ and end are lifecycles the router manages, each certified by succession certs:
 
 - New session: the phone signs (sink, source-x, P); the spawner spawns from it.
 - Pause: a kill into a fresh source. Resume: a spawn from it.
-- A machine stopped outside Jarvis (`fly machine stop`, an exit, Fly's own doing; `router/lostmachine.go`): no cert
-  changes. The spawner starts the same machine again on its own volume (`POST /start`, a Fly fact like the others);
-  it is the same Fly machine with the same key pair (the machine keeps its pair on its volume, never in a snapshot:
-  `machine/main.go keepOwnKeys`), so its cert and grant hold and it reads its state off the volume. One that can't
-  start again (destroyed, no volume, an image that keeps no keys there) is killed into a fresh source naming the
-  newest signed snapshot, and Resume spawns from it.
+- A machine stopped outside Jarvis (`fly machine stop`, an exit, Fly's own doing; `router/lostmachine.go`): it is
+  never started again in place (its key pair was in its memory only, so it couldn't prove it is the machine its cert
+  names). Resume is a kill into a fresh source naming the newest signed snapshot, then a spawn from it; what the session
+  did after that snapshot is lost. With no signed snapshot at all, Resume refuses (`noSnapshot`).
 - End: a burn, (source, sink). Only a source can be burned: a machine has no used-once rule and stays alive whatever is
   signed about it, so (machine, sink) would stop nothing.
 - Widening happens only out of the sink.

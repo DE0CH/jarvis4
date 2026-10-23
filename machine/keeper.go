@@ -338,11 +338,18 @@ func newKeeper() *keeperT {
 	return k
 }
 
-// keeperDirs: /run/jarvis2 (user claude's, as before) and the keeper's own /run/jarvis2-keeper (root's)
+// keeperDirs: /run/jarvis2 (user claude's, as before) and the keeper's own /run/jarvis2-keeper (root's). On a Fly
+// machine /run/jarvis2 is a tmpfs of its own: the machine's key pair (private.json) lives there, in memory only, never
+// on a disk (Fly's root overlay is on one) or the volume (DECISIONS 228).
 func keeperDirs() error {
 	s := session()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
+	}
+	if os.Getenv("FLY_MACHINE_ID") != "" {
+		if err := memoryDir(dir); err != nil {
+			return fmt.Errorf("%s in memory: %w", dir, err)
+		}
 	}
 	if err := os.Chown(dir, s.uid, s.gid); err != nil {
 		return err
@@ -353,6 +360,29 @@ func keeperDirs() error {
 	}
 	os.Chown(keeperDir, 0, 0)
 	return os.Chmod(keeperDir, 0o755)
+}
+
+// memoryDir: a tmpfs on d, unless d is one already (the keeper started again in the same boot keeps what is there)
+func memoryDir(d string) error {
+	var fs syscall.Statfs_t
+	var st, parent syscall.Stat_t
+	if err := syscall.Statfs(d, &fs); err != nil {
+		return err
+	}
+	if err := syscall.Stat(d, &st); err != nil {
+		return err
+	}
+	if err := syscall.Stat(d+"/..", &parent); err != nil {
+		return err
+	}
+	if fs.Type == 0x01021994 && st.Dev != parent.Dev { // TMPFS_MAGIC, mounted on d itself
+		return nil
+	}
+	if err := syscall.Mount("tmpfs", d, "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, "mode=755,size=256m"); err != nil {
+		return err
+	}
+	log.Printf("%s: a tmpfs (the machine's keys live in memory only)", d)
+	return nil
 }
 
 // protectFromOOM: oom_score_adj -1000 (never chosen by the OOM killer) for the keeper; the worker inherits it.

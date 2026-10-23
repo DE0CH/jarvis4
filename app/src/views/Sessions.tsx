@@ -335,7 +335,7 @@ function LostMachineNote({ m }: { m: Session }) {
   if (!l) return null;
   const what = ({ stopped: "stopped", suspended: "was suspended", failed: "failed on Fly", gone: "is gone from Fly" } as Record<string, string>)[l.flyState] || "was destroyed";
   return (
-    <Callout color="red" variant="surface" mt={2} data={{ lost: l.inPlace ? "in-place" : "snapshot" }} id={"lost-" + m.id}>
+    <Callout color="red" variant="surface" mt={2} id={"lost-" + m.id}>
       <CalloutText color="red">{`Stopped outside Jarvis: machine ${l.machine} ${what} ${ago(l.at)}${l.fly ? " (" + l.fly + ")" : ""}. Jarvis didn't pause or destroy it.`}</CalloutText>
       <CalloutText color="red">{l.resume}</CalloutText>
     </Callout>

@@ -11,7 +11,7 @@ import (
 )
 
 // lostRig: a kernel line running on its first machine (booted, its secrets pulled), the router reading the fake Fly
-func lostRig(t *testing.T, keysOnVolume bool) (*rig, *kerneltest.Kernel, string, *kerneltest.FakeMachine) {
+func lostRig(t *testing.T) (*rig, *kerneltest.Kernel, string, *kerneltest.FakeMachine) {
 	rg, k := kernelRig(t)
 	old := listFlyMachines
 	t.Cleanup(func() { listFlyMachines = old })
@@ -62,11 +62,7 @@ func lostRig(t *testing.T, keysOnVolume bool) (*rig, *kerneltest.Kernel, string,
 	if code, body := kdo(t, h, m1, "POST", "/m/pull-secrets", "{}"); code != 200 {
 		t.Fatal(code, string(body))
 	}
-	report := `{"raw":""}`
-	if keysOnVolume {
-		report = `{"raw":"","keysOnVolume":"1"}`
-	}
-	if code, body := kdo(t, h, m1, "POST", "/m/status", report); code != 200 {
+	if code, body := kdo(t, h, m1, "POST", "/m/status", `{"raw":""}`); code != 200 {
 		t.Fatal(code, string(body))
 	}
 	if s := kernelSession(rg, sid); s.State != "started" || s.Booted != m1.ID {
@@ -85,110 +81,74 @@ func eventsText(r *Router, sid string) string {
 }
 
 // a machine stopped outside Jarvis (fly machine stop): on the second look the session says so — when, Fly's event,
-// that its volume is kept and nothing is lost — in its error, its lost record, its events and /setup/sessions; Resume
-// starts the same machine again through the spawner (no new machine, no new cert), and it goes on once it reports in
-func TestAMachineStoppedOutsideJarvisResumesInPlace(t *testing.T) {
-	rg, k, sid, m1 := lostRig(t, true)
-	seen := map[string]int{}
-	rg.r.lostTick(seen)
-	if kernelSession(rg, sid).State != "started" {
-		t.Fatal("a running machine was taken for lost")
-	}
-	k.Fly.Stop(m1.ID)
-	rg.r.lostTick(seen)
-	if kernelSession(rg, sid).State != "started" {
-		t.Fatal("lost on one look")
-	}
-	rg.r.lostTick(seen)
-	s := kernelSession(rg, sid)
-	if s.State != "failed" || s.Lost == nil || !s.Lost.InPlace || s.Lost.Volume == "" || s.Lost.FlyState != "stopped" || s.FailedAt == nil {
-		t.Fatalf("%s %+v", s.State, s.Lost)
-	}
-	for _, want := range []string{"Its machine " + m1.ID + " stopped outside Jarvis at 2026-10-22 09:30:00 UTC", "Fly: machine exit → stopped (user)",
-		"Nothing is lost: its volume " + s.Lost.Volume + " is kept", "Resume starts the same machine again"} {
-		if !strings.Contains(s.Error, want) {
-			t.Fatalf("%q lacks %q", s.Error, want)
-		}
-	}
-	defer func() {
-		if t.Failed() {
-			t.Log(eventsText(rg.r, sid))
-		}
-	}()
-	waitFor(t, "the event", func() bool {
-		t := eventsText(rg.r, sid)
-		return strings.Contains(t, "Machine lost failed") && strings.Contains(t, ": Its machine "+m1.ID+" stopped outside Jarvis")
-	})
-	if strings.Contains(eventsText(rg.r, sid), "Session failed") {
-		t.Fatal("the failure was written twice")
-	}
-	rg.r.cfg.NoAccess = true
-	code, out := inboxDo(t, rg.r, "GET", "/setup/sessions", "", false)
-	var row map[string]any
-	for _, x := range out["sessions"].([]any) {
-		if x.(map[string]any)["id"] == sid {
-			row = x.(map[string]any)
-		}
-	}
-	if code != 200 || row["error"] != s.Error || row["failedAt"] == nil || row["lost"].(map[string]any)["inPlace"] != true {
-		t.Fatalf("%d %v", code, row)
-	}
-	// ✱ the next look leaves it alone
-	rg.r.lostTick(seen)
-	before := len(k.Fly.Machines)
-	if err := rg.r.Resume(sid, false); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, "started again", func() bool { return k.Fly.Starts == 1 && kernelSession(rg, sid).State == "initialising" })
-	s = kernelSession(rg, sid)
-	if s.MachineID != m1.ID || s.Lost != nil || s.Error != "" || s.FailedAt != nil || len(k.Fly.Machines) != before || m1.State != "started" {
-		t.Fatalf("%+v machines %d", s, len(k.Fly.Machines))
-	}
-	// the same machine reports in and pulls with the grant it had: it goes on
-	h := rg.r.MachineHandler()
-	if code, body := kdo(t, h, m1, "POST", "/m/status", `{"raw":"","keysOnVolume":"1"}`); code != 200 {
-		t.Fatal(code, string(body))
-	}
-	if code, body := kdo(t, h, m1, "POST", "/m/pull-secrets", "{}"); code != 200 {
-		t.Fatal(code, string(body))
-	}
-	if st := kernelSession(rg, sid).State; st != "started" {
-		t.Fatal(st)
-	}
-	waitFor(t, "the resume's end", func() bool {
-		return strings.Contains(eventsText(rg.r, sid), "the machine reported in again") && strings.Contains(eventsText(rg.r, sid), "Resume done")
-	})
-}
-
-// a machine that can't start again (destroyed outside Jarvis; or an image that keeps no keys on its volume): the
-// session says the newest signed snapshot is kept; Resume kills it into the line's next source and a new machine
-// restores that snapshot
-func TestALostMachineResumesFromTheNewestSnapshot(t *testing.T) {
+// that the machine isn't started again, which snapshot Resume starts from and that work since it is lost — in its error,
+// its lost record, its events and /setup/sessions; Resume kills it into the line's next source (never starts it again)
+// and a new machine restores the newest signed snapshot. ✱ A machine gone from Fly the same way.
+func TestAMachineStoppedOutsideJarvisResumesFromTheNewestSnapshot(t *testing.T) {
 	for _, destroyed := range []bool{false, true} {
-		rg, k, sid, m1 := lostRig(t, false)
+		rg, k, sid, m1 := lostRig(t)
 		tarball := makeTar(t, rg.files)
 		sum := sha256.Sum256(tarball)
 		snapSig, _ := m1.Sig.Sign([]byte(hex.EncodeToString(sum[:])))
 		putSnap(t, rg.r, m1.ID, tarball, snapSig)
+		seen := map[string]int{}
+		rg.r.lostTick(seen)
+		if kernelSession(rg, sid).State != "started" {
+			t.Fatal("a running machine was taken for lost")
+		}
 		if destroyed {
 			k.Fly.Destroy(m1.ID) // listed no more: "gone"
 		} else {
 			k.Fly.Stop(m1.ID)
 		}
-		seen := map[string]int{}
 		rg.r.lostTick(seen)
+		if kernelSession(rg, sid).State != "started" {
+			t.Fatal("lost on one look")
+		}
 		rg.r.lostTick(seen)
 		s := kernelSession(rg, sid)
-		if s.State != "failed" || s.Lost == nil || s.Lost.InPlace {
+		state := "stopped"
+		if destroyed {
+			state = "gone"
+		}
+		if s.State != "failed" || s.Lost == nil || s.Lost.FlyState != state || s.FailedAt == nil {
 			t.Fatalf("%s %+v", s.State, s.Lost)
 		}
-		want := "predates starting a machine again"
+		what := "stopped outside Jarvis at 2026-10-22 09:30:00 UTC"
 		if destroyed {
-			want = "is gone from Fly"
+			what = "is gone from Fly outside Jarvis"
 		}
-		if !strings.Contains(s.Error, want) || !strings.Contains(s.Error, "The newest signed snapshot (machine "+m1.ID+"'s") {
+		for _, want := range []string{"Its machine " + m1.ID + " " + what, "Fly: machine exit → stopped (user)",
+			"isn't started again (its keys were in its memory only)",
+			"Resume starts a new machine from the newest signed snapshot (machine " + m1.ID + "'s, from ",
+			"what the session did after that snapshot is lost"} {
+			if !strings.Contains(s.Error, want) {
+				t.Fatalf("%q lacks %q", s.Error, want)
+			}
+		}
+		if strings.Contains(s.Error, "Nothing is lost") || strings.Contains(s.Error, "volume") {
 			t.Fatal(s.Error)
 		}
+		waitFor(t, "the event", func() bool {
+			t := eventsText(rg.r, sid)
+			return strings.Contains(t, "Machine lost failed") && strings.Contains(t, ": Its machine "+m1.ID+" "+what)
+		})
+		if strings.Contains(eventsText(rg.r, sid), "Session failed") {
+			t.Fatal("the failure was written twice")
+		}
+		rg.r.cfg.NoAccess = true
+		code, out := inboxDo(t, rg.r, "GET", "/setup/sessions", "", false)
+		var row map[string]any
+		for _, x := range out["sessions"].([]any) {
+			if x.(map[string]any)["id"] == sid {
+				row = x.(map[string]any)
+			}
+		}
+		lost, _ := row["lost"].(map[string]any)
+		if code != 200 || row["error"] != s.Error || row["failedAt"] == nil || lost == nil || lost["resume"] != s.Lost.Resume || lost["inPlace"] != nil || lost["volume"] != nil {
+			t.Fatalf("%d %v", code, row)
+		}
+		rg.r.lostTick(seen) // ✱ the next look leaves it alone
 		if err := rg.r.Resume(sid, false); err != nil {
 			t.Fatal(err)
 		}
@@ -196,8 +156,11 @@ func TestALostMachineResumesFromTheNewestSnapshot(t *testing.T) {
 			s := kernelSession(rg, sid)
 			return s.MachineID != "" && s.MachineID != m1.ID && s.Kernel.MachineCert != nil
 		})
-		if k.Fly.Starts != 0 || k.Fly.Machine(m1.ID).State != "destroyed" {
+		if k.Fly.Machine(m1.ID).State != "destroyed" {
 			t.Fatal("the lost machine wasn't killed")
+		}
+		if s := kernelSession(rg, sid); s.Lost != nil || s.Error != "" {
+			t.Fatalf("%+v", s)
 		}
 		m2 := k.Fly.Machine(kernelSession(rg, sid).MachineID)
 		if code, body := kdo(t, rg.r.MachineHandler(), m2, "GET", "/m/snapshot", ""); code != 200 || string(body) != string(tarball) {
@@ -206,9 +169,32 @@ func TestALostMachineResumesFromTheNewestSnapshot(t *testing.T) {
 	}
 }
 
+// ✱ a lost machine and no signed snapshot at all: the session says Resume refuses, and Resume does (it would start empty)
+func TestALostMachineWithoutASnapshotIsRefused(t *testing.T) {
+	rg, k, sid, m1 := lostRig(t)
+	k.Fly.Stop(m1.ID)
+	seen := map[string]int{}
+	rg.r.lostTick(seen)
+	rg.r.lostTick(seen)
+	s := kernelSession(rg, sid)
+	if s.Lost == nil || !strings.Contains(s.Error, "There is no signed snapshot of the session, so Resume would start it empty and refuses") {
+		t.Fatalf("%+v", s.Lost)
+	}
+	if err := rg.r.Resume(sid, false); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the refusal", func() bool {
+		s := kernelSession(rg, sid)
+		return s.State == "failed" && s.NoSnapshot != "" && strings.Contains(s.Error, "it would start empty")
+	})
+	if k.Fly.Machine(m1.ID).State != "destroyed" || kernelSession(rg, sid).MachineID != "" {
+		t.Fatal("the lost machine wasn't killed, or a new one started")
+	}
+}
+
 // ✱ a machine Jarvis is pausing (its job holds the session) isn't lost; nor is one that is only stopping
 func TestJarvisOwnStopIsNotLost(t *testing.T) {
-	rg, k, sid, m1 := lostRig(t, true)
+	rg, k, sid, m1 := lostRig(t)
 	k.Fly.Stop(m1.ID)
 	done, err := rg.r.lock(sid, "pausing")
 	if err != nil {

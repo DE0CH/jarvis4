@@ -117,9 +117,6 @@ type Started struct {
 	Volume        *Volume `json:"volume,omitempty"`     // snapsafe.go: the machine's Fly volume (a core with volumes)
 	KernelPred    string  `json:"kernelPred,omitempty"` // kernelline.go: the machine whose snapshot this one restores
 	KernelCert    *Doc    `json:"kernelCert,omitempty"` // kernelline.go: the spawner's cert naming it (what its archive keeps)
-	// lostmachine.go: the machine said it keeps its key pair on its volume (machine/main.go keepOwnKeys), so started
-	// again on that volume it is the same machine
-	KeysOnVolume bool `json:"keysOnVolume,omitempty"`
 }
 
 type persisted struct {

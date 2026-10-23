@@ -485,9 +485,6 @@ struct LostMachine: Equatable, Hashable {
   var flyState: String { j["flyState"].string ?? "" }
   /// Fly's own event for it (the stop or exit)
   var fly: String? { j["fly"].text }
-  var volume: String? { j["volume"].text }
-  /// Resume starts the same machine again on its volume: nothing is lost
-  var inPlace: Bool { j["inPlace"].bool == true }
   /// what Resume does, in plain words
   var resume: String { j["resume"].text ?? "" }
   var what: String {

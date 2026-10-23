@@ -73,10 +73,8 @@ func volumeSplit() (dirs, files []string) {
 }
 
 // setupVolume: at boot, before the predecessor's snapshot is restored: the state's directories onto the volume.
-// false: no volume (or it couldn't be set up: logged, and the machine runs on its root disk as before). again: the
-// same machine started again on its own volume (main.go restoreOwnKeys): the volume already holds the session's state,
-// so nothing of the image goes onto it, and the single files come back from it.
-func setupVolume(again bool) bool {
+// false: no volume (or it couldn't be set up: logged, and the machine runs on its root disk as before).
+func setupVolume() bool {
 	if !hasVolume() {
 		return false
 	}
@@ -98,7 +96,7 @@ func setupVolume(again bool) bool {
 			continue
 		}
 		// what the image has there goes onto the volume first (cp -a keeps modes, links and times)
-		if ents, _ := os.ReadDir(dst); len(ents) > 0 && !again {
+		if ents, _ := os.ReadDir(dst); len(ents) > 0 {
 			if out, err := sessionCommand(nil, "cp", "-a", dst+"/.", src+"/").CombinedOutput(); err != nil {
 				log.Printf("volume: copying the image's %s: %v %s", rel, err, out)
 				continue
@@ -112,37 +110,12 @@ func setupVolume(again bool) bool {
 	}
 	predecessorTmp = filepath.Join(volumeRoot, ".predecessor.tar.gz") // a multi-GB download lands on the volume
 	log.Printf("volume: %d of %d state directories on %s", n, len(dirs), volumeRoot)
-	if again {
-		restoreVolumeFiles()
-	}
 	go func() {
 		for ; ; time.Sleep(mirrorEvery) {
 			mirrorVolumeFiles()
 		}
 	}()
 	return true
-}
-
-// restoreVolumeFiles: the snapshot's single files back from the volume (their copy of at most mirrorEvery ago) onto a
-// machine started again
-func restoreVolumeFiles() {
-	home, _ := os.UserHomeDir()
-	_, files := volumeSplit()
-	n := 0
-	for _, rel := range files {
-		b, err := os.ReadFile(filepath.Join(volumeRoot, "home", rel))
-		if err != nil {
-			continue
-		}
-		dst := filepath.Join(home, rel)
-		os.MkdirAll(filepath.Dir(dst), 0o755)
-		if err := os.WriteFile(dst, b, 0o600); err != nil {
-			log.Printf("volume: %s: %v", rel, err)
-			continue
-		}
-		n++
-	}
-	log.Printf("volume: %d single files back from %s", n, volumeRoot)
 }
 
 // mirrorVolumeFiles: the snapshot's single files copied onto the volume (only on a machine with one)

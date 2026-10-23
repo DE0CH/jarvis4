@@ -139,8 +139,8 @@ struct SessionRow: View {
       Text(line1).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
       if busy == nil, m.state == "failed" {
         // why it failed, in the list too (router/failures.go): the reason's start, the rest on the session's page
-        if let l = m.lost {
-          HStack(spacing: 6) { StatusPill(text: "Stopped outside Jarvis", color: .red); if l.inPlace { Text("nothing lost").font(.footnote) } }
+        if m.lost != nil {
+          StatusPill(text: "Stopped outside Jarvis", color: .red)
             .accessibilityIdentifier("lost-row-\(m.id)")
         }
         Text(m.error ?? "No reason recorded").font(.footnote).foregroundStyle(.red).lineLimit(3)
