@@ -143,10 +143,12 @@ mkdir -p /etc/apt/keyrings
 curl -fsSL https://apt.grafana.com/gpg.key | gpg --yes --dearmor -o /etc/apt/keyrings/grafana.gpg
 echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" > /etc/apt/sources.list.d/grafana.list
 apt-get update -y && apt-get install -y "alloy=$ALLOY_VERSION" && apt-mark hold alloy
+# the same text as the ConfigMap host-alloy in k8s/cluster/obs/alloy.yaml (which keeps it so on the server)
 cat > /etc/alloy/config.alloy <<ALLOY
-// stub (infra/cloud-init.sh): the module is infra/alloy/box.alloy on main, pulled every 5 min
+// stub: the module is infra/alloy/box.alloy on DE0CH/jarvis4 main, pulled every 5 min. The names "jarvis2" and
+// "box" stay as they are: Alloy keys its read positions and journal cursor by them.
 import.git "jarvis2" {
-repository     = "https://github.com/DE0CH/jarvis2"
+repository     = "https://github.com/DE0CH/jarvis4"
 revision       = "main"
 path           = "infra/alloy/box.alloy"
 pull_frequency = "5m"

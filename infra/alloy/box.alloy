@@ -1,7 +1,8 @@
 // The boxes' log and metrics agent (docs/DESIGN.md "Logs and metrics"). Grafana Alloy runs on each box's HOST as a
 // systemd unit (infra/cloud-init.sh), outside k3s, so it keeps working, and ships what happened, when the cluster on
-// that box doesn't. The host's /etc/alloy/config.alloy is a stub that imports this module from the public repo
-// (import.git, every 5 min), so a change here reaches both boxes as a visible commit, like everything else.
+// that box doesn't. The host's /etc/alloy/config.alloy is a stub that imports this module from DE0CH/jarvis4
+// (import.git, every 5 min; k8s/cluster/obs/alloy.yaml host-alloy keeps the stub so), so a change here reaches every
+// node as a visible commit, like everything else.
 //
 // The cluster's other nodes (infra/cluster-node.sh) have no host Alloy: the DaemonSet k8s/cluster/obs/alloy.yaml runs
 // this same module in a pod on each of them (host paths mounted under /host), with `node` set, so a new node ships from

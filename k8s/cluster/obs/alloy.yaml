@@ -72,3 +72,74 @@ spec:
         - { name: data, hostPath: { path: /var/lib/jarvis2-alloy, type: DirectoryOrCreate } }
         - { name: host, hostPath: { path: /, type: Directory } }
         - { name: sys, hostPath: { path: /sys, type: Directory } }
+---
+# host-alloy: keeps the server's host Alloy importing its module from DE0CH/jarvis4 (the stub infra/cloud-init.sh writes;
+# servers built before 2026-10-23 imported it from DE0CH/jarvis2). On the control-plane node only, every 60 s and
+# idempotently, in the host's namespaces like node-net: when /etc/alloy/config.alloy differs from `stub`, it stops
+# Alloy (which saves its read positions), drops Alloy's git clone of any other repository (import.git keeps the
+# clone's origin otherwise), writes the stub and starts Alloy again. The stub's names stay "jarvis2"/"box", so the
+# positions and the journal cursor carry over: no gap and nothing shipped twice. Its `node` is the hostname (the
+# module's default), as the DaemonSet above sets it on the other nodes.
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: host-alloy, namespace: jarvis2-obs }
+data:
+  stub: |
+    // stub: the module is infra/alloy/box.alloy on DE0CH/jarvis4 main, pulled every 5 min. The names "jarvis2" and
+    // "box" stay as they are: Alloy keys its read positions and journal cursor by them.
+    import.git "jarvis2" {
+    repository     = "https://github.com/DE0CH/jarvis4"
+    revision       = "main"
+    path           = "infra/alloy/box.alloy"
+    pull_frequency = "5m"
+    }
+    jarvis2.main "box" {
+    box = "cluster"
+    }
+  host-alloy.sh: |
+    set -u
+    F=/etc/alloy/config.alloy
+    [ -f "$F" ] || { echo "host-alloy: no host Alloy here"; exit 0; }
+    [ "$(cat "$F")" = "$STUB" ] && exit 0
+    systemctl stop alloy
+    for c in $(find /var/lib/alloy -path '*/.git/config' 2>/dev/null); do
+      grep -q 'url = https://github.com/DE0CH/jarvis4$' "$c" || { rm -rf "${c%/.git/config}"; echo "host-alloy: dropped the clone ${c%/.git/config}"; }
+    done
+    printf '%s\n' "$STUB" > "$F.new" && mv "$F.new" "$F"
+    [ -f /etc/alloy/grafana.env ] && systemctl start alloy
+    echo "host-alloy: the stub imports DE0CH/jarvis4 now; alloy $(systemctl is-active alloy)"
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: { name: host-alloy, namespace: jarvis2-obs }
+spec:
+  selector: { matchLabels: { app: host-alloy } }
+  updateStrategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 1 } }
+  template:
+    metadata: { labels: { app: host-alloy } }
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions: [{ key: node-role.kubernetes.io/control-plane, operator: Exists }]
+      hostPID: true
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      priorityClassName: system-node-critical
+      tolerations: [{ operator: Exists }]
+      containers:
+        - name: host-alloy
+          image: busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+          command:
+            - sh
+            - -c
+            - |
+              while true; do
+                nsenter -t 1 -m -u -i -n -p -- env STUB="$(cat /cfg/stub)" sh -c "$(cat /cfg/host-alloy.sh)"
+                sleep 60
+              done
+          volumeMounts: [{ name: cfg, mountPath: /cfg, readOnly: true }]
+          resources: { requests: { cpu: 5m, memory: 8Mi }, limits: { memory: 32Mi } }
+          securityContext: { privileged: true }
+      volumes: [{ name: cfg, configMap: { name: host-alloy } }]

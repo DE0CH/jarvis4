@@ -390,7 +390,8 @@ Grafana Cloud (Free, stack `jumboshortbread1389`, EU Germany). Grafana Labs join
 boundary): logs leave the boxes, so secret shapes are replaced first (Bearer tokens, `sk-ant-`, GitHub tokens, age and
 PEM private keys, the kit's prefix), as a second layer under "the core logs nothing, the router logs no value".
 
-- **Each box's host:** Alloy (`infra/alloy/box.alloy`, imported from git by a stub cloud-init writes; credentials from
+- **Each box's host:** Alloy (`infra/alloy/box.alloy`, imported from DE0CH/jarvis4 by a stub cloud-init writes, which
+  the DaemonSet `jarvis2-obs/host-alloy` keeps so on the cluster's server; credentials from
   the k8s Secret `jarvis2-obs/alloy`, which a host timer copies out) ships every pod's log, the journal (persistent:
   after a hard reset the last minutes of the previous boot still go out) and metrics: PSI memory/IO pressure, OOM kills,
   disk, network, per-container memory and CPU. Labels: `box` (control | services | cluster), `source` (pod | journal),
@@ -401,8 +402,10 @@ PEM private keys, the kit's prefix), as a second layer under "the core logs noth
 - **The session machines:** the Fly app `jarvis2-log-shipper` in org jarvis2-370 (`services/log-shipper`: Fly's log
   shipper with only the Loki sink, the same redaction, and no listening port: Vector's API would let any machine on the
   org's network tap every session's log), label `box="fly"`.
-- **Alerts** (rules as code: `infra/grafana.py`) go to Discord #jarvis2-alerts: memory pressure, OOM kills, disk,
-  Flux failing, control-plane restarts, a new core (Deyao Recovers), a box gone quiet, and the external probe: Grafana
+- **Alerts** (rules as code: `infra/grafana.py`, Jarvis 4's own folder and contact point in the stack Jarvis 2 shares)
+  go to Discord #jarvis2-alerts: per node memory pressure, OOM kills, disk and a node gone quiet (any node that has
+  shipped in the last 24 h, so new nodes need nothing), the whole cluster gone quiet, Flux failing, control-plane
+  restarts, and the external probe: Grafana
   Synthetic Monitoring calls `https://jarvis4.deyaochen.com/healthz` every minute from London and Frankfurt with its own
   Access service token (path-scoped Access app; `router/healthz.go` answers 200 only while the router and its core
   serve; on a box with no core, while the router serves and the kernel is healthy, `router/kernelhealth.go`). A rule whose query Grafana itself can't run keeps its last state; two `notice` canaries say when Grafana

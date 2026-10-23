@@ -791,7 +791,8 @@ metric series, 14 days). The account logs in **with GitHub as DE0CH** (no Grafan
   GRAFANA_METRICS_USER=3676371 infra/router-secrets.py --box <box> --part alloy GRAFANA_LOGS_URL GRAFANA_LOGS_USER
   GRAFANA_METRICS_URL GRAFANA_METRICS_USER GRAFANA_WRITE_TOKEN`.
 - **The cluster's extra nodes:** the DaemonSet `jarvis2-obs/alloy` (k8s/cluster/obs/alloy.yaml) runs the same module
-  on every node but the server, with the Secret `jarvis2-obs/alloy`; a node that ships nothing: its pod's log is in
+  on every node but the server, with the Secret `jarvis2-obs/alloy` (the server's host Alloy imports it from
+  DE0CH/jarvis4 too: the DaemonSet `jarvis2-obs/host-alloy` keeps its stub so); a node that ships nothing: its pod's log is in
   Grafana only if it got that far, so look at `{box="cluster",namespace="kube-system"}` for its scheduling and at the
   node's `up` (`up{box="cluster",node="…"}`).
 - **Session machines:** the Fly app `jarvis2-log-shipper` (`services/log-shipper`; deploy: `FLY_API_TOKEN=$JARVIS2_FLY_TOKEN
@@ -799,11 +800,13 @@ metric series, 14 days). The account logs in **with GitHub as DE0CH** (no Grafan
   `ACCESS_TOKEN` (`flyctl tokens create readonly jarvis2-370 --from-existing` with the org token), `LOKI_URL=https://logs-prod-012.grafana.net`,
   `LOKI_USERNAME=1833850`, `LOKI_PASSWORD` = `GRAFANA_WRITE_TOKEN`. One shared-cpu-1x 256 MB machine (USD 2.52/month at the budget's lhr rates, in
   the Fly budget; the Machines tab labels the app with what it is and this cost, `jarvisOwnApps` in `router/flyorgs.go`).
-- **Alerts:** `GRAFANA_ADMIN_TOKEN=… GRAFANA_DISCORD_WEBHOOK=… infra/grafana.py apply --boxes control,services` (name only
-  the boxes that exist; `show` lists the rules), to Discord #jarvis2-alerts (channel 1560217907072344104 in DE0CH's
-  server). The probe: `GRAFANA_SM_TOKEN=… HEALTH_PROBE_ID=… HEALTH_PROBE_SECRET=… infra/grafana.py probe`.
+- **Alerts:** `GRAFANA_ADMIN_TOKEN=… GRAFANA_DISCORD_WEBHOOK=… infra/grafana.py apply` (folder "Jarvis 4", group
+  `cluster`, contact point `jarvis4-discord`, template `jarvis4`; Jarvis 2's own rules, contact point, template and the
+  stack's policy are left alone; `show` lists the rules), to Discord #jarvis2-alerts (channel 1560217907072344104 in
+  DE0CH's server). Per node (label `node`): memory pressure, OOM, disk and "Gone quiet" (a node that sent metrics in
+  the last 24 h and none for 5 min), so a new node needs no change here. The probe: `GRAFANA_SM_TOKEN=… HEALTH_PROBE_ID=… HEALTH_PROBE_SECRET=… infra/grafana.py probe`.
   Each rule carries three annotations, `summary` (what is wrong), `meaning` and `action`, and the contact point renders
-  them through the template `jarvis2` (a new rule gets all three). In a session the old image's
+  them through the template `jarvis4` (a new rule gets all three). In a session the old image's
   `pull-secrets --exec CMD` (or `session-secret --keys … --exec CMD`) runs it with `jarvis2-ops`; `show` prints each
   rule's pending period, no-data and error states, and whether the live template matches the code.
 - **"DatasourceError" / "Grafana can't query its own metrics (or logs)":** Grafana Cloud's rule evaluator couldn't
