@@ -126,7 +126,7 @@ exec env -i PATH="$PATH" HOME="$HOME" \\
   DATABASE_URL="$DBURL" ROUTER_THROWAWAY=1 NO_ACCESS=1 RECORDS_OFF=1 CORE_URL=http://127.0.0.1:8090 ADDR=127.0.0.1:18080 MACHINE_ADDR=127.0.0.1:18081 \\
   DATA_DIR="$W/data" WEB_DIR="$ROOT/web" TASKS_DIR="$ROOT/tasks" POLICY_FILE="$ROOT/policy/stores.json" \\
   SESSION_IMAGE="$SIMG" SESSION_IMAGE_SIG="$SSIG" SESSION_IMAGE_SIGS_FILE="$ROOT/k8s/cluster/router/session-image-sigs.txt" \\
-  FLY_REGION=lhr MACHINE_URL="$MURL" WG_CONFIG="$W/wg.conf" FLY_READ_TOKEN="\$(cat "$W/fly-read")" \\
+  FLY_REGION=lhr MACHINE_URL="$MURL" FLY_READ_TOKEN="\$(cat "$W/fly-read")" \\
   SETUP_KEY="$(cat "$W/keys/setup.pub")" \\
   BACKUP_ENDPOINT=http://127.0.0.1:18098 BACKUP_BUCKET=jarvis2-backup-replica BACKUP_READ_ACCESS_KEY=replica BACKUP_READ_SECRET_KEY="$S3_SECRET" \\
   "$W/router"
@@ -135,8 +135,11 @@ chmod 700 "$W/router.sh"
 nohup "$W/router.sh" > "$W/router.log" 2>&1 & echo $! > "$W/router.pid"
 for _ in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:18080/api/state && break; sleep 1; done
 curl -sf -o /dev/null http://127.0.0.1:18080/api/state || { echo "the router didn't come up"; tail -20 "$W/router.log"; exit 1; }
-for _ in $(seq 20); do grep -q "WireGuard peer from" "$W/router.log" && break; sleep 1; done
-grep -q "WireGuard peer from" "$W/router.log" || { echo "the router has no WireGuard peer"; tail -20 "$W/router.log"; exit 1; }
+# the machines' WireGuard peer runs in the gateway (router/mgateway.go), as on the cluster, passing /m to the router
+(env -i PATH="$PATH" HOME="$HOME" WG_CONFIGS="$W/wg.conf" POD_NAME=m-gateway-0 M_GATEWAY_TO=http://127.0.0.1:18081 HEALTH_ADDR=127.0.0.1:18082 \
+  nohup "$W/router" m-gateway > "$W/m-gateway.log" 2>&1 & echo $! > "$W/m-gateway.pid")
+for _ in $(seq 20); do grep -q "WireGuard peer from" "$W/m-gateway.log" && break; sleep 1; done
+grep -q "WireGuard peer from" "$W/m-gateway.log" || { echo "the gateway has no WireGuard peer"; tail -20 "$W/m-gateway.log"; exit 1; }
 
 # what the setup answers (ios/ci/replica-setup.sh) need: setup.py pointed at this stack
 cat > "$W/env" <<EOF

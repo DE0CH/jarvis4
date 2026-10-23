@@ -375,7 +375,7 @@ jobs:
           xcrun xcresulttool export attachments --path replica.xcresult --output-path out/shots || true
           cp test.log out/ 2>/dev/null || true
           grep -n "error:" xcodebuild.log | head -100 > out/build-errors.txt || true
-          for f in core.log router.log s3.log setup.log; do cp "$RUNNER_TEMP/stack/$f" out/ 2>/dev/null || true; done
+          for f in core.log router.log m-gateway.log s3.log setup.log; do cp "$RUNNER_TEMP/stack/$f" out/ 2>/dev/null || true; done
           gzip -f out/sim.log 2>/dev/null || true
           mkdir -p out/crash
           find ~/Library/Logs/DiagnosticReports -newer ios/project.yml -name "*.ips" -exec cp {} out/crash/ \; 2>/dev/null || true
