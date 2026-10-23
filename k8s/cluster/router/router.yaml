@@ -33,7 +33,7 @@ spec:
       securityContext: { fsGroup: 65532 }
       containers:
         - name: router
-          image: ghcr.io/de0ch/jarvis4-router:sha-5eac7314a533@sha256:6432b8d49260396152334db7be4b3bfd42635db643dd2620cbf0ab09cb7ffc2a
+          image: ghcr.io/de0ch/jarvis4-router:sha-a0dd0108aeef@sha256:677a7d3b06c60f7d55af0bda8b5e086350918f93cf7986265c72c42dc2b7ed1c
           env:
             - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }  # the standby proxies to the leader's
             # the kernel's components (k8s/cluster/kernel): %s is the component's Service name
@@ -53,9 +53,9 @@ spec:
             # its /data, age-encrypted to this key (the same key as Jarvis 2's router backups: the private half is
             # ROUTER_BACKUP_AGE_KEY in the infra store), to the Storage Box claude-records/.jarvis4-router (router/backup.go)
             - { name: ROUTER_BACKUP_AGE_PUB, value: "age1zkvnmh6wu5hyvxppvxf9c83l6q5af7xqqlxtmahkz0l5hhwqq90s8edvu0" }
-            - { name: SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session:sha-5eac7314a533@sha256:b241176d01685baeec2328cdbbe726e40e100cd39d6cea1eb968745cd7786496" }
+            - { name: SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session:sha-a0dd0108aeef@sha256:da3d2794d120db57a584613aeb9e386f04b706f102009e6b7d08627fe786e693" }
             # the CI key's signature over "jarvis2-session-image <SESSION_IMAGE>" (images.yml, keys/ci.pub): the phone checks it
-            - { name: SESSION_IMAGE_SIG, value: "MEUCIQCXCSMZppnv+s1q3pYNzg9bO5kAY6Sw/EkqpllLV2CMMAIgX1xS0alyvuMoIETJKrWXjJdhPv6ofHIH6qi5Uuk7WZw=" }
+            - { name: SESSION_IMAGE_SIG, value: "MEUCIFk32fAMFMosmBzOckgGQks5mwqWCtl7UpmirYlp/TxUAiEAw2IJlzpJCusSmWQooGyFFU2Wk97K/gSAmTbj2BhRatU=" }
             # every earlier CI-pinned session image with its signature (session-image-sigs.txt here, images.yml)
             - { name: SESSION_IMAGE_SIGS_FILE, value: /sigs/session-image-sigs.txt }
             - { name: FLY_REGION, value: lhr }
@@ -165,7 +165,7 @@ spec:
       securityContext: { fsGroup: 65532 } # wg.conf is mode 0440: readable through the group
       containers:
         - name: m-gateway
-          image: ghcr.io/de0ch/jarvis4-router:sha-5eac7314a533@sha256:6432b8d49260396152334db7be4b3bfd42635db643dd2620cbf0ab09cb7ffc2a
+          image: ghcr.io/de0ch/jarvis4-router:sha-a0dd0108aeef@sha256:677a7d3b06c60f7d55af0bda8b5e086350918f93cf7986265c72c42dc2b7ed1c
           args: [m-gateway]
           env:
             - { name: POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
