@@ -402,7 +402,7 @@ PEM private keys, the kit's prefix), as a second layer under "the core logs noth
   Flux failing, control-plane restarts, a new core (Deyao Recovers), a box gone quiet, and the external probe: Grafana
   Synthetic Monitoring calls `https://jarvis4.deyaochen.com/healthz` every minute from London and Frankfurt with its own
   Access service token (path-scoped Access app; `router/healthz.go` answers 200 only while the router and its core
-  serve). A rule whose query Grafana itself can't run keeps its last state; two `notice` canaries say when Grafana
+  serve; on a box with no core, while the router serves and the kernel is healthy, `router/kernelhealth.go`). A rule whose query Grafana itself can't run keeps its last state; two `notice` canaries say when Grafana
   hasn't been able to query its own metrics or logs for 15 min (DECISIONS 211). Each Discord message reads: what is
   wrong, what it means, what to do (template `jarvis2`).
 

@@ -46,6 +46,16 @@ func TestKernelHealth(t *testing.T) {
 	if kv := state(); kv["checked"] != true || kv["healthy"] != false {
 		t.Fatalf("api/state after the check: %v", kv)
 	}
+	healthz := func() (int, string) {
+		mux := http.NewServeMux()
+		r.registerHealthz(mux.Handle)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("GET", "/healthz", nil))
+		return rec.Code, rec.Body.String()
+	}
+	if c, b := healthz(); c != 503 || !strings.Contains(b, "No signed kernel roster") || strings.Contains(b, `"core"`) {
+		t.Fatalf("healthz, no roster: %d %s", c, b)
+	}
 
 	rdo(t, h, "POST", "/api/kernel/root-key", map[string]string{"rootKey": k.Root.PublicKey()}, nil)
 	payload := rosterOf(t, k)
@@ -58,6 +68,10 @@ func TestKernelHealth(t *testing.T) {
 	}
 	if kv := state(); kv["healthy"] != true {
 		t.Fatalf("api/state healthy: %v", kv)
+	}
+	// (this rig's router has no database connected: the db part alone keeps it at 503 here)
+	if c, b := healthz(); !strings.Contains(b, `"kernel":"healthy"`) || (c != 200) != strings.Contains(b, "no database") {
+		t.Fatalf("healthz, healthy kernel (no core): %d %s", c, b)
 	}
 	if _, out := rdo(t, h, "GET", "/api/kernel", nil, nil); out["health"].(map[string]any)["healthy"] != true {
 		t.Fatalf("GET /api/kernel health: %v", out)
@@ -78,6 +92,9 @@ func TestKernelHealth(t *testing.T) {
 	want := []string{"notary not answering", "mover holding no roster", "merger not holding the current roster"}
 	if hc.Healthy || !slices.Equal(hc.Problems, want) {
 		t.Fatalf("broken components: %q", hc.Problems)
+	}
+	if c, b := healthz(); c != 503 || !strings.Contains(b, "notary not answering") {
+		t.Fatalf("healthz, broken components: %d %s", c, b)
 	}
 
 	// the router's re-post makes the roster stale (mover refuses it: new keys); the stale roster is named

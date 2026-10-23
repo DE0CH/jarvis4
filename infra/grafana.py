@@ -103,7 +103,7 @@ def rules(boxes):
         rule("j2-probe", "jarvis4.deyaochen.com /healthz failing",
              "The external probe gets no 200 from https://jarvis4.deyaochen.com/healthz for 3 min.",
              PROM, '1 - min(probe_success{job="jarvis2-healthz"})', 0, for_="3m", severity="critical",
-             meaning="Jarvis 4 isn't serving: the router, the tunnel or the core is down, so the app and sessions can't reach it.",
+             meaning="Jarvis 4 isn't serving: the router, the tunnel or the kernel (the core, on a box with one) is down, so the app and sessions can't reach it.",
              action="Open the app to confirm, then check the control box's logs in Grafana."),
         # canaries: the only rules that page on a query error, after it has lasted 15 min, as a notice. A real
         # series keeps them Normal (gt a value never reached); an empty result is No data = OK.
