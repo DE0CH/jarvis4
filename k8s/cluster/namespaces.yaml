@@ -1,10 +1,11 @@
 # The one cluster's namespaces (docs/PLAN-cluster.md), from git like everything else on it.
-# jarvis2-obs: only a Secret, the Grafana Cloud write credentials the host's Alloy reads (infra/alloy/).
+# jarvis2-obs: the Grafana Cloud write credentials the server's host Alloy reads (infra/alloy/), and the Alloy DaemonSet
+# on the other nodes (k8s/cluster/obs; privileged: it reads the host's logs, /proc and /sys)
 apiVersion: v1
 kind: Namespace
 metadata:
   name: jarvis2-obs
-  labels: { pod-security.kubernetes.io/enforce: restricted, jarvis2/ns: obs }
+  labels: { pod-security.kubernetes.io/enforce: privileged, jarvis2/ns: obs }
 ---
 # jarvis2-edge: cloudflared of the tunnel jarvis2-cluster (only kernel-id.deyaochen.com, behind Access) and what it serves
 apiVersion: v1

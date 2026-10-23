@@ -1,0 +1,74 @@
+# alloy: Grafana Alloy on every node of the cluster except the server, as a DaemonSet, so a node infra/cluster-node.sh
+# adds ships its pods' logs, its journal, its node metrics and its containers' metrics to Grafana from the moment it
+# joins (docs/DESIGN.md "Logs and metrics"). The server (node-role control-plane) runs Alloy on its host instead
+# (infra/cloud-init.sh), outside k3s, so it keeps shipping when the cluster doesn't; this DaemonSet stays off it.
+#
+# The pod runs the same module as the hosts, infra/alloy/box.alloy on main (import.git, every 5 min), with the host's
+# / mounted at /host (pod logs, the journal, /proc, /sys, containerd's socket) and labels box="cluster",
+# node=<the node's name>. Credentials: the Secret jarvis2-obs/alloy (k8s/cluster/secrets/alloy.enc.yaml). Its read
+# positions and journal cursor live on the host (/var/lib/jarvis2-alloy), so a restarted pod doesn't ship twice.
+# Privileged and on the host's network and PID namespace, like node-net: what Flux applies is already cluster admin.
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: alloy-node, namespace: jarvis2-obs }
+data:
+  config.alloy: |
+    // stub (k8s/cluster/obs/alloy.yaml): the module is infra/alloy/box.alloy on main, pulled every 5 min
+    import.git "jarvis4" {
+      repository     = "https://github.com/DE0CH/jarvis4"
+      revision       = "main"
+      path           = "infra/alloy/box.alloy"
+      pull_frequency = "5m"
+    }
+    jarvis4.main "node" {
+      box       = "cluster"
+      node      = sys.env("NODE_NAME")
+      host_root = "/host"
+    }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: { name: alloy, namespace: jarvis2-obs }
+spec:
+  selector: { matchLabels: { app: alloy } }
+  updateStrategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 1 } }
+  template:
+    metadata: { labels: { app: alloy } }
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions: [{ key: node-role.kubernetes.io/control-plane, operator: DoesNotExist }]
+      hostNetwork: true
+      hostPID: true
+      dnsPolicy: Default
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      priorityClassName: system-node-critical
+      tolerations: [{ operator: Exists }]
+      containers:
+        - name: alloy
+          image: grafana/alloy:v1.20.1@sha256:2aa2099af76c0098d4af7a4d6e48f86cb66dc1a000222ad927a1c67c6542d13f
+          args:
+            - run
+            - /etc/alloy/config.alloy
+            - --storage.path=/var/lib/alloy/data
+            - --server.http.listen-addr=127.0.0.1:12345
+          env:
+            - name: NODE_NAME
+              valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
+          envFrom: [{ secretRef: { name: alloy } }]
+          volumeMounts:
+            - { name: cfg, mountPath: /etc/alloy, readOnly: true }
+            - { name: data, mountPath: /var/lib/alloy/data }
+            - { name: host, mountPath: /host, readOnly: true, mountPropagation: HostToContainer }
+            # cAdvisor finds the cgroups through /sys/fs/cgroup, so the host's /sys goes there too
+            - { name: sys, mountPath: /sys, readOnly: true }
+          resources: { requests: { cpu: 20m, memory: 96Mi }, limits: { memory: 300Mi } }
+          securityContext: { privileged: true, runAsUser: 0 }
+      volumes:
+        - { name: cfg, configMap: { name: alloy-node } }
+        - { name: data, hostPath: { path: /var/lib/jarvis2-alloy, type: DirectoryOrCreate } }
+        - { name: host, hostPath: { path: /, type: Directory } }
+        - { name: sys, hostPath: { path: /sys, type: Directory } }

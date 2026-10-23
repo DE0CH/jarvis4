@@ -1,0 +1,4 @@
+# Logs and metrics from every node but the server (the server's host runs Alloy itself: infra/cloud-init.sh).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: [alloy.yaml]

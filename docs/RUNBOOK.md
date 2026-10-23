@@ -779,8 +779,9 @@ metric series, 14 days). The account logs in **with GitHub as DE0CH** (no Grafan
 
 - **Query from a session** with `GRAFANA_READ_TOKEN`:
   `curl -u "1833850:$GRAFANA_READ_TOKEN" -G https://logs-prod-012.grafana.net/loki/api/v1/query_range --data-urlencode
-  'query={box="control",container="router"}'` (labels `box` control | services | fly, `source` pod | journal,
-  `namespace`, `container`, `unit`, `fly_app`), and Prometheus at
+  'query={box="control",container="router"}'` (labels `box` control | services | cluster | fly, `source` pod |
+  journal, `namespace`, `container`, `unit`, `fly_app`; on the cluster's extra nodes also `node`, e.g.
+  `{box="cluster",node="jarvis2-cluster-2"}`), and Prometheus at
   `https://prometheus-prod-65-prod-eu-west-2.grafana.net/api/prom/api/v1/query` with user 3676371 (e.g.
   `rate(node_pressure_memory_stalled_seconds_total{box="control"}[5m])`, `container_memory_working_set_bytes`).
 - **The boxes:** Alloy on each host (cloud-init; `systemctl status alloy` would show it, but there is no way in: a box
@@ -789,6 +790,10 @@ metric series, 14 days). The account logs in **with GitHub as DE0CH** (no Grafan
   GRAFANA_LOGS_USER=1833850 GRAFANA_METRICS_URL=https://prometheus-prod-65-prod-eu-west-2.grafana.net/api/prom/push
   GRAFANA_METRICS_USER=3676371 infra/router-secrets.py --box <box> --part alloy GRAFANA_LOGS_URL GRAFANA_LOGS_USER
   GRAFANA_METRICS_URL GRAFANA_METRICS_USER GRAFANA_WRITE_TOKEN`.
+- **The cluster's extra nodes:** the DaemonSet `jarvis2-obs/alloy` (k8s/cluster/obs/alloy.yaml) runs the same module
+  on every node but the server, with the Secret `jarvis2-obs/alloy`; a node that ships nothing: its pod's log is in
+  Grafana only if it got that far, so look at `{box="cluster",namespace="kube-system"}` for its scheduling and at the
+  node's `up` (`up{box="cluster",node="…"}`).
 - **Session machines:** the Fly app `jarvis2-log-shipper` (`services/log-shipper`; deploy: `FLY_API_TOKEN=$JARVIS2_FLY_TOKEN
   flyctl deploy -c services/log-shipper/fly.toml --ha=false --remote-only`). Its secrets: `ORG=jarvis2-370`,
   `ACCESS_TOKEN` (`flyctl tokens create readonly jarvis2-370 --from-existing` with the org token), `LOKI_URL=https://logs-prod-012.grafana.net`,

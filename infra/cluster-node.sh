@@ -21,8 +21,8 @@
 #     infra/cluster-node-init.sh (WARP for IPv4, the private guard, k3s agent with node label jarvis4/pool=services)
 #  5. waits until the server's k3s logs the node, then takes the join token out of git (Flux prunes it)
 # Afterwards: Jarvis 4's shared services may go on (infra/services-seed.sh, then `services` in
-# k8s/cluster/kustomization.yaml). Pods on the new node don't ship logs to Grafana yet (Alloy runs on the server's host
-# only).
+# k8s/cluster/kustomization.yaml). The node ships its logs and metrics to Grafana by itself (the Alloy DaemonSet
+# k8s/cluster/obs, label node="NAME").
 set -euo pipefail
 cd "$(dirname "$0")/.."
 : "${HETZNER_JARVIS2_MOCK_API:?}" "${GITHUB_TOKEN:?}" "${GRAFANA_READ_TOKEN:?}"

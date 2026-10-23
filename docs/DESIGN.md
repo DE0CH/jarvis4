@@ -393,8 +393,11 @@ PEM private keys, the kit's prefix), as a second layer under "the core logs noth
 - **Each box's host:** Alloy (`infra/alloy/box.alloy`, imported from git by a stub cloud-init writes; credentials from
   the k8s Secret `jarvis2-obs/alloy`, which a host timer copies out) ships every pod's log, the journal (persistent:
   after a hard reset the last minutes of the previous boot still go out) and metrics: PSI memory/IO pressure, OOM kills,
-  disk, network, per-container memory and CPU. Labels: `box` (control | services), `source` (pod | journal),
+  disk, network, per-container memory and CPU. Labels: `box` (control | services | cluster), `source` (pod | journal),
   `namespace`, `container`, `unit`.
+- **The cluster's other nodes** (infra/cluster-node.sh): no host Alloy; the DaemonSet `jarvis2-obs/alloy`
+  (k8s/cluster/obs) runs the same module in a privileged pod on every node but the server (the host's / under /host),
+  label `node` = the node's name, so a new node ships from the moment it joins.
 - **The session machines:** the Fly app `jarvis2-log-shipper` in org jarvis2-370 (`services/log-shipper`: Fly's log
   shipper with only the Loki sink, the same redaction, and no listening port: Vector's API would let any machine on the
   org's network tap every session's log), label `box="fly"`.

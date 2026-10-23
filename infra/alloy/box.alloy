@@ -3,6 +3,10 @@
 // that box doesn't. The host's /etc/alloy/config.alloy is a stub that imports this module from the public repo
 // (import.git, every 5 min), so a change here reaches both boxes as a visible commit, like everything else.
 //
+// The cluster's other nodes (infra/cluster-node.sh) have no host Alloy: the DaemonSet k8s/cluster/obs/alloy.yaml runs
+// this same module in a pod on each of them (host paths mounted under /host), with `node` set, so a new node ships from
+// the moment it joins.
+//
 // Ships to Grafana Cloud (Free, EU stack): every pod's log (/var/log/pods), the journal (k3s, the kernel's OOM kills,
 // warp-svc, cloud-init; journald is persistent, so after a hard reset the previous boot's last minutes go out from the
 // saved cursor), node metrics (with PSI: memory pressure shows minutes before a thrash) and per-container cgroup
@@ -13,7 +17,17 @@
 // logs no value; Grafana Labs is a provider we trust to its contract, DESIGN "Trust boundary").
 
 declare "main" {
-  argument "box" { comment = "control or services" }
+  argument "box" { comment = "control, services or cluster" }
+  argument "node" {
+    comment  = "the node's name, label `node` on everything this ships"
+    optional = true
+    default  = constants.hostname
+  }
+  argument "host_root" {
+    comment  = "prefix of the host's paths: \"\" on the host, \"/host\" in the DaemonSet's pod"
+    optional = true
+    default  = ""
+  }
 
   // ---- logs ----
   loki.write "grafana" {
@@ -24,7 +38,7 @@ declare "main" {
         password = sys.env("GRAFANA_WRITE_TOKEN")
       }
     }
-    external_labels = { box = argument.box.value }
+    external_labels = { box = argument.box.value, node = argument.node.value }
   }
 
   loki.process "redact" {
@@ -40,7 +54,7 @@ declare "main" {
   }
 
   local.file_match "pods" {
-    path_targets = [{ "__path__" = "/var/log/pods/*/*/*.log" }]
+    path_targets = [{ "__path__" = argument.host_root.value + "/var/log/pods/*/*/*.log" }]
     sync_period  = "10s"
   }
 
@@ -56,7 +70,7 @@ declare "main" {
     // /var/log/pods/<namespace>_<pod>_<uid>/<container>/<n>.log
     stage.regex {
       source     = "filename"
-      expression = "^/var/log/pods/(?P<namespace>[^_]+)_(?P<pod>[^_]+)_[^/]+/(?P<container>[^/]+)/"
+      expression = "^(/host)?/var/log/pods/(?P<namespace>[^_]+)_(?P<pod>[^_]+)_[^/]+/(?P<container>[^/]+)/"
     }
     stage.labels {
       values = { namespace = "", container = "" }
@@ -92,6 +106,7 @@ declare "main" {
     forward_to    = [loki.process.redact.receiver]
     relabel_rules = loki.relabel.journal.rules
     max_age       = "48h"
+    path          = argument.host_root.value + "/var/log/journal"
     labels        = { source = "journal" }
   }
 
@@ -104,10 +119,13 @@ declare "main" {
         password = sys.env("GRAFANA_WRITE_TOKEN")
       }
     }
-    external_labels = { box = argument.box.value }
+    external_labels = { box = argument.box.value, node = argument.node.value }
   }
 
   prometheus.exporter.unix "node" {
+    rootfs_path    = coalesce(argument.host_root.value, "/")
+    procfs_path    = argument.host_root.value + "/proc"
+    sysfs_path     = argument.host_root.value + "/sys"
     set_collectors = ["cpu", "diskstats", "filesystem", "loadavg", "meminfo", "netdev", "pressure", "vmstat", "uname", "time", "stat"]
     filesystem {
       mount_points_exclude = "^/(dev|proc|run|sys|var/lib/kubelet/pods/.+|run/k3s/.+|var/lib/rancher/k3s/agent/containerd/.+)($|/)"
@@ -131,7 +149,7 @@ declare "main" {
   }
 
   prometheus.exporter.cadvisor "containers" {
-    containerd_host                = "/run/k3s/containerd/containerd.sock"
+    containerd_host                = argument.host_root.value + "/run/k3s/containerd/containerd.sock"
     containerd_namespace           = "k8s.io"
     docker_only                    = false
     store_container_labels         = false
