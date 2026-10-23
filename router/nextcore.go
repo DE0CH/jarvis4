@@ -158,6 +158,29 @@ func (r *Router) relayFor(w http.ResponseWriter, req *http.Request, method, path
 	w.Write(b)
 }
 
+// storesFor: where a request's store call goes — the next core when it names one, else the stores' keeper
+// (storeCore: the kernel's serving secrets on a box with no core); nil when it names a next core there isn't
+func (r *Router) storesFor(req *http.Request) *CoreClient {
+	if c := r.coreFor(req); c != r.core {
+		return c
+	}
+	return r.storeCore()
+}
+
+// relayStores: a store call relayed to storesFor
+func (r *Router) relayStores(w http.ResponseWriter, req *http.Request, method, path string, body []byte) {
+	if r.secretsStores == nil {
+		r.relayFor(w, req, method, path, body)
+		return
+	}
+	c := r.storesFor(req)
+	if c == nil {
+		writeJSON(w, 404, map[string]string{"error": "there is no next core"})
+		return
+	}
+	r.relayTo(w, c, method, path, body)
+}
+
 // coreServing: what c's signed state says it does — "serving", "standby" (Recovered alongside, waiting for a
 // takeover), "handed-off" ("" for an empty core) — and its signing key
 func coreServing(c *CoreClient) (serving, key string, err error) {

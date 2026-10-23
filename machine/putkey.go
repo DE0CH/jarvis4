@@ -27,6 +27,8 @@ import (
 	"log"
 	"os"
 	"strings"
+
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 // writerText: core.WriterText
@@ -72,7 +74,26 @@ func gcmSeal(key, plain, aad []byte) []byte {
 	return append(nonce, g.Seal(nil, nonce, plain, aad)...)
 }
 
-// sealTargets: the store key and the master key, from the core's signed documents (checked with the core key)
+// writeTrust: what a write's targets are checked with — the old core's key, or on a kernel machine secrets' keys as the
+// root key's roster names them (its agreement key: the write's live copy is sealed to it)
+func writeTrust() (signing, agreement string, err error) {
+	if t, ok := readKernelTrust(); ok {
+		r, err := sig.OpenRoster(t.Roster, t.Root)
+		if err != nil {
+			return "", "", fmt.Errorf("the kernel's roster: %w", err)
+		}
+		m, ok := r.Member("secrets")
+		if !ok || m.SigningKey != t.Secrets {
+			return "", "", errors.New("the kernel's roster names no secrets, or another one than this machine booted with")
+		}
+		return m.SigningKey, m.AgreementKey, nil
+	}
+	k, err := readTrim(coreKeyPath)
+	return k, "", err
+}
+
+// sealTargets: the store key and the master key, from the core's (or the kernel secrets') signed documents, checked
+// with its key
 func sealTargets(c *client, coreKey string) (storeKey, master string, err error) {
 	var out struct {
 		Identity struct {
@@ -91,7 +112,7 @@ func sealTargets(c *client, coreKey string) (storeKey, master string, err error)
 			AgreementKey string `json:"agreementKey"`
 		} `json:"phone"`
 	}
-	if out.Identity.SigningKey != coreKey || verifyDoc(coreKey, out.Identity.State, &st) != nil || st.Kind != "core-state" || st.Master == "" || st.Phone == nil {
+	if out.Identity.SigningKey != coreKey || verifyDoc(coreKey, out.Identity.State, &st) != nil || st.Kind != "core-state" && st.Kind != "secrets-state" || st.Master == "" || st.Phone == nil {
 		return "", "", errors.New("the core's state isn't signed by this machine's core, or the core isn't set up")
 	}
 	var sk struct {
@@ -102,6 +123,9 @@ func sealTargets(c *client, coreKey string) (storeKey, master string, err error)
 	}
 	return sk.StoreKey, st.Master, nil
 }
+
+// liveInfo: the HKDF info a write's live copy is sealed under (kernel/secrets infoLive + store + key)
+func liveInfo(store, key string) string { return "jarvis2/live-key\n" + store + "\n" + key }
 
 // keyWriteRequest: what the router takes (router/storedocs.go keyWriteIn), sealed and signed here
 func keyWriteRequest(storeKey, master string, sig *ecdh.PrivateKey, store, key string, value []byte, del bool, explanation string) (map[string]any, error) {
@@ -170,7 +194,7 @@ func putKeyCmd(args []string, del bool) error {
 			return errors.New("no value on stdin (an empty key is a delete: jarvis2 delete-key)")
 		}
 	}
-	coreKey, err := readTrim(coreKeyPath)
+	coreKey, secretsAgreement, err := writeTrust()
 	if err != nil {
 		return err
 	}
@@ -189,6 +213,14 @@ func putKeyCmd(args []string, del bool) error {
 	req, err := keyWriteRequest(storeKey, master, priv.sig, store, key, value, del, explain)
 	if err != nil {
 		return err
+	}
+	if secretsAgreement != "" && !del {
+		// the live copy (kernel/secrets WriteKeyInput.Live): an open unlock of the store gets the new value at once
+		e, data, err := sealParts(secretsAgreement, value, liveInfo(store, key), nil)
+		if err != nil {
+			return fmt.Errorf("secrets' key: %w", err)
+		}
+		req["live"] = map[string]string{"e": e, "data": data}
 	}
 	var out struct{}
 	if err := c.json("POST", "/m/stores/"+store+"/keys/"+key, req, &out); err != nil {

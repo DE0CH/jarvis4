@@ -28,6 +28,9 @@ type Router struct {
 	// kernel: the kernel's components (kernel.go, kernelline.go); nil while this box has none (KERNEL_URL unset)
 	kernel      *KernelClient
 	kernelLines *lineKeeper // linestate.go: the kernel secrets' line state
+	// secretsStores: on a box with no core (NO_CORE=1), the store calls (lists, key writes, store keys, unlocks,
+	// versions) go to the kernel's serving secrets, whose store routes have the core's shapes (kernel/secrets/http.go)
+	secretsStores *CoreClient
 	// db: the router's database (db.go); nil until connected
 	db atomic.Pointer[DB]
 	// objects: the router's blobs (objstore.go): the bucket, or memory for a router with none (tests)

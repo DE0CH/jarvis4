@@ -4,6 +4,9 @@ package main
 // api"; 2026-10-13: the explanation of each key is surfaced on the web and iPhone portal, and writing one key by name
 // is allowed without overwriting the store).
 //
+// On a box with no core (NO_CORE=1) all of this goes to the kernel's serving secrets (kernel.go storeCore), whose store
+// routes have the core's shapes; a kernel session's machine writes with the grant it holds instead of a cert.
+//
 // Key names and who wrote each key come from the core's signed store list (a store is a set of keys, core/keys.go).
 // What a store and each key are for is the router's own record (store-docs.json, a row of router_docs in its database): not a secret and
 // not part of any trust decision, written by whoever writes a key (a new key name needs its explanation), by the setup
@@ -189,7 +192,7 @@ type coreStoreRow struct {
 
 // StoreList: the core's signed list with each store's keys, who wrote them and what they are for
 func (r *Router) StoreList() ([]StoreRow, *Doc, error) {
-	d, err := r.core.Call("/stores", map[string]string{"nonce": "store-keys-" + randID()})
+	d, err := r.storeCore().Call("/stores", map[string]string{"nonce": "store-keys-" + randID()})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -259,9 +262,10 @@ func (r *Router) serveStoreList(w http.ResponseWriter) {
 // storeKeyFor: what a writer seals to — the core's identity (its keys, the box key's signature, its signed state
 // naming the master key and the phone) and its signed store key for that phone
 func (r *Router) storeKeyFor() (map[string]any, error) {
-	status, b, err := r.core.Raw("GET", "/identity", nil)
+	sc := r.storeCore()
+	status, b, err := sc.Raw("GET", "/identity", nil)
 	if err != nil || status != 200 {
-		return nil, fmt.Errorf("the core's identity isn't readable (HTTP %d, %v)", status, err)
+		return nil, fmt.Errorf("the %s's identity isn't readable (HTTP %d, %v)", sc.who(), status, err)
 	}
 	var id struct {
 		State *Doc `json:"state"`
@@ -275,7 +279,7 @@ func (r *Router) storeKeyFor() (map[string]any, error) {
 	if id.State == nil || id.State.Decode(&st) != nil || st.Phone.AgreementKey == "" {
 		return nil, errors.New("the core isn't set up (no phone in its signed state)")
 	}
-	sk, err := r.core.Call("/store-key", map[string]string{"phone": st.Phone.AgreementKey})
+	sk, err := sc.Call("/store-key", map[string]string{"phone": st.Phone.AgreementKey})
 	if err != nil {
 		return nil, err
 	}
@@ -297,6 +301,9 @@ type keyWriteIn struct {
 	} `json:"backup"`
 	Sig         string `json:"sig"`
 	Explanation string `json:"explanation"`
+	// Live: the value sealed to the kernel's secrets (kernel/secrets WriteKeyInput.Live), so an open unlock of the
+	// store stays current; passed on as is (the core has none)
+	Live json.RawMessage `json:"live,omitempty"`
 }
 
 // backupSha: what WriterText names for a key's backup — sha256 of its sealed parts
@@ -360,21 +367,38 @@ func (r *Router) WriteKey(writer, machine, store, key string, in keyWriteIn) (ma
 	if in.Wrapped != nil {
 		core["wrapped"] = in.Wrapped
 	}
+	if len(in.Live) != 0 && string(in.Live) != "null" {
+		core["live"] = in.Live
+	}
 	if writer == "machine" {
 		var cert *Doc
+		var grant any
 		r.st.Do(func(d *persisted) {
-			if s := d.Sessions[d.Machines[machine]]; s != nil && s.MachineID == machine && s.State == "started" {
-				cert = s.Cert
+			s := d.Sessions[d.Machines[machine]]
+			if s == nil || s.MachineID != machine || s.State != "started" {
+				return
 			}
+			if s.Kernel != nil { // a kernel line (kernelline.go): secrets checks the grant its machine holds
+				if s.Kernel.MachineCert != nil && s.Kernel.Grant != nil {
+					grant = s.Kernel.Grant
+				}
+				return
+			}
+			cert = s.Cert
 		})
-		if cert == nil {
+		switch {
+		case grant != nil:
+			core["grant"] = grant
+		case cert != nil:
+			core["cert"] = cert
+		default:
 			return nil, &forbidden{"only a running session writes a key"}
 		}
-		core["cert"] = cert
 	}
-	idStatus, ident, err := r.core.Raw("GET", "/identity", nil)
+	sc := r.storeCore()
+	idStatus, ident, err := sc.Raw("GET", "/identity", nil)
 	if err != nil || idStatus != 200 {
-		return nil, fmt.Errorf("the core's identity isn't readable: %v", err)
+		return nil, fmt.Errorf("the %s's identity isn't readable: %v", sc.who(), err)
 	}
 	// the backup first: a key never reaches the core without one (Deyao: "has backup, so can't overwrite")
 	b := backupBucketFromEnv()
@@ -388,7 +412,7 @@ func (r *Router) WriteKey(writer, machine, store, key string, in keyWriteIn) (ma
 	if err := b.put("keys/"+store+"/"+key+".json", raw); err != nil {
 		return nil, fmt.Errorf("the backup wasn't written, so the key wasn't either: %v", err)
 	}
-	receipt, err := r.core.Call("/stores/write-key", core)
+	receipt, err := sc.Call("/stores/write-key", core)
 	if err != nil {
 		return nil, err
 	}

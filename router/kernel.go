@@ -348,4 +348,16 @@ func (r *Router) wireKernel(k *KernelClient) {
 	k.onSecretsSeq = r.kernelLines.seen
 	k.roster = r.currentRoster // roster.go
 	k.onStale = r.rosterStale
+	if r.cfg.NoCore {
+		r.secretsStores = &CoreClient{name: "secrets", http: &http.Client{}, onLineSeq: r.kernelLines.seen,
+			baseFn: func() string { return k.url(k.secretsRole("secrets")) }}
+	}
+}
+
+// storeCore: where the store calls go — the kernel's serving secrets on a box with no core, else the core
+func (r *Router) storeCore() *CoreClient {
+	if r.secretsStores != nil {
+		return r.secretsStores
+	}
+	return r.core
 }

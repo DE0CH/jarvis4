@@ -10,6 +10,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"testing"
+
+	"github.com/DE0CH/jarvis4/kernel/secrets"
 )
 
 // what put-key sends opens exactly as the core (with the combined store key's scalar) and Deyao's kit (with the master
@@ -81,4 +83,17 @@ func hkdfKey(t *testing.T, x []byte, info string) []byte {
 		t.Fatal(err)
 	}
 	return k
+}
+
+// a kernel machine's live copy opens in secrets exactly as kernel/secrets liveUpdate opens it (its agreement key, the
+// store's and the key's names in the info)
+func TestTheLiveCopyOpensInSecrets(t *testing.T) {
+	k, _ := ecdh.P256().GenerateKey(rand.Reader)
+	e, data, err := sealParts(b64.EncodeToString(k.PublicKey().Bytes()), []byte("v4lue"), liveInfo("yyc", "YYC_KEY"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, err := secrets.OpenSealed(k, secrets.Sealed{E: e, Data: data}, "jarvis2/live-key\nyyc\nYYC_KEY"); err != nil || string(v) != "v4lue" {
+		t.Fatalf("secrets can't open the live copy: %q %v", v, err)
+	}
 }

@@ -26,7 +26,11 @@ func (d *Doc) Decode(out any) error { return json.Unmarshal([]byte(d.Payload), o
 type CoreClient struct {
 	mu   sync.RWMutex
 	base string
-	http *http.Client
+	// baseFn: where the client points, asked at every call (the kernel's serving secrets, kernel.go storesOnSecrets);
+	// name: what its errors call it ("" = "core")
+	baseFn func() string
+	name   string
+	http   *http.Client
 	// onLineSeq: every answer's X-Line-Seq (linestate.go keeps the core's line state when it moved), called before
 	// the answer goes back to the caller
 	onLineSeq func(int)
@@ -34,6 +38,9 @@ type CoreClient struct {
 
 // URL: the core this client talks to now
 func (c *CoreClient) URL() string {
+	if c.baseFn != nil {
+		return c.baseFn()
+	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.base
@@ -104,6 +111,14 @@ func (c *CoreClient) raw(method, path string, body []byte) (int, []byte, int, er
 	return resp.StatusCode, b, seq, err
 }
 
+// who: what errors call the client's server
+func (c *CoreClient) who() string {
+	if c.name != "" {
+		return c.name
+	}
+	return "core"
+}
+
 // Call: POST a JSON body, expect a signed document
 func (c *CoreClient) Call(path string, in any) (*Doc, error) {
 	d, _, err := c.CallAnswer(path, in)
@@ -123,19 +138,19 @@ func (c *CoreClient) CallAnswer(path string, in any) (*Doc, *Answer, error) {
 	body, _ := json.Marshal(in)
 	status, b, err := c.Raw("POST", path, body)
 	if err != nil {
-		return nil, nil, fmt.Errorf("core %s: %w", path, err)
+		return nil, nil, fmt.Errorf("%s %s: %w", c.who(), path, err)
 	}
 	var d Doc
 	if status != 200 {
-		msg := fmt.Sprintf("core %s: HTTP %d", path, status)
+		msg := fmt.Sprintf("%s %s: HTTP %d", c.who(), path, status)
 		var e struct{ Error string }
 		if json.Unmarshal(b, &d) == nil && d.Decode(&e) == nil && e.Error != "" {
-			msg = "core: " + e.Error
+			msg = c.who() + ": " + e.Error
 		}
 		return nil, nil, &CoreError{Status: status, Body: b, Msg: msg}
 	}
 	if err := json.Unmarshal(b, &d); err != nil || d.Payload == "" {
-		return nil, nil, fmt.Errorf("core %s: not a signed document", path)
+		return nil, nil, fmt.Errorf("%s %s: not a signed document", c.who(), path)
 	}
 	var a Answer
 	json.Unmarshal(b, &a)
@@ -149,7 +164,7 @@ func (c *CoreClient) Key() (map[string]string, error) {
 		return nil, err
 	}
 	if status != 200 {
-		return nil, fmt.Errorf("core /identity: HTTP %d", status)
+		return nil, fmt.Errorf("%s /identity: HTTP %d", c.who(), status)
 	}
 	var id struct {
 		SigningKey   string `json:"signingKey"`
@@ -159,6 +174,8 @@ func (c *CoreClient) Key() (map[string]string, error) {
 	if err := json.Unmarshal(b, &id); err != nil {
 		return nil, err
 	}
-	noteCoreSizes(id.SizeLadder >= 1) // sizes.go
+	if c.name == "" {
+		noteCoreSizes(id.SizeLadder >= 1) // sizes.go (the core's own; secrets starts no machine)
+	}
 	return map[string]string{"signingKey": id.SigningKey, "agreementKey": id.AgreementKey}, nil
 }

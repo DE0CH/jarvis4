@@ -64,10 +64,10 @@ func withAccountStore(stores []string, account string) []string {
 
 // syncAccountStores: every account whose pair or record changed since it was last written into this core
 func (r *Router) syncAccountStores() {
-	if r.core == nil {
+	if r.storeCore() == nil {
 		return
 	}
-	key, err := r.core.Key()
+	key, err := r.storeCore().Key()
 	if err != nil {
 		return
 	}
@@ -108,7 +108,7 @@ func (r *Router) syncAccountStores() {
 
 // forgetAccountStore: a removed account's keys leave its core store (a store itself can't be deleted)
 func (r *Router) forgetAccountStore(store string) {
-	if r.core == nil {
+	if r.storeCore() == nil {
 		return
 	}
 	for _, k := range []string{"CLAUDE_CREDENTIALS", "CLAUDE_ACCOUNT"} {
@@ -124,7 +124,7 @@ func (r *Router) forgetAccountStore(store string) {
 // writeAccountStore: the store made (not sensitive: a Claude login can't reach a code push) if the core lacks it, then
 // both keys
 func (r *Router) writeAccountStore(store, credentials, account string) error {
-	if _, err := r.core.Call("/stores/create", map[string]string{"name": store}); err != nil && !strings.Contains(err.Error(), "exists") {
+	if _, err := r.storeCore().Call("/stores/create", map[string]string{"name": store}); err != nil && !strings.Contains(err.Error(), "exists") {
 		return fmt.Errorf("making the store: %w", err)
 	}
 	if err := r.writeRouterKey(store, "CLAUDE_CREDENTIALS", []byte(credentials), false); err != nil {
@@ -160,7 +160,7 @@ func (r *Router) writeRouterKey(store, key string, value []byte, del bool) error
 		in["wrapped"] = map[string]string{"e": e, "wrapped": wrapped}
 		in["data"] = base64.StdEncoding.EncodeToString(gcmSealKey(dk, value, []byte(store+"\n"+key)))
 	}
-	_, err := r.core.Call("/stores/write-key", in)
+	_, err := r.storeCore().Call("/stores/write-key", in)
 	if err != nil && del && strings.Contains(err.Error(), "has no key") {
 		return nil
 	}

@@ -94,6 +94,10 @@ func (r *Router) buildHandlers() {
 			if method == "GET" {
 				b = nil
 			}
+			if corePath == "/identity" || strings.HasPrefix(corePath, "/stores") {
+				r.relayTo(w, r.storeCore(), method, corePath, b) // the stores' keeper: secrets on a box with no core
+				return
+			}
 			r.relay(w, method, corePath, b)
 		}))
 	}
@@ -505,14 +509,14 @@ func (r *Router) buildHandlers() {
 		path := "/" + p
 		app("POST /api/core"+path, func(w http.ResponseWriter, req *http.Request) {
 			b, _ := io.ReadAll(io.LimitReader(req.Body, 1<<20))
-			r.relayFor(w, req, "POST", path, b) // nextcore.go: X-Jarvis2-Core: next (store-key for Recover alongside)
+			r.relayStores(w, req, "POST", path, b) // nextcore.go: X-Jarvis2-Core: next (store-key for Recover alongside)
 		})
 	}
 
 	// an unlock for one running session's cert: its machine pulls again (storedocs.go unlockArrived)
 	app("POST /api/core/unlock/finish", func(w http.ResponseWriter, req *http.Request) {
 		b, _ := io.ReadAll(io.LimitReader(req.Body, 1<<20))
-		c := r.coreFor(req)
+		c := r.storesFor(req)
 		if c == nil {
 			writeJSON(w, 404, map[string]string{"error": "there is no next core"})
 			return
@@ -798,12 +802,17 @@ func (r *Router) buildHandlers() {
 }
 
 func (r *Router) relay(w http.ResponseWriter, method, path string, body []byte) {
-	status, b, err := r.core.Raw(method, path, body)
+	r.relayTo(w, r.core, method, path, body)
+}
+
+// relayTo: one call relayed to c (the core, or secrets for the stores on a box with no core), its answer unchanged
+func (r *Router) relayTo(w http.ResponseWriter, c *CoreClient, method, path string, body []byte) {
+	status, b, err := c.Raw(method, path, body)
 	if err != nil {
 		// no core to talk to (its pod is restarting, e.g. after a wipe): a state, not a fault — the app waits
 		// and shows it as a plain note (coreDown)
-		log.Printf("core %s %s: %v", method, path, err)
-		writeJSON(w, 503, map[string]any{"error": "the core isn't running", "coreDown": true})
+		log.Printf("%s %s %s: %v", c.who(), method, path, err)
+		writeJSON(w, 503, map[string]any{"error": "the " + c.who() + " isn't running", "coreDown": true})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

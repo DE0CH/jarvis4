@@ -45,6 +45,7 @@ def claimed_by(master, dev=None, signer=None):
                  cert={"statement": st, "masterSig": sig(master, st)},
                  devs=[{"statement": st, "deviceKey": pub(signer), "deviceSig": sig(signer, st)}] if signer else [])
 
+S.identity_real = S.identity
 S.identity = lambda: state["me"]
 S.call = lambda m, p, b=None: {"/setup/core-cert": state.get("cert"), "/setup/claim-device": state.get("devs")}[p]
 
@@ -80,5 +81,33 @@ try:
     S.load_pins(); raise AssertionError("pins not signed by the setup key were read")
 except SystemExit:
     pass
+
+# the kernel's secrets (a box with no core): its keys are the root key's roster's, its state its own; only the pinned
+# master is trusted (no claim to read, nothing re-pinned)
+root_k, secrets_k, other_k = (ec.generate_private_key(ec.SECP256R1()) for _ in range(3))
+open(os.path.join(keys, "root.pub"), "w").write(pub(root_k))
+bucket.clear()
+S.save_pins(pub(deyao_master), pub(device))
+def kernel_box(master, roster_signer=root_k, serving="serving"):
+    payload = S.roster_payload("blue", [{"role": "secrets", "signingKey": pub(secrets_k), "agreementKey": pub(secrets_k)}])
+    st = json.dumps({"kind": "secrets-state", "master": pub(master), "phone": {"signingKey": pub(phone_k), "agreementKey": pub(phone_k)}, "serving": serving})
+    ident = {"role": "secrets", "signingKey": pub(secrets_k), "agreementKey": pub(secrets_k), "state": {"payload": st, "sig": sig(secrets_k, st)}}
+    roster = {"current": {"payload": payload, "sig": sig(roster_signer, payload)}}
+    S.call = lambda m, p, b=None: {"/setup/identity": ident, "/setup/kernel/roster": roster}[p]
+S.identity = S.__dict__["identity_real"]
+kernel_box(deyao_master)
+me = S.set_up()
+assert me["kernel"] and me["master"] == pub(deyao_master)
+w = S.key_write("infra", "K", "v4lue", me, "a key")
+assert w["live"]["e"] and w["live"]["data"], "a kernel write carries no live copy"
+kernel_box(router_master)
+refused("a kernel secrets claimed with another master")
+for bad in (lambda: kernel_box(deyao_master, roster_signer=other_k), lambda: kernel_box(deyao_master, serving="standby")):
+    bad()
+    try:
+        S.identity(); raise AssertionError("an unvouched or standby secrets was trusted")
+    except SystemExit:
+        pass
+assert json.loads(json.loads(bucket["pins.json"])["doc"])["master"] == pub(deyao_master), "the pins changed"
 
 print("ok: setup.py trusts only the pinned master or a claim countersigned by the pinned device")

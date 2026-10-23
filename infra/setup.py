@@ -85,6 +85,8 @@ both). Values never print.
 Everything is sealed to the master public key the core was set up with (Reset or Recover in the app), which
 this script reads from the core's signed state, after checking the core's keys against keys/box.pub — so it
 works only once the core is set up. A store the core never created (no `create` first) is sensitive.
+On a box with no core (the cluster: NO_CORE=1) the router sends every store call to the kernel's serving secrets,
+which has the core's store routes; its keys are checked against the root key's roster (keys/root.pub) instead.
 """
 import base64, hashlib, json, os, sys, time, urllib.error, urllib.request
 
@@ -186,6 +188,8 @@ def identity():
     """the core's keys (checked against the box key, keys/box.pub) and its own signed state: {signingKey,
     agreementKey, master: the master public key it was set up with ("" while empty), phone: its keys or None}"""
     k = call("GET", "/setup/identity")
+    if k.get("role") == "secrets":
+        return kernel_identity(k)
     text = f"jarvis2-core-identity {k['signingKey']} {k['agreementKey']}".encode()
     if not _verify(keyfile("box.pub"), text, k.get("boxSig", "")):
         raise SystemExit("the core's identity isn't signed by this box's key (keys/box.pub)")
@@ -196,6 +200,22 @@ def identity():
     if st.get("kind") != "core-state":
         raise SystemExit("not the core's state")
     return {"signingKey": k["signingKey"], "agreementKey": k["agreementKey"], "master": st.get("master") or "", "phone": st.get("phone")}
+
+
+def kernel_identity(k):
+    """the kernel's secrets (a box with no core: the router's store calls go there): no box key, so its keys are checked
+    against the root key's roster (keys/root.pub), then its own signed state; the same shape as identity()"""
+    m = roster_members(call("GET", "/setup/kernel/roster").get("current")).get("secrets")
+    if not m or m["signingKey"] != k.get("signingKey") or m["agreementKey"] != k.get("agreementKey"):
+        raise SystemExit("the serving secrets' keys aren't the ones the root key's roster names")
+    d = k.get("state") or {}
+    if not _verify(k["signingKey"], (d.get("payload") or "").encode(), d.get("sig") or ""):
+        raise SystemExit("secrets' state isn't signed by secrets")
+    st = json.loads(d["payload"])
+    if st.get("kind") != "secrets-state" or st.get("serving") != "serving":
+        raise SystemExit("not the serving secrets' state")
+    return {"signingKey": k["signingKey"], "agreementKey": k["agreementKey"], "master": st.get("master") or "",
+            "phone": st.get("phone"), "kernel": True}
 
 
 def set_up():
@@ -262,6 +282,12 @@ def trust(me):
     if not pins.get("master"):
         raise SystemExit("no master key pinned yet: once the core is known to be Deyao's (a Recover by him), "
                          "run `infra/setup.py pin-master` (docs/RUNBOOK.md)")
+    if me.get("kernel"):
+        # secrets' keys are the root key's (its roster), and it was claimed with the master key it names: the stores'
+        # master must be the pinned one (a Reset to a new master is pinned from the core's countersigned claim only)
+        if pins["master"] != me["master"]:
+            raise SystemExit("REFUSED: the kernel's secrets is set up with a master key that isn't the pinned one: nothing is written")
+        return
     device, countersigned = claim_of(me)
     if pins["master"] == me["master"]:
         if device and device != pins.get("device"):  # his app's device key, named in a claim his master key signed
@@ -305,6 +331,8 @@ def key_write(store, key, value, me, explanation=""):
         bsha = hashlib.sha256((b["e"] + "\n" + b["data"]).encode()).hexdigest()
         req.update({"wrapped": {"e": e, "wrapped": base64.b64encode(_gcm(_kdf(shared_x, "jarvis2/store-data-key"), dk)).decode()},
                     "data": data, "backup": b, "backupSha256": bsha})
+        if me.get("kernel"):  # the live copy, sealed to secrets: an open unlock of the store gets the value at once
+            req["live"] = seal_to(me["agreementKey"], value.encode(), f"jarvis2/live-key\n{store}\n{key}")
     req["sig"] = base64.b64encode(setup_key().sign(writer_text(store, key, e, data, bsha).encode(), ec.ECDSA(hashes.SHA256()))).decode()
     return req
 

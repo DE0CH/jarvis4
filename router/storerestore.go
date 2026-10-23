@@ -65,9 +65,10 @@ func (r *Router) FinishRestore(body []byte) (map[string]any, error) {
 	if b == nil {
 		return nil, errors.New("the router has no backup credential (BACKUP_READ_ACCESS_KEY): nothing is restored without its backups")
 	}
-	status, raw, err := r.core.Raw("POST", "/stores/restore/finish", body)
+	sc := r.storeCore()
+	status, raw, err := sc.Raw("POST", "/stores/restore/finish", body)
 	if err != nil {
-		return nil, fmt.Errorf("core /stores/restore/finish: %w", err)
+		return nil, fmt.Errorf("%s /stores/restore/finish: %w", sc.who(), err)
 	}
 	if status != 200 {
 		return nil, &CoreError{Status: status, Body: raw, Msg: "core: the restore was refused"}
@@ -77,7 +78,7 @@ func (r *Router) FinishRestore(body []byte) (map[string]any, error) {
 	if json.Unmarshal(raw, &ap) != nil || ap.Receipt == nil || ap.Receipt.Decode(&rc) != nil || rc.Kind != "store-restore-approved" || rc.Pending != in.Pending {
 		return nil, errors.New("the core's restore answer isn't readable")
 	}
-	idStatus, ident, err := r.core.Raw("GET", "/identity", nil)
+	idStatus, ident, err := sc.Raw("GET", "/identity", nil)
 	if err != nil || idStatus != 200 {
 		return nil, fmt.Errorf("the core's identity isn't readable: %v", err)
 	}
@@ -107,7 +108,7 @@ func (r *Router) FinishRestore(body []byte) (map[string]any, error) {
 			return nil, fmt.Errorf("the backups weren't written, so nothing was restored: %v", err)
 		}
 	}
-	done, err := r.core.Call("/stores/restore/commit", map[string]string{"pending": in.Pending})
+	done, err := sc.Call("/stores/restore/commit", map[string]string{"pending": in.Pending})
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +123,7 @@ func (r *Router) registerRestore(app appRoute, mux *http.ServeMux) {
 		path := "/" + p
 		app("POST /api/core"+path, func(w http.ResponseWriter, req *http.Request) {
 			b, _ := io.ReadAll(io.LimitReader(req.Body, 1<<20))
-			r.relayFor(w, req, "POST", path, b)
+			r.relayStores(w, req, "POST", path, b)
 		})
 	}
 	app("POST /api/stores/restore/finish", func(w http.ResponseWriter, req *http.Request) {
@@ -144,5 +145,7 @@ func (r *Router) registerRestore(app appRoute, mux *http.ServeMux) {
 			fn(w, req, b)
 		}))
 	}
-	setup("POST /setup/stores/versions", func(w http.ResponseWriter, req *http.Request, b []byte) { r.relay(w, "POST", "/stores/versions", b) })
+	setup("POST /setup/stores/versions", func(w http.ResponseWriter, req *http.Request, b []byte) {
+		r.relayTo(w, r.storeCore(), "POST", "/stores/versions", b)
+	})
 }
