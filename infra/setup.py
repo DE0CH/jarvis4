@@ -8,6 +8,9 @@ both). Values never print.
   HETZNER_S3_*                    the backup buckets (writes jarvis4-backup-de0ch, reads jarvis2-backup-de0ch)
 
   infra/setup.py status                the router's health: secret names present, session image, core up
+  infra/setup.py services [QUERY]      the shared services as the router reaches them: transcript search's counts and
+                                       a keyword search's hit count (QUERY, default "jarvis"), and a check run on the
+                                       watch runner
   infra/setup.py identity              whether the core is empty or set up (and with which master public key),
                                        checked against keys/box.pub and the core's own signature
   infra/setup.py stores [--keys]       every store (the core's signed list) with the key NAMES it holds (--keys: each
@@ -89,7 +92,7 @@ works only once the core is set up. A store the core never created (no `create` 
 On a box with no core (the cluster: NO_CORE=1) the router sends every store call to the kernel's serving secrets,
 which has the core's store routes; its keys are checked against the root key's roster (keys/root.pub) instead.
 """
-import base64, hashlib, json, os, sys, time, urllib.error, urllib.request
+import base64, hashlib, json, os, sys, time, urllib.error, urllib.parse, urllib.request
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -407,6 +410,8 @@ def main():
     cmd, args = sys.argv[1], sys.argv[2:]
     if cmd == "status":
         print(json.dumps(call("GET", "/setup/status"), indent=1))
+    elif cmd == "services":
+        print(json.dumps(call("GET", "/setup/services" + ("?q=" + urllib.parse.quote(args[0]) if args else "")), indent=1))
     elif cmd == "identity":
         me = identity()
         print(f"set up with master key {me['master'][:16]}…" if me["master"] else "empty: waiting for Reset or Recover in the app")

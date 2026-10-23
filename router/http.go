@@ -171,6 +171,7 @@ func (r *Router) buildHandlers() {
 			"core": r.nextCoreStatus(), "leads": leads(), "replica": routerID, "process": processStatus(),
 			"volumeSweep": volumeSweepStatus(), "db": r.dbStatus(req.Context())})
 	}))
+	mux.Handle("GET /setup/services", r.requireSetup(r.setupServices)) // setupservices.go: search and the watch runner
 	setup("GET /setup/identity", "GET", "/identity")
 	setup("POST /setup/stores", "POST", "/stores")
 	setup("POST /setup/stores/create", "POST", "/stores/create")
