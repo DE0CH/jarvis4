@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Draw the Jarvis 4 app icon (the Jarvis arc-reactor ring with a "2" at its centre in place of the triangle and
+"""Draw the Jarvis 4 app icon (the Jarvis arc-reactor ring with a "4" at its centre in place of the triangle and
 core) -> assets/icon.png (app.json "icon") and ../ios/Jarvis4/Assets.xcassets/AppIcon.appiconset/icon.png (the native
-native build actually uses). The "2" is drawn as strokes (no font file), so it renders the same anywhere.
+native build actually uses). The "4" is drawn as strokes (no font file), so it renders the same anywhere.
 1024x1024 RGB, no alpha (App Store rejects alpha). Rendered at 2x and downsampled for smooth edges.
-The web favicon is the ring (with its 2) alone on a transparent background, no square tile:
+The web favicon is the ring (with its 4) alone on a transparent background, no square tile:
 assets/favicon.png (app.json web.favicon). Run: python3 app/scripts/make-icon.py"""
 import math, os
 from PIL import Image, ImageDraw, ImageFilter
@@ -25,16 +25,15 @@ for i in range(10):                                      # ten coil segments
     a0 = i * 36 + 4; a1 = a0 + 28
     g.arc([C - 600, C - 600, C + 600, C + 600], a0, a1, fill=CYAN, width=120)
 ring(g, 430, 40, CYAN)
-# the "2": a top bowl (arc), a diagonal down to the bottom left, a flat base — stamped as round discs along the
-# path (PIL's wide arcs/joints leave spiky gaps), which also gives round caps
+# the "4": a diagonal from the stem's top down to the left, a crossbar, and the stem — stamped as round discs along the
+# path (PIL's wide lines/joints leave spiky gaps), which also gives round caps
 W = 110; CORE = (200, 245, 255)
-ax, ay, ar = C - 10, C - 125, 165                        # the bowl's circle
-x0, y0, x1 = C - 210, C + 280, C + 205                   # base: left end, height, right end
-path = [(ax + ar * math.cos(math.radians(a / 4)), ay + ar * math.sin(math.radians(a / 4))) for a in range(195 * 4, 396 * 4)]
+sx, top, bot = C + 85, C - 285, C + 285                  # the stem: x, top, bottom
+bx0, by, bx1 = C - 215, C + 115, C + 210                 # the crossbar: left end, height, right end
 def seg(p, q):
     n = int(math.dist(p, q) / 2) + 1
     return [(p[0] + (q[0] - p[0]) * k / n, p[1] + (q[1] - p[1]) * k / n) for k in range(n + 1)]
-path += seg(path[-1], (x0, y0)) + seg((x0, y0), (x1, y0))
+path = seg((sx, top), (bx0, by)) + seg((bx0, by), (bx1, by)) + seg((sx, top), (sx, bot))
 for x, y in path:
     g.ellipse([x - W / 2, y - W / 2, x + W / 2, y + W / 2], fill=CORE)
 blur = glow.filter(ImageFilter.GaussianBlur(40))
@@ -43,7 +42,7 @@ img.paste(glow, (0, 0), glow.convert("L").point(lambda v: 255 if v > 20 else 0))
 img = img.resize((1024, 1024), Image.LANCZOS).convert("RGB")
 out = os.path.join(os.path.dirname(__file__), "..", "assets", "icon.png")
 img.save(out, optimize=True); print("wrote", os.path.normpath(out))
-img.save(os.path.join(os.path.dirname(__file__), "..", "..", "ios", "Jarvis2", "Assets.xcassets", "AppIcon.appiconset", "icon.png"), optimize=True)
+img.save(os.path.join(os.path.dirname(__file__), "..", "..", "ios", "Jarvis4", "Assets.xcassets", "AppIcon.appiconset", "icon.png"), optimize=True)
 # favicons: the ring alone — its shapes plus their soft glow as alpha — cropped to the ring
 ringimg = Image.new("RGBA", (S, S), (0, 0, 0, 0))
 # the glow in the ring's own cyan (its blurred RGB would show as a grey smudge on a light tab bar)
