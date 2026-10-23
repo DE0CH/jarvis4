@@ -31,15 +31,18 @@ type fakeFly struct {
 	swap     string // report this image instead
 	slowStop bool
 	creates  int
-	lose     bool // Create makes the machine but answers an error (a lost answer)
+	lose     bool             // Create makes the machine but answers an error (a lost answer)
+	full     int              // the next this-many Creates answer that the volume's host is full (412 volume_placement_capacity)
+	guests   []map[string]any // the compute hint of each CreateVolume
 }
 
 func newFly() *fakeFly { return &fakeFly{ms: map[string]*fakeM{}, vols: map[string]bool{}} }
 
 func (f *fakeFly) Configure(string) {}
-func (f *fakeFly) CreateVolume(string, int) (string, error) {
+func (f *fakeFly) CreateVolume(_ string, _ int, guest map[string]any) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.guests = append(f.guests, guest)
 	f.n++
 	v := fmt.Sprintf("vol_%d", f.n)
 	f.vols[v] = true
@@ -48,6 +51,10 @@ func (f *fakeFly) CreateVolume(string, int) (string, error) {
 func (f *fakeFly) Create(image, region string, guest map[string]any, env map[string]string, volume, spawnKey string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.full > 0 {
+		f.full--
+		return "", fmt.Errorf(`POST /machines: HTTP 412 {"error":"failed_precondition: insufficient resources to create new machine with existing volume '%s'","status":"volume_placement_capacity"}`, volume)
+	}
 	f.n++
 	f.creates++
 	id := fmt.Sprintf("%014x", f.n)
@@ -427,5 +434,36 @@ func TestStartAStoppedMachine(t *testing.T) {
 	}
 	if _, err := r.sp.Start(id); err == nil || !strings.Contains(err.Error(), "killed") {
 		t.Fatal(err)
+	}
+}
+
+// a volume is pinned to its host: when that host has no room for the machine, the spawn makes a new volume (another
+// host) and tries again, and the volume it gave up on goes; every volume is made with the machine's size as its hint
+func TestSpawnMovesOffAFullHost(t *testing.T) {
+	r := newRig(t)
+	cert, nz := r.source()
+	in := SpawnInput{Cert: cert, Notarized: nz, Notarizer: r.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"}
+	r.fly.full = 2
+	a, err := r.sp.Spawn(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vol := a.(map[string]any)["volume"].(string)
+	if r.fly.creates != 1 || len(r.fly.vols) != 1 || !r.fly.vols[vol] || len(r.fly.guests) != 3 {
+		t.Fatalf("after two full hosts: creates=%d vols=%v volume=%s volume creates=%d", r.fly.creates, r.fly.vols, vol, len(r.fly.guests))
+	}
+	for _, g := range r.fly.guests {
+		if g["cpus"] == nil || g["memory_mb"] == nil || g["cpu_kind"] == nil {
+			t.Fatalf("a volume without the machine's size as its hint: %v", g)
+		}
+	}
+
+	// full every time: the spawn gives up after placementTries volumes, leaving none behind
+	r2 := newRig(t)
+	cert2, nz2 := r2.source()
+	r2.fly.full = 100
+	_, err = r2.sp.Spawn(SpawnInput{Cert: cert2, Notarized: nz2, Notarizer: r2.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"})
+	if err == nil || !strings.Contains(err.Error(), "volume_placement_capacity") || len(r2.fly.vols) != 0 || len(r2.fly.guests) != placementTries {
+		t.Fatalf("always full: err=%v vols=%v volume creates=%d", err, r2.fly.vols, len(r2.fly.guests))
 	}
 }

@@ -33,7 +33,7 @@ type FlyMachine struct {
 // Fly: single calls, no waiting or retrying (the router retries)
 type Fly interface {
 	Configure(token string)
-	CreateVolume(region string, sizeGB int) (string, error)
+	CreateVolume(region string, sizeGB int, guest map[string]any) (string, error)
 	// Create: a machine whose Fly metadata names the spawn it is for (spawnKey: the cert's id), so a spawn whose
 	// answer was lost (a crash, a timeout) finds it again with Find instead of making a second one
 	Create(image, region string, guest map[string]any, env map[string]string, volume, spawnKey string) (string, error)
@@ -170,12 +170,17 @@ func (f *FlyAPI) call(method, path string, body any, out any) error {
 	return nil
 }
 
-func (f *FlyAPI) CreateVolume(region string, sizeGB int) (string, error) {
+func (f *FlyAPI) CreateVolume(region string, sizeGB int, guest map[string]any) (string, error) {
 	var v struct {
 		ID string `json:"id"`
 	}
 	body := map[string]any{"name": volumeName, "region": region, "size_gb": sizeGB, "encrypted": true,
 		"snapshot_retention": 1, "auto_backup_enabled": false, "require_unique_zone": false}
+	if guest != nil {
+		// Fly places the volume on a host with room for a machine of this size: a volume is pinned to its host, and
+		// without the hint Fly may pick one too full for the machine (412 volume_placement_capacity)
+		body["compute"] = guest
+	}
 	if err := f.call("POST", "/volumes", body, &v); err != nil {
 		return "", err
 	}

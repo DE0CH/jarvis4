@@ -18,7 +18,10 @@ package main
 // A Fly without VolumeFly (the CI fake, the tests' plain fake) makes machines without volumes: everything else is
 // unchanged.
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 const (
 	volumePath    = "/data" // where the machine finds its volume (machine/volume.go)
@@ -29,7 +32,7 @@ const (
 
 // VolumeFly: the Fly calls volumes need (FlyAPI; single calls, no waiting, like Fly)
 type VolumeFly interface {
-	CreateVolume(region string, sizeGB int) (string, error)
+	CreateVolume(region string, sizeGB int, guest map[string]any) (string, error)
 	CreateWithVolume(r StartRequest, guest map[string]any, env map[string]string, volume, path string) (string, error)
 	ExtendVolume(volume string, sizeGB int) (needsRestart bool, err error)
 	DeleteVolume(volume string) error
@@ -67,6 +70,15 @@ func diskSize(gb int) (int, error) {
 	return gb, nil
 }
 
+// placementTries: how many new volumes a start makes when Fly answers that a volume's host has no room for the
+// machine (412 volume_placement_capacity): a volume is pinned to one host, so a new one is the way to another host
+const placementTries = 3
+
+// hostFull: Fly's answer that the volume's host has no room for a machine of this size
+func hostFull(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "volume_placement_capacity")
+}
+
 // createMachine: Start's Fly create, with a new empty volume when Fly has volumes. The volume goes again if the
 // machine can't be made.
 func (c *Core) createMachine(r StartRequest, guest map[string]any, env map[string]string) (string, *VolumeInfo, error) {
@@ -79,18 +91,24 @@ func (c *Core) createMachine(r StartRequest, guest map[string]any, env map[strin
 	if err != nil {
 		return "", nil, err
 	}
-	vid, err := vf.CreateVolume(r.Region, gb)
-	if err != nil {
-		return "", nil, fmt.Errorf("volume: %w", err)
-	}
-	id, err := vf.CreateWithVolume(r, guest, env, vid, volumePath)
-	if err != nil {
+	var vid, id string
+	for try := 1; ; try++ {
+		if vid, err = vf.CreateVolume(r.Region, gb, guest); err != nil {
+			return "", nil, fmt.Errorf("volume: %w", err)
+		}
+		if id, err = vf.CreateWithVolume(r, guest, env, vid, volumePath); err == nil {
+			break
+		}
 		if derr := vf.DeleteVolume(vid); derr != nil {
 			c.mu.Lock()
 			c.vol.orphans[vid] = true
 			c.mu.Unlock()
 		}
-		return "", nil, err
+		// the volume's host had no room for the machine: a new volume lands elsewhere
+		if !hostFull(err) || try == placementTries {
+			return "", nil, err
+		}
+		c.logf("start: volume %s's host is full (%v); a new volume, try %d", vid, err, try+1)
 	}
 	v := &VolumeInfo{ID: vid, SizeGB: gb, Path: volumePath}
 	c.logf("machine %s: volume %s (%d GB)", id, vid, gb) // infra/run-volumes.py reads a test run's volumes from it

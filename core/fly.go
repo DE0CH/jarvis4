@@ -180,12 +180,17 @@ func (f *FlyAPI) CreateWithVolume(r StartRequest, guest map[string]any, env map[
 // ---- volumes (volumes.go; Fly Machines API /volumes) ----
 
 // CreateVolume: Fly's daily automatic snapshots off (no volume snapshot of any kind: volumes.go)
-func (f *FlyAPI) CreateVolume(region string, sizeGB int) (string, error) {
+func (f *FlyAPI) CreateVolume(region string, sizeGB int, guest map[string]any) (string, error) {
 	var v struct {
 		ID string `json:"id"`
 	}
 	body := map[string]any{"name": volumeName, "region": region, "size_gb": sizeGB, "encrypted": true,
 		"auto_backup_enabled": false, "require_unique_zone": false}
+	if guest != nil {
+		// Fly places the volume on a host with room for a machine of this size: a volume is pinned to its host, and
+		// without the hint Fly may pick one too full for the machine (412 volume_placement_capacity)
+		body["compute"] = guest
+	}
 	if err := f.call("POST", "/volumes", body, &v); err != nil {
 		return "", err
 	}

@@ -229,7 +229,7 @@ func NewFakeFly() *FakeFly {
 
 func (f *FakeFly) Configure(string) {}
 
-func (f *FakeFly) CreateVolume(string, int) (string, error) {
+func (f *FakeFly) CreateVolume(string, int, map[string]any) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.n++

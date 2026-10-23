@@ -15,6 +15,8 @@ type volFly struct {
 	mounts    map[string]string // machine → volume
 	calls     []string
 	createErr error
+	full      int              // the next this-many creates answer that the volume's host is full
+	guests    []map[string]any // each volume's compute hint
 }
 
 type fakeVol struct {
@@ -30,7 +32,8 @@ func withVolumes(c *Core, f *fakeFly) *volFly {
 
 func (v *volFly) log(s string, a ...any) { v.calls = append(v.calls, fmt.Sprintf(s, a...)) }
 
-func (v *volFly) CreateVolume(region string, sizeGB int) (string, error) {
+func (v *volFly) CreateVolume(region string, sizeGB int, guest map[string]any) (string, error) {
+	v.guests = append(v.guests, guest)
 	v.n++
 	id := fmt.Sprintf("vol_%d", v.n)
 	v.vols[id] = &fakeVol{size: sizeGB}
@@ -40,6 +43,10 @@ func (v *volFly) CreateVolume(region string, sizeGB int) (string, error) {
 func (v *volFly) CreateWithVolume(r StartRequest, guest map[string]any, env map[string]string, volume, path string) (string, error) {
 	if v.createErr != nil {
 		return "", v.createErr
+	}
+	if v.full > 0 {
+		v.full--
+		return "", fmt.Errorf(`POST /machines: HTTP 412 {"status":"volume_placement_capacity"}`)
 	}
 	id, err := v.fakeFly.Create(r, guest, env)
 	v.mounts[id] = volume + ":" + path
@@ -106,6 +113,31 @@ func TestAStartMakesTheMachinesOwnVolume(t *testing.T) {
 	}
 	if len(v.vols) != before+1 || !v.vols[fmt.Sprintf("vol_%d", v.n)].deleted {
 		t.Fatal("the failed start's volume wasn't deleted")
+	}
+}
+
+// a volume's host with no room for the machine: the start makes a new volume (another host), up to placementTries;
+// the volumes it gave up on go, and each carries the machine's size as its placement hint
+func TestAStartMovesOffAFullHost(t *testing.T) {
+	c, f, _ := setup(t)
+	v := withVolumes(c, f)
+	v.full = 2
+	created := pl(t)(c.Start(StartRequest{Image: img, Region: "lhr", Size: "large"}))
+	live := 0
+	for _, fv := range v.vols {
+		if !fv.deleted {
+			live++
+		}
+	}
+	if created["id"] == nil || len(v.vols) != 3 || live != 1 || len(v.guests) != 3 || v.guests[0]["memory_mb"] == nil {
+		t.Fatalf("created %v vols=%d live=%d guests=%v", created, len(v.vols), live, v.guests)
+	}
+	v.full = 100
+	if _, err := c.Start(StartRequest{Image: img, Region: "lhr", Size: "large"}); err == nil || !strings.Contains(err.Error(), "volume_placement_capacity") {
+		t.Fatalf("always full: %v", err)
+	}
+	if len(v.guests) != 3+placementTries {
+		t.Fatalf("tries: %d volumes", len(v.guests)-3)
 	}
 }
 

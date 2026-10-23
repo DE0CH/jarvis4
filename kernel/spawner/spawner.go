@@ -181,6 +181,19 @@ type SpawnInput struct {
 	DiskGB    int          `json:"diskGb"`
 }
 
+// placementTries: how many volumes a spawn tries when Fly answers that a volume's host has no room for the machine
+// (412 volume_placement_capacity): the volume is pinned to its host, so each try is a new volume on another host
+const placementTries = 3
+
+// hostFull: Fly's answer that the volume's host has no room for a machine of this size
+func hostFull(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "volume_placement_capacity")
+}
+
+func guestOf(kind string, cpus, mem int) map[string]any {
+	return map[string]any{"cpu_kind": kind, "cpus": cpus, "memory_mb": mem}
+}
+
 // Spawn: one Fly create (with a new empty volume) from a notarized source → {kind: "created", id, source, volume}
 func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 	if err := sig.CheckIdentity(in.Notarizer, "notarizer", sp.trust); err != nil {
@@ -271,7 +284,7 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 	}()
 
 	if sw.Volume == "" {
-		vid, err := sp.fly.CreateVolume(in.Region, gb)
+		vid, err := sp.fly.CreateVolume(in.Region, gb, guestOf(kind, cpus, mem))
 		if err != nil {
 			return nil, serve.Fail(502, "fly volume: %v", err)
 		}
@@ -289,7 +302,29 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 	for k, v := range sp.env {
 		env[k] = v
 	}
-	id, err := sp.fly.Create(c.Source.Image, in.Region, map[string]any{"cpu_kind": kind, "cpus": cpus, "memory_mb": mem}, env, sw.Volume, key)
+	guest := guestOf(kind, cpus, mem)
+	id, err := sp.fly.Create(c.Source.Image, in.Region, guest, env, sw.Volume, key)
+	for try := 2; hostFull(err) && try <= placementTries; try++ {
+		// the volume's host has no room for this machine; a volume is pinned to its host, so a new one is the way to
+		// another host (nothing was made: Fly refused before creating the machine)
+		old := sw.Volume
+		vid, verr := sp.fly.CreateVolume(in.Region, gb, guest)
+		if verr != nil {
+			break
+		}
+		sp.mu.Lock()
+		if sp.fly.DeleteVolume(old) != nil {
+			sp.orphans[old] = true
+		}
+		sw.Volume = vid
+		serr := sp.save()
+		sp.mu.Unlock()
+		if serr != nil {
+			return nil, serr
+		}
+		log.Printf("spawn: volume %s's host is full (%v); new volume %s, try %d", old, err, vid, try)
+		id, err = sp.fly.Create(c.Source.Image, in.Region, guest, env, sw.Volume, key)
+	}
 	if err == nil && crashAfterCreate != nil {
 		crashAfterCreate()
 	}
