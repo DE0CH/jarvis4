@@ -126,6 +126,7 @@ declare "main" {
     rootfs_path    = coalesce(argument.host_root.value, "/")
     procfs_path    = argument.host_root.value + "/proc"
     sysfs_path     = argument.host_root.value + "/sys"
+    udev_data_path = argument.host_root.value + "/run/udev/data"
     set_collectors = ["cpu", "diskstats", "filesystem", "loadavg", "meminfo", "netdev", "pressure", "vmstat", "uname", "time", "stat"]
     filesystem {
       mount_points_exclude = "^/(dev|proc|run|sys|var/lib/kubelet/pods/.+|run/k3s/.+|var/lib/rancher/k3s/agent/containerd/.+)($|/)"
