@@ -30,7 +30,12 @@ struct SettingsView: View {
         ClaudeAccountsSections()
         FlySection()
         Section {
-          LabeledContent("Core", value: model.coreUp ? "Running" : "Not answering")
+          if let k = model.kernelHealth {
+            LabeledContent("Kernel", value: !k.checked ? "Checking…" : k.healthy ? "Healthy" : k.problems.first ?? "Not healthy")
+              .accessibilityElement(children: .combine).accessibilityIdentifier("settings-kernel-health")
+          } else {
+            LabeledContent("Core", value: model.coreUp ? "Running" : "Not answering")
+          }
           Button("Reset or recover…", systemImage: "key.horizontal") { model.showSetup = true }.accessibilityIdentifier("open-setup")
           NavigationLink(value: SettingsRoute.backup) { Label("Encrypted backup", systemImage: "arrow.down.doc") }
             .accessibilityIdentifier("open-backup")

@@ -6,8 +6,8 @@ package main
 //	POST /api/kernel/root-key      {rootKey}: the app registers its root key's public half (base64 X9.63); kept as
 //	                               pending until the setup session commits it (keys/root.pub, the kernel's ConfigMap)
 //	GET  /setup/kernel/root-key    {rootKey} (setup-signed): what infra/setup.py kernel-root-key commits
-//	GET  /setup/kernel/roster      {current, secretsServing} (setup-signed): the current roster and the secrets colour
-//	                               that serves (whose identity the roster names)
+//	GET  /setup/kernel/roster      {current, secretsServing, status, health} (setup-signed): the current roster, the secrets colour
+//	                               that serves (whose identity the roster names), and the kernel's health (kernelhealth.go)
 //	POST /setup/kernel/roster      {copy, payload, setupSig} (setup-signed): the components' identities as the setup
 //	                               session read them through kernel-id.deyaochen.com, signed by the setup key; pending
 //	GET  /api/kernel/roster/pending {copy, payload, setupSig}: what the app shows and the root key signs
@@ -271,7 +271,7 @@ func (r *Router) registerRoster(app func(string, http.HandlerFunc), mux *http.Se
 		if r.kernel != nil {
 			serving = strings.TrimPrefix(r.kernel.secretsRole("secrets"), "secrets-")
 		}
-		out := map[string]any{"current": nil, "secretsServing": serving, "status": r.rosterStatus()}
+		out := map[string]any{"current": nil, "secretsServing": serving, "status": r.rosterStatus(), "health": r.kernelHealthView()}
 		if d := r.currentRoster(); d != nil {
 			out["current"] = d
 		}
@@ -373,6 +373,7 @@ func (r *Router) registerRoster(app func(string, http.HandlerFunc), mux *http.Se
 			r.kernel.forget(role) // identities are read again (the roster may name new keys)
 		}
 		log.Printf("kernel: the root key's roster %s posted: %v", d.ID()[:12], res)
+		r.kernelHealthCheck() // kernelhealth.go: the app's warning follows the new roster at once
 		writeJSON(w, 200, map[string]any{"ok": true, "id": d.ID(), "results": res})
 	})
 }

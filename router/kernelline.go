@@ -538,7 +538,7 @@ func mustSucc(d *sig.Doc) doc.Object {
 //	                                    the kernel, never the core), whether new
 //	                                    sessions start on it, whether the root's grant is here, and the roster's
 //	                                    state (roster.go: none, pending, current, stale + "roster stale: component X
-//	                                    restarted" per component that refused it)
+//	                                    restarted" per component that refused it), and its health (kernelhealth.go)
 //	GET  /api/kernel/root-grant/draft   {payload}: what the root key signs
 //	POST /api/kernel/root-grant         {grant}: the root key's ⊤ on the sink (the app signs it once, after
 //	                                    secrets' claim, behind the root key's own warning screen); kept, passed on
@@ -548,7 +548,8 @@ func (r *Router) registerKernel(app func(string, http.HandlerFunc)) {
 	app("GET /api/kernel", func(w http.ResponseWriter, req *http.Request) {
 		root := false
 		r.st.Do(func(d *persisted) { root = d.KernelRoot != nil })
-		writeJSON(w, 200, map[string]any{"configured": r.kernel != nil, "core": !r.cfg.NoCore, "serves": r.kernelServes(), "root": root, "roster": r.rosterStatus()})
+		writeJSON(w, 200, map[string]any{"configured": r.kernel != nil, "core": !r.cfg.NoCore, "serves": r.kernelServes(), "root": root, "roster": r.rosterStatus(),
+			"health": r.kernelHealthView()})
 	})
 	// the grant the root key signs once: ⊤ on the sink with the sink's keys (hashed from its name: the app can't
 	// compute them; a draft naming other keys is refused by every component that takes the grant)
