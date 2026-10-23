@@ -41,12 +41,6 @@ func TestMGatewayPassesRequestsOn(t *testing.T) {
 	}
 }
 
-func TestWithPort(t *testing.T) {
-	if got := withPort("http://10.42.0.5:8080", ":8081"); got != "http://10.42.0.5:8081" {
-		t.Fatal(got)
-	}
-}
-
 func TestGatewayConfigByOrdinal(t *testing.T) {
 	if p, err := gatewayConfig("/wg-a/wg.conf,/wg-b/wg.conf", "m-gateway-1"); err != nil || p != "/wg-b/wg.conf" {
 		t.Fatal(p, err)

@@ -58,13 +58,30 @@ func writeErr(w http.ResponseWriter, err error) {
 // MachineHandler: /m only, for the listener that only Fly's private network reaches
 func (r *Router) MachineHandler() http.Handler {
 	r.handlers()
-	return r.gatedMachine(r.machineMux) // movegate.go
+	return stateWriteGuard(r.machineMux)
 }
 
 // Handler: the public listener behind cloudflared — the app, the web page and setup
 func (r *Router) Handler() http.Handler {
 	r.handlers()
-	return r.gated(r.publicMux) // movegate.go
+	return stateWriteGuard(r.publicMux)
+}
+
+// stateWriteGuard: a request whose change the records couldn't take (state.go Do) answers 503 with why, never a 200
+func stateWriteGuard(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		defer func() {
+			if v := recover(); v != nil {
+				if e, ok := v.(stateWriteError); ok {
+					log.Printf("%s %s: %v", req.Method, req.URL.Path, e)
+					writeJSON(w, 503, map[string]string{"error": e.Error() + ": nothing of this request was kept, try again"})
+					return
+				}
+				panic(v)
+			}
+		}()
+		h.ServeHTTP(w, req)
+	})
 }
 
 func (r *Router) handlers() {
@@ -151,7 +168,7 @@ func (r *Router) buildHandlers() {
 				"attention": flyAttentionCount([]flyOrgView{o})})
 		}
 		writeJSON(w, 200, map[string]any{"secrets": present, "sessionImage": r.cfg.SessionImage, "coreUp": coreErr == nil, "version": os.Getenv("VERSION"), "githubRepos": gh, "flyOrgs": flyOrgs,
-			"move": moveStatusNow(), "backup": backupStatus(), "core": r.nextCoreStatus(), "process": processStatus(),
+			"core": r.nextCoreStatus(), "leads": leads(), "replica": routerID, "process": processStatus(),
 			"volumeSweep": volumeSweepStatus(), "db": r.dbStatus(req.Context())})
 	}))
 	setup("GET /setup/identity", "GET", "/identity")
@@ -698,10 +715,7 @@ func (r *Router) buildHandlers() {
 		it, err := r.mqNext(req.Context(), machine, 50*time.Second)
 		switch {
 		case err != nil && req.Context().Err() != nil:
-			if r.frozenNow() { // movegate.go: a handover — "nothing", so the machine polls again at once (the next leader)
-				w.Header().Set("Connection", "close")
-				writeJSON(w, 200, map[string]any{"commands": []string{}, "execs": []execItem{}})
-			}
+			// the machine went (or this replica stops: it polls again, through the gateway, on another)
 		case err != nil:
 			writeErr(w, err)
 		case it == nil:

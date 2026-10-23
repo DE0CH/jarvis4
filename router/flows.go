@@ -42,7 +42,6 @@ type Router struct {
 	notes *broker // mq.go: this replica's waiters on the machines' queue, woken by the database
 	hk    holders
 	drain drainState // drain.go: the lifecycle goroutines running, refused once SIGTERM came
-	gate  moveGate   // movegate.go: deliveries and requests in flight at a handover
 	ops   opsState   // sessionops.go: busy marks, permission-mode/restart jobs, uploads, repos
 
 	policy Policy

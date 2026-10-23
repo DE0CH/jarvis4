@@ -62,3 +62,11 @@ func awaitLead() {
 		time.Sleep(time.Second)
 	}
 }
+
+// releaseLead: a stopping replica gives the scheduler's lease up at once (another takes it at its next renewal)
+func (r *Router) releaseLead() {
+	leadUntil.Store(0)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	r.pool().pool.Exec(ctx, "UPDATE leader SET until = now() WHERE name = 'scheduler' AND holder = $1", routerID)
+}

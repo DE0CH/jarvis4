@@ -308,6 +308,9 @@ func (r *Router) lcDrop(session string) {
 // log early): closed as such
 func (r *Router) lcCutOff() {
 	for _, session := range r.st.LogSessions(logLifecycle) {
+		if r.jobBusy(session) {
+			continue // another replica runs it (jobs.go)
+		}
 		ops, _ := r.lcRead(session)
 		for _, op := range ops {
 			if op.State == "running" {

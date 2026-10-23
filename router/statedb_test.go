@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -49,12 +51,12 @@ func TestStateInPostgres(t *testing.T) {
 	if hot != "started" {
 		t.Fatalf("hot column: %q", hot)
 	}
+	var a, b persisted
+	st.Do(func(d *persisted) { a = *d })
 	db.Close()
 
 	st2, db2 := open()
 	defer db2.Close()
-	var a, b persisted
-	st.Do(func(d *persisted) { a = *d })
 	st2.Do(func(d *persisted) { b = *d })
 	if !reflect.DeepEqual(a.Sessions["s1"], b.Sessions["s1"]) || b.Sessions["s1"].Cert == nil || b.Sessions["s2"] != nil {
 		t.Fatalf("sessions: %+v", b.Sessions)
@@ -104,8 +106,9 @@ func TestStateImport(t *testing.T) {
 	}
 }
 
-// a write the database refuses is kept and written again once it can be; the status says so meanwhile
-func TestStateWriteRetried(t *testing.T) {
+// a change the database keeps refusing never vanishes quietly: Do retries it on a fresh copy, then panics with a
+// stateWriteError, which an HTTP caller gets as a 503 (and a job holder leaves its job for another replica)
+func TestStateWriteRefused(t *testing.T) {
 	url := testDBURL(t)
 	ctx := context.Background()
 	db, err := OpenDB(ctx, url)
@@ -117,20 +120,92 @@ func TestStateWriteRetried(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	old := doBackoff
+	doBackoff = []time.Duration{0, time.Millisecond, time.Millisecond}
+	t.Cleanup(func() { doBackoff = old; stateWriteFailing.Store(false) })
 	r := &Router{st: st}
 	r.db.Store(db)
 	db.pool.Exec(ctx, "ALTER TABLE sessions RENAME TO sessions_away")
-	st.Do(func(d *persisted) { d.Sessions["s1"] = &Session{ID: "s1", State: "started"} })
-	if err, _ := st.StoreError(); err == nil || r.dbStatus(ctx).OK {
-		t.Fatal("a failed write isn't reported")
+	tries := 0
+	func() {
+		defer func() {
+			if _, ok := recover().(stateWriteError); !ok {
+				t.Fatal("a refused change didn't panic with a stateWriteError")
+			}
+		}()
+		st.Do(func(d *persisted) { tries++; d.Sessions["s1"] = &Session{ID: "s1", State: "started"} })
+	}()
+	if tries > 3 || r.dbStatus(ctx).OK || !stateWriteFailing.Load() {
+		t.Fatalf("%d tries, status %+v", tries, r.dbStatus(ctx))
+	}
+	// an HTTP caller gets a 503 saying nothing was kept
+	h := stateWriteGuard(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		st.Do(func(d *persisted) { d.Sessions["s9"] = &Session{ID: "s9"} })
+		w.WriteHeader(200)
+	}))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "/api/x", nil))
+	if w.Code != 503 || !strings.Contains(w.Body.String(), "nothing of this request was kept") {
+		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	db.pool.Exec(ctx, "ALTER TABLE sessions_away RENAME TO sessions")
-	waitFor(t, "the retry", func() bool { err, _ := st.StoreError(); return err == nil })
-	var n int
-	db.pool.QueryRow(ctx, "SELECT count(*) FROM sessions WHERE id = 's1'").Scan(&n)
-	if n != 1 || !r.dbStatus(ctx).OK {
-		t.Fatalf("after the retry: %d rows, %+v", n, r.dbStatus(ctx))
+	st.Do(func(d *persisted) {
+		if d.Sessions["s1"] != nil || d.Sessions["s9"] != nil {
+			t.Fatal("a refused change stayed in the copy")
+		}
+		d.Sessions["s2"] = &Session{ID: "s2"}
+	})
+	if err, _ := st.StoreError(); err != nil || !r.dbStatus(ctx).OK || stateWriteFailing.Load() {
+		t.Fatalf("after a write went through: %v", err)
 	}
+}
+
+// two replicas: a change one makes is what the other's next Do sees
+func TestStateAcrossReplicas(t *testing.T) {
+	url := testDBURL(t)
+	ctx := context.Background()
+	open := func() *State {
+		db, err := OpenDB(ctx, url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(db.Close)
+		st, err := OpenState(ctx, db, t.TempDir(), testSeal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st
+	}
+	a, b := open(), open()
+	a.Do(func(d *persisted) { d.Sessions["s1"] = &Session{ID: "s1", State: "started"} })
+	b.Do(func(d *persisted) {
+		if d.Sessions["s1"] == nil {
+			t.Fatal("the other replica's change isn't seen")
+		}
+		d.Sessions["s1"].State = "pausing"
+	})
+	a.Do(func(d *persisted) {
+		if d.Sessions["s1"].State != "pausing" {
+			t.Fatal("a stale copy was used")
+		}
+	})
+	// concurrent Do's on both: none is lost
+	done := make(chan bool)
+	for _, st := range []*State{a, b} {
+		go func(st *State) {
+			for i := 0; i < 20; i++ {
+				st.Do(func(d *persisted) { d.Sessions["s1"].DiskGB++ })
+			}
+			done <- true
+		}(st)
+	}
+	<-done
+	<-done
+	a.Do(func(d *persisted) {
+		if d.Sessions["s1"].DiskGB != 40 {
+			t.Fatalf("%d increments of 40 survived", d.Sessions["s1"].DiskGB)
+		}
+	})
 }
 
 // the small documents: read and written in the database; a file of one on the volume is imported once and set aside

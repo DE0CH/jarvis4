@@ -4,9 +4,12 @@ package main
 // trusted by anyone else: the certs are core-signed and the snapshots machine-signed.
 
 import (
+	"context"
 	"log"
+	"sync/atomic"
 
 	"github.com/DE0CH/jarvis4/kernel/gv"
+	"github.com/jackc/pgx/v5"
 
 	"sync"
 	"time"
@@ -157,37 +160,103 @@ type State struct {
 	seal *Sealer // sealed.go: the router's secrets in the database
 }
 
-// Do runs fn under the lock and writes what it changed to the database afterwards
+// Do runs fn on the records under the lock of every replica (the state_version row, taken FOR UPDATE: Do's are
+// serialised across the replicas) and writes what it changed in the same transaction; a replica whose copy is older
+// than the database's reloads it first. A transaction the database refuses leaves it as it was: Do reloads and runs fn
+// again (doAttempts times, backing off). A change it still can't write never vanishes quietly: Do panics with a
+// stateWriteError, which the HTTP handlers answer as a 503 to their caller (stateWriteGuard) and which ends this
+// replica otherwise (a job in flight is then carried on by another replica: its holder marks it neither done nor
+// failed, jobs.go jobUnlock).
 func (s *State) Do(fn func(d *persisted)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	fn(&s.data)
-	s.save()
+	if s.sdb == nil {
+		fn(&s.data) // a State that was never opened (a test's frozen stand-in)
+		return
+	}
+	select {
+	case <-s.sdb.db.done:
+		return // the database was closed: the process (or a test) is ending
+	default:
+	}
+	var err error
+	for i, wait := range doBackoff {
+		time.Sleep(wait)
+		if err = s.doOnce(fn); err == nil {
+			stateWriteFailing.Store(false)
+			return
+		}
+		log.Printf("state: a change wasn't written (attempt %d of %d; the records are read again): %v", i+1, len(doBackoff), err)
+	}
+	select {
+	case <-s.sdb.db.done:
+		return
+	default:
+	}
+	stateWriteFailing.Store(true)
+	panic(stateWriteError{err})
 }
 
-// save: the changed records to the database (callers hold mu); a failure is kept and tried again (statedb.go)
-func (s *State) save() {
-	d := &s.data
-	d.SessCerts = map[string]*Doc{}
-	for id, ss := range d.Sessions {
-		if ss.Cert != nil {
-			d.SessCerts[id] = ss.Cert
+// doBackoff: the waits before each attempt of a Do
+var doBackoff = []time.Duration{0, 200 * time.Millisecond, time.Second, 3 * time.Second}
+
+// stateWriteFailing: a Do just gave up (jobs.go: a job ending now isn't marked done: another replica carries it on)
+var stateWriteFailing atomic.Bool
+
+// stateWriteError: what a Do panics with when it can't write a change
+type stateWriteError struct{ err error }
+
+func (e stateWriteError) Error() string { return "the records couldn't be written: " + e.err.Error() }
+
+func (s *State) doOnce(fn func(d *persisted)) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var written rows
+	var ver int64
+	err := pgx.BeginFunc(ctx, s.sdb.db.pool, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, "SELECT v FROM state_version WHERE id = 1 FOR UPDATE").Scan(&ver); err != nil {
+			return err
 		}
-	}
-	if s.sdb == nil {
-		return // a State that was never opened (a test's frozen stand-in)
-	}
-	err := s.sdb.write(d)
+		if ver != s.sdb.ver {
+			if err := s.reload(ctx, tx); err != nil {
+				return err
+			}
+			s.sdb.ver = ver
+		}
+		fn(&s.data)
+		d := &s.data
+		d.SessCerts = map[string]*Doc{}
+		for id, ss := range d.Sessions {
+			if ss.Cert != nil {
+				d.SessCerts[id] = ss.Cert
+			}
+		}
+		now, changed, err := s.sdb.writeTx(ctx, tx, d)
+		if err != nil {
+			return err
+		}
+		if changed {
+			if err := tx.QueryRow(ctx, "UPDATE state_version SET v = v + 1 WHERE id = 1 RETURNING v").Scan(&ver); err != nil {
+				return err
+			}
+		}
+		written = now
+		return nil
+	})
 	s.sdb.mu.Lock()
 	defer s.sdb.mu.Unlock()
-	switch {
-	case err != nil && s.sdb.lastErr == nil:
-		s.sdb.lastErr, s.sdb.errAt = err, time.Now()
-		log.Printf("state: writing to the database failed (kept, tried again): %v", err)
-	case err != nil:
+	if err != nil {
+		s.sdb.ver = -1 // the copy here may hold what the database refused: read again next time
+		if s.sdb.lastErr == nil {
+			s.sdb.errAt = time.Now()
+		}
 		s.sdb.lastErr = err
-	case s.sdb.lastErr != nil:
-		log.Printf("state: the database has every record again (it failed since %s)", s.sdb.errAt.Format(time.RFC3339))
+		return err
+	}
+	s.sdb.written, s.sdb.ver = written, ver
+	if s.sdb.lastErr != nil {
+		log.Printf("state: writes go through again (they failed since %s)", s.sdb.errAt.Format(time.RFC3339))
 		s.sdb.lastErr = nil
 	}
+	return nil
 }

@@ -95,6 +95,9 @@ func (r *Router) jobHold(id string) func(state, errMsg string) {
 	return func(state, errMsg string) {
 		once.Do(func() {
 			close(stop)
+			if state == "abandoned" {
+				return // the lease is left to lapse: jobsLoop carries it on
+			}
 			ctx, cancel := r.jobCtx()
 			defer cancel()
 			if _, err := r.pool().pool.Exec(ctx, "UPDATE jobs SET state = $2, error = $3, updated_at = now() WHERE id = $1 AND state = 'running'", id, state, errMsg); err != nil {
@@ -230,7 +233,22 @@ func (r *Router) jobUnlock(session, kind string, end func(string, string)) func(
 	return func() {
 		once.Do(func() {
 			r.ops.setBusy(session, "")
+			if stateWriteFailing.Load() {
+				// a Do gave up (state.go): this job's last change may be lost, so it isn't marked done; its lease
+				// lapses and a replica carries it on
+				end("abandoned", "")
+				return
+			}
 			end("done", "")
 		})
 	}
+}
+
+// myRunningJobs: the jobs this replica holds now
+func (r *Router) myRunningJobs() int {
+	ctx, cancel := r.jobCtx()
+	defer cancel()
+	var n int
+	r.pool().pool.QueryRow(ctx, "SELECT count(*) FROM jobs WHERE owner = $1 AND state = 'running'", routerID).Scan(&n)
+	return n
 }
