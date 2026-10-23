@@ -47,6 +47,9 @@ spec:
             - { name: CORE_URL, value: "http://core.invalid:8090" }
             # no core on this box, only the kernel: the app's first launch sets up the kernel (GET /api/kernel "core")
             - { name: NO_CORE, value: "1" }
+            # the key backups (storedocs.go): read from Jarvis 2's bucket (BACKUP_BUCKET, the read key may only read
+            # there), written to Jarvis 4's own (versioned; the key adds versions only: infra/backup-read-key.py own-bucket)
+            - { name: BACKUP_WRITE_BUCKET, value: jarvis4-backup-de0ch }
             # its /data, age-encrypted to this key (the same key as Jarvis 2's router backups: the private half is
             # ROUTER_BACKUP_AGE_KEY in the infra store), to the Storage Box claude-records/.jarvis4-router (router/backup.go)
             - { name: ROUTER_BACKUP_AGE_PUB, value: "age1zkvnmh6wu5hyvxppvxf9c83l6q5af7xqqlxtmahkz0l5hhwqq90s8edvu0" }

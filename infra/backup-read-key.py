@@ -13,6 +13,9 @@ A Hetzner S3 credential can do everything in the project unless a bucket policy 
 statements of its own, next to Jarvis 2's (whose statement and key stay as they are):
   jarvis2-backup-de0ch   Sid Jarvis4ReadKeyOnlyReads: Deny of every changing action, PutObject included (Jarvis 2's
                          latest backup versions must never be Jarvis 4's: the key only READS)
+  jarvis4-backup-de0ch   Sid Jarvis4KeyOnlyAdds: the same Deny as Jarvis 2's own key has on its bucket (no delete, no
+                         policy, no versioning change): Jarvis 4's key backups go here as new versions (the router's
+                         BACKUP_WRITE_BUCKET); the app's Recover reads both buckets, this one's objects over Jarvis 2's
   every other bucket     Sid NoJarvis4BackupReadKey: Deny s3:* (a bucket with no policy gets one; a new bucket needs
                          `policies` run again)
 
@@ -20,6 +23,8 @@ statements of its own, next to Jarvis 2's (whose statement and key stay as they 
   backup-read-key.py generate    a new credential "jarvis4-backup-read" → FILE (refuses if FILE exists)
   backup-read-key.py policies    the statements above name the new key (a rotated-out key is kept in
                                  ~/.jarvis2/jarvis4-backup-read.old for delete-old)
+  backup-read-key.py own-bucket  jarvis4-backup-de0ch made (versioned) if missing, with Jarvis4KeyOnlyAdds for the key
+                                 the backup bucket's statement names now and NoJarvis4ObjectsKey for the objects key
   backup-read-key.py test        what the new key may do (wait ~1 min after `policies`); throwaway names only, cleaned
                                  up by the admin key
   backup-read-key.py delete-old  delete the rotated-out credential in the Console (its row's ⋯ → Delete → OK)
@@ -37,6 +42,7 @@ URL = "https://console.hetzner.com/projects/2827255/security/s3-credentials"
 NAME = "jarvis4-backup-read"
 B = "jarvis2-backup-de0ch"
 SID_B, SID_OTHER = "Jarvis4ReadKeyOnlyReads", "NoJarvis4BackupReadKey"
+B4, SID_B4 = "jarvis4-backup-de0ch", "Jarvis4KeyOnlyAdds"  # Jarvis 4's own key backups (router BACKUP_WRITE_BUCKET)
 J2_SID = "BackupReadKeyOnlyReads"  # Jarvis 2's own statement on B: its actions, plus PutObject, are the Jarvis 4 key's Deny
 
 
@@ -140,10 +146,11 @@ def policies():
             if e.response["Error"]["Code"] != "NoSuchBucketPolicy":
                 raise
             j = {"Version": "2012-10-17", "Statement": []}
-        sid = SID_B if b == B else SID_OTHER
+        sid = SID_B if b == B else SID_B4 if b == B4 else SID_OTHER
         if b == B:
-            j2 = next(st for st in j["Statement"] if st.get("Sid") == J2_SID)
-            acts = sorted(set(j2["Action"] if isinstance(j2["Action"], list) else [j2["Action"]]) | {"s3:PutObject"})
+            acts = sorted(set(j2_actions(s3)) | {"s3:PutObject"})
+        elif b == B4:
+            acts = j2_actions(s3)
         else:
             acts = "s3:*"
         mine = {"Sid": sid, "Effect": "Deny", "Principal": {"AWS": arn}, "Action": acts,
@@ -159,12 +166,48 @@ def policies():
         back = json.loads(s3.get_bucket_policy(Bucket=b)["Policy"])["Statement"]
         assert any(st.get("Sid") == sid and new in json.dumps(st["Principal"]) for st in back), b
         assert len(back) == len(rest) + 1, b
-        print(f"ok: {b} {sid}: the new key is denied {'every change' if b == B else 's3:*'} ({len(rest)} other statement(s) kept)")
+        print(f"ok: {b} {sid}: the new key is denied {'every change' if b == B else 'every change but a new version' if b == B4 else 's3:*'} ({len(rest)} other statement(s) kept)")
     if olds:
         assert len(olds) == 1, "the statements named more than one other key"
         with os.fdopen(os.open(OLD, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
             f.write(olds.pop())
         print("the rotated-out key is in", OLD, "(delete-old next)")
+
+
+def j2_actions(s3):
+    """what Jarvis 2's own key is denied on its bucket (every change but a new version)"""
+    j = json.loads(s3.get_bucket_policy(Bucket=B)["Policy"])
+    a = next(st for st in j["Statement"] if st.get("Sid") == J2_SID)["Action"]
+    return sorted(a if isinstance(a, list) else [a])
+
+
+def own_bucket():
+    """B4: made and versioned if missing; the Jarvis 4 key (as B's statement names it now) may read and add versions,
+    the objects key nothing"""
+    from botocore.exceptions import ClientError
+    s3 = admin()
+    if B4 not in [x["Name"] for x in s3.list_buckets()["Buckets"]]:
+        s3.create_bucket(Bucket=B4)
+        print(f"ok: bucket {B4} made")
+    if s3.get_bucket_versioning(Bucket=B4).get("Status") != "Enabled":
+        s3.put_bucket_versioning(Bucket=B4, VersioningConfiguration={"Status": "Enabled"})
+    principal = lambda b, sid: next(st["Principal"] for st in json.loads(s3.get_bucket_policy(Bucket=b)["Policy"])["Statement"] if st.get("Sid") == sid)
+    res = [f"arn:aws:s3:::{B4}", f"arn:aws:s3:::{B4}/*"]
+    try:
+        j = json.loads(s3.get_bucket_policy(Bucket=B4)["Policy"])
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "NoSuchBucketPolicy":
+            raise
+        j = {"Version": "2012-10-17", "Statement": []}
+    mine = [{"Sid": SID_B4, "Effect": "Deny", "Principal": principal(B, SID_B), "Action": j2_actions(s3), "Resource": res},
+            {"Sid": "NoJarvis4ObjectsKey", "Effect": "Deny", "Principal": principal("jarvis4-db-de0ch", "NoJarvis4ObjectsKey"), "Action": "s3:*", "Resource": res}]
+    sids = {m["Sid"] for m in mine}
+    j["Statement"] = [st for st in j["Statement"] if st.get("Sid") not in sids] + mine
+    s3.put_bucket_policy(Bucket=B4, Policy=json.dumps(j))
+    back = {st.get("Sid") for st in json.loads(s3.get_bucket_policy(Bucket=B4)["Policy"])["Statement"]}
+    assert sids <= back, back
+    assert s3.get_bucket_versioning(Bucket=B4).get("Status") == "Enabled"
+    print(f"ok: {B4} versioned; {SID_B4} (the Jarvis 4 key adds versions only) and NoJarvis4ObjectsKey in its policy")
 
 
 def test():
@@ -173,7 +216,7 @@ def test():
     t = f"zz-permission-test/{secrets.token_hex(8)}"
     vid = adm.put_object(Bucket=B, Key=t + "-real", Body=b"x")["VersionId"]
     o2 = f"zz-permission-test/{secrets.token_hex(8)}"
-    others = [x["Name"] for x in adm.list_buckets()["Buckets"] if x["Name"] != B]
+    others = [x["Name"] for x in adm.list_buckets()["Buckets"] if x["Name"] not in (B, B4)]
     for O in others:
         adm.put_object(Bucket=O, Key=o2, Body=b"x")
     rows = []
@@ -201,6 +244,16 @@ def test():
     check("put a lifecycle", "refused", lambda: s3.put_bucket_lifecycle_configuration(Bucket=B, LifecycleConfiguration={"Rules": [
         {"ID": "x", "Status": "Enabled", "Filter": {"Prefix": "zz-permission-test/"}, "Expiration": {"Days": 1}}]}))
     check("put the bucket ACL", "refused", lambda: s3.put_bucket_acl(Bucket=B, ACL="private"))
+    if B4 in [x["Name"] for x in adm.list_buckets()["Buckets"]]:
+        v4 = adm.put_object(Bucket=B4, Key=t + "-real", Body=b"x")["VersionId"]
+        check(f"put on {B4} (Jarvis 4's own key backups)", "allowed", lambda: s3.put_object(Bucket=B4, Key=t, Body=b"x"))
+        check(f"get on {B4}", "allowed", lambda: s3.get_object(Bucket=B4, Key=t + "-real")["Body"].read())
+        check(f"delete on {B4}", "refused", lambda: s3.delete_object(Bucket=B4, Key=t + "-real"))
+        check(f"delete a version on {B4}", "refused", lambda: s3.delete_object(Bucket=B4, Key=t + "-real", VersionId=v4))
+        check(f"suspend versioning on {B4}", "refused", lambda: s3.put_bucket_versioning(Bucket=B4, VersioningConfiguration={"Status": "Suspended"}))
+        others_clean = [B4]
+    else:
+        others_clean = []
     for O in others:
         check(f"list {O}", "refused", lambda O=O: s3.list_objects_v2(Bucket=O, MaxKeys=1))
         check(f"get on {O}", "refused", lambda O=O: s3.get_object(Bucket=O, Key=o2)["Body"].read())
@@ -211,7 +264,7 @@ def test():
     if adm.get_bucket_versioning(Bucket=B).get("Status") != "Enabled":
         adm.put_bucket_versioning(Bucket=B, VersioningConfiguration={"Status": "Enabled"})
         print("FAIL  versioning was changed (re-enabled)")
-    for b in [B] + others:
+    for b in [B] + others + others_clean:
         r = adm.list_object_versions(Bucket=b, Prefix="zz-permission-test/")
         for x in r.get("Versions", []) + r.get("DeleteMarkers", []):
             adm.delete_object(Bucket=b, Key=x["Key"], VersionId=x["VersionId"])
@@ -252,7 +305,7 @@ def install():
 
 
 if __name__ == "__main__":
-    cmds = {"login": login, "generate": generate, "policies": policies, "test": test, "delete-old": delete_old, "install": install}
+    cmds = {"login": login, "generate": generate, "policies": policies, "own-bucket": own_bucket, "test": test, "delete-old": delete_old, "install": install}
     a = sys.argv[1:]
     if not a or a[0] not in cmds:
         raise SystemExit(__doc__)

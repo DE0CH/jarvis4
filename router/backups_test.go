@@ -156,3 +156,56 @@ func TestBackupsFallbackWhileTheBucketFails(t *testing.T) {
 		t.Fatalf("after delete: got %d", code)
 	}
 }
+
+// with a write bucket (Jarvis 4) the router writes there only, and serves both buckets: the write bucket's object over
+// the read bucket's of the same name
+func TestBackupsWriteBucketOverTheReadBucket(t *testing.T) {
+	buckets := map[string]map[string]string{
+		"j2": {"stores/a.json": "A2", "keys/a/K.json": "K2"},
+		"j4": {"keys/a/K.json": "K4", "keys/b/L.json": "L4"},
+	}
+	puts := []string{}
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		parts := strings.SplitN(strings.TrimPrefix(req.URL.Path, "/"), "/", 2)
+		objs := buckets[parts[0]]
+		if req.Method == "PUT" {
+			if parts[0] == "j2" {
+				w.WriteHeader(403)
+				fmt.Fprint(w, "<Error><Code>AccessDenied</Code></Error>")
+				return
+			}
+			puts = append(puts, req.URL.Path)
+			return
+		}
+		if len(parts) == 1 {
+			fmt.Fprint(w, "<ListBucketResult>")
+			for k := range objs {
+				if strings.HasPrefix(k, req.URL.Query().Get("prefix")) {
+					fmt.Fprintf(w, "<Contents><Key>%s</Key></Contents>", k)
+				}
+			}
+			fmt.Fprint(w, "<IsTruncated>false</IsTruncated></ListBucketResult>")
+			return
+		}
+		fmt.Fprint(w, objs[parts[1]])
+	}))
+	defer s.Close()
+	for k, v := range map[string]string{"BACKUP_READ_ACCESS_KEY": "ak", "BACKUP_READ_SECRET_KEY": "sk", "BACKUP_ENDPOINT": s.URL, "BACKUP_BUCKET": "j2", "BACKUP_WRITE_BUCKET": "j4"} {
+		t.Setenv(k, v)
+	}
+	b := backupBucketFromEnv()
+	if err := b.put("keys/c/M.json", []byte("M4")); err != nil || len(puts) != 1 || puts[0] != "/j4/keys/c/M.json" {
+		t.Fatalf("the write went to %v (%v)", puts, err)
+	}
+	objs, err := b.all()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, o := range objs {
+		got[o.Key] = o.Body
+	}
+	if len(got) != 3 || got["stores/a.json"] != "A2" || got["keys/a/K.json"] != "K4" || got["keys/b/L.json"] != "L4" {
+		t.Fatalf("served %v", got)
+	}
+}
