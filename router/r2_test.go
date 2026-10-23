@@ -95,7 +95,7 @@ func TestDeployKeyRelayForTheAppsKeyPair(t *testing.T) {
 	r.cfg.NoAccess = true
 	r.core = &CoreClient{base: core.URL, http: http.DefaultClient}
 	// the app's per-key entries (core/keys.go) reach the core unchanged
-	appDo(t, r, "POST", "/api/repos/key/begin", `{"action":"add","repo":"DE0CH/x","store":"github-x","title":"jarvis2 github-x","publicKey":"ssh-ed25519 AAAA","keys":[{"store":"github-x","key":"K","data":"d"}]}`)
+	appDo(t, r, "POST", "/api/repos/key/begin", `{"action":"add","repo":"DE0CH/x","store":"github-x","title":"jarvis4 github-x","publicKey":"ssh-ed25519 AAAA","keys":[{"store":"github-x","key":"K","data":"d"}]}`)
 	if ks, _ := got["keys"].([]any); got["store"] != "github-x" || got["publicKey"] != "ssh-ed25519 AAAA" || len(ks) != 1 || ks[0].(map[string]any)["key"] != "K" {
 		t.Fatalf("relayed %v", got)
 	}

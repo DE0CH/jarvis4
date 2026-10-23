@@ -6,6 +6,12 @@
 //   .live/<machineId>/<sid>.jsonl                        running sessions — synced every few
 //                                                        minutes by the session image  (source live)
 //   <archive dir>/**.{md,txt,html,log}                   records, reports, chat logs  (kind doc)
+//   .jarvis4-records/<date> <title>.tar.gz               Jarvis 4's archives: one .tar.gz each (the router's
+//                                                        archivetar.go); its transcript-*.jsonl and artifacts/** docs
+//                                                        are indexed as members, <archive>/<name>, with the archive
+//                                                        as their dir. The member list is cached per archive etag
+//                                                        (kv), and a run reads each changed archive once, up to the
+//                                                        first jarvis2/ entry (the snapshot is never read).
 //
 // The unit of work is a GROUP: every copy of one transcript (same <sid>: its live copy, its pause
 // snapshot, the archive, and the archive made again after a Restore) — or a single doc file. When
@@ -18,6 +24,7 @@ const path = require("path");
 const { extractTranscript, extractDoc } = require("./extract");
 const { cjkSpace } = require("./db");
 const { pool, tmpFile, ROOT } = require("./source");
+const tar = require("./tar");
 const { embedDocs, vecToBlob, EMBED_MODEL } = require("./embed");
 
 const SID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/;
@@ -25,11 +32,15 @@ const DOC_RE = /\.(md|txt|html?|log)$/i;
 const DOC_MAX = 1.5 * 1024 * 1024;
 const SKIP_DIRS = [`${ROOT}/.index`, `${ROOT}/oxford-migration`];
 const skipDir = (p) => SKIP_DIRS.includes(p) || /\/(node_modules|\.git)$/.test(p);
+const J4 = ".jarvis4-records";
+// an archive's members that are read at all: the ones before its first jarvis2/ entry (archivetar.go's order)
+const memberEnd = (name) => name.startsWith("jarvis2/") || name.startsWith("discord/");
 
 // path -> { type: transcript|doc|meta, grp, source, dir, machineId } or null (not indexed)
 function classify(p) {
   const rel = p.slice(ROOT.length + 1), seg = rel.split("/");
   if (seg.length < 2) return null;
+  if (seg[0] === J4) return seg.length === 2 && p.endsWith(".tar.gz") ? { type: "archive", dir: p } : null;
   const special = seg[0] === ".paused" ? "paused" : seg[0] === ".live" ? "live" : null;
   if (seg[0].startsWith(".") && !special) return null;
   if (special) {
@@ -47,7 +58,18 @@ function classify(p) {
   return null;
 }
 
-const dirTitle = (dir) => (dir ? path.basename(dir).replace(/^\d{4}-\d{2}-\d{2} /, "") : null);
+// a member of a Jarvis 4 archive: <archive>/<name in it>
+function classifyMember(archive, name) {
+  const p = `${archive}/${name}`;
+  if (name.endsWith(".jsonl")) {
+    const sid = (p.match(SID_RE) || [])[1];
+    return { type: "transcript", grp: sid || p, sid: sid || null, source: "archive", dir: archive, machineId: null };
+  }
+  if (DOC_RE.test(name)) return { type: "doc", grp: p, source: "archive", dir: archive };
+  return null;
+}
+
+const dirTitle = (dir) => (dir ? path.basename(dir).replace(/\.tar\.gz$/, "").replace(/^\d{4}-\d{2}-\d{2} /, "") : null);
 const dirDate = (dir) => (dir && (path.basename(dir).match(/^\d{4}-\d{2}-\d{2}/) || [])[0]) || null;
 const SOURCE_ORDER = { archive: 0, paused: 1, live: 2 };
 
@@ -86,7 +108,67 @@ class Indexer {
 
   async _run({ full = false } = {}) {
     const t0 = Date.now(); this.status.state = "crawling";
-    const listing = (await this.source.list(skipDir)).map((f) => ({ ...f, c: classify(f.path) })).filter((f) => f.c);
+    const dirMeta = new Map();
+    this.extracted = new Map(); this.extractDir = null;
+    try { await this._crawl(full, dirMeta, t0); } finally { if (this.extractDir) fs.rmSync(this.extractDir, { recursive: true, force: true }); this.extracted = null; this.extractDir = null; }
+  }
+
+  // an archive's members ({ name, size } up to the first jarvis2/ entry) and its session.json, cached by etag; a
+  // changed archive is read once, its transcripts and docs kept in this run's extract dir
+  async _members(f) {
+    const key = `archive:${f.path}`, row = this.db.prepare("SELECT v FROM kv WHERE k = ?").get(key);
+    const cached = row && JSON.parse(row.v);
+    if (cached && cached.etag === f.etag) return cached;
+    if (!this.extractDir) this.extractDir = fs.mkdtempSync(path.join(require("os").tmpdir(), "tsearch-x-"));
+    const members = [], metaTmp = path.join(this.extractDir, `${this.extracted.size}-session.json`);
+    let meta = null, sawMeta = false;
+    await tar.walk(await this.source.open(f.path), (e) => {
+      if (memberEnd(e.name)) return "stop";
+      if (e.type !== "file") return;
+      if (e.name === "session.json") { sawMeta = true; return metaTmp; }
+      if (!classifyMember(f.path, e.name)) return;
+      members.push({ name: e.name, size: e.size });
+      const local = path.join(this.extractDir, `${this.extracted.size}-${path.basename(e.name).replace(/[^\w.-]/g, "_")}`);
+      this.extracted.set(`${f.path}/${e.name}`, local);
+      return local;
+    });
+    if (sawMeta) { try { meta = JSON.parse(fs.readFileSync(metaTmp, "utf8")); } catch { /* the title falls back to the name */ } }
+    const out = { etag: f.etag, members, meta };
+    this.db.prepare("INSERT OR REPLACE INTO kv(k, v) VALUES (?, ?)").run(key, JSON.stringify(out));
+    return out;
+  }
+
+  // one member of an archive into dst: from this run's extract dir, else read out of the archive
+  async _fetchMember(f, dst) {
+    const have = this.extracted && this.extracted.get(f.path);
+    if (have && fs.existsSync(have)) { fs.copyFileSync(have, dst); return; }
+    let found = false;
+    await tar.walk(await this.source.open(f.archive), (e) => {
+      if (found || memberEnd(e.name)) return "stop";
+      if (e.name === f.member && e.type === "file") { found = true; return dst; }
+    });
+    if (!found) throw new Error(`${f.member} is not in ${f.archive}`);
+  }
+
+  async _crawl(full, dirMeta, t0) {
+    const listing = [];
+    for (const f of await this.source.list(skipDir)) {
+      const c = classify(f.path);
+      if (!c) continue;
+      if (c.type !== "archive") { listing.push({ ...f, c }); continue; }
+      let m;
+      try { m = await this._members(f); } catch (e) {
+        this.log(`archive ${f.path}: ${e.message}`); // what it held last time stays indexed
+        const row = this.db.prepare("SELECT v FROM kv WHERE k = ?").get(`archive:${f.path}`);
+        if (!row) continue;
+        m = JSON.parse(row.v); f.etag = m.etag;
+      }
+      if (m.meta) dirMeta.set(f.path, m.meta);
+      for (const x of m.members) listing.push({ path: `${f.path}/${x.name}`, size: x.size, etag: f.etag, archive: f.path, member: x.name, c: classifyMember(f.path, x.name) });
+    }
+    for (const row of this.db.prepare("SELECT k FROM kv WHERE k LIKE 'archive:%'").all()) { // a deleted archive's cache goes
+      if (!listing.some((f) => f.archive === row.k.slice(8))) this.db.prepare("DELETE FROM kv WHERE k = ?").run(row.k);
+    }
     const metaFiles = listing.filter((f) => f.c.type === "meta");
     const items = listing.filter((f) => f.c.type !== "meta" && !(f.c.type === "doc" && f.size > DOC_MAX));
     const known = new Map(this.q.files.all().map((r) => [r.path, r]));
@@ -98,7 +180,6 @@ class Indexer {
     this.log(`crawl: ${items.length} files in ${groups.size} groups, ${dirty.size} to (re)index, ${gone.length} gone`);
 
     // archive-dir titles (session.json) are only needed for dirs being rebuilt
-    const dirMeta = new Map();
     const needDirs = new Set([...dirty].flatMap((g) => (groups.get(g) || []).map((f) => f.c.dir)).filter(Boolean));
     await pool(metaFiles.filter((f) => needDirs.has(f.c.dir)), 6, async (f) => {
       const tmp = tmpFile("session.json");
@@ -142,7 +223,7 @@ class Indexer {
     for (const f of files) {
       const tmp = tmpFile(path.basename(f.path));
       try {
-        await this.source.fetchTo(f.path, tmp);
+        if (f.archive) await this._fetchMember(f, tmp); else await this.source.fetchTo(f.path, tmp);
         if (f.c.type === "doc") results.push({ f, chunks: extractDoc(path.relative(f.c.dir, f.path), fs.readFileSync(tmp, "utf8")), uuids: [], meta: null });
         else {
           const r = await extractTranscript(tmp, { skipUuid: (u) => { if (seen.has(u)) return true; const o = this.q.uuidGrp.get(u); return !!o && o.grp !== grp; } });
@@ -201,4 +282,4 @@ class Indexer {
   }
 }
 
-module.exports = { Indexer, classify };
+module.exports = { Indexer, classify, classifyMember };

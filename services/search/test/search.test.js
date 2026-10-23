@@ -119,3 +119,54 @@ test("filters: state = the session's current state; archived = text read from an
   assert.equal((await kw("return leg", { archived: true })).sessions.length, 0);
   assert.equal((await kw("return leg", { states: ["live"] })).sessions.length, 1);
 });
+
+// Jarvis 4's archives: one .tar.gz each in claude-records/.jarvis4-records/ (the router's archivetar.go); members are
+// indexed as <archive>/<name> with the archive as their dir, read once per change and never past jarvis2/
+test("index: a Jarvis 4 .tar.gz archive", async () => {
+  const { execFileSync } = require("child_process");
+  const { walk } = require("../lib/tar");
+  const root = mirror({});
+  const src = fs.mkdtempSync(path.join(os.tmpdir(), "ts-arch-"));
+  const longDir = "artifacts/" + "deep-folder-name/".repeat(8); // > 100 chars: a PAX path record
+  const put = (p, body) => { fs.mkdirSync(path.join(src, path.dirname(p)), { recursive: true }); fs.writeFileSync(path.join(src, p), body); };
+  put("session.json", JSON.stringify({ id: "s1", title: "Ferry booking", environment: "default" }));
+  put(`transcript-${SID}.jsonl`, convo());
+  put(longDir + "record.md", "# Record\n\nBooked the Shekou ferry at 09:15.");
+  put("jarvis2/snapshot.tar.gz", "never read");
+  const name = "2026-10-22 Ferry booking.tar.gz", rel = `.jarvis4-records/${name}`, file = path.join(root, "claude-records", rel);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  execFileSync("tar", ["--format=pax", "-czf", file, "-C", src, "session.json", `transcript-${SID}.jsonl`, "artifacts", "jarvis2"]);
+  fs.writeFileSync(path.join(root, "claude-records/.jarvis4-records/index.json"), "[]");
+
+  // the reader: every member, PAX long names whole; "stop" ends the walk
+  const seen = [];
+  await walk(fs.createReadStream(file), (e) => { seen.push(e.name); });
+  assert.ok(seen.includes(longDir + "record.md"), seen.join(","));
+  const early = [];
+  await walk(fs.createReadStream(file), (e) => { early.push(e.name); if (e.name.startsWith("artifacts")) return "stop"; });
+  assert.ok(!early.includes("jarvis2/snapshot.tar.gz"));
+
+  const archive = `claude-records/${rel}`;
+  assert.deepEqual(classify(archive), { type: "archive", dir: archive });
+  assert.equal(classify("claude-records/.jarvis4-records/index.json"), null);
+  const db = open(":memory:"), ix = new Indexer(db, local(root), quiet), s = new Searcher(db, quiet);
+  delete process.env.OPENROUTER_API;
+  await ix.run();
+  const kw = (q, extra) => s.search({ q, mode: "keyword", ...extra });
+  const hit = (await kw("火车票")).hits[0];
+  assert.equal(hit.title, "Train tickets");
+  assert.equal(hit.dir, archive);
+  assert.equal(hit.file, `${archive}/transcript-${SID}.jsonl`);
+  assert.equal((await kw("Shekou ferry", { kinds: ["doc"] })).hits[0].file, `${archive}/${longDir}record.md`);
+  assert.equal((await kw("never read")).hits.length, 0);
+  assert.equal(db.prepare("SELECT dir FROM sessions WHERE sid = ?").get(SID).dir, archive);
+
+  // unchanged: nothing re-indexed, and the archive isn't read again
+  await ix.run();
+  assert.equal(ix.status.lastRun.reindexed, 0);
+  // the archive deleted (a purge): its text goes
+  fs.rmSync(file);
+  await ix.run();
+  assert.equal((await kw("火车票")).hits.length, 0);
+  assert.equal(db.prepare("SELECT count(*) n FROM kv WHERE k LIKE 'archive:%'").get().n, 0);
+});

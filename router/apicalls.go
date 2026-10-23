@@ -488,7 +488,6 @@ var callRules = map[string]callRule{
 	"GET /api/kernel/secrets/{path...}":           callNo, // the kernel's secrets, relayed for the app (claim, unlock: the phone's)
 	"POST /api/kernel/secrets/{path...}":          callNo,
 	"GET /api/records":                            callBody,
-	"POST /api/records":                           callBody,
 	"DELETE /api/records/{id}":                    callBody,
 	"POST /api/records/{id}/restore":              callBody,
 	"GET /api/records/{id}/tail":                  callBody,

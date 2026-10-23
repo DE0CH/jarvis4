@@ -80,9 +80,27 @@ func (m *memDAV) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			if n < len(b) {
 				b = b[len(b)-n:]
 			}
+			w.Header().Set("Content-Length", strconv.Itoa(len(b)))
 			w.WriteHeader(206)
+		} else {
+			w.Header().Set("Content-Length", strconv.Itoa(len(b)))
 		}
 		w.Write(b)
+	case "MOVE":
+		b, ok := m.files[p]
+		u, err := url.Parse(req.Header.Get("Destination"))
+		if !ok || err != nil {
+			w.WriteHeader(404)
+			return
+		}
+		to := strings.Trim(u.Path, "/")
+		if m.fail != "" && strings.HasPrefix(to, m.fail) {
+			w.WriteHeader(507)
+			return
+		}
+		delete(m.files, p)
+		m.files[to] = b
+		w.WriteHeader(201)
 	case "DELETE":
 		found := false
 		for f := range m.files {
@@ -152,6 +170,38 @@ func (m *memDAV) get(p string) []byte {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.files[p]
+}
+
+// archive: the members of a .tar.gz on the box (a hard link holds its target's bytes) and their order
+func (m *memDAV) archive(t *testing.T, file string) (map[string][]byte, []string) {
+	t.Helper()
+	b := m.get(file)
+	if b == nil {
+		t.Fatalf("no archive %s (have %v)", file, m.under("claude-records"))
+	}
+	gz, err := gzip.NewReader(bytes.NewReader(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := tar.NewReader(gz)
+	out := map[string][]byte{}
+	var order []string
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		order = append(order, h.Name)
+		if h.Typeflag == tar.TypeLink {
+			out[h.Name] = out[h.Linkname]
+			continue
+		}
+		out[h.Name], _ = io.ReadAll(tr)
+	}
+	return out, order
 }
 
 func (m *memDAV) under(dir string) []string {
@@ -320,32 +370,45 @@ func waitFor(t *testing.T, what string, ok func() bool) {
 
 // ---- tests ------------------------------------------------------------------------------------------
 
+const rigArchive = archivesRoot + "/2026-10-01 Fix the router.tar.gz" // the transcript's title, made path-safe
+
 func TestArchiveLayoutAndIndex(t *testing.T) {
 	rg := newRig(t)
 	info, err := rg.r.archive("s1")
 	if err != nil || info == nil {
 		t.Fatalf("archive: %v %v", info, err)
 	}
-	dir := "claude-records/2026-10-01 Fix the router" // the transcript's title, made path-safe
-	if info.Dir != dir {
-		t.Fatalf("dir %q", info.Dir)
+	if info.File != rigArchive {
+		t.Fatalf("file %q", info.File)
 	}
-	got := rg.dav.under(dir)
-	want := []string{"artifacts/proj/report.html", "artifacts/record.md", "artifacts/report.html", "artifacts/sub/shot.png",
-		"jarvis2/cert.json", "jarvis2/core-cert.json", "jarvis2/snapshot.sig", "jarvis2/snapshot.tar.gz",
-		"restore-s1.json", "session.json", "transcript-aaaa.jsonl", "transcript-bbbb.jsonl"}
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("files:\n got %v\nwant %v", got, want)
+	// ONE file in Jarvis 4's folder, and only the index next to it: nothing anywhere else
+	if got := rg.dav.under("claude-records"); strings.Join(got, ",") != ".jarvis4-records/2026-10-01 Fix the router.tar.gz,.jarvis4-records/index.json" {
+		t.Fatalf("on the box: %v", got)
 	}
-	if string(rg.dav.get(dir+"/artifacts/report.html")) != "<p>r</p>" {
+	files, order := rg.dav.archive(t, rigArchive)
+	want := []string{"session.json", "restore-s1.json", "transcript-aaaa.jsonl", "transcript-bbbb.jsonl",
+		"artifacts/proj/report.html", "artifacts/record.md", "artifacts/report.html", "artifacts/sub/shot.png",
+		"jarvis2/cert.json", "jarvis2/core-cert.json", "jarvis2/snapshot.sig", "jarvis2/snapshot.tar.gz"}
+	sorted := func(xs []string) string { c := append([]string{}, xs...); sort.Strings(c); return strings.Join(c, ",") }
+	if sorted(order) != sorted(want) {
+		t.Fatalf("members:\n got %v\nwant %v", order, want)
+	}
+	// the transcripts come before the artifacts, and the snapshot last
+	if order[0] != "session.json" || order[2] != "transcript-aaaa.jsonl" || order[3] != "transcript-bbbb.jsonl" || order[len(order)-1] != "jarvis2/snapshot.tar.gz" {
+		t.Fatalf("order %v", order)
+	}
+	if string(files["artifacts/report.html"]) != "<p>r</p>" || string(files["artifacts/proj/report.html"]) != "<p>r</p>" {
 		t.Fatal("a symlinked artifact wasn't followed")
 	}
 	if strings.Join(info.Transcripts, ",") != "transcript-aaaa.jsonl,transcript-bbbb.jsonl" {
 		t.Fatalf("transcripts not oldest first: %v", info.Transcripts)
 	}
+	if info.Bytes != int64(len(rg.dav.get(rigArchive))) || info.UploadSeconds <= 0 {
+		t.Fatalf("size %d (box %d), upload %v s", info.Bytes, len(rg.dav.get(rigArchive)), info.UploadSeconds)
+	}
 	var meta map[string]any
-	json.Unmarshal(rg.dav.get(dir+"/session.json"), &meta)
-	if meta["id"] != "s1" || meta["snapshotMachine"] != "m1" || fmt.Sprint(meta["unresolvedArtifactLinks"]) != "[artifacts/outside]" {
+	json.Unmarshal(files["session.json"], &meta)
+	if meta["id"] != "s1" || meta["snapshotMachine"] != "m1" || fmt.Sprint(meta["unresolvedArtifactLinks"]) != "[artifacts/outside]" || meta["archive"] != rigArchive {
 		t.Fatalf("session.json %v", meta)
 	}
 	// the signed snapshot verifies against the archived cert's machine key
@@ -353,50 +416,67 @@ func TestArchiveLayoutAndIndex(t *testing.T) {
 		Machine struct{ SigningKey string } `json:"machine"`
 	}
 	var cd Doc
-	json.Unmarshal(rg.dav.get(dir+"/jarvis2/cert.json"), &cd)
+	json.Unmarshal(files["jarvis2/cert.json"], &cd)
 	cd.Decode(&c)
-	sum := sha256.Sum256(rg.dav.get(dir + "/jarvis2/snapshot.tar.gz"))
-	if !verifyP256(c.Machine.SigningKey, []byte(hex.EncodeToString(sum[:])), string(rg.dav.get(dir+"/jarvis2/snapshot.sig"))) {
+	sum := sha256.Sum256(files["jarvis2/snapshot.tar.gz"])
+	if !verifyP256(c.Machine.SigningKey, []byte(hex.EncodeToString(sum[:])), string(files["jarvis2/snapshot.sig"])) {
 		t.Fatal("archived snapshot doesn't verify against the archived cert")
 	}
 	var idx []map[string]any
 	json.Unmarshal(rg.dav.get(recordsIndex), &idx)
-	if len(idx) != 1 || idx[0]["id"] != "s1" || idx[0]["archiveDir"] != dir {
+	if len(idx) != 1 || idx[0]["id"] != "s1" || idx[0]["archive"] != rigArchive {
 		t.Fatalf("index %v", idx)
 	}
 	var s Session
 	rg.r.st.Do(func(d *persisted) { s = *d.Sessions["s1"] })
-	if rg.r.archiveDir(s) != dir {
-		t.Fatal("archiveDir doesn't return the chosen dir")
+	if s.ArchiveFile != rigArchive {
+		t.Fatal("the session doesn't keep its archive's name")
 	}
 }
 
-func TestArchiveDirUnique(t *testing.T) {
+func TestArchiveFileUnique(t *testing.T) {
 	rg := newRig(t)
 	rg.r.st.Do(func(d *persisted) { d.Sessions["s1"].Label = "Mine" })
 	box := rg.r.box()
-	box.Mkcols("claude-records/2026-10-01 Mine")
-	box.PutBytes("claude-records/2026-10-01 Mine/session.json", []byte("{}")) // Jarvis 1's, same day and title
+	box.Mkcols(archivesRoot)
+	box.PutBytes(archivesRoot+"/2026-10-01 Mine.tar.gz", []byte("x")) // another session's, same day and title
 	info, err := rg.r.archive("s1")
-	if err != nil || info.Dir != "claude-records/2026-10-01 Mine 2" {
+	if err != nil || info.File != archivesRoot+"/2026-10-01 Mine 2.tar.gz" {
 		t.Fatalf("%v %v", info, err)
 	}
+}
+
+// a failed upload leaves no archive under its real name (only the .part, deleted), and the next try writes it whole
+func TestArchiveUploadFailsWhole(t *testing.T) {
+	rg := newRig(t)
+	rg.dav.fail = rigArchive // the rename fails
+	if _, err := rg.r.archive("s1"); err == nil {
+		t.Fatal("no error")
+	}
+	if got := rg.dav.under(archivesRoot); len(got) != 0 {
+		t.Fatalf("left on the box: %v", got)
+	}
+	rg.dav.fail = ""
+	if info, err := rg.r.archive("s1"); err != nil || info.File != rigArchive {
+		t.Fatalf("%v %v", info, err)
+	}
+	rg.dav.archive(t, rigArchive)
 }
 
 func TestDestroyArchivesThenRecords(t *testing.T) {
 	rg := newRig(t)
 	var hooked string
-	onDestroy = append(onDestroy, func(r *Router, s Session) { hooked = s.ID + " " + r.archiveDir(s) })
+	onDestroy = append(onDestroy, func(r *Router, s Session) { hooked = s.ID + " " + s.ArchiveFile })
 	defer func() { onDestroy = onDestroy[:len(onDestroy)-1] }()
 	if err := rg.r.Destroy("s1"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the record", func() bool { return rg.r.record("s1") != nil && rg.r.record("s1").Archive != nil })
 	rec := rg.r.record("s1")
-	if rec.Archive.Dir != "claude-records/2026-10-01 Fix the router" || rec.Archive.Last == nil || rec.Archive.Last.Text != "done it" {
+	if rec.Archive.File != rigArchive || rec.Archive.Last == nil || rec.Archive.Last.Text != "done it" {
 		t.Fatalf("record %+v", rec.Archive)
 	}
-	if hooked != "s1 claude-records/2026-10-01 Fix the router" {
+	if hooked != "s1 "+rigArchive {
 		t.Fatalf("destroy hook got %q", hooked)
 	}
 	waitFor(t, "the snapshot gone", func() bool { return rg.r.snap("m1") == nil })
@@ -412,7 +492,7 @@ func TestDestroyArchivesThenRecords(t *testing.T) {
 
 func TestDestroyArchiveFailureKeepsSession(t *testing.T) {
 	rg := newRig(t)
-	rg.dav.fail = "claude-records/2026"
+	rg.dav.fail = archivesRoot + "/2026"
 	rg.r.Destroy("s1")
 	waitFor(t, "the error", func() bool {
 		var s Session
@@ -462,24 +542,19 @@ func TestPurgeRecord(t *testing.T) {
 	rg := newRig(t)
 	rg.r.Destroy("s1")
 	waitFor(t, "the record", func() bool { return rg.r.record("s1") != nil && rg.r.record("s1").Archive != nil }) // finish lists it a moment before its archive is set (flows.go)
-	dir := rg.r.record("s1").Archive.Dir
-	// a second record sharing the dir keeps the shared files
-	rg.r.st.Do(func(d *persisted) {
-		d.Records = append(d.Records, &Record{Session: Session{ID: "s2"}, Archive: &ArchiveInfo{Dir: dir, Transcripts: []string{"transcript-bbbb.jsonl"}}})
-	})
+	file := rg.r.record("s1").Archive.File
 	out, err := rg.r.DeleteRecord("s1", true)
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || rg.dav.get(file) != nil {
+		t.Fatalf("purge %v %v", out, err)
 	}
-	if rg.dav.get(dir+"/transcript-aaaa.jsonl") != nil || rg.dav.get(dir+"/transcript-bbbb.jsonl") == nil || rg.dav.get(dir+"/restore-s1.json") != nil {
-		t.Fatalf("shared purge %v", out)
+	// a record whose archive isn't one of Jarvis 4's is refused
+	rg.r.st.Do(func(d *persisted) {
+		d.Records = append(d.Records, &Record{Session: Session{ID: "s2"}, Archive: &ArchiveInfo{File: "claude-records/2026-10-01 Jarvis 2's"}})
+	})
+	if _, err := rg.r.DeleteRecord("s2", true); err == nil {
+		t.Fatal("purged a file outside Jarvis 4's folder")
 	}
-	if _, err := rg.r.DeleteRecord("s2", true); err != nil {
-		t.Fatal(err)
-	}
-	if len(rg.dav.under(dir)) != 0 {
-		t.Fatalf("left %v", rg.dav.under(dir))
-	}
+	rg.r.DeleteRecord("s2", false)
 	var idx []map[string]any
 	json.Unmarshal(rg.dav.get(recordsIndex), &idx)
 	if len(idx) != 0 || rg.r.record("s1") != nil {
@@ -553,8 +628,19 @@ func TestRestoreRefusesBadSignature(t *testing.T) {
 	rg := newRig(t)
 	rg.r.Destroy("s1")
 	waitFor(t, "the record", func() bool { return rg.r.record("s1") != nil && rg.r.record("s1").Archive != nil }) // finish lists it a moment before its archive is set (flows.go)
-	dir := rg.r.record("s1").Archive.Dir
-	rg.r.box().PutBytes(dir+"/jarvis2/snapshot.tar.gz", []byte("tampered"))
+	file := rg.r.record("s1").Archive.File
+	members, order := rg.dav.archive(t, file)
+	members["jarvis2/snapshot.tar.gz"] = []byte("tampered")
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for _, n := range order {
+		tw.WriteHeader(&tar.Header{Name: n, Mode: 0o644, Size: int64(len(members[n])), Typeflag: tar.TypeReg})
+		tw.Write(members[n])
+	}
+	tw.Close()
+	gz.Close()
+	rg.r.box().PutBytes(file, buf.Bytes())
 	if _, err := rg.r.RestoreRecord("s1", "r"); err == nil || !strings.Contains(err.Error(), "isn't signed") {
 		t.Fatalf("err %v", err)
 	}
@@ -574,12 +660,12 @@ func TestResolveLink(t *testing.T) {
 	}
 }
 
-func TestArchiveDirFor(t *testing.T) {
+func TestArchiveFileFor(t *testing.T) {
 	s := &Session{ID: "s1", Created: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
-	if got := archiveDirFor(s, "..hidden/x"); got != "claude-records/2026-10-01 hidden x" {
+	if got := archiveFileFor(s, "..hidden/x"); got != "claude-records/.jarvis4-records/2026-10-01 hidden x.tar.gz" {
 		t.Fatal(got)
 	}
-	if got := archiveDirFor(s, ""); got != "claude-records/2026-10-01 s1" {
+	if got := archiveFileFor(s, ""); got != "claude-records/.jarvis4-records/2026-10-01 s1.tar.gz" {
 		t.Fatal(got)
 	}
 }
@@ -593,7 +679,7 @@ func TestRecordsListNoTranscriptsAsArray(t *testing.T) {
 	r.cfg.NoAccess = true
 	r.st.Do(func(d *persisted) {
 		d.Records = append(d.Records, &Record{Session: Session{ID: "s9"}, DestroyedAt: time.Now(),
-			Archive: &ArchiveInfo{Dir: "claude-records/2026-10-16 s9", Title: "s9", Signer: "m9"}})
+			Archive: &ArchiveInfo{File: archivesRoot + "/2026-10-16 s9.tar.gz", Title: "s9", Signer: "m9"}})
 	})
 	req := httptest.NewRequest("GET", "/api/records", nil)
 	w := httptest.NewRecorder()
@@ -614,9 +700,9 @@ func TestRecordsListNoTranscriptsAsArray(t *testing.T) {
 	}
 }
 
-// DECISIONS 226: the uploads run in parallel, each directory is made once (parents first), progress is reported, and
-// a failed upload fails the archive without leaving temp files
-func TestArchiveParallelUploadsAndProgress(t *testing.T) {
+// many artifacts go into the one archive (streamed, nothing left in tmp), with progress; a failed upload fails the
+// archive and leaves nothing in tmp
+func TestArchiveManyArtifactsAndProgress(t *testing.T) {
 	rg := newRig(t)
 	t0 := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	files := append([]tfile{}, rg.files...)
@@ -631,13 +717,10 @@ func TestArchiveParallelUploadsAndProgress(t *testing.T) {
 	if err != nil || info == nil {
 		t.Fatalf("archive: %v %v", info, err)
 	}
-	got := map[string]bool{}
-	for _, f := range rg.dav.under(info.Dir) {
-		got[f] = true
-	}
+	got, _ := rg.dav.archive(t, info.File)
 	for i := 0; i < 60; i++ {
 		f := fmt.Sprintf("artifacts/deep/d%d/e/f%d.txt", i%7, i)
-		if !got[f] || string(rg.dav.get(info.Dir+"/"+f)) != fmt.Sprint("file ", i) {
+		if string(got[f]) != fmt.Sprint("file ", i) {
 			t.Fatalf("%s missing or wrong", f)
 		}
 	}
@@ -659,7 +742,7 @@ func TestArchiveParallelUploadsAndProgress(t *testing.T) {
 	rg.writeSnapshot(t, "m1", files)
 	tmp = filepath.Join(rg.r.cfg.DataDir, "tmp")
 	rg.dav.mu.Lock()
-	rg.dav.fail = "claude-records/2026-10-01 Fix the router/artifacts/deep/d3"
+	rg.dav.fail = archivesRoot + "/2026"
 	rg.dav.mu.Unlock()
 	if _, err := rg.r.archive("s1"); err == nil || !strings.Contains(err.Error(), "507") {
 		t.Fatalf("want the 507, got %v", err)
@@ -674,17 +757,12 @@ func TestArchiveProgressText(t *testing.T) {
 	every := archiveProgressEvery
 	archiveProgressEvery = time.Hour
 	defer func() { archiveProgressEvery = every }()
-	p := rg.r.archiveProgress("s1")
-	p(1, 10) // the first is always shown
-	p(2, 10) // within the interval: not
+	p := rg.r.archiveProgress("s1", 10_000_000)
+	p(1_000_000) // the first is always shown
+	p(2_000_000) // within the interval: not
 	var s Session
 	rg.r.st.Do(func(d *persisted) { s = *d.Sessions["s1"] })
-	if s.Waiting != "archiving to the Storage Box: 1 of 10 files uploaded" {
-		t.Fatalf("waiting %q", s.Waiting)
-	}
-	p(10, 10) // the last always
-	rg.r.st.Do(func(d *persisted) { s = *d.Sessions["s1"] })
-	if s.Waiting != "archiving to the Storage Box: 10 of 10 files uploaded" {
+	if s.Waiting != "archiving to the Storage Box: 1.0 MB of 10.0 MB" {
 		t.Fatalf("waiting %q", s.Waiting)
 	}
 }

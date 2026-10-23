@@ -45,7 +45,7 @@ type Session struct {
 	LiveSync       *LiveSync  `json:"liveSync,omitempty"`       // livesync.go: the transcripts the machine last copied out
 	DiscordChannel string     `json:"discordChannel,omitempty"` // the session's channel (discord.go), LOBSTER_CHANNEL on the machine
 	Live           *Liveness  `json:"live,omitempty"`           // reported status, auto-pause/one-shot settings (autopilot.go)
-	ArchiveDir     string     `json:"archiveDir,omitempty"`     // archive.go: fixed by the destroy that archives it
+	ArchiveFile    string     `json:"archiveFile,omitempty"`    // archivetar.go: fixed by the destroy that archives it
 	RestoreFrom    string     `json:"restoreFrom,omitempty"`    // restore.go: the record this session restores
 	RestoreCert    *Doc       `json:"restoreCert,omitempty"`    // restore.go: that record's signer cert
 	// restore.go: the master key's claim of the core that signed RestoreCert (an archive from an earlier core)

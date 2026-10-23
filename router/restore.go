@@ -57,7 +57,7 @@ func (r *Router) RestoreRecord(recordID, requestID string) (string, error) {
 		return "", errors.New("this session was destroyed without an archive: nothing to restore")
 	}
 	if rec.Archive.Signer == "" {
-		return "", errHandIndex // records.go
+		return "", fmt.Errorf("this archive has no signed snapshot, so it can't be restored: %s", rec.Archive.NoSnapshot)
 	}
 	// an archive marked unverified (its snapshot wasn't named in its kill: an earlier core's machine) is checked like
 	// any other below (checkRestoreFiles: its cert by this core or an earlier core the master key claimed, the snapshot
@@ -102,18 +102,17 @@ func (r *Router) RestoreRecord(recordID, requestID string) (string, error) {
 		r.snapDrop(restoreSnap(sid))
 		return "", err
 	}
+	// streamed out of the archive (archivetar.go); core-cert.json: the master key's claim of the core that signed the
+	// cert, through which an archive from an earlier core restores (core continuity); absent when the router had none
+	found, err := extractArchive(box, rec.Archive.File, dir, "jarvis2/snapshot.tar.gz", "jarvis2/snapshot.sig", "jarvis2/cert.json", "jarvis2/core-cert.json")
+	if err != nil {
+		return fail(err)
+	}
 	for _, f := range []string{"snapshot.tar.gz", "snapshot.sig", "cert.json"} {
-		found, err := box.Download(rec.Archive.Dir+"/jarvis2/"+f, filepath.Join(dir, f))
-		if err != nil {
-			return fail(err)
-		}
-		if !found {
+		if !found["jarvis2/"+f] {
 			return fail(fmt.Errorf("the archive has no jarvis2/%s", f))
 		}
 	}
-	// the master key's claim of the core that signed the cert (archive.go writes it): an archive from an earlier core
-	// restores through it (core continuity); absent in archives from before the router kept claims
-	box.Download(rec.Archive.Dir+"/jarvis2/core-cert.json", filepath.Join(dir, "core-cert.json"))
 	cert, err := r.checkRestoreFiles(dir)
 	if err != nil {
 		return fail(err)

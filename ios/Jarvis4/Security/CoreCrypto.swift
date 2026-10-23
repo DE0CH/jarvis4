@@ -393,14 +393,19 @@ extension Checks {
     if action == "remove", b.keys?.isEmpty == false { throw TrustError.mismatch("a remove that brings a key") }
     guard b.kind == "deploy-key-begin", b.action == action else { throw TrustError.mismatch("action") }
     guard b.repo.lowercased() == repo.lowercased() else { throw TrustError.mismatch("repo") }
-    guard b.store == repoStore(repo), b.title == "jarvis2 " + b.store else { throw TrustError.mismatch("store") }
+    guard b.store == repoStore(repo), b.title == deployKeyTitle(b.store) else { throw TrustError.mismatch("store") }
     guard b.tokenStore == deployKeyTokenStore else { throw TrustError.mismatch("the store it opens") }
     if action == "add", sensitive, !b.sensitive { throw TrustError.mismatch("sensitive") }
-    // Jarvis 4's own repo can push code that changes Jarvis 4: its store is always sensitive (checked here, not only
+    // Jarvis's own repos can push code that changes Jarvis: their stores are always sensitive (checked here, not only
     // by the core)
-    if action == "add", repo.lowercased() == "de0ch/jarvis2", !b.sensitive { throw TrustError.mismatch("DE0CH/jarvis2's store must be sensitive") }
+    if action == "add", alwaysSensitive(repo), !b.sensitive { throw TrustError.mismatch("\(repo)'s store must be sensitive") }
     return b
   }
+  /// the repos whose code runs Jarvis (DE0CH/jarvis2 and DE0CH/jarvis4): their stores are always sensitive
+  static func alwaysSensitive(_ repo: String) -> Bool { ["de0ch/jarvis2", "de0ch/jarvis4"].contains(repo.lowercased()) }
+  /// the deploy key's title on GitHub: Jarvis 4's own ("jarvis4 <store>"), so a re-add here replaces only Jarvis 4's key
+  /// for the repo, never the one Jarvis 2 added ("jarvis2 <store>")
+  static func deployKeyTitle(_ store: String) -> String { "jarvis4 " + store }
 
   /// the core's answer is for this request and says it was done
   static func deployKeyAnswer(_ doc: SignedDoc, coreKey: String, begin b: DeployKeyBegin) throws -> DeployKeyAnswer {

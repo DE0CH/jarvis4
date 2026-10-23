@@ -86,9 +86,9 @@ made around it; the app's own list is `app/DECISIONS.md`.
     Jarvis 1 tokens the cf-tunnel Worker confines (`CONFINED_TOKENS`): `jarvis2-claude-credentials`,
     `jarvis2-services` (credentials, search, iCloud, usage), `jarvis2-tunnel` (Jarvis 4 tunnel agents, per-id proof).
 26. **Discord**: lobster (shared with Jarvis 1, Deyao's answer), channels under a "Jarvis 4" category.
-27. **Archives** go to the Storage Box in Jarvis 1's layout (`claude-records/<date> <title>/`), so Jarvis 1's
-    transcript search indexes them, with the machine-signed snapshot and its cert chain under `jarvis2/`; Jarvis 4's
-    own index is `.index/jarvis2-destroyed-sessions.json`.
+27. **Archives** go to the Storage Box as one `.tar.gz` each in Jarvis 4's own folder
+    (`claude-records/.jarvis4-records/`, index `index.json` there; DECISIONS 227), with the machine-signed snapshot and
+    its cert chain under `jarvis2/` inside.
 28. **Restore of a destroyed session** is a new line (phone approval) whose first machine restores the archived
     snapshot after checking it against the old core-signed cert. Which snapshot is the router's choice, not
     signed; the router already holds every snapshot, so a wrong choice exposes nothing new.
@@ -147,9 +147,8 @@ made around it; the app's own list is `app/DECISIONS.md`.
 40. **One-shot sessions are destroyed with force** (Jarvis 1's finishOneShot): a failed archive no longer leaves them
     paused; the repos' state comes from the final snapshot (the machine records it just before tarring), so no `archive`
     grant is needed; Deyao gets a DM only when work was lost (dirty repos, an unchecked state, a failed archive).
-41. **Indexing an archive by hand** (`POST /api/records`, Jarvis 1's) puts a folder already on the Storage Box on the
-    Previous list (tail, Remove, Delete). It can't be restored in Jarvis 4: restore trusts only a machine-signed
-    snapshot with its core-signed cert, which such a folder doesn't have.
+41. **Indexing an archive by hand** (`POST /api/records`, Jarvis 1's) is gone (DECISIONS 227): a record is one of
+    Jarvis 4's own `.tar.gz` archives.
 42. **Search and the iCloud index were forwarded to Jarvis 1** until they moved to the Jarvis 4 box (2026-10-13, entries
     106-111).
 43. **When the core can't be reached the router answers 503 `{coreDown}`** (it said 502 "core unreachable"): while
@@ -2497,7 +2496,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      refused; the tick finishes it without a takeover call; `activeCore` set, `core-final.json` gone, kept over a
      restart), `TestNoFinishWhileTheCurrentCoreServes`.
 
-226. **A destroy's archive uploads in parallel and says how far it is** (`router/archive.go` `uploadSnapshotFiles`,
+226. **A destroy's archive uploads in parallel and says how far it is** (replaced by 227) (`router/archive.go` `uploadSnapshotFiles`,
      `archiveProgress`). The archive put the snapshot's transcripts and `~/artifacts` files on the Storage Box one PUT
      at a time, and every file's directory again segment by segment from `claude-records/` (a MKCOL per segment), so a
      session with thousands of artifact files spent most of its destroy in round trips (2026-10-22: 2094 files took
@@ -2515,3 +2514,19 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      `TestArchiveParallelUploadsAndProgress` (60 files over nested directories the fake DAV only accepts with their
      parents made; all arrive, counts right, `waiting` cleared, no temp files; a failing PUT fails the archive and
      leaves no temp files), `TestArchiveProgressText`.
+
+227. **A destroy's archive is ONE streamed .tar.gz in Jarvis 4's own folder** (Deyao, 2026-10-22; `router/archivetar.go`).
+     The archive put each transcript and artifact on the Storage Box as its own file (in parallel since 226, still a
+     WebDAV round trip per file), in `claude-records/<date> <title>/` beside Jarvis 2's archives, with an index file in
+     `claude-records/.index/` that both routers rewrote. Now the router writes tar → gzip into a pipe that a chunked PUT
+     sends to `claude-records/.jarvis4-records/<date> <title>.tar.gz.part` (nothing of it on disk or in memory beyond the
+     snapshot's scratch copy it already made), checks the Storage Box holds every byte, and MOVEs it to its name; a failed
+     upload is made again from the start (3 tries). The index is `claude-records/.jarvis4-records/index.json`; nothing
+     Jarvis 4 archives touches a file Jarvis 2 writes. The members keep the old layout's names, in an order that lets readers
+     stop early (transcripts and artifacts first, the snapshot last); the Discord export and the lifecycle and supervisor
+     logs go inside (the lifecycle up to the upload) instead of being written beside it by destroy hooks, and the channel
+     is deleted only when its archive holds it. Readers changed with it (clean cut): a record's tail streams to its
+     transcript, a Restore streams out `jarvis2/*`, a purge deletes the one file, and the transcript search (services/search
+     `lib/tar.js`) indexes an archive's transcripts and docs as `<archive>/<name>` with the archive as their dir, reading
+     each changed archive once up to its first `jarvis2/` entry. Indexing a folder by hand (`POST /api/records`) went: a
+     record is one of these archives.

@@ -1,9 +1,8 @@
 package main
 
 // The Storage Box (Hetzner, WebDAV over https on 443) with the router's own credentials: router env
-// STORAGEBOX_HOST, STORAGEBOX_USER, STORAGEBOX_PASSWORD (k8s/control/secrets/router.enc.yaml). The archives of
-// destroyed sessions live there, in Jarvis 1's layout (claude-records/<yyyy-mm-dd> <title>/), so Jarvis 1's
-// transcript search picks them up.
+// STORAGEBOX_HOST, STORAGEBOX_USER, STORAGEBOX_PASSWORD. The archives of destroyed sessions live there, one .tar.gz
+// each in Jarvis 4's own folder (archivetar.go).
 
 import (
 	"errors"
@@ -36,8 +35,8 @@ func recordsBoxFromEnv() *StorageBox {
 }
 
 func newStorageBox(base, user, pass string) *StorageBox {
-	// its own transport: the default keeps 2 idle connections per host, too few for an archive's parallel uploads
-	// (archiveUploads), which would then open a new TLS connection for most files
+	// its own transport: the default keeps 2 idle connections per host, too few for the live copies' and content
+	// stores' calls in parallel, which would then open a new TLS connection for most
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	t.MaxIdleConnsPerHost = 8
 	return &StorageBox{base: strings.TrimSuffix(base, "/") + "/", user: user, pass: pass, http: &http.Client{Timeout: 30 * time.Minute, Transport: t}}
@@ -217,4 +216,54 @@ func (b *StorageBox) Delete(p string) error {
 		return fmt.Errorf("DELETE %s: HTTP %d", p, resp.StatusCode)
 	}
 	return nil
+}
+
+// PutStream: a body of unknown length, sent chunked (an archive written while it uploads, archivetar.go); one try,
+// since a stream can't be sent again (the caller makes it again)
+func (b *StorageBox) PutStream(p string, body io.Reader) error {
+	req, err := http.NewRequest("PUT", davURL(b.base, p), body)
+	if err != nil {
+		return err
+	}
+	req.ContentLength = -1
+	req.SetBasicAuth(b.user, b.pass)
+	resp, err := streamClient.Do(req) // no overall time limit: a multi-GB archive outlasts any fixed one
+	if err != nil {
+		return err
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("PUT %s: HTTP %d", p, resp.StatusCode)
+	}
+	return nil
+}
+
+// Move: a file to a new name (WebDAV MOVE, server side), replacing what is there
+func (b *StorageBox) Move(from, to string) error {
+	resp, err := b.do("MOVE", from, nil, 0, map[string]string{"Destination": davURL(b.base, to), "Overwrite": "T"})
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("MOVE %s → %s: HTTP %d", from, to, resp.StatusCode)
+	}
+	return nil
+}
+
+// Size: a file's size (-1 when it is missing)
+func (b *StorageBox) Size(p string) (int64, error) {
+	resp, err := b.do("HEAD", p, nil, 0, nil)
+	if err != nil {
+		return 0, err
+	}
+	resp.Body.Close()
+	switch {
+	case resp.StatusCode == 404:
+		return -1, nil
+	case resp.StatusCode < 300:
+		return resp.ContentLength, nil
+	}
+	return 0, fmt.Errorf("HEAD %s: HTTP %d", p, resp.StatusCode)
 }

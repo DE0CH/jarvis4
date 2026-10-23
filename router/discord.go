@@ -11,13 +11,11 @@ package main
 //              Remote Control link; Jarvis 4 doesn't know it)
 //   title    → a tick renames the channel when the session's title changes (Discord allows 2 name/topic
 //              edits per channel per 10 minutes; a third waits for the window)
-//   destroy  → the channel's messages and attachments are exported to the Storage Box,
-//              claude-records/<date> <title>/discord/{messages.json,attachments/<message id>-<file>}
-//              (Jarvis 1's layout, so its transcript search indexes it), then the channel is deleted. A
-//              failed export keeps the channel (Deyao gets a DM) and the destroy goes on.
+//   destroy  → the channel's messages and attachments go into the session's archive (archivetar.go),
+//              discord/{messages.json,attachments/<message id>-<file>}, then the channel is deleted. A
+//              failed export (or no archive) keeps the channel (Deyao gets a DM) and the destroy goes on.
 // Settings (router env): LOBSTER_TOKEN (without it nothing here runs and r.DM only logs), DISCORD_GUILD_ID,
-// DISCORD_DM_CHANNEL, DISCORD_SESSIONS_CATEGORY, DISCORD_SESSION_CHANNELS=off (DMs only), and
-// STORAGEBOX_HOST/USER/PASSWORD for the export.
+// DISCORD_DM_CHANNEL, DISCORD_SESSIONS_CATEGORY, DISCORD_SESSION_CHANNELS=off (DMs only).
 
 import (
 	"bytes"
@@ -27,8 +25,8 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -513,98 +511,10 @@ func httpFetch(u string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-// ---- the Storage Box (WebDAV over https) -------------------------------------------------------------
-
-type storageBox struct {
-	host, user, pass string
-	http             *http.Client
-	base             string // https://<host>/ unless a test sets it
-}
-
-func storageBoxFromEnv() *storageBox {
-	h, u, p := os.Getenv("STORAGEBOX_HOST"), os.Getenv("STORAGEBOX_USER"), os.Getenv("STORAGEBOX_PASSWORD")
-	if h == "" || u == "" || p == "" {
-		return nil
-	}
-	return &storageBox{host: h, user: u, pass: p, base: "https://" + h + "/", http: &http.Client{Timeout: 10 * time.Minute}}
-}
-
-func (sb *storageBox) url(p string) string {
-	segs := strings.Split(p, "/")
-	for i, s := range segs {
-		segs[i] = url.PathEscape(s)
-	}
-	return sb.base + strings.Join(segs, "/")
-}
-
-func (sb *storageBox) do(method, p string, body []byte, ct string) (int, error) {
-	var rd io.Reader
-	if body != nil {
-		rd = bytes.NewReader(body)
-	}
-	req, _ := http.NewRequest(method, sb.url(p), rd)
-	req.SetBasicAuth(sb.user, sb.pass)
-	if ct != "" {
-		req.Header.Set("Content-Type", ct)
-	}
-	resp, err := sb.http.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
-	return resp.StatusCode, nil
-}
-
-// mkcols: every folder on the path (an existing one answers 405, which is fine)
-func (sb *storageBox) mkcols(p string) error {
-	cur := ""
-	for _, seg := range strings.Split(p, "/") {
-		if seg == "" {
-			continue
-		}
-		cur += seg + "/"
-		if _, err := sb.do("MKCOL", cur, nil, ""); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (sb *storageBox) put(p string, b []byte, ct string) error {
-	code, err := sb.do("PUT", p, b, ct)
-	if err != nil {
-		return err
-	}
-	if code < 200 || code > 299 {
-		return fmt.Errorf("PUT %s -> %d", p, code)
-	}
-	return nil
-}
-
-// davSink: the export's files under one folder on the box
-type davSink struct {
-	sb   *storageBox
-	base string
-	made map[string]bool
-}
-
-func (s *davSink) putBytes(rel string, b []byte, ct string) error {
-	p := s.base + "/" + rel
-	if dir := p[:strings.LastIndex(p, "/")]; !s.made[dir] {
-		if err := s.sb.mkcols(dir); err != nil {
-			return err
-		}
-		s.made[dir] = true
-	}
-	return s.sb.put(p, b, ct)
-}
-
 // ---- the router side ------------------------------------------------------------------------------------
 
 var (
 	disc      *discordClient
-	discBox   *storageBox
 	discFetch = httpFetch
 )
 
@@ -614,7 +524,6 @@ func (r *Router) startDiscord() {
 		log.Printf("[discord] no LOBSTER_TOKEN: no DMs, no session channels")
 		return
 	}
-	discBox = storageBoxFromEnv()
 	dmHook = func(text string) {
 		go func() {
 			if err := disc.send(disc.dm, text); err != nil {
@@ -704,20 +613,50 @@ func (r *Router) discordTick() {
 	}
 }
 
-// discordDestroy: export the channel next to the session's archive, then delete it. A failed export keeps the
-// channel (nothing is lost) and tells Deyao.
+// discordExports: the sessions whose channel went into their archive (discordExport), so the destroy hook deletes it
+var discordExports sync.Map
+
+// discordExport: the session's channel exported into a local dir (tmp/discord) for its archive (archivetar.go); ""
+// when it has no channel, the channel is gone, or the export failed (then the channel is kept and Deyao told, by
+// discordDestroy). done(archived) notes whether the archive holding it reached the Storage Box.
+func (r *Router) discordExport(s Session, tmp string) (dir string, done func(archived error)) {
+	done = func(error) {}
+	if disc == nil || s.DiscordChannel == "" {
+		return "", done
+	}
+	dir = filepath.Join(tmp, "discord")
+	res, err := disc.exportChannel(s.DiscordChannel, &dirSink{dir: dir}, discFetch)
+	if err != nil {
+		log.Printf("[discord] %s: channel %s NOT exported: %v", s.ID, s.DiscordChannel, err)
+		discordExports.Store(s.ID, err)
+		return "", done
+	}
+	if res == nil {
+		return "", done
+	}
+	return dir, func(archived error) {
+		if archived != nil {
+			discordExports.Store(s.ID, fmt.Errorf("its archive failed: %v", archived))
+			return
+		}
+		discordExports.Store(s.ID, res)
+	}
+}
+
+// discordDestroy: the channel goes once its archive holds it; otherwise it is kept and Deyao told
 func discordDestroy(r *Router, s Session) {
 	if disc == nil || s.DiscordChannel == "" {
 		return
 	}
-	res, err := r.exportSessionChannel(s)
-	if err != nil {
-		log.Printf("[discord] %s: channel %s NOT exported, kept: %v", s.ID, s.DiscordChannel, err)
-		r.DM(fmt.Sprintf("Jarvis 4: the Discord channel of destroyed session %q wasn't exported (%v); it is kept: https://discord.com/channels/%s/%s", sessionTitle(s), err, disc.guild, s.DiscordChannel))
-		return
-	}
-	if res == nil {
-		log.Printf("[discord] %s: channel %s is already gone", s.ID, s.DiscordChannel)
+	v, _ := discordExports.LoadAndDelete(s.ID)
+	res, ok := v.(*exportResult)
+	if !ok {
+		why := "the session has no archive"
+		if err, isErr := v.(error); isErr {
+			why = err.Error()
+		}
+		log.Printf("[discord] %s: channel %s NOT exported, kept: %s", s.ID, s.DiscordChannel, why)
+		r.DM(fmt.Sprintf("Jarvis 4: the Discord channel of destroyed session %q wasn't exported (%s); it is kept: https://discord.com/channels/%s/%s", sessionTitle(s), why, disc.guild, s.DiscordChannel))
 		return
 	}
 	if _, err := disc.deleteChannel(s.DiscordChannel); err != nil {
@@ -727,9 +666,13 @@ func discordDestroy(r *Router, s Session) {
 	log.Printf("[discord] %s: channel #%s exported (%d message(s), %d attachment(s), %d failed) and deleted", s.ID, res.Name, res.Messages, res.Attachments, res.AttachmentsFailed)
 }
 
-func (r *Router) exportSessionChannel(s Session) (*exportResult, error) {
-	if discBox == nil {
-		return nil, errors.New("no STORAGEBOX_HOST/USER/PASSWORD in the router's env")
+// dirSink: the export's files under a local dir
+type dirSink struct{ dir string }
+
+func (s *dirSink) putBytes(rel string, b []byte, _ string) error {
+	p := filepath.Join(s.dir, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return err
 	}
-	return disc.exportChannel(s.DiscordChannel, &davSink{sb: discBox, base: r.archiveDir(s) + "/discord", made: map[string]bool{}}, discFetch)
+	return os.WriteFile(p, b, 0o600)
 }

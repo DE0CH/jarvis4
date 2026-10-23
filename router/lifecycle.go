@@ -598,31 +598,20 @@ func (r *Router) lcAll(session string) []map[string]any {
 	return out
 }
 
-// lifecycleDestroy: the destroy hook: the supervisor log and every operation's log into the session's archive dir
-func lifecycleDestroy(r *Router, s Session) {
-	if recordsOff() || r.lc == nil {
-		return
+// lifecycleFiles: the supervisor log and every operation's log, for the session's archive (archivetar.go)
+func (r *Router) lifecycleFiles(sid string) []memFile {
+	if r.lc == nil {
+		return nil
 	}
-	box := r.box()
-	if box == nil {
-		return
-	}
-	dir := r.archiveDir(s) + "/jarvis2"
-	if err := box.Mkcols(dir); err != nil {
-		log.Printf("[lifecycle] %s: archive dir: %v", s.ID, err)
-		return
-	}
-	if lines, _ := r.st.ReadLog(s.ID, logSupervisor); len(lines) > 0 {
-		if err := box.PutBytes(dir+"/supervisor-log.jsonl", append(bytes.Join(lines, []byte("\n")), '\n')); err != nil {
-			log.Printf("[lifecycle] %s: archiving the supervisor log: %v", s.ID, err)
-		}
-	}
-	if ops := r.lcAll(s.ID); len(ops) > 0 {
+	var out []memFile
+	if ops := r.lcAll(sid); len(ops) > 0 {
 		b, _ := json.MarshalIndent(ops, "", " ")
-		if err := box.PutBytes(dir+"/lifecycle.json", b); err != nil {
-			log.Printf("[lifecycle] %s: archiving the lifecycle log: %v", s.ID, err)
-		}
+		out = append(out, memFile{"jarvis2/lifecycle.json", b})
 	}
+	if lines, _ := r.st.ReadLog(sid, logSupervisor); len(lines) > 0 {
+		out = append(out, memFile{"jarvis2/supervisor-log.jsonl", append(bytes.Join(lines, []byte("\n")), '\n')})
+	}
+	return out
 }
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
@@ -637,8 +626,6 @@ func (r *Router) lcLines(session string) [][]byte {
 	}
 	return lines
 }
-
-func init() { onDestroy = append(onDestroy, lifecycleDestroy) }
 
 // ---- routes ---------------------------------------------------------------------------------------------------
 

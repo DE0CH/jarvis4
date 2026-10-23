@@ -149,12 +149,12 @@ func TestADestroyGoesPastARefusedSnapshot(t *testing.T) {
 	if rec.Archive == nil || rec.Archive.Unverified != snapshotFromEarlierCore || rec.SnapshotNote != snapshotFromEarlierCore {
 		t.Fatalf("record %+v archive %+v", rec, rec.Archive)
 	}
-	dir := rec.Archive.Dir
-	if got := rg.dav.get(dir + "/jarvis2/snapshot.tar.gz"); len(body) == 0 || string(got) != string(body) {
+	files, _ := rg.dav.archive(t, rec.Archive.File)
+	if got := files["jarvis2/snapshot.tar.gz"]; len(body) == 0 || string(got) != string(body) {
 		t.Fatalf("the snapshot isn't archived whole (%d of %d bytes)", len(got), len(body))
 	}
-	if !strings.Contains(string(rg.dav.get(dir+"/session.json")), `"snapshotUnverified": "`+snapshotFromEarlierCore) {
-		t.Fatalf("session.json: %s", rg.dav.get(dir+"/session.json"))
+	if !strings.Contains(string(files["session.json"]), `"snapshotUnverified": "`+snapshotFromEarlierCore) {
+		t.Fatalf("session.json: %s", files["session.json"])
 	}
 	// restorable like any archive: checked by checkRestoreFiles and the restoring machine, not refused for its mark
 	if _, err := rg.r.RestoreRecord("s1", ""); err != nil && strings.Contains(err.Error(), "waits for the core release") {

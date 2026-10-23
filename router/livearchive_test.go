@@ -62,14 +62,14 @@ func TestDestroyArchivesEveryLiveTranscriptFirst(t *testing.T) {
 	if rec == nil || rec.Archive == nil || rec.ArchiveError != "" || rec.LiveKept != "" {
 		t.Fatalf("record %+v", rec)
 	}
-	dir := rec.Archive.Dir
-	if got := string(rg.dav.get(dir + "/transcript-cccc.jsonl")); got != orig {
+	files, _ := rg.dav.archive(t, rec.Archive.File)
+	if got := string(files["transcript-cccc.jsonl"]); got != orig {
 		t.Fatalf("the original conversation isn't in the archive (%d bytes)", len(got))
 	}
-	if got := string(rg.dav.get(dir + "/transcript-aaaa.live.jsonl")); got != "an older version\n" {
+	if got := string(files["transcript-aaaa.live.jsonl"]); got != "an older version\n" {
 		t.Fatalf("the other version of aaaa: %q", got)
 	}
-	if got := string(rg.dav.get(dir + "/transcript-aaaa.jsonl")); got != snapshotBody(rg, "aaaa.jsonl") {
+	if got := string(files["transcript-aaaa.jsonl"]); got != snapshotBody(rg, "aaaa.jsonl") {
 		t.Fatalf("the snapshot's aaaa was replaced: %q", got)
 	}
 	want := map[string]string{"aaaa.jsonl": "transcript-aaaa.live.jsonl", "bbbb.jsonl": "snapshot", "cccc.jsonl": "transcript-cccc.jsonl"}
@@ -101,7 +101,7 @@ func TestDestroyArchivesEveryLiveTranscriptFirst(t *testing.T) {
 		t.Fatalf("noSnapshot %q", rec.Archive.NoSnapshot)
 	}
 	var meta map[string]any
-	json.Unmarshal(rg.dav.get(dir+"/session.json"), &meta)
+	json.Unmarshal(files["session.json"], &meta)
 	if !strings.Contains(meta["noSnapshot"].(string), "machine m2 left no snapshot") || meta["live"] == nil {
 		t.Fatalf("session.json %v", meta)
 	}
@@ -113,11 +113,11 @@ func TestALiveCopyFailureKeepsEveryLiveFile(t *testing.T) {
 	rg := newRig(t)
 	putLive(t, rg, "cccc.jsonl", "the original\n")
 	putLive(t, rg, "bbbb.jsonl", snapshotBody(rg, "bbbb.jsonl"))
-	rg.dav.fail = "claude-records/2026-10-01 Fix the router/transcript-cccc"
+	rg.dav.fail = archivesRoot + "/2026"
 	rg.r.Destroy("s1")
 	waitFor(t, "the error", func() bool {
 		s := sessionS1(rg)
-		return s.State == "paused" && strings.Contains(s.Error, "cccc.jsonl")
+		return s.State == "paused" && strings.HasPrefix(s.Error, "archive:")
 	})
 	// the destroy sets that state a moment before it releases the session: its end is waitState's (not the state's)
 	if err := rg.r.waitState("s1", "paused", 5*time.Second); err != nil {
@@ -152,11 +152,15 @@ func TestNoSnapshotStillArchivesTheLiveCopies(t *testing.T) {
 	if rec.Archive == nil || rec.Archive.Signer != "" || len(rec.Archive.Live) != 1 || !strings.Contains(rec.Archive.NoSnapshot, "no signed snapshot") {
 		t.Fatalf("record %+v", rec.Archive)
 	}
-	if string(rg.dav.get(rec.Archive.Dir+"/transcript-dddd.jsonl")) != "only here\n" || len(rg.dav.under(liveS1)) != 0 {
-		t.Fatalf("archive %v, live %v", rg.dav.under(rec.Archive.Dir), rg.dav.under(liveS1))
+	files, order := rg.dav.archive(t, rec.Archive.File)
+	if string(files["transcript-dddd.jsonl"]) != "only here\n" || len(rg.dav.under(liveS1)) != 0 {
+		t.Fatalf("archive %v, live %v", order, rg.dav.under(liveS1))
+	}
+	if !strings.HasPrefix(strings.Join(order, ","), "session.json,restore-s1.json,transcript-dddd.jsonl,jarvis2/") || files["jarvis2/snapshot.tar.gz"] != nil {
+		t.Fatalf("members %v", order)
 	}
 	var meta map[string]any
-	json.Unmarshal(rg.dav.get(rec.Archive.Dir+"/session.json"), &meta)
+	json.Unmarshal(files["session.json"], &meta)
 	if meta["snapshot"] != nil || !strings.Contains(meta["noSnapshot"].(string), "only its live transcript copies") {
 		t.Fatalf("session.json %v", meta)
 	}

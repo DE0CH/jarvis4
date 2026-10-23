@@ -223,12 +223,15 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
   /// the core's signed begin document, checked: this action, this repo, its store, the one token store it opens
   /// An add: the app makes the ed25519 pair, wraps the repo's store (the private half among its keys) to the core's
   /// store key, and sends both; the core's signed begin must echo them.
+  /// Once the kernel serves, its secrets keeps the stores and answers these calls (router/repos.go deployKeyCall):
+  /// its store key and its signatures, checked against the keys this iPhone pinned (KernelTrust).
   func deployKeyBegin(action: String, repo: String, sensitive: Bool) async throws -> (doc: SignedDoc, begin: DeployKeyBegin) {
-    let store = Checks.repoStore(repo), title = "jarvis2 " + store
+    let store = Checks.repoStore(repo), title = Checks.deployKeyTitle(store)
     var body: [String: Any] = ["action": action, "repo": repo, "sensitive": sensitive, "store": store, "title": title]
     var sent: DeployKeySent?
+    let signer = try await deployKeySigner()
     if action == "add" {
-      let sk = try await storeKey(coreKey: try CoreTrust.key())
+      let sk = try await deployKeyStoreKey(signer)
       let kp = try OpenSSH.ed25519(comment: title)
       let values = OpenSSH.storeValues(repo: repo, privateKeyFile: kp.privateKeyFile)
       // each value under its own data key, "<store>\n<key>" as associated data
@@ -238,9 +241,20 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
       sent = DeployKeySent(publicKey: kp.publicKey, keys: keys)
     }
     let d = try await json("POST", "api/repos/key/begin", body, as: SignedDoc.self)
-    let b = try Checks.deployKeyBegin(d, coreKey: try CoreTrust.key(), action: action, repo: repo, sensitive: sensitive, sent: sent)
+    let b = try Checks.deployKeyBegin(d, coreKey: signer.key, action: action, repo: repo, sensitive: sensitive, sent: sent)
     try await checkTokenWriter(b)
     return (d, b)
+  }
+  /// who signs the deploy-key documents: the kernel's secrets once the kernel serves, else the core
+  private func deployKeySigner() async throws -> (key: String, kernel: Bool) {
+    if (try? await kernelStatus())?.serves == true { return (try KernelTrust.key(), true) }
+    return (try CoreTrust.key(), false)
+  }
+  /// the store key the repo's store is wrapped to: secrets' C = P + K for the K this iPhone pinned, or the core's
+  private func deployKeyStoreKey(_ signer: (key: String, kernel: Bool)) async throws -> String {
+    guard signer.kernel else { return try await storeKey(coreKey: signer.key) }
+    guard let k = KernelTrust.pinned else { throw TrustError.notSetUp }
+    return try await kernelStoreKey(signedBy: k.signingKey, secrets: k.agreementKey)
   }
   /// who wrote the GitHub token the phone's share opens: the setup key (its signature over the token key's writer text)
   /// or the core; never a session (the core refuses a machine write to that store)
@@ -258,7 +272,7 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
     if let inbox, let q = inbox.addingPercentEncoding(withAllowedCharacters: .alphanumerics) { path += "?inbox=" + q }
     let (status, data) = try await raw("POST", path, body)
     guard (200..<300).contains(status) else { throw Self.failure("POST", path, status, data) }
-    let a = try Checks.deployKeyAnswer(try JSONDecoder().decode(SignedDoc.self, from: data), coreKey: try CoreTrust.key(), begin: b)
+    let a = try Checks.deployKeyAnswer(try JSONDecoder().decode(SignedDoc.self, from: data), coreKey: try await deployKeySigner().key, begin: b)
     let f = JSON.parse(data)["followups"].strings
     return (a, f)
   }

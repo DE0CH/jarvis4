@@ -184,62 +184,6 @@ func TestLiveTranscriptSync(t *testing.T) {
 	}
 }
 
-func TestIndexArchiveByHand(t *testing.T) {
-	rg := newRig(t)
-	r := rg.r
-	r.cfg.NoAccess = true
-	dir := "claude-records/2026-09-01 Train tickets"
-	tr := "transcript-0b6a2f3e-1111-4222-8333-444455556666.jsonl"
-	rg.dav.files[dir+"/"+tr] = []byte(line(map[string]any{"type": "user", "message": map[string]any{"content": "book it"}}))
-	if code, out := appDo(t, r, "POST", "/api/records", jsonString(map[string]any{"archiveDir": dir, "transcripts": []string{"missing.jsonl"}})); code != 400 ||
-		!strings.Contains(out["error"].(string), "not on the Storage Box") {
-		t.Fatalf("%d %v", code, out)
-	}
-	for _, b := range []map[string]any{
-		{"archiveDir": "claude-records/.paused/x", "transcripts": []string{tr}},
-		{"archiveDir": "elsewhere/x", "transcripts": []string{tr}},
-		{"archiveDir": dir, "transcripts": []string{"../../etc/passwd"}},
-		{"archiveDir": dir},
-	} {
-		if code, _ := appDo(t, r, "POST", "/api/records", jsonString(b)); code != 400 {
-			t.Fatalf("%v: %d", b, code)
-		}
-	}
-	code, out := appDo(t, r, "POST", "/api/records", jsonString(map[string]any{"archiveDir": dir + "/", "transcripts": []string{tr},
-		"title": "Train tickets", "environment": "default", "repos": []string{"https://github.com/DE0CH/x"}, "permissionMode": "bypass"}))
-	if code != 200 {
-		t.Fatalf("%d %v", code, out)
-	}
-	rec := r.record("archive-0b6a2f3e")
-	if rec == nil || rec.Archive.Dir != dir || rec.Label != "Train tickets" || rec.PermissionMode != "bypass" || rec.Repos != "https://github.com/DE0CH/x" {
-		t.Fatalf("record %+v", rec)
-	}
-	if tail, st, err := r.RecordTail(rec.ID); err != nil || st != 200 || len(tail.Messages) != 1 {
-		t.Fatalf("tail %v %d %+v", err, st, tail)
-	}
-	// indexed again: already on the list, so the existing record is the answer (no second copy)
-	if code, out := appDo(t, r, "POST", "/api/records", jsonString(map[string]any{"archiveDir": dir, "transcripts": []string{tr}})); code != 200 || out["record"] == nil {
-		t.Fatalf("indexed twice: %d %v", code, out)
-	}
-	n := 0
-	r.st.Do(func(d *persisted) {
-		for _, x := range d.Records {
-			if x.ID == rec.ID {
-				n++
-			}
-		}
-	})
-	if n != 1 {
-		t.Fatalf("%d copies", n)
-	}
-	if _, err := r.RestoreRecord(rec.ID, "rq"); err != errHandIndex {
-		t.Fatalf("restore: %v", err)
-	}
-	if !strings.Contains(string(rg.dav.get(recordsIndex)), `"archive-0b6a2f3e"`) {
-		t.Fatal("not in the Storage Box index")
-	}
-}
-
 func TestOneShotDestroyDMsLostWork(t *testing.T) {
 	rg := newRig(t) // s1 paused; its snapshot recorded "proj 2 1" and "other 0 -1"
 	dms := make(chan string, 4)
@@ -251,7 +195,7 @@ func TestOneShotDestroyDMsLostWork(t *testing.T) {
 	}
 	dm := recvDM(t, dms)
 	for _, want := range []string{"one-shot session “Fix the: router”", "proj: 2 uncommitted file(s), 1 unpushed commit(s)",
-		"other: branch has no upstream", "claude-records/2026-10-01 Fix the router"} {
+		"other: branch has no upstream", rigArchive} {
 		if !strings.Contains(dm, want) {
 			t.Fatalf("DM lacks %q:\n%s", want, dm)
 		}
@@ -263,7 +207,7 @@ func TestOneShotDestroyDMsLostWork(t *testing.T) {
 
 func TestOneShotForcedWhenArchiveFails(t *testing.T) {
 	rg := newRig(t)
-	rg.dav.fail = "claude-records/2026"
+	rg.dav.fail = archivesRoot + "/2026"
 	dms := make(chan string, 4)
 	old := dmHook
 	dmHook = func(t string) { dms <- t }
@@ -306,7 +250,7 @@ func (m testMachine) doReq(t *testing.T, h http.Handler, req *http.Request, body
 }
 
 func TestOneShotLostDMNothingLost(t *testing.T) {
-	if s := oneShotLostDM("x", map[string]any{"checked": true, "repos": []RepoChange{{"a", 0, 0}}}, &ArchiveInfo{Dir: "d"}, nil); s != "" {
+	if s := oneShotLostDM("x", map[string]any{"checked": true, "repos": []RepoChange{{"a", 0, 0}}}, &ArchiveInfo{File: "d"}, nil); s != "" {
 		t.Fatalf("DM when nothing was lost: %s", s)
 	}
 	if s := oneShotLostDM("x", map[string]any{"checked": false, "reason": "no snapshot"}, nil, nil); !strings.Contains(s, "could not check the repos for unsaved work (no snapshot)") {

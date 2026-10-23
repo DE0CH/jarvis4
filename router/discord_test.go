@@ -2,10 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -153,17 +156,6 @@ func TestSessionTitleOrder(t *testing.T) {
 	}
 	if sessionTitle(Session{ID: "s1", Title: "ai"}) != "ai" || sessionTitle(Session{ID: "s1"}) != "s1" {
 		t.Fatal("fallbacks")
-	}
-}
-
-func TestArchiveDir(t *testing.T) {
-	r := &Router{}
-	s := Session{ID: "s1", Label: `a/b: "c"  d`, Created: time.Date(2026, 10, 9, 23, 0, 0, 0, time.UTC)}
-	if got := r.archiveDir(s); got != "claude-records/2026-10-09 a b c d" {
-		t.Fatalf("got %q", got)
-	}
-	if got := r.archiveDir(Session{ID: "s1", Label: "///", Created: s.Created}); got != "claude-records/2026-10-09 s1" {
-		t.Fatalf("got %q", got)
 	}
 }
 
@@ -338,47 +330,12 @@ func TestExportChannel(t *testing.T) {
 	}
 }
 
-// fakeDAV: a WebDAV server that records folders and files
-type fakeDAV struct {
-	mu    sync.Mutex
-	dirs  map[string]bool
-	files map[string][]byte
-}
-
-func (f *fakeDAV) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if u, p, ok := req.BasicAuth(); !ok || u != "u" || p != "p" {
-		w.WriteHeader(401)
-		return
-	}
-	switch req.Method {
-	case "MKCOL":
-		if f.dirs[req.URL.Path] {
-			w.WriteHeader(405)
-			return
-		}
-		f.dirs[req.URL.Path] = true
-		w.WriteHeader(201)
-	case "PUT":
-		dir := req.URL.Path[:strings.LastIndex(req.URL.Path, "/")+1]
-		if !f.dirs[dir] {
-			w.WriteHeader(409)
-			return
-		}
-		b, _ := io.ReadAll(req.Body)
-		f.files[req.URL.Path] = b
-		w.WriteHeader(201)
-	}
-}
-
+// destroy: the channel goes into the session's archive (discordExport into the archive's scratch dir), and is
+// deleted only once the archive holds it; a failed export, or no archive, keeps it and tells Deyao
 func TestDestroyExportsAndDeletes(t *testing.T) {
 	f, d, _ := testDiscord(t)
-	dav := &fakeDAV{dirs: map[string]bool{}, files: map[string][]byte{}}
-	davSrv := httptest.NewServer(dav)
-	defer davSrv.Close()
-	oldDisc, oldBox, oldFetch, oldDM := disc, discBox, discFetch, dmHook
-	defer func() { disc, discBox, discFetch, dmHook = oldDisc, oldBox, oldFetch, oldDM }()
+	oldDisc, oldFetch, oldDM := disc, discFetch, dmHook
+	defer func() { disc, discFetch, dmHook = oldDisc, oldFetch, oldDM }()
 	disc, discFetch = d, func(string) ([]byte, error) { return []byte("bytes"), nil }
 	var dms []string
 	dmHook = func(t string) { dms = append(dms, t) }
@@ -398,26 +355,42 @@ func TestDestroyExportsAndDeletes(t *testing.T) {
 		t.Fatalf("env %v stored %q", env, stored)
 	}
 	f.messages[stored] = []map[string]any{{"id": "2", "content": "done", "attachments": []any{map[string]any{"id": "a", "filename": "f.txt", "url": "x"}}}, {"id": "1", "content": "hi"}}
-
-	// no Storage Box: the channel is kept and Deyao told
-	discBox = nil
 	copyS.DiscordChannel = stored
+
+	// no archive: the channel is kept and Deyao told
 	discordDestroy(r, copyS)
 	if f.channels[stored] == nil || len(dms) != 1 {
-		t.Fatalf("channel should be kept on a failed export (dms %v)", dms)
+		t.Fatalf("channel should be kept without an archive (dms %v)", dms)
 	}
 
-	discBox = &storageBox{user: "u", pass: "p", base: davSrv.URL + "/", http: davSrv.Client()}
-	discordDestroy(r, copyS)
-	if f.channels[stored] != nil {
-		t.Fatal("channel not deleted after the export")
+	// the archive's export: the files in its scratch dir; then the destroy deletes the channel
+	tmp := t.TempDir()
+	dir, done := r.discordExport(copyS, tmp)
+	if dir == "" {
+		t.Fatal("no export")
 	}
-	base := "/claude-records/2026-10-09 My task/discord/"
-	if string(dav.files[base+"attachments/2-f.txt"]) != "bytes" || len(dav.files[base+"messages.json"]) == 0 {
-		t.Fatalf("export files: %v", keys(dav.files))
+	if b, _ := os.ReadFile(filepath.Join(dir, "attachments", "2-f.txt")); string(b) != "bytes" {
+		t.Fatalf("attachment %q", b)
 	}
-	// gone already: nothing happens
+	if b, _ := os.ReadFile(filepath.Join(dir, "messages.json")); len(b) == 0 {
+		t.Fatal("no messages.json")
+	}
+	// the archive holding it failed (a forced destroy goes on): the channel is kept, Deyao told
+	done(errors.New("PUT: HTTP 507"))
 	discordDestroy(r, copyS)
+	if f.channels[stored] == nil || len(dms) != 2 {
+		t.Fatalf("channel should be kept when its archive failed (dms %v)", dms)
+	}
+	// on the Storage Box: the destroy deletes the channel
+	done(nil)
+	discordDestroy(r, copyS)
+	if f.channels[stored] != nil || len(dms) != 2 {
+		t.Fatalf("channel not deleted after the export (dms %v)", dms)
+	}
+	// gone already: nothing is exported
+	if d, _ := r.discordExport(copyS, t.TempDir()); d != "" {
+		t.Fatal("exported a deleted channel")
+	}
 }
 
 func TestTickRenamesAndFillsMissing(t *testing.T) {

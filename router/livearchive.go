@@ -5,11 +5,11 @@ package main
 // failed, the session went on under a new conversation, and the archive took only the latest snapshot's
 // transcripts, so the original had no other copy).
 //
-//   - An archive copies EVERY transcript in the session's .live dir that the snapshot doesn't already hold
-//     byte-identical (same size and sha256) into the record: transcript-<uuid>.jsonl, or transcript-<uuid>.live.jsonl
-//     when the snapshot holds a different version of that conversation. Each copy is read back and checked (size and
-//     sha256) before it counts. The record lists them all (ArchiveInfo.Live).
-//   - A session with no snapshot but live copies still gets a record: the live transcripts and session.json, which
+//   - An archive holds EVERY transcript in the session's .live dir that the snapshot doesn't already hold
+//     byte-identical (same size and sha256): transcript-<uuid>.jsonl, or transcript-<uuid>.live.jsonl when the
+//     snapshot holds a different version of that conversation. They count once the whole archive is on the Storage
+//     Box (its size checked, archivetar.go). The record lists them all (ArchiveInfo.Live).
+//   - A session with no snapshot but live copies still gets an archive: the live transcripts and session.json, which
 //     notes that there is no snapshot (nothing to restore).
 //   - clearArchivedLive deletes only the .live files the archive accounted for, each still the size it had then; the
 //     dir goes only once it is empty. Anything else (no archive, a failed one, a file that came or changed since)
@@ -18,7 +18,6 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -27,7 +26,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // LiveCopy: one .live transcript as the archive accounted for it
@@ -60,36 +58,23 @@ func sumFile(p string) (fileSum, error) {
 	return fileSum{n, hex.EncodeToString(h.Sum(nil))}, nil
 }
 
-// boxSum: a Storage Box file's size and sha256 (downloaded into tmp); ok false when it is missing
-func boxSum(box *StorageBox, p, tmp string) (fileSum, bool, error) {
-	f, err := os.CreateTemp(tmp, "livesum-*")
+// sumReader: a stream's size and sha256
+func sumReader(rd io.Reader) (fileSum, error) {
+	h := sha256.New()
+	n, err := io.Copy(h, rd)
 	if err != nil {
-		return fileSum{}, false, err
+		return fileSum{}, err
 	}
-	f.Close()
-	defer os.Remove(f.Name())
-	found, err := box.Download(p, f.Name())
-	if err != nil || !found {
-		return fileSum{}, false, err
-	}
-	s, err := sumFile(f.Name())
-	return s, err == nil, err
+	return fileSum{n, hex.EncodeToString(h.Sum(nil))}, nil
 }
 
-// archiveLive: every .live transcript of the session into dir, unless held (snapshot transcript name → sum) has it
-// byte-identical; taken: the file names dir already uses. Returns the accounting (sorted by name) and the archive
-// names it added (for the record's transcripts). Any error: nothing may be deleted from .live.
-func (r *Router) archiveLive(box *StorageBox, sid, dir string, held map[string]fileSum, taken map[string]bool) ([]LiveCopy, []string, error) {
+// gatherLive: every .live transcript of the session downloaded into tmp, unless held (snapshot transcript name →
+// sum) has it byte-identical; taken: the transcript names the archive already uses. Returns the accounting (sorted by
+// name) and the files to put in the archive. Any error: nothing may be deleted from .live.
+func (r *Router) gatherLive(box *StorageBox, sid, tmp string, held map[string]fileSum, taken map[string]bool) ([]LiveCopy, []diskFile, error) {
 	listed, err := box.List(liveDir(sid))
 	if err != nil {
 		return nil, nil, fmt.Errorf("listing the live copies: %w", err)
-	}
-	if len(listed) == 0 {
-		return nil, nil, nil
-	}
-	tmp := filepath.Join(r.cfg.DataDir, "tmp")
-	if err := os.MkdirAll(tmp, 0o700); err != nil {
-		return nil, nil, err
 	}
 	names := make([]string, 0, len(listed))
 	for n := range listed {
@@ -97,153 +82,47 @@ func (r *Router) archiveLive(box *StorageBox, sid, dir string, held map[string]f
 	}
 	sort.Strings(names)
 	var out []LiveCopy
-	var added []string
+	var files []diskFile
 	for _, name := range names {
 		if !liveNameRE.MatchString(name) {
 			log.Printf("[livesync] %s: %q in the live dir isn't a transcript: left there", sid, name)
 			continue
 		}
-		c, dest, err := r.archiveLiveFile(box, sid, dir, name, listed[name], tmp, held, taken)
+		local := filepath.Join(tmp, "live-"+name)
+		found, err := box.Download(liveDir(sid)+"/"+name, local)
 		if err != nil {
-			return nil, nil, fmt.Errorf("copying the live transcript %s into the archive: %w", name, err)
+			return nil, nil, fmt.Errorf("reading the live transcript %s: %w", name, err)
 		}
-		if c == nil {
+		if !found {
 			continue // gone since the listing
 		}
-		out = append(out, *c)
-		if dest != "" {
-			added = append(added, dest)
-			taken[dest] = true
+		sum, err := sumFile(local)
+		if err != nil {
+			return nil, nil, err
 		}
-	}
-	return out, added, nil
-}
-
-// archiveLiveFile: one .live transcript; dest = the archive file it now has ("" when the snapshot holds it)
-func (r *Router) archiveLiveFile(box *StorageBox, sid, dir, name string, listedSize int64, tmp string, held map[string]fileSum, taken map[string]bool) (*LiveCopy, string, error) {
-	f, err := os.CreateTemp(tmp, "live-*")
-	if err != nil {
-		return nil, "", err
-	}
-	f.Close()
-	defer os.Remove(f.Name())
-	found, err := box.Download(liveDir(sid)+"/"+name, f.Name())
-	if err != nil {
-		return nil, "", err
-	}
-	if !found {
-		return nil, "", nil
-	}
-	sum, err := sumFile(f.Name())
-	if err != nil {
-		return nil, "", err
-	}
-	if sum.size != listedSize {
-		return nil, "", fmt.Errorf("it changed while being read (%d bytes listed, %d read)", listedSize, sum.size)
-	}
-	c := &LiveCopy{Name: name, Size: sum.size, Sha256: sum.sha}
-	if h, ok := held[name]; ok && h == sum {
-		c.In = "snapshot"
-		return c, "", nil
-	}
-	stem := strings.TrimSuffix(name, ".jsonl")
-	for i := 1; i <= 50; i++ {
+		if sum.size != listed[name] {
+			return nil, nil, fmt.Errorf("the live transcript %s changed while being read (%d bytes listed, %d read)", name, listed[name], sum.size)
+		}
+		c := LiveCopy{Name: name, Size: sum.size, Sha256: sum.sha}
+		if h, ok := held[name]; ok && h == sum {
+			c.In = "snapshot"
+			out = append(out, c)
+			continue
+		}
+		stem := strings.TrimSuffix(name, ".jsonl")
 		dest := "transcript-" + name
-		if _, inSnapshot := held[name]; inSnapshot || i > 1 {
+		if _, inSnapshot := held[name]; inSnapshot || taken[dest] {
 			dest = "transcript-" + stem + ".live.jsonl" // the snapshot's version of this conversation differs
-			if i > 1 {
+			for i := 2; taken[dest]; i++ {
 				dest = "transcript-" + stem + ".live-" + strconv.Itoa(i) + ".jsonl"
 			}
 		}
-		if taken[dest] {
-			continue
-		}
-		have, exists, err := boxSum(box, dir+"/"+dest, tmp)
-		if err != nil {
-			return nil, "", err
-		}
-		if exists && have != sum {
-			continue // another file by that name (a dir shared with another record)
-		}
-		if !exists {
-			if err := box.PutFile(dir+"/"+dest, f.Name()); err != nil {
-				return nil, "", err
-			}
-			if have, exists, err = boxSum(box, dir+"/"+dest, tmp); err != nil {
-				return nil, "", fmt.Errorf("reading the copy back: %w", err)
-			}
-			if !exists || have != sum {
-				return nil, "", fmt.Errorf("the copy %s doesn't match (%d bytes %s, want %d bytes %s)", dest, have.size, have.sha, sum.size, sum.sha)
-			}
-		}
+		taken[dest] = true
 		c.In = dest
-		return c, dest, nil
+		out = append(out, c)
+		files = append(files, diskFile{name: dest, local: local})
 	}
-	return nil, "", fmt.Errorf("no free name for it in %s", dir)
-}
-
-// archiveLiveOnly: a session with no signed snapshot but live copies: a record of the live transcripts alone, its
-// session.json noting that there is no snapshot (so nothing to restore). nil when there is no live copy either.
-func (r *Router) archiveLiveOnly(box *StorageBox, s *Session) (*ArchiveInfo, error) {
-	listed, err := box.List(liveDir(s.ID))
-	if err != nil {
-		return nil, fmt.Errorf("listing the live copies: %w", err)
-	}
-	if len(listed) == 0 {
-		return nil, nil
-	}
-	title := sessionTitle(*s)
-	dir, err := r.pickArchiveDir(box, s, title)
-	if err != nil {
-		return nil, err
-	}
-	if err := box.Mkcols(dir); err != nil {
-		return nil, err
-	}
-	live, added, err := r.archiveLive(box, s.ID, dir, map[string]fileSum{}, map[string]bool{})
-	if err != nil {
-		return nil, err
-	}
-	why := "the session left no signed snapshot"
-	if s.NoSnapshot != "" {
-		why += " (" + s.NoSnapshot + ")"
-	}
-	why += ": this record holds only its live transcript copies, so it can't be restored"
-	if added == nil {
-		added = []string{}
-	}
-	info := &ArchiveInfo{Dir: dir, Title: title, Transcripts: added, Live: live, NoSnapshot: why}
-	now := time.Now().UTC()
-	meta := map[string]any{
-		"id": s.ID, "jarvis": 2, "title": title, "label": s.Label, "aiTitle": s.Title, "created": s.Created,
-		"destroyedAt": now, "archiveDir": dir, "environment": strings.Join(s.Stores, ","), "stores": s.Stores,
-		"repos": s.Repos, "model": s.Model, "permissionMode": s.PermissionMode, "size": s.Size, "harness": s.Harness,
-		"image": s.Image, "line": certField(s.Cert, "line"), "snapshot": nil, "noSnapshot": why, "live": live,
-	}
-	mb, _ := json.MarshalIndent(meta, "", " ")
-	if err := box.PutBytes(dir+"/session.json", mb); err != nil {
-		return nil, err
-	}
-	man, _ := json.Marshal(map[string]any{"id": s.ID, "archiveDir": dir, "transcripts": added, "artifacts": []string{}, "snapshot": nil})
-	if err := box.PutBytes(dir+"/restore-"+s.ID+".json", man); err != nil {
-		return nil, err
-	}
-	entry := map[string]any{"id": s.ID, "jarvis": 2, "title": title, "label": s.Label, "archiveDir": dir, "created": s.Created,
-		"destroyedAt": now, "transcripts": len(added), "artifacts": 0, "environment": strings.Join(s.Stores, ","), "repos": s.Repos,
-		"model": s.Model, "size": s.Size, "harness": s.Harness, "permissionMode": s.PermissionMode, "restored": []any{}, "noSnapshot": why}
-	if err := updateIndex(box, func(list []map[string]any) []map[string]any {
-		out := []map[string]any{entry}
-		for _, e := range list {
-			if e["id"] != s.ID {
-				out = append(out, e)
-			}
-		}
-		return out
-	}); err != nil {
-		return nil, fmt.Errorf("indexing the archive: %w", err)
-	}
-	log.Printf("session %s: no snapshot; archived its %d live transcript(s) to %s", s.ID, len(added), dir)
-	return info, nil
+	return out, files, nil
 }
 
 // clearArchivedLive: the .live files the archive accounted for go (each only while it is still the size it had);

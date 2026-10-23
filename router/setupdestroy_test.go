@@ -18,7 +18,7 @@ func TestSetupDestroy(t *testing.T) {
 		t.Fatalf("no such session: %d %v", code, out)
 	}
 	// the archive fails (the Storage Box refuses): paused with the error, no record
-	rg.dav.fail = "claude-records/2026"
+	rg.dav.fail = archivesRoot + "/2026"
 	if code, out := rdo(t, h, "POST", "/setup/sessions/s1/destroy", map[string]any{}, &setup); code != 202 || out["ok"] != true {
 		t.Fatalf("%d %v", code, out)
 	}
@@ -50,4 +50,5 @@ func TestSetupDestroyArchives(t *testing.T) {
 		t.Fatalf("%d %v", code, out)
 	}
 	waitFor(t, "the archived record", func() bool { rec := rg.r.record("s1"); return rec != nil && rec.Archive != nil })
+	rg.dav.archive(t, rg.r.record("s1").Archive.File) // one .tar.gz that opens
 }

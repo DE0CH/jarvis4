@@ -222,7 +222,7 @@ enum BatchPrepare {
   /// for (into): the add-store the router files once the key is made is signed under the same Face ID
   static func repoKey(_ action: String, _ repo: String, _ sensitiveAsked: Bool, inbox: String? = nil, into: RepoInto? = nil,
                       model: AppModel) async throws -> BatchPrepared {
-    let want = sensitiveAsked || repo.lowercased() == "de0ch/jarvis2"
+    let want = sensitiveAsked || Checks.alwaysSensitive(repo)
     let r = try await RouterClient.shared.deployKeyBegin(action: action, repo: repo, sensitive: want)
     let payload = r.doc.payload, b = r.begin
     let e = b.e

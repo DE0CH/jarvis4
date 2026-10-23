@@ -18,7 +18,7 @@ struct SearchContextView: View {
     ScrollViewReader { proxy in
       List {
         Section {
-          Text([hit["date"].text, hit["dir"].text.map { $0.replacing("claude-records/", with: "") } ?? (hit["state"].string == "live" ? "running session" : "paused session")].compactMap { $0 }.joined(separator: " · "))
+          Text([hit["date"].text, hit["dir"].text.map { $0.replacing("claude-records/.jarvis4-records/", with: "").replacing("claude-records/", with: "") } ?? (hit["state"].string == "live" ? "running session" : "paused session")].compactMap { $0 }.joined(separator: " · "))
             .font(.footnote).foregroundStyle(.secondary)
         }
         if let error { ErrorRow(text: error) }
@@ -64,7 +64,7 @@ struct SearchContextView: View {
     if let mid = hit["machineId"].text, let m = model.session(mid), m.state == "paused" {
       return ("Resume", { model.tab = .sessions; Task { await model.resume(m.id) } })
     }
-    if let dir = hit["dir"].text, let r = model.records.items.first(where: { $0.archive["dir"].string == dir && $0.restorable }) {
+    if let dir = hit["dir"].text, let r = model.records.items.first(where: { $0.archive["file"].string == dir && $0.restorable }) {
       return ("Restore", { Task { await model.restore(r) } })
     }
     return nil

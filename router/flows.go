@@ -1282,7 +1282,7 @@ func (r *Router) destroyRun(id string, s Session, o destroyOpts, unlock func(), 
 	case aerr != nil:
 		op.note("", "the archive failed: "+aerr.Error())
 	case archived != nil:
-		op.note("", "archived to "+archived.Dir)
+		op.note("", fmt.Sprintf("archived to %s (%s, uploaded in %.1f s)", archived.File, mb(archived.Bytes), archived.UploadSeconds))
 	default:
 		op.note("", "nothing to archive")
 	}
@@ -1314,7 +1314,7 @@ func (r *Router) destroyRun(id string, s Session, o destroyOpts, unlock func(), 
 			op.note("", "the line ended: the core's burn cert")
 		}
 	}
-	op.note("", "the session's records follow it into the archive (supervisor log, this log); the session becomes a record")
+	op.note("", "the session becomes a record")
 	op.end("done", "")
 	r.st.Do(func(d *persisted) {
 		if x := d.Sessions[id]; x != nil {

@@ -55,7 +55,7 @@ func archiveWhere(a *ArchiveInfo, aerr error) string {
 	case a == nil:
 		return "nothing archived (no snapshot, or records off)"
 	}
-	return fmt.Sprintf("%s (%d transcript(s), %d artifact file(s))", a.Dir, len(a.Transcripts), a.Artifacts)
+	return fmt.Sprintf("%s (%d transcript(s), %d artifact file(s))", a.File, len(a.Transcripts), a.Artifacts)
 }
 
 // oneShotLostDM: the DM, or "" when nothing was lost

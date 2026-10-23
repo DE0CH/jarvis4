@@ -66,7 +66,7 @@ export function Records() {
       <Cards>
         {list.map((m) => {
           const n = (m.restored || []).length, busy = pending.has("r:" + m.id), a = m.archive;
-          // an archive indexed by hand (POST api/records) has no machine-signed snapshot: nothing Jarvis 4 can restore
+          // an archive of only the live transcript copies has no machine-signed snapshot: nothing Jarvis 4 can restore
           const signed = !!a?.signer;
           return (
             <Card key={m.id} data={{ record: m.id }}>
@@ -91,7 +91,7 @@ export function Records() {
                 {a ? <>
                   <Row label="Transcripts">{String((a.transcripts || []).length)}</Row>
                   <Row label="Artifact files">{String(a.artifacts)}</Row>
-                  {!signed && <Row label="Snapshot">None (indexed by hand)</Row>}
+                  {!signed && <Row label="Snapshot">None (only the live transcripts)</Row>}
                 </> : <Row label="Archive" color={m.archiveError ? "red" : undefined}>{m.archiveError || "None"}</Row>}
               </Rows>
               {a?.last && <LastMessage last={a.last} />}

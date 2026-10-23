@@ -291,7 +291,8 @@ func TestLifecycleMergeOrder(t *testing.T) {
 	}
 }
 
-// Destroy: the supervisor log and every operation (the destroy's too) go into the archive, then off the volume
+// Destroy: the supervisor log and every operation (the destroy's too, up to its upload) go into the archive, then
+// out of the database
 func TestDestroyArchivesTheLogs(t *testing.T) {
 	rg := newRig(t)
 	rg.r.cfg.NoAccess = true
@@ -303,17 +304,17 @@ func TestDestroyArchivesTheLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the record", func() bool { return rg.r.record("s1") != nil && rg.r.record("s1").Archive != nil })
-	dir := rg.r.record("s1").Archive.Dir + "/jarvis2/"
-	sup := string(rg.dav.get(dir + "supervisor-log.jsonl"))
+	files, _ := rg.dav.archive(t, rg.r.record("s1").Archive.File)
+	sup := string(files["jarvis2/supervisor-log.jsonl"])
 	if !strings.Contains(sup, "supervisor started") {
 		t.Fatalf("supervisor log %q", sup)
 	}
 	var ops []map[string]any
-	if err := json.Unmarshal(rg.dav.get(dir+"lifecycle.json"), &ops); err != nil || len(ops) != 1 || ops[0]["kind"] != "destroy" {
+	if err := json.Unmarshal(files["jarvis2/lifecycle.json"], &ops); err != nil || len(ops) != 1 || ops[0]["kind"] != "destroy" {
 		t.Fatalf("lifecycle.json %v %v", err, ops)
 	}
 	b, _ := json.Marshal(ops[0]["entries"])
-	if !strings.Contains(string(b), "archived to ") || !strings.Contains(string(b), "supervisor started") {
+	if !strings.Contains(string(b), "uploading the archive") || !strings.Contains(string(b), "supervisor started") {
 		t.Fatalf("entries %s", b)
 	}
 	if l, _ := rg.r.st.ReadLog("s1", logSupervisor); len(l) > 0 {

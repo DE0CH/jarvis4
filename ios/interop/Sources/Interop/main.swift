@@ -641,7 +641,7 @@ if a4s == 200, c4s == 200, let sc4 = try? Checks.cert(doc(c4d), coreKey: coreKey
 /// the begin body the app sends (RouterClient.deployKeyBegin): the store and title it names, and for an add the key
 /// pair it made, the private half's store wrapped to the store key
 func keyBegin(_ action: String, _ repo: String, sensitive: Bool) -> ([String: Any], DeployKeySent?) {
-  let store = Checks.repoStore(repo), title = "jarvis2 " + store
+  let store = Checks.repoStore(repo), title = Checks.deployKeyTitle(store)
   var body: [String: Any] = ["action": action, "repo": repo, "sensitive": sensitive, "store": store, "title": title]
   guard action == "add" else { return (body, nil) }
   let kp = try! OpenSSH.ed25519(comment: title)
@@ -705,12 +705,12 @@ if let vb = FileManager.default.contents(atPath: "testdata/openssh-ed25519.json"
 } else {
   check(false, "the OpenSSH vector (testdata/openssh-ed25519.json) is readable")
 }
-let kp = try! OpenSSH.ed25519(comment: "jarvis2 github-r2-app")
+let kp = try! OpenSSH.ed25519(comment: "jarvis4 github-r2-app")
 let skNow = try! CoreCrypto.storeKey(doc(call("/store-key", ["phone": phone.agreementKey]).1), coreKey: coreKey, phone: phone.agreementKey)
 let appKeys = try! CoreCrypto.wrapKeys(store: "github-r2-app", values: OpenSSH.storeValues(repo: "DE0CH/r2-app", privateKeyFile: kp.privateKeyFile), storeKey: skNow)
 check(appKeys.map(\.key) == ["GITHUB_DEPLOY_KEY_DE0CH_R2_APP", "GITHUB_DEPLOY_REPO_DE0CH_R2_APP"], "a repo's store is two keys, each sealed on its own")
 let (abStatus, abd) = call("/deploy-keys/begin", ["action": "add", "repo": "DE0CH/r2-app", "sensitive": false, "store": "github-r2-app",
-                                             "title": "jarvis2 github-r2-app", "publicKey": kp.publicKey, "keys": appKeys.map(\.json)])
+                                             "title": "jarvis4 github-r2-app", "publicKey": kp.publicKey, "keys": appKeys.map(\.json)])
 let abeg = abStatus == 200 ? try? Checks.deployKeyBegin(doc(abd), coreKey: coreKey, action: "add", repo: "DE0CH/r2-app", sensitive: false, sent: DeployKeySent(publicKey: kp.publicKey, keys: appKeys)) : nil
 check(abeg != nil && abeg?.keys?.count == 2 && abeg?.tokenKey == "GITHUB_DEPLOY_KEYS_TOKEN", "the core's begin names the app's public key and each key it sent (HTTP \(abStatus))")
 check(abeg.map(tokenWriterOK) == true && abeg?.tokenWriter?.by == "core", "…and who wrote the GitHub token (the core: a Recover's key)")
@@ -728,9 +728,9 @@ if let b = abeg {
 // the store's keys sealed under another key's name: the core keeps them as sent, and they don't open
 let swapped = [KeyEntry(store: "github-r2-swap", key: "GITHUB_DEPLOY_KEY_DE0CH_R2_SWAP", wrapped: appKeys[1].wrapped, data: appKeys[1].data),
                KeyEntry(store: "github-r2-swap", key: "GITHUB_DEPLOY_REPO_DE0CH_R2_SWAP", wrapped: appKeys[0].wrapped, data: appKeys[0].data)]
-let kp2 = try! OpenSSH.ed25519(comment: "jarvis2 github-r2-swap")
+let kp2 = try! OpenSSH.ed25519(comment: "jarvis4 github-r2-swap")
 let (sws, swd) = call("/deploy-keys/begin", ["action": "add", "repo": "DE0CH/r2-swap", "sensitive": false, "store": "github-r2-swap",
-                                       "title": "jarvis2 github-r2-swap", "publicKey": kp2.publicKey, "keys": swapped.map(\.json)])
+                                       "title": "jarvis4 github-r2-swap", "publicKey": kp2.publicKey, "keys": swapped.map(\.json)])
 if sws == 200, let b = try? Checks.deployKeyBegin(doc(swd), coreKey: coreKey, action: "add", repo: "DE0CH/r2-swap", sensitive: false, sent: DeployKeySent(publicKey: kp2.publicKey, keys: swapped)) {
   let sig = try! phoneSigning.signature(for: Data(doc(swd).payload.utf8)).derRepresentation.base64EncodedString()
   _ = call("/deploy-keys/finish", ["pending": b.pending, "signature": sig, "share": try! CoreCrypto.sealShare(shareOf(b.e), to: b.t)])

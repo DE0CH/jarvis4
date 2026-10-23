@@ -1,6 +1,6 @@
 // Where the transcripts come from: the Storage Box over WebDAV (production), or a local mirror
 // of it (LOCAL_ROOT — development and tests). Both list { path, size, etag } under
-// claude-records/ and fetch one file to a local temp path (transcripts reach 100+ MB, so they
+// claude-records/, stream one file (open: Jarvis 4's .tar.gz archives) and fetch one file to a local temp path (transcripts reach 100+ MB, so they
 // are streamed to disk and parsed from there, never held in memory).
 const fs = require("fs");
 const path = require("path");
@@ -51,6 +51,11 @@ function dav({ host, user, pass }) {
       if (!r.ok) throw new Error(`GET ${p} -> ${r.status}`);
       await pipeline(Readable.fromWeb(r.body), fs.createWriteStream(dst));
     },
+    async open(p) {
+      const r = await fetch(url(p), { headers: { Authorization: auth } });
+      if (!r.ok) throw new Error(`GET ${p} -> ${r.status}`);
+      return Readable.fromWeb(r.body);
+    },
   };
 }
 
@@ -66,6 +71,7 @@ function local(root) {
   return {
     list: async (skip) => walk(ROOT, 0, skip, []),
     async fetchTo(p, dst) { fs.copyFileSync(path.join(root, p), dst); },
+    async open(p) { return fs.createReadStream(path.join(root, p)); },
   };
 }
 

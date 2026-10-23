@@ -208,7 +208,7 @@ struct Rec: Identifiable, Equatable, Hashable {
   var session: Session { Session(j: j) }
   var archive: JSON { j["archive"] }
   var hasArchive: Bool { !archive.isNull }
-  /// an archive indexed by hand has no machine-signed snapshot: nothing Jarvis 4 can restore
+  /// an archive of only the live transcript copies has no machine-signed snapshot: nothing Jarvis 4 can restore
   var restorable: Bool { archive["signer"].text != nil }
   var title: String { archive["title"].text ?? session.title }
   var destroyedAt: Date? { j["destroyedAt"].string?.isoDate }

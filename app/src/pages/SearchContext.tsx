@@ -40,7 +40,7 @@ function useHitAction(h: SearchHit): Action {
   const sessions = useStore((s) => s.state.sessions), records = useStore((s) => s.records.items);
   const m = h.machineId ? sessions.find((x) => x.id === h.machineId) : undefined;
   if (m && m.state === "paused") return { label: "Resume", run: () => { setTab("sessions"); resumeSession(m.id); } };
-  const rec = h.dir ? records.find((r) => r.archive?.dir === h.dir && r.archive?.signer) : undefined;
+  const rec = h.dir ? records.find((r) => r.archive?.file === h.dir && r.archive?.signer) : undefined;
   return rec ? { label: "Restore", run: () => restore(rec) } : null;
 }
 
@@ -68,7 +68,7 @@ export function SearchContext({ spec }: { spec: ContextSpec }) {
       right={action ? <Button id="sc-action" onPress={() => { closePage(); action.run(); }}>{action.label}</Button> : undefined}>
       <Rows mt={2} id="sc-rows">
         {!!hit.date && <Row label="Date">{hit.date}</Row>}
-        {hit.dir ? <Row label="Archive" mono selectable>{hit.dir.replace(/^claude-records\//, "")}</Row>
+        {hit.dir ? <Row label="Archive" mono selectable>{hit.dir.replace(/^claude-records\/(\.jarvis4-records\/)?/, "")}</Row>
           : <Row label="Session">{hit.state === "live" ? <Pill kind="ok">running</Pill> : <Pill kind="wait">paused</Pill>}</Row>}
       </Rows>
       {err ? <P size={2} color="red" mt={3}>{err}</P>

@@ -186,6 +186,12 @@ func (r *Router) registerDeployKeys(app appRoute) {
 			writeJSON(w, 400, map[string]string{"error": "a GitHub repo (owner/name or its URL) and action add or remove"})
 			return
 		}
+		// the key's title on GitHub is Jarvis 4's own: the secrets deletes the repo's keys with the same title before it
+		// adds one, so Jarvis 2's title ("jarvis2 <store>") would take Jarvis 2's key away
+		if in.Store != "" && in.Title != deployKeyTitle(in.Store) {
+			writeJSON(w, 400, map[string]string{"error": "the deploy key's title must be " + deployKeyTitle(in.Store) + " (an older app sends Jarvis 2's: update the Jarvis 4 app)"})
+			return
+		}
 		body := map[string]any{"action": in.Action, "repo": repo, "sensitive": in.Sensitive}
 		if in.Store != "" {
 			body["store"], body["title"], body["publicKey"] = in.Store, in.Title, in.PublicKey
@@ -211,9 +217,9 @@ func (r *Router) relayDeployKey(w http.ResponseWriter, path string, body []byte,
 }
 
 func (r *Router) relayDeployKeyFor(w http.ResponseWriter, path string, body []byte, finish bool, inbox string) {
-	status, b, err := r.core.Raw("POST", path, body)
+	status, b, err := r.deployKeyCall(path, body)
 	if err != nil {
-		log.Printf("core %s: %v", path, err)
+		log.Printf("deploy keys %s: %v", path, err)
 		writeJSON(w, 503, map[string]any{"error": "the core isn't running", "coreDown": true})
 		return
 	}
@@ -224,6 +230,7 @@ func (r *Router) relayDeployKeyFor(w http.ResponseWriter, path string, body []by
 	}
 	if status == 502 && json.Unmarshal(b, &d) == nil {
 		// the core says only what GitHub said; a 403/404 means the token can't manage this repo's deploy keys
+		// (the kernel's secrets answers the same signed error)
 		var e struct{ Error string }
 		if d.Decode(&e) == nil && (strings.HasPrefix(e.Error, "github: HTTP 403") || strings.HasPrefix(e.Error, "github: HTTP 404")) {
 			writeJSON(w, 502, map[string]string{"error": "the GitHub token in github-deploy-keys can't manage this repo's deploy keys (" + e.Error +
@@ -248,6 +255,15 @@ func (r *Router) relayDeployKeyFor(w http.ResponseWriter, path string, body []by
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write(b)
+}
+
+// deployKeyTitle: Jarvis 4's deploy keys' title on GitHub (the app's Checks.deployKeyTitle)
+func deployKeyTitle(store string) string { return "jarvis4 " + store }
+
+// deployKeyCall: a deploy-key call to whoever keeps the stores (storeCore): the kernel's serving secrets on a box with
+// no core (kernel/secrets/deploykeys.go: the same calls and signed answers, under secrets' key), else the core
+func (r *Router) deployKeyCall(path string, body []byte) (int, []byte, error) {
+	return r.storeCore().Raw("POST", path, body)
 }
 
 // repoAsker: a session that asked for the repo (its request, as filed)
@@ -291,7 +307,7 @@ func (r *Router) repoFollowups(a keyAnswer, asked []repoAsker, inbox string) []s
 		var machine string
 		held := false
 		r.st.Do(func(d *persisted) {
-			if s := d.Sessions[q.session]; s != nil && s.State == "started" && s.Cert != nil {
+			if s := d.Sessions[q.session]; s != nil && s.State == "started" && s.hasLine() {
 				machine, held = s.MachineID, slices.Contains(s.Stores, store)
 			}
 		})

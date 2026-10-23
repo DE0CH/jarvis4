@@ -173,7 +173,7 @@ export const loadClaudeAccounts = () => api<ClaudeAccounts>("GET", "api/claude-a
 export const LEGACY_CLAUDE_STORE = "claude";
 export function fromNow(iso: string | Date) { const d = new Date(iso).getTime() - Date.now(); return d < 0 ? ago(iso) : "in " + ago(new Date(Date.now() - d)).replace(" ago", "").replace("just now", "a moment"); }
 export type TailMessage = { role: "user" | "assistant"; text: string; at?: string };
-export type ArchiveInfo = { dir: string; title: string; transcripts: string[] | null; artifacts: number; signer?: string; snapshotAt?: string; last?: TailMessage | null };
+export type ArchiveInfo = { file: string; bytes?: number; uploadSeconds?: number; title: string; transcripts: string[] | null; artifacts: number; signer?: string; snapshotAt?: string; last?: TailMessage | null };
 /** a destroyed session (GET api/records): the session's fields plus where its archive is */
 export type Rec = Session & { destroyedAt: string; archive?: ArchiveInfo | null; archiveError?: string; restored?: { sessionId: string; at: string }[]; live?: { oneShot?: boolean } };
 export type Grant = { id: string; session: string; holder: string; kind: "grant" | "rule"; ends: string };
