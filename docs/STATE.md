@@ -429,9 +429,9 @@ Each step ships alone, keeps the router working, and is a clean cut for what it 
    holds jarvis4-box, m-gateway-1 jarvis4-gw-b, by ordinal), replaced one at a time; a stopping gateway takes no new
    connection and lets what it carries finish; the machines get both addresses (JARVIS2_URL comma-separated) and dial
    the other when one doesn't answer (machine/routerdial.go), so a gateway's rollout is no gap.
-10. **Stateless replicas** (prepared on branch `step10-replicas`, waiting for the second node): the router Deployment becomes 2 replicas, RollingUpdate `maxUnavailable: 0`, readiness on
-    the database, a PodDisruptionBudget, no volume (scratch is an emptyDir). This is the step that deletes the old
-    machinery (section 7).
+10. **Stateless replicas** (done): the router Deployment runs 2 replicas spread over the nodes, RollingUpdate
+    `maxUnavailable: 0`, readiness on the database (/readyz), a PodDisruptionBudget, no volume (scratch is an emptyDir).
+    This step deleted the old machinery (section 7); a write the database refuses is retried, never dropped quietly.
 
 ## 7. What is deleted
 
@@ -508,3 +508,10 @@ Verdict, per Deyao's rule (add machines, never throttle): before the router and 
 IPv6-only with WARP like the first. The two Postgres instances then run one per node (switch
 `podAntiAffinityType` to `required`), the router's two replicas spread over both, and the services (search,
 icloud-index) fit on it. A third server node is the separate question of control-plane HA (etcd needs three).
+
+What runs: the cx43 was sold out in every EU location (2026-10-23), so the second node is **jarvis2-cluster-2, a cx33
+(4 vCPU, 8 GiB, EUR 10.19/month gross)** in fsn1 (Deyao's choice), 10.77.0.5 / k3s0 10.254.254.5, label
+`jarvis4/pool=services`. It holds search and watch (requests 832 MiB, limits 2.4 GiB for their two replicas each); the
+iCloud index is off (not part of Jarvis). Everything else may schedule there too: the manifests' memory requests
+sum to 2,880 MiB and their limits to 6,944 MiB (without Flux, cert-manager, the CloudNativePG operator and CoreDNS),
+against 7,751 MiB on the cx33 (less 712 MiB reserved and the eviction margin) plus the cx23's.

@@ -37,8 +37,8 @@ spec:
             # the kernel's components (k8s/cluster/kernel): %s is the component's Service name
             - { name: KERNEL_URL, value: "http://%s.jarvis4-kernel.svc.cluster.local:8080" }
             # no old core in Jarvis 4: nothing answers here
-            # the shared services (k8s/cluster/services, not yet on the cluster: until they are, these names don't
-            # resolve and the router answers search/iCloud with a 502 and keeps retrying watches until they give up)
+            # the shared services (k8s/cluster/services, on the node jarvis2-cluster-2); the iCloud index is off (not
+            # part of Jarvis, Deyao 2026-10-22), so its name doesn't resolve and the router answers it with a 502
             - { name: SEARCH_URL, value: "http://search.jarvis4-services.svc.cluster.local:8090" }
             - { name: ICLOUD_INDEX_URL, value: "http://icloud-index.jarvis4-services.svc.cluster.local:8091" }
             - { name: WATCH_URL, value: "http://watch.jarvis4-services.svc.cluster.local:8095" }

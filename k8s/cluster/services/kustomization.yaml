@@ -1,7 +1,5 @@
-# Jarvis 4's shared services (transcript search, the watch runner), NOT yet listed in
-# k8s/cluster/kustomization.yaml: the one cx23 node can't hold them (search 1 Gi). They go
-# on once a second node joins (infra/cluster-node.sh, Deyao's approval pending): add `services` to that file's
-# resources, run infra/services-seed.sh first (the indexes' copies from Jarvis 2's dir into .jarvis4-services).
+# Jarvis 4's shared services (transcript search, the watch runner), on the node infra/cluster-node.sh added
+# (nodeSelector jarvis4/pool=services: jarvis2-cluster-2, cx33), seeded from Jarvis 2's copies by infra/services-seed.sh.
 # The router reaches them at <name>.jarvis4-services.svc.cluster.local (k8s/cluster/router/router.yaml).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
