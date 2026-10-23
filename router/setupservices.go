@@ -57,9 +57,8 @@ func (r *Router) setupServices(w http.ResponseWriter, req *http.Request) {
 	}
 	search := get("/search?" + url.Values{"q": {q}, "mode": {"keyword"}, "limit": {"3"}, "rerank": {"false"}}.Encode())
 	if m, ok := search["body"].(map[string]any); ok { // how many hits, not their text
-		if res, ok := m["results"].([]any); ok {
-			search["body"] = map[string]any{"results": len(res)}
-		}
+		hits, _ := m["hits"].([]any)
+		search["body"] = map[string]any{"hits": len(hits), "total": m["total"], "tookMs": m["tookMs"]}
 	}
 	t0 := time.Now()
 	watch := map[string]any{}

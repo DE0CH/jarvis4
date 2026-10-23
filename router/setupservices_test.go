@@ -18,7 +18,7 @@ func TestSetupServices(t *testing.T) {
 				"replica": map[string]any{"pod": "search-a", "role": "writer", "memory": 1}})
 		case "/search":
 			gotQ = req.URL.Query().Get("q")
-			json.NewEncoder(w).Encode(map[string]any{"results": []any{map[string]any{"text": "secret words"}, map[string]any{}}})
+			json.NewEncoder(w).Encode(map[string]any{"hits": []any{map[string]any{"snippet": "secret words"}, map[string]any{}}, "total": 7})
 		}
 	}))
 	defer svc.Close()
@@ -45,7 +45,7 @@ func TestSetupServices(t *testing.T) {
 	if st0["chunks"].(float64) != 12 || st0["indexer"] != nil || st0["replica"].(map[string]any)["pod"] != "search-a" {
 		t.Fatalf("status: %v", st0)
 	}
-	if n := s["search"].(map[string]any)["body"].(map[string]any)["results"]; n.(float64) != 2 {
+	if b := s["search"].(map[string]any)["body"].(map[string]any); b["hits"].(float64) != 2 || b["total"].(float64) != 7 || b["snippet"] != nil {
 		t.Fatalf("search: %v", s["search"])
 	}
 	if w := out["watch"].(map[string]any)["run"].(map[string]any); w["exit"].(float64) != 0 || w["stdout"] != "watch runner ok" {
