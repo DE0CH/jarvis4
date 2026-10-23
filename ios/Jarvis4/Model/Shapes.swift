@@ -85,6 +85,10 @@ struct Session: Identifiable, Equatable, Hashable {
   var noSnapshot: String? { j["noSnapshot"].text }
   /// the final snapshot failed and the machine (no volume) is kept: Pause again or Destroy anyway
   var snapshotFailed: String? { j["snapshotFailed"].text }
+  /// when it became failed (router/failures.go; `error` says why)
+  var failedAt: Date? { j["failedAt"].string?.isoDate }
+  /// its machine stopped or went away without Jarvis doing it (router/lostmachine.go)
+  var lost: LostMachine? { j["lost"].object == nil ? nil : LostMachine(j: j["lost"]) }
   /// the router's last restart / upgrade / account-switch job (kind, phase, error)
   var wakeKind: String? { j["wake"]["kind"].text }
   var wakePhase: String? { j["wake"]["phase"].text }
@@ -470,4 +474,29 @@ struct SessionEvent: Equatable, Hashable, Identifiable {
   /// an end's state: done | failed | cut off
   var state: String { j["state"].string ?? "" }
   var text: String { j["text"].string ?? "" }
+}
+
+/// a session's machine that stopped outside Jarvis (router/lostmachine.go LostMachine)
+struct LostMachine: Equatable, Hashable {
+  let j: JSON
+  var machine: String { j["machine"].string ?? "" }
+  var at: Date? { j["at"].string?.isoDate }
+  /// stopped | suspended | failed | destroyed | destroying | gone
+  var flyState: String { j["flyState"].string ?? "" }
+  /// Fly's own event for it (the stop or exit)
+  var fly: String? { j["fly"].text }
+  var volume: String? { j["volume"].text }
+  /// Resume starts the same machine again on its volume: nothing is lost
+  var inPlace: Bool { j["inPlace"].bool == true }
+  /// what Resume does, in plain words
+  var resume: String { j["resume"].text ?? "" }
+  var what: String {
+    switch flyState {
+    case "stopped": "Stopped"
+    case "suspended": "Suspended"
+    case "failed": "Failed on Fly"
+    case "gone": "Gone from Fly"
+    default: "Destroyed"
+    }
+  }
 }

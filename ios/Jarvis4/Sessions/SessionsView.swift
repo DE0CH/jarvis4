@@ -137,6 +137,15 @@ struct SessionRow: View {
         if let busy { StatusPill(text: busy.lowercased(), color: .orange, spinning: true) } else { StatusPill(text: p.text, color: p.color, spinning: p.spin) }
       }
       Text(line1).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+      if busy == nil, m.state == "failed" {
+        // why it failed, in the list too (router/failures.go): the reason's start, the rest on the session's page
+        if let l = m.lost {
+          HStack(spacing: 6) { StatusPill(text: "Stopped outside Jarvis", color: .red); if l.inPlace { Text("nothing lost").font(.footnote) } }
+            .accessibilityIdentifier("lost-row-\(m.id)")
+        }
+        Text(m.error ?? "No reason recorded").font(.footnote).foregroundStyle(.red).lineLimit(3)
+          .accessibilityIdentifier("failed-reason-\(m.id)")
+      }
       if m.state == "started", let w = m.workers, w.subagents > 0 || !w.jobs.isEmpty {
         Label(Fmt.workers(subagents: w.subagents, jobs: w.jobs), systemImage: "person.2")
           .font(.footnote).foregroundStyle(.secondary).lineLimit(1)

@@ -67,7 +67,8 @@ private struct SessionDetailList: View {
         .accessibilityIdentifier("status-\(m.id)")
         if let info = autoPauseInfo { LabeledContent(info.label, value: info.value).accessibilityIdentifier("autopause-\(m.id)") }
         if m.authFailed { ErrorRow(text: "Claude login failed") }
-        if let e = m.error { ErrorRow(text: e, id: "session-error") }
+        if let e = m.error, m.lost == nil { ErrorRow(text: e, id: "session-error") }
+        if m.state == "failed", let f = m.failedAt { LabeledContent("Failed", value: Fmt.past(f)).accessibilityIdentifier("failed-at-\(m.id)") }
         if busy == nil, m.wakeKind == "account", m.wakePhase == "failed" { ErrorRow(text: "Account switch failed: " + (m.wakeError ?? "no reason given"), id: "account-failed") }
         if let rp = m.resumePrompt {
           VStack(alignment: .leading, spacing: 2) {
@@ -80,6 +81,7 @@ private struct SessionDetailList: View {
 
       if let a = m.memAlert { MemAlertSection(m: m, a: a, busy: busy) }
       if let a = m.diskAlert { DiskAlertSection(m: m, a: a, busy: busy) }
+      if let l = m.lost { LostMachineSection(m: m, l: l, busy: busy) }
       if m.snapshotFailed != nil || m.noSnapshot != nil { SnapshotProblemSection(m: m, busy: busy) }
 
       if let h = m.needsGrant {
@@ -310,5 +312,33 @@ private struct SnapshotProblemSection: View {
       Label(m.snapshotFailed != nil ? "Final snapshot failed" : "No snapshot", systemImage: "externaldrive.badge.exclamationmark")
         .foregroundStyle(.red)
     }
+  }
+}
+
+/// its machine stopped outside Jarvis (router/lostmachine.go): what happened, when, what is kept, and one Resume
+private struct LostMachineSection: View {
+  @Environment(AppModel.self) private var model
+  let m: Session
+  let l: LostMachine
+  let busy: String?
+
+  var body: some View {
+    Section {
+      LabeledContent("Machine", value: "\(l.machine) · \(l.what.lowercased())")
+      if let at = l.at { LabeledContent("When", value: Fmt.past(at)) }
+      if let f = l.fly { Text(f).font(.footnote).foregroundStyle(.secondary) }
+      if let v = l.volume { LabeledContent("Volume", value: "\(v) · kept") }
+      Text(l.resume).font(.subheadline)
+        .accessibilityIdentifier("lost-resume-\(m.id)")
+      if busy == nil, m.resumable {
+        Button(l.inPlace ? "Resume (start the same machine again)" : "Resume from the snapshot", systemImage: "play.circle") { Task { await model.resume(m.id) } }
+          .accessibilityIdentifier("lost-resume-button-\(m.id)")
+      }
+    } header: {
+      Label("Stopped outside Jarvis", systemImage: "bolt.horizontal.circle").foregroundStyle(.red)
+    } footer: {
+      Text("Jarvis didn't pause or destroy this machine: it stopped on Fly by itself or someone stopped it there.")
+    }
+    .accessibilityIdentifier("lost-\(m.id)")
   }
 }

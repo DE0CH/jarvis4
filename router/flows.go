@@ -66,6 +66,9 @@ type Router struct {
 
 func NewRouter(cfg Config, st *State, core *CoreClient, policy Policy) *Router {
 	r := &Router{cfg: cfg, st: st, core: core, policy: policy, setupSeen: map[string]time.Time{}, sup: &supLogs{next: map[string]int64{}}, lc: newLifecycle()}
+	if st != nil {
+		st.onFailed = r.failureEvent // failures.go
+	}
 	r.notes = &broker{}
 	if st != nil && st.sdb != nil {
 		go st.sdb.db.listenLoop(r.notes) // mq.go

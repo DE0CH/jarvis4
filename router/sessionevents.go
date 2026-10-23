@@ -82,7 +82,7 @@ func lcEvents(recs []lcRec, from int) ([]SessionEvent, *LcOp) {
 			ops[op.ID] = op
 			if !seen {
 				latest = op.ID
-				if i >= from {
+				if i >= from && op.State == "running" { // one written already ended (failures.go, lostmachine.go): its end only
 					out = append(out, SessionEvent{Key: key, At: op.Started, Source: "router", Op: op.Kind, OpID: op.ID, Mark: "start",
 						State: "running", Text: opTitle(op.Kind) + " started"})
 				}
@@ -91,7 +91,7 @@ func lcEvents(recs []lcRec, from int) ([]SessionEvent, *LcOp) {
 				ended[op.ID] = true
 				if i >= from {
 					t := opTitle(op.Kind) + " " + op.State
-					if d := durText(op.Started, op.Ended); d != "" {
+					if d := durText(op.Started, op.Ended); d != "" && op.Started != op.Ended {
 						t += " after " + d
 					}
 					if op.Error != "" {

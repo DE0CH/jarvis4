@@ -2530,3 +2530,37 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      `lib/tar.js`) indexes an archive's transcripts and docs as `<archive>/<name>` with the archive as their dir, reading
      each changed archive once up to its first `jarvis2/` entry. Indexing a folder by hand (`POST /api/records`) went: a
      record is one of these archives.
+
+228. **A machine stopped outside Jarvis is noticed, said so plainly, and Resume brings it back with nothing lost**
+     (`router/lostmachine.go`, `kernel/spawner` `Start`, `machine/main.go` `keepOwnKeys`). 2026-10-22: Claude ran
+     `fly machine stop` on Jarvis 2's "YYC news monitor 2"; Jarvis 2 showed it "started, busy" for a long time, then
+     "failed" with its machine still listed, and nothing said whether its work was lost. Now the leader looks at Fly
+     every 20 s (read-only token): a session Jarvis has running whose machine is stopped, suspended, failed, destroyed
+     or no longer listed, on two looks in a row and with no action of Jarvis's holding the session, is `failed` with
+     `lost` and an error naming the machine, when it stopped and Fly's own event (exit code, OOM, stop requested), what
+     is kept and what Resume will do; the event stream gets a "Machine lost" operation, Deyao a DM. Resume of a kernel
+     line goes through the kernel: when the machine still exists with its volume and keeps its key pair there (its
+     status report says `keysOnVolume`), the spawner starts the same machine again (`POST /start`: a Fly fact, no
+     cert); its cert and grant still name it, its boot restores nothing and finds its state on the volume (the
+     snapshot's single files come back from their copy of at most a minute ago). Otherwise the spawner kills it into a
+     fresh source naming the newest signed snapshot and a new machine starts from it (or Resume refuses with
+     `noSnapshot` when there is none). Why the key pair on the volume: a restarted Fly machine has a fresh root
+     filesystem, so keys only in `/run` would leave it unable to prove it is the machine its cert names, and the
+     alternative (a new cert per restart) needs a fly→fly cert with new keys, which the kernel's table doesn't have. The
+     volume is the machine's own (encrypted, made new for it, deleted by its kill, Fly backups off) and reading it
+     needs the same Fly power as exec into the running machine, so the keys are no more exposed than before; they
+     never go into a snapshot (the snapshot holds `~` only). Tested: `TestAMachineStoppedOutsideJarvisResumesInPlace`
+     (one look is not enough; error, `lost`, events and `/setup/sessions`; Resume starts the same machine, no new one,
+     and it goes on once it reports and pulls), `TestALostMachineResumesFromTheNewestSnapshot` (an image without kept
+     keys, and a machine gone from Fly: a new machine restores the newest snapshot), `TestJarvisOwnStopIsNotLost`,
+     `kernel/spawner` `TestStartAStoppedMachine`, `machine` `TestStartedAgainOnItsVolume`.
+
+229. **A failed session always says why and since when, everywhere it is listed** (`router/failures.go`). 2026-10-22:
+     Jarvis 2's "Kates work" failed on its first start, with no machine, and `infra/setup.py sessions -v` showed no
+     reason. Every write of the state stamps a failed session's `failedAt` (cleared once it is anything else) and gives
+     a failed session with no error one saying the path that failed it gave none (a bug to fix there); each new failure
+     outside a running operation is a "Session failed: <reason>" event of its own (inside one, the operation's end
+     carries it). `GET /setup/sessions` carries `error`, `failedAt`, `lost`, `waiting` and `noSnapshot`, and
+     `infra/setup.py sessions` prints a failed session's reason under it; the app's session list shows the reason
+     under a failed row (and "Stopped outside Jarvis" for a lost machine), its session page the time it failed and a
+     section for a lost machine with its Resume; the web page the same. Tested: `TestAFailedSessionSaysWhy`.

@@ -106,6 +106,15 @@ func (f *fakeFly) DeleteVolume(v string) error {
 	delete(f.vols, v)
 	return nil
 }
+func (f *fakeFly) Start(id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if m := f.ms[id]; m != nil && m.state != "destroyed" {
+		m.state = "started"
+		return nil
+	}
+	return fmt.Errorf("HTTP 404")
+}
 func (f *fakeFly) ExtendVolume(string, int) (bool, error) { return true, nil }
 
 type rig struct {
@@ -370,5 +379,53 @@ func TestSpawnAfterACrashFindsItsMachine(t *testing.T) {
 	out, err = r2.sp.Spawn(SpawnInput{Cert: cert2, Notarized: nz2, Notarizer: r2.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"})
 	if err != nil || r2.fly.creates != 1 || len(r2.fly.vols) != 1 {
 		t.Fatalf("lost answer: %v %v creates=%d vols=%d", out, err, r2.fly.creates, len(r2.fly.vols))
+	}
+}
+
+// a machine stopped outside Jarvis starts again on its own volume, keeping its cert (no new one is signed); ✱ a machine
+// never up, one killed, one Fly destroyed, one the spawner never made
+func TestStartAStoppedMachine(t *testing.T) {
+	r := newRig(t)
+	id, d := r.spawn()
+	vol := r.fly.ms[id].volume
+	r.fly.mu.Lock()
+	r.fly.ms[id].state = "stopped"
+	r.fly.mu.Unlock()
+	out, err := r.sp.Start(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o := out.(map[string]any); o["was"] != "stopped" || o["volume"] != vol || r.fly.ms[id].state != "started" {
+		t.Fatalf("%v %s", o, r.fly.ms[id].state)
+	}
+	if again, err := r.sp.Init(id); err != nil || again != d {
+		t.Fatal("the restart changed the machine's cert", err)
+	}
+	if _, err := r.sp.Start(id); err != nil { // already started: nothing to do
+		t.Fatal(err)
+	}
+	if _, err := r.sp.Start("nosuch"); err == nil || !strings.Contains(err.Error(), "isn't one") {
+		t.Fatal(err)
+	}
+	// never up
+	cert, nz := r.source()
+	o2, _ := r.sp.Spawn(SpawnInput{Cert: cert, Notarized: nz, Notarizer: r.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"})
+	if _, err := r.sp.Start(o2.(map[string]any)["id"].(string)); err == nil || !strings.Contains(err.Error(), "never came up") {
+		t.Fatal(err)
+	}
+	// destroyed on Fly
+	id3, _ := r.spawn()
+	r.fly.mu.Lock()
+	r.fly.ms[id3].state = "destroyed"
+	r.fly.mu.Unlock()
+	if _, err := r.sp.Start(id3); err == nil || !strings.Contains(err.Error(), "destroyed") {
+		t.Fatal(err)
+	}
+	// killed
+	if _, err := r.sp.Kill(id, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.sp.Start(id); err == nil || !strings.Contains(err.Error(), "killed") {
+		t.Fatal(err)
 	}
 }

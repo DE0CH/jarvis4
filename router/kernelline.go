@@ -449,6 +449,16 @@ func (r *Router) kernelResume(s Session, upgrade bool, unlock func(), op *lcHand
 		defer unlock()
 		defer op.endFromState()
 		defer r.settleFollowups(id)
+		if s.Lost != nil && s.MachineID == s.Lost.Machine && !upgrade { // lostmachine.go: it stopped outside Jarvis
+			if r.kernelResumeLost(s, op) {
+				return
+			}
+			r.st.Do(func(d *persisted) {
+				if x := d.Sessions[id]; x != nil {
+					s = *x
+				}
+			})
+		}
 		if s.MachineID != "" {
 			op.machine(s.MachineID)
 			op.note(s.MachineID, "finishing the machine's pause first")

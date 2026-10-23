@@ -880,7 +880,9 @@ func sessionView(s *Session, d *persisted) map[string]any {
 		"model": s.Model, "permissionMode": s.PermissionMode, "guest": guest, "size": s.Size, "pausedAt": s.PausedAt,
 		"image": s.Image, "createRequestId": s.RequestID, "repos": s.Repos, "discordChannel": s.DiscordChannel,
 		"waiting": s.Waiting, "lockedStore": s.LockedStore, "carryLost": s.CarryLost, "oldCore": s.OldCore, "claudeAccount": nullIfEmpty(s.ClaudeAccount),
-		"kernel": s.Kernel != nil, // kernelline.go: its stores unlock in the kernel's secrets
+		"kernel":   s.Kernel != nil, // kernelline.go: its stores unlock in the kernel's secrets
+		"failedAt": s.FailedAt,      // failures.go: when it became failed (error says why)
+		"lost":     s.Lost,          // lostmachine.go: its machine stopped outside Jarvis (what is kept, what Resume does)
 	}
 	liveView(s, v)
 	snapshotView(s, v) // snapsafe.go

@@ -66,6 +66,10 @@ type Session struct {
 	NoSnapshot     string      `json:"noSnapshot,omitempty"`     // the line's last machine left no snapshot: Resume refuses
 	DiskGB         int         `json:"diskGb,omitempty"`         // disk.go: the volume size the next machine gets (0 = the core's default)
 	Kernel         *KernelLine `json:"kernel,omitempty"`         // kernelline.go: the line is the kernel's (not the old core's)
+	// lostmachine.go: its machine stopped or went away without Jarvis doing it (Resume brings it back)
+	Lost *LostMachine `json:"lost,omitempty"`
+	// failures.go: when it last became failed (Error says why); nil while it isn't failed
+	FailedAt       *time.Time  `json:"failedAt,omitempty"`
 	noSnapshotDMed bool        // a refused resume DMed once
 	taskConfig     *TaskConfig // vouch.go: a task line's instance + parameters while its first challenge is made (not kept)
 }
@@ -113,6 +117,9 @@ type Started struct {
 	Volume        *Volume `json:"volume,omitempty"`     // snapsafe.go: the machine's Fly volume (a core with volumes)
 	KernelPred    string  `json:"kernelPred,omitempty"` // kernelline.go: the machine whose snapshot this one restores
 	KernelCert    *Doc    `json:"kernelCert,omitempty"` // kernelline.go: the spawner's cert naming it (what its archive keeps)
+	// lostmachine.go: the machine said it keeps its key pair on its volume (machine/main.go keepOwnKeys), so started
+	// again on that volume it is the same machine
+	KeysOnVolume bool `json:"keysOnVolume,omitempty"`
 }
 
 type persisted struct {
@@ -158,6 +165,8 @@ type State struct {
 	data persisted
 	sdb  *stateDB
 	seal *Sealer // sealed.go: the router's secrets in the database
+	// failures.go: told (outside the lock) of each session that has just become failed, with its reason
+	onFailed func(session, reason string)
 }
 
 // Do runs fn on the records under the lock of every replica (the state_version row, taken FOR UPDATE: Do's are
@@ -168,6 +177,19 @@ type State struct {
 // replica otherwise (a job in flight is then carried on by another replica: its holder marks it neither done nor
 // failed, jobs.go jobUnlock).
 func (s *State) Do(fn func(d *persisted)) {
+	var failed [][2]string
+	s.doLocked(func(d *persisted) {
+		fn(d)
+		failed = stampFailures(d, time.Now().UTC()) // failures.go: a failed session says why and since when
+	})
+	if hook := s.onFailed; hook != nil {
+		for _, f := range failed {
+			go hook(f[0], f[1])
+		}
+	}
+}
+
+func (s *State) doLocked(fn func(d *persisted)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.sdb == nil {

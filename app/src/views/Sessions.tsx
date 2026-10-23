@@ -329,6 +329,18 @@ function DiskAlert({ m, busy }: { m: Session; busy: string | null }) {
   );
 }
 // the final snapshot failed and the machine was kept; or the line's last machine left none and it won't resume
+// its machine stopped outside Jarvis (router/lostmachine.go): what happened, when, what is kept, and what Resume does
+function LostMachineNote({ m }: { m: Session }) {
+  const l = m.lost;
+  if (!l) return null;
+  const what = ({ stopped: "stopped", suspended: "was suspended", failed: "failed on Fly", gone: "is gone from Fly" } as Record<string, string>)[l.flyState] || "was destroyed";
+  return (
+    <Callout color="red" variant="surface" mt={2} data={{ lost: l.inPlace ? "in-place" : "snapshot" }} id={"lost-" + m.id}>
+      <CalloutText color="red">{`Stopped outside Jarvis: machine ${l.machine} ${what} ${ago(l.at)}${l.fly ? " (" + l.fly + ")" : ""}. Jarvis didn't pause or destroy it.`}</CalloutText>
+      <CalloutText color="red">{l.resume}</CalloutText>
+    </Callout>
+  );
+}
 function SnapshotTrouble({ m, busy }: { m: Session; busy: string | null }) {
   if (m.snapshotFailed) return (
     <Callout color="red" variant="surface" mt={2} data={{ snapshotFailed: "1" }} id={"snapshot-failed-" + m.id}>
@@ -479,6 +491,7 @@ export function Sessions() {
                 {!!m.resumePrompt && <Quote by={paused ? "Queued for the next resume" : "Queued prompt"} lines={3}>{clip(m.resumePrompt)}</Quote>}
                 <MemAlert m={m} busy={busy || null} />
                 <DiskAlert m={m} busy={busy || null} />
+                <LostMachineNote m={m} />
                 <SnapshotTrouble m={m} busy={busy || null} />
                 <PendingMessages m={m} />
                 <NeedsGrant m={m} />
@@ -487,7 +500,7 @@ export function Sessions() {
                 <Schedules m={m} />
                 {m.wake?.kind === "account" && m.wake.phase === "failed" && <P size={2} color="red" mt={1} id={"account-failed-" + m.id}>{"Account switch failed: " + (m.wake.error || "no reason given")}</P>}
                 <MessageRules m={m} />
-                {!!m.error && <P size={2} color="red" mt={1}>{m.error}</P>}
+                {!!m.error && !m.lost && <P size={2} color="red" mt={1} id={"failed-reason-" + m.id}>{(m.state === "failed" && m.failedAt ? "Failed " + ago(m.failedAt) + ": " : "") + m.error}</P>}
                 {!!m.discordChannel && <Flex mt={1}><Button size={1} variant="ghost" color="gray" id={"discord-" + m.id} onPress={() => openDiscord(m.discordChannel!)}>Discord channel ↗</Button></Flex>}
                 <Flex gap={2} pt={3} wrap style={{ marginTop: "auto" }} data={{ actions: "1" }}>
                   {busy ? <BusyButton variant="soft" color="gray" label={busy} />

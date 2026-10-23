@@ -832,13 +832,15 @@ func (r *Router) registerInbox(app appRoute, m machineRoute, public publicRoute)
 	public("GET /setup/requests", setupOnly(func(w http.ResponseWriter, req *http.Request, _ []byte) {
 		writeJSON(w, 200, map[string]any{"requests": r.Inbox(), "batches": r.InboxBatches(nil)})
 	}))
-	// the sessions and their current machines (ids and states only): the phone replica runs jarvis2-request in a
+	// the sessions and their current machines (ids, states, and why a failed one failed): the phone replica runs jarvis2-request in a
 	// session's machine (flyctl exec) and finds it here, since machines carry no router env any more
 	public("GET /setup/sessions", setupOnly(func(w http.ResponseWriter, req *http.Request, _ []byte) {
 		out := []map[string]any{}
 		r.st.Do(func(d *persisted) {
 			for _, s := range d.Sessions {
-				v := map[string]any{"id": s.ID, "machineId": s.MachineID, "state": s.State, "title": sessionTitle(*s), "image": s.Image, "stores": s.Stores}
+				v := map[string]any{"id": s.ID, "machineId": s.MachineID, "state": s.State, "title": sessionTitle(*s), "image": s.Image, "stores": s.Stores,
+					// failures.go: why it failed and when; lostmachine.go: a machine that stopped outside Jarvis
+					"error": s.Error, "failedAt": s.FailedAt, "lost": s.Lost, "waiting": s.Waiting, "noSnapshot": s.NoSnapshot}
 				// the autopilot's view (no secrets): what the machine last reported and the stall watchdog's clock
 				if l := s.Live; l != nil {
 					v["lastReport"], v["nudgeAt"], v["nudgeError"], v["needsGrant"] = l.LastReport, l.NudgeAt, l.NudgeError, l.NeedsGrant

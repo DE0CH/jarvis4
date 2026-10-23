@@ -50,7 +50,8 @@ both). Values never print.
                                        and which is the default (router/claudeaccounts.go)
   infra/setup.py claude-login          the same for the default account only
   infra/setup.py repos                 the router's repo list (repo, store, key fingerprint)
-  infra/setup.py sessions              the router's sessions: id, current machine, state, title
+  infra/setup.py sessions [-v]         the router's sessions: id, current machine, state, title, and a failed one's reason
+                                       and when (-v: also the autopilot's view, a lost machine's details)
   infra/setup.py lease take-over|hand-back DEVICE [--note TEXT]
                                        for Deyao: take a shared device over (agents refused) or hand it back
   infra/setup.py pause SESSION         cancel its wakeups and crons, then pause it (its snapshot if the machine answers)
@@ -541,8 +542,10 @@ def main():
     elif cmd == "sessions":
         for s in call("GET", "/setup/sessions")["sessions"]:
             print(s["id"], s["machineId"] or "-", s["state"], s["title"])
+            if s.get("error"):  # why it failed (router/failures.go), or what a stopped machine left (router/lostmachine.go)
+                print("    error" + (f" (since {s['failedAt']})" if s.get("failedAt") else "") + ":", s["error"])
             if "-v" in args:  # the autopilot's view: status, background jobs, stall clock, last nudge
-                print("   ", json.dumps({k: v for k, v in s.items() if k not in ("id", "machineId", "state", "title")}, sort_keys=True))
+                print("   ", json.dumps({k: v for k, v in s.items() if k not in ("id", "machineId", "state", "title", "error")}, sort_keys=True))
     elif cmd == "lease":
         if len(args) < 2 or args[0] not in ("take-over", "hand-back"):
             raise SystemExit(__doc__)

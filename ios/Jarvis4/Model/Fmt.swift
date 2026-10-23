@@ -29,6 +29,10 @@ enum Fmt {
     if s < 86400 { return "\(Int(s / 3600)) h ago" }
     return "\(Int(s / 86400)) d ago"
   }
+  /// "Oct 22 09:30 (3 h ago)": a time in the past, with the date
+  static func past(_ d: Date) -> String {
+    "\(d.formatted(.dateTime.month(.abbreviated).day().hour().minute())) (\(ago(d)))"
+  }
   /// "in 5 min" for the future, "5 min ago" for the past
   static func fromNow(_ d: Date) -> String {
     let s = d.timeIntervalSinceNow

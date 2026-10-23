@@ -68,6 +68,7 @@ func (r *Router) startFeatures() {
 	go r.coreChangeLoop() // corechange.go: a new core → the earlier core's paused sessions are destroyed
 	go r.loginLoop()      // claudelogin.go: refresh the Claude login (own) or mirror Jarvis 1's (follow)
 	go r.volSweepLoop()   // volsweep.go: delete leftover session volumes (DECISIONS 195)
+	go r.lostLoop()       // lostmachine.go: machines that stopped without Jarvis doing it
 }
 
 // stateHooks: add fields to GET /api/state

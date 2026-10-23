@@ -1115,6 +1115,12 @@ and end are lifecycles the router manages, each certified by succession certs:
 
 - New session: the phone signs (sink, source-x, P); the spawner spawns from it.
 - Pause: a kill into a fresh source. Resume: a spawn from it.
+- A machine stopped outside Jarvis (`fly machine stop`, an exit, Fly's own doing; `router/lostmachine.go`): no cert
+  changes. The spawner starts the same machine again on its own volume (`POST /start`, a Fly fact like the others);
+  it is the same Fly machine with the same key pair (the machine keeps its pair on its volume, never in a snapshot:
+  `machine/main.go keepOwnKeys`), so its cert and grant hold and it reads its state off the volume. One that can't
+  start again (destroyed, no volume, an image that keeps no keys there) is killed into a fresh source naming the
+  newest signed snapshot, and Resume spawns from it.
 - End: a burn, (source, sink). Only a source can be burned: a machine has no used-once rule and stays alive whatever is
   signed about it, so (machine, sink) would stop nothing.
 - Widening happens only out of the sink.

@@ -42,6 +42,8 @@ type Fly interface {
 	Inspect(id string) (FlyMachine, error)
 	Init(id string) (MachineKeys, error)
 	Destroy(id string) error
+	// Start: a stopped machine started again (its config, image and volume unchanged)
+	Start(id string) error
 	DeleteVolume(volume string) error
 	ExtendVolume(volume string, sizeGB int) (needsRestart bool, err error)
 }
@@ -263,6 +265,10 @@ func (f *FlyAPI) Init(id string) (MachineKeys, error) {
 
 func (f *FlyAPI) Destroy(id string) error {
 	return f.call("DELETE", "/machines/"+id+"?force=true", nil, nil)
+}
+
+func (f *FlyAPI) Start(id string) error {
+	return f.call("POST", "/machines/"+id+"/start", nil, nil)
 }
 
 func (f *FlyAPI) DeleteVolume(volume string) error {

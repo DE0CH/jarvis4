@@ -146,6 +146,8 @@ export type Session = {
   diskGb?: number; // the volume size the line's next machine gets (0 = the core's default, 10 GB)
   // the line's last machine left no signed snapshot: Resume is refused (it would start empty)
   noSnapshot?: string | null;
+  failedAt?: string | null; // router/failures.go: when it became failed (error says why)
+  lost?: LostMachine | null; // router/lostmachine.go: its machine stopped outside Jarvis
   // the final snapshot failed and the machine (no volume) is kept: state failed with a machine
   snapshotFailed?: string | null;
   // how many messages for it wait in the Inbox for Deyao (PendingMessage, state "pending"); absent = none
@@ -372,3 +374,15 @@ export type SearchContext = { session: { title: string; dir: string | null } | n
 export type IcloudHit = { path: string; size: number; mtime: string; kind: string; state?: string; note?: string; score: number; via: string[]; part?: string; src?: string; snippet: string };
 export type IcloudResult = { query: string; total: number; tookMs: number; notes: string[]; hits: IcloudHit[] };
 export type IcloudFile = { path: string; size?: number; mtime?: string; kind?: string; state?: string; note?: string; error?: string; chunks: { part?: string; src?: string; text: string }[] };
+
+// router/lostmachine.go LostMachine: a session's machine that stopped or went away without Jarvis doing it
+export interface LostMachine {
+  machine: string;
+  at: string;
+  seen: string;
+  flyState: string; // stopped | suspended | failed | destroyed | destroying | gone
+  fly?: string; // Fly's own event for it
+  volume?: string; // kept
+  inPlace: boolean; // Resume starts the same machine again on its volume: nothing is lost
+  resume: string; // what Resume does, in plain words
+}

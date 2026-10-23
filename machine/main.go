@@ -225,6 +225,9 @@ func keygen() error {
 	if err := sudo("install", "-d", "-o", "claude", "-m", "755", dir); err != nil {
 		return err
 	}
+	if restoreOwnKeys() {
+		return nil
+	}
 	enc, err := ecdh.P256().GenerateKey(rand.Reader)
 	if err != nil {
 		return err
@@ -238,7 +241,80 @@ func keygen() error {
 		return err
 	}
 	pub, _ := json.Marshal(map[string]string{"encryptionKey": b64.EncodeToString(enc.PublicKey().Bytes()), "signingKey": b64.EncodeToString(sig.PublicKey().Bytes())})
-	return os.WriteFile(keysPath, pub, 0o644)
+	if err := os.WriteFile(keysPath, pub, 0o644); err != nil {
+		return err
+	}
+	keepOwnKeys(p, pub)
+	return nil
+}
+
+// A machine with a volume keeps its key pair and its id on the volume (selfDir, never in a snapshot: a snapshot holds
+// ~ only). Stopped outside Jarvis and started again on the same volume (the spawner's start, router/lostmachine.go),
+// it is the same machine with the same keys: its cert and its grant still hold, nobody runs init (the boot goes on by
+// itself), and its state is on the volume as it left it, so the boot restores nothing (restartedPath).
+var selfDir = func() string { return filepath.Join(volumeRoot, ".jarvis2-self") }
+
+var restartedPath = dir + "/restarted"
+
+// restarted: this boot is the same machine started again on its own volume
+func restarted() bool { return fileExists(restartedPath) }
+
+func keepOwnKeys(priv, pub []byte) {
+	me := os.Getenv("FLY_MACHINE_ID")
+	if me == "" || !hasVolume() {
+		return
+	}
+	d := selfDir()
+	if err := runPriviled("install", "-d", "-o", strconv.Itoa(os.Getuid()), "-g", strconv.Itoa(os.Getgid()), "-m", "700", d); err != nil {
+		log.Printf("volume: keeping the keys: %v (a restart outside Jarvis then starts from the newest snapshot)", err)
+		return
+	}
+	for name, b := range map[string][]byte{"private.json": priv, "keys.json": pub} {
+		if err := os.WriteFile(filepath.Join(d, name), b, 0o600); err != nil {
+			log.Printf("volume: keeping the keys: %v", err)
+			return
+		}
+	}
+	if err := os.WriteFile(filepath.Join(d, "machine"), []byte(me), 0o600); err != nil {
+		log.Printf("volume: keeping the keys: %v", err)
+	}
+}
+
+// keptOwnKeys: the key pair the volume keeps for this machine (ok: there is one, and it is this machine's)
+func keptOwnKeys() (priv, pub []byte, ok bool) {
+	me := os.Getenv("FLY_MACHINE_ID")
+	if me == "" || !hasVolume() {
+		return nil, nil, false
+	}
+	d := selfDir()
+	id, err := os.ReadFile(filepath.Join(d, "machine"))
+	if err != nil || strings.TrimSpace(string(id)) != me {
+		return nil, nil, false
+	}
+	priv, err1 := os.ReadFile(filepath.Join(d, "private.json"))
+	pub, err2 := os.ReadFile(filepath.Join(d, "keys.json"))
+	if err1 != nil || err2 != nil || len(priv) == 0 || len(pub) == 0 {
+		log.Printf("volume: this machine's kept keys are incomplete (%v, %v): new ones", err1, err2)
+		return nil, nil, false
+	}
+	return priv, pub, true
+}
+
+// restoreOwnKeys: the volume holds this machine's own keys (it was started again): they are its keys again, and the
+// boot goes on without init
+func restoreOwnKeys() bool {
+	priv, pub, ok := keptOwnKeys()
+	if !ok {
+		return false
+	}
+	if os.WriteFile(privPath, priv, 0o600) != nil || os.WriteFile(keysPath, pub, 0o644) != nil {
+		return false
+	}
+	now := []byte(time.Now().UTC().Format(time.RFC3339))
+	os.WriteFile(restartedPath, now, 0o644)
+	os.WriteFile(goPath, now, 0o644) // no init comes: the spawner's start runs none
+	log.Printf("started again on its own volume: the machine's keys are the ones its cert names")
+	return true
 }
 
 func sudo(args ...string) error {
@@ -314,12 +390,15 @@ func prepare() (spec harnessSpec, err error) {
 	v.Ex = fetchExceptions(c) // the few router values whose format can't carry an instruction
 	writeVouched(v)
 	firstMachine := cert.PredID == ""
+	again := restarted() // the same machine started again on its own volume: its state is there, nothing is restored
 
 	// 1b. the volume (volume.go): the state's directories onto it, before anything is restored there
-	setupVolume()
+	setupVolume(again)
 
 	// 2. the predecessor's snapshot: the one whose hash the cert names, signed by the predecessor
-	if kernel && cert.Snapshot != "" {
+	if again {
+		log.Printf("started again on its own volume: the session's state is there as the machine left it; nothing is restored")
+	} else if kernel && cert.Snapshot != "" {
 		if err := kernelRestore(c, cert.Snapshot); err != nil {
 			return spec, fmt.Errorf("snapshot: %w", err)
 		}
@@ -354,7 +433,7 @@ func prepare() (spec harnessSpec, err error) {
 	}
 	// 2b. a new line restoring a destroyed session's archived snapshot (restore.go): only the one the cert names
 	// (a kernel line's source names its archived snapshot by hash, restored above: the phone signed it)
-	if !kernel {
+	if !kernel && !again {
 		if err := restoreArchived(c, coreKey, me, &cert, v); err != nil {
 			return spec, fmt.Errorf("restore: %w", err)
 		}
@@ -384,8 +463,10 @@ func prepare() (spec harnessSpec, err error) {
 
 	// 4. repos: each repo's deploy key is in the supervisor's ssh-agent (deploykeys.go), then the clones the cert names
 	cloneRepos(reposToClone(v, secrets))
-	placeImportedTranscripts()     // jarvis1import.go: an import's transcripts, under the working dir's project
-	rearmJarvis1(c, sessionID(me)) // jarvis1import.go: its wakeups and crons, as this line's own requests
+	if !again {
+		placeImportedTranscripts()     // jarvis1import.go: an import's transcripts, under the working dir's project
+		rearmJarvis1(c, sessionID(me)) // jarvis1import.go: its wakeups and crons, as this line's own requests
+	}
 
 	// 5. booted: from now on a snapshot command gets a real snapshot; then the keeper runs Jarvis 1's entrypoint (the harness) —
 	// unless a pause already took the predecessor's snapshot as this machine's (snapstream.go): it goes no further
@@ -407,7 +488,7 @@ func prepare() (spec harnessSpec, err error) {
 	if account := sessionClaudeLogin(c); account != "" {
 		spec.Fallback["CLAUDE_ACCOUNT"] = account // Jarvis 1's entrypoint merges it into ~/.claude.json (a store's own wins)
 	}
-	if !firstMachine && v.Once.Prompt != "" {
+	if !firstMachine && !again && v.Once.Prompt != "" {
 		home, _ := os.UserHomeDir()
 		os.Remove(filepath.Join(home, ".claude", ".first-prompt-sent")) // the supervisor types the approved resume prompt
 	}
