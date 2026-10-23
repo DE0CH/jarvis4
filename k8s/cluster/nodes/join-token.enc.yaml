@@ -2,28 +2,28 @@ apiVersion: v1
 kind: Secret
 type: bootstrap.kubernetes.io/token
 metadata:
-    name: bootstrap-token-ybq020
+    name: bootstrap-token-cewsnh
     namespace: kube-system
 stringData:
-    token-id: ENC[AES256_GCM,data:VIoA45Vy,iv:684hN5U/ar2acFFDXjObGxnV6jTCgX7hzl84JBoJ0i8=,tag:W8QnxRM4woC2RGXbQIOSng==,type:str]
-    token-secret: ENC[AES256_GCM,data:KvpaA0mNilc0YLEGSWrMuA==,iv:bMibH08wSXro58+eGGZMaMl69ICOszvW5LnrJ8wVLVc=,tag:T5OYDYT44+RPVeOMLC1unw==,type:str]
-    expiration: ENC[AES256_GCM,data:WeSGmnjWyBxDOqN8IAgMxtOkb4s=,iv:qCvUaX1jw5lZrWfctgfaEJMcCf4X+n9dccBasm1VJNg=,tag:v0Hwn5+Ixt8GsyCyqSnL9A==,type:str]
-    description: ENC[AES256_GCM,data:/IG3m6zdNmYjuulIUHsY5BJNpgNbNg9HWoFoHV2kmYbyYyMHBoCL8mJ+P9wtOA==,iv:aryfr9ask3kAN70KggAegfauias7zxaXgDi0ZJisoLc=,tag:BbxXHWmVqkZXRr9SP5UEEg==,type:str]
-    usage-bootstrap-authentication: ENC[AES256_GCM,data:L60zQA==,iv:7j8MNRt0nnsDcmR1Ue9yGf+luwJEKPkxI9GJ1eBX6mQ=,tag:NG8iBQRDn5jgRJbS8r86Gg==,type:str]
-    usage-bootstrap-signing: ENC[AES256_GCM,data:yofi8Q==,iv:bK+Ac6OXHxv3hXMt11wHUWzItD5vnfJmOs+Fa2IFgF4=,tag:WYgb3BPINO2vZvZTWF4AzA==,type:str]
-    auth-extra-groups: ENC[AES256_GCM,data:fCKQ4F8AdziN4PF8FRUKyHbM6RdSUPt/mHjd8dHSmeFR+ztV4yaCglHRXA==,iv:uv8NHQ/7lclg9qtzLLNHx3DVosz/odOFTRVVEBrZyN8=,tag:UbMZ2Yc6WYtGVJ/zjWvtcA==,type:str]
+    token-id: ENC[AES256_GCM,data:oQ0ajCjJ,iv:VxwaoS06ZuKJts2YRcrNe+X3ef+vQ2avcoQzfs/lXB4=,tag:9xq2hKNCIJh9R2s6Wu9BBg==,type:str]
+    token-secret: ENC[AES256_GCM,data:FVbij5GKcbXw34iz7ZPsZg==,iv:odW3WBiU73f+uoQUrbsXcYJCtR8RCJOEGNfqq8OBAiE=,tag:DSlqwUGfzoHhfOv8AuA2sA==,type:str]
+    expiration: ENC[AES256_GCM,data:DE34SqumAmp9IVftWUp/ZG8jOQA=,iv:hU2Ix9Xz/7NfCZFZLJORT4h9NFn3bjKayn6QS8+AVR0=,tag:HzfSN6LNMdWYODqH6MbGig==,type:str]
+    description: ENC[AES256_GCM,data:6LV6T/7VwkhpgwyfTvHvM0rkIIp88xMpjeiMvLqVu6r8LDokdLyCVeSK9HQ+KQ==,iv:VgIBruiQMIIsn7qzZRKwhUz33bZQrIm1aZKTU2MQg4c=,tag:GKoBrbcaqNc9s0CbaTUQ5w==,type:str]
+    usage-bootstrap-authentication: ENC[AES256_GCM,data:M0eTOQ==,iv:cHnQZ+it9o/rr2um8at5MGN7+RPNt3d3RrsQutS73O8=,tag:/s8zj12MO5mLi7y+k3J60w==,type:str]
+    usage-bootstrap-signing: ENC[AES256_GCM,data:aNNDWg==,iv:GU1MZqgWh7pgjZFGtFA66R4QZ/YqdnG2yu4ckohS2sY=,tag:JIFr7KEYUOxFu2bgiIWNFg==,type:str]
+    auth-extra-groups: ENC[AES256_GCM,data:by9VkpaSdVG6gPbJ6ljFawLHT3quLyKP/Br6dSRnj4CaHYGa8kz+LJXC/g==,iv:TmEBZm5h/4sJGIjOfYX1ZD3aK+/dfQ9zhaSapMDPJRg=,tag:vXAcfvGn+35LtURTIna7Hg==,type:str]
 sops:
     age:
         - enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBtWVpzWjBlRzFnU3A1MjJQ
-            dWR2dk9aUjJ6WHVPRUMrcjAyckR2NmR3aWl3CjlSUVE2T3Jvb2ZyV2tuNGM5K09p
-            K2hCUzBVaHJGbzJkOURCNjY3RnNqY28KLS0tIDVqUFNTWFF5Nk1oTEludk5weU9J
-            YlZxa1o0WnFEN1l1STJQZTBPbzhXVkEK7B85oCh5mHUVIk636rRG8dJExzvNhdQw
-            lsUni6LFTOt8vOVZFMNUbKEeemWIbt4H5CCQtCzMHtGts/+X1krQeg==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBjNW1YUzNsNVdnY09JM2dQ
+            RFgxSGxUdFZUK1FRSWlkZnZKUzk5YmtnWEdZCkpRZmxleTQ1VXFsQnhoTXBFa3NW
+            bUNIdGs0bGloa0NPR3BXUXdpTW82bVEKLS0tIGZxTVVVZ3g0Qys2MGwxVkVJMEdt
+            b0lMZE5CTE5nNUxYSlM4czByTC9tdGMKZsdYJZbpqHDRv7x9wlU7hPgyz71cMB37
+            Fwt/eCGblpDg/JMXWZYlTQjUcFe4hqy+mFK0WXBjfsmDmjZCttS4Ag==
             -----END AGE ENCRYPTED FILE-----
           recipient: age1udpk0jqzan54zjh2hfmxp4yu4dlj9yt0uvaqp90wkcurmesk5pqs6hsgfg
     encrypted_regex: ^(data|stringData)$
-    lastmodified: "2026-10-22T23:41:52Z"
-    mac: ENC[AES256_GCM,data:/L2JIQd4sYrh4BXpLxgCN6qy0inMVTnxMIbK6e9EgIOpSTY0fgoZ0WX5oWXRhG/x2X4B4KvgDYTDTNHH0l7UlXWaLJsaFqZv9dL7I6YpUk4FOk31EFaVfCYHR+InVm7Vq3Cb9FuWq5VTI7o1Ga6ovrunCxlaijwuH0W3a6VSPSg=,iv:KxyvqnYBICh0a3s2PY34Jo3sZdjYGFMdHyldJcxYZ7E=,tag:xRH31q5Xh/qognorfCGGjQ==,type:str]
+    lastmodified: "2026-10-23T01:53:56Z"
+    mac: ENC[AES256_GCM,data:eGTQngNSk1se0BEELJPtgxLMkBpb+J/EkzKH8/BXE4cYpL3A8bOpfPnKlaLT6kdl9tht93OWVnzsUIcbLMPYqq08m7X8qky4U27nFyM4O7TCUIhWGpN7pD9lZ6KNOnQk4uKpyrvEalhmCKhgL42ObuXwy2nexSNKoyPRHN9D7D4=,iv:xiIie/eQ0YjLOGivRD6ZXdN6xXmRVDUOP64+Hi08agc=,tag:hDL5an9cbFq80iZtQ4N6zQ==,type:str]
     version: 3.13.3
