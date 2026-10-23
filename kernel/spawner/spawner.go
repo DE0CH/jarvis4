@@ -3,9 +3,6 @@
 //
 //	spawn:  a notarized cert into source-x → a Fly machine with the source's image and a new empty volume; once it is
 //	        up, its keys (jarvis2-init, through Fly) → (source-x, fly-M, ⊤) naming them and the image Fly runs.
-//	start:  M stopped without a kill (outside Jarvis, or Fly's own doing) → started again on its own volume; no cert:
-//	        the machine is the same Fly machine with the key pair its cert names (machine/main.go keeps it on the
-//	        volume), so its grant and documents stay as they are.
 //	kill:   M alive → destroyed, confirmed through Fly, its volume deleted → (fly-M, source-y, ⊤), source-y holding M's
 //	        image and settings and the hash of the snapshot M signed (none when M sent none; a caller that would rather
 //	        keep M than lose its state says required, and the kill is then refused).
@@ -470,40 +467,6 @@ func (sp *Spawner) dropVolumes() {
 	}
 }
 
-// Start: a machine the spawner made that stopped without a kill (someone stopped it outside Jarvis, or Fly did), started
-// again with its own volume → {kind: "started", id, volume, was}. Only a machine that came up (its cert names its keys,
-// which it keeps on that volume) and still has its volume; a destroyed one can't come back.
-func (sp *Spawner) Start(id string) (any, error) {
-	sp.mu.Lock()
-	m := sp.machines[id]
-	sp.mu.Unlock()
-	switch {
-	case m == nil:
-		return nil, serve.Fail(404, "machine %s isn't one the spawner made", id)
-	case m.Killed:
-		return nil, serve.Fail(409, "machine %s was killed", id)
-	case m.Cert == nil:
-		return nil, serve.Fail(409, "machine %s never came up: nothing to start again", id)
-	case m.Volume == "":
-		return nil, serve.Fail(409, "machine %s has no volume: nothing to start it again from", id)
-	}
-	fm, err := sp.fly.Inspect(id)
-	if err != nil {
-		return nil, serve.Fail(502, "fly: %v", err)
-	}
-	switch fm.State {
-	case "started", "starting":
-	case "destroyed", "destroying":
-		return nil, serve.Fail(409, "machine %s is %s on Fly: it can't start again", id, fm.State)
-	default:
-		if err := sp.fly.Start(id); err != nil {
-			return nil, serve.Fail(502, "fly start: %v", err)
-		}
-		log.Printf("machine %s started again on volume %s (it was %s)", id, m.Volume, fm.State)
-	}
-	return map[string]any{"kind": "started", "id": id, "volume": m.Volume, "was": fm.State}, nil
-}
-
 // Extend: the live machine's volume grows to sizeGB (More disk) → {kind: "extended", id, sizeGb, needsRestart}
 func (sp *Spawner) Extend(id string, sizeGB int) (any, error) {
 	sp.mu.Lock()
@@ -543,11 +506,6 @@ func Register(s *serve.Server, sp *Spawner) {
 		Snapshot *Snapshot `json:"snapshot,omitempty"`
 	}) (any, error) {
 		return sp.Kill(in.ID, in.Snapshot)
-	})
-	serve.Handle(s, "POST /start", func(in struct {
-		ID string `json:"id"`
-	}) (any, error) {
-		return sp.Start(in.ID)
 	})
 	serve.Handle(s, "POST /extend", func(in struct {
 		ID     string `json:"id"`

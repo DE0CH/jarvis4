@@ -220,7 +220,6 @@ type FakeFly struct {
 	vols     map[string]bool
 	// Booting: new machines stay "starting" until Up
 	Booting bool
-	Starts  int // Start calls that started a machine
 }
 
 func NewFakeFly() *FakeFly {
@@ -314,18 +313,6 @@ func (f *FakeFly) DeleteVolume(v string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.vols, v)
-	return nil
-}
-
-// Start: a stopped machine started again (the same machine, keys and all)
-func (f *FakeFly) Start(id string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	m := f.Machines[id]
-	if m == nil || m.State == "destroyed" {
-		return fmt.Errorf("HTTP 404 no machine %s", id)
-	}
-	m.State, f.Starts = "started", f.Starts+1
 	return nil
 }
 
