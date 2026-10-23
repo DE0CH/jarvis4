@@ -168,7 +168,7 @@ func (r *Router) kernelHealthView() map[string]any {
 // GET /api/state's "kernel": only on a router that runs no core, where it replaces core.up as what the app warns about
 func init() {
 	stateHooks = append(stateHooks, func(r *Router, out map[string]any) {
-		if r.cfg.NoCore {
+		if r != nil && r.cfg.NoCore {
 			out["kernel"] = r.kernelHealthView()
 		}
 	})
