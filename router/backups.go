@@ -8,6 +8,10 @@ package main
 // read, change or forge one (a writer's signature covers it); it can only withhold a backup or serve an older version
 // (the bucket is versioned: a new version never removes an old one).
 //
+// With BACKUP_WRITE_BUCKET (Jarvis 4: jarvis4-backup-de0ch) the router writes its key backups there, never into the
+// bucket it reads (Jarvis 2's, whose latest versions must stay Jarvis 2's: a bucket policy denies the key every write
+// there), and serves both: the write bucket's objects over the read bucket's of the same name.
+//
 //	GET /api/backups → {bucket, objects: [{key, body}]}: every object under stores/, keys/ and sensitive/, body = the
 //	                   object's text; 503 {error} without the credential.
 
@@ -31,6 +35,7 @@ import (
 
 type backupBucket struct {
 	endpoint, region, bucket string
+	write                    string // the bucket the router writes ("" = bucket)
 	accessKey, secretKey     string
 	http                     *http.Client
 	now                      func() time.Time
@@ -42,7 +47,7 @@ func backupBucketFromEnv() *backupBucket {
 		return nil
 	}
 	return &backupBucket{endpoint: strings.TrimSuffix(env("BACKUP_ENDPOINT", "https://fsn1.your-objectstorage.com"), "/"),
-		region: env("BACKUP_REGION", "fsn1"), bucket: env("BACKUP_BUCKET", "jarvis2-backup-de0ch"),
+		region: env("BACKUP_REGION", "fsn1"), bucket: env("BACKUP_BUCKET", "jarvis2-backup-de0ch"), write: os.Getenv("BACKUP_WRITE_BUCKET"),
 		accessKey: ak, secretKey: sk, http: &http.Client{Timeout: 60 * time.Second}, now: time.Now}
 }
 
@@ -70,10 +75,20 @@ func (b *backupBucket) get(key string, query map[string]string) ([]byte, error) 
 	return b.do("GET", key, query, nil)
 }
 
-// put: a new version of one object (the bucket is versioned: every earlier version stays)
+// put: a new version of one object in the bucket the router writes (versioned: every earlier version stays)
 func (b *backupBucket) put(key string, body []byte) error {
-	_, err := b.do("PUT", key, nil, body)
+	_, err := b.writer().do("PUT", key, nil, body)
 	return err
+}
+
+// writer: the bucket the router writes, as a client
+func (b *backupBucket) writer() *backupBucket {
+	if b.write == "" || b.write == b.bucket {
+		return b
+	}
+	w := *b
+	w.bucket, w.write = b.write, ""
+	return &w
 }
 
 func (b *backupBucket) do(method, key string, query map[string]string, body []byte) ([]byte, error) {
@@ -169,8 +184,33 @@ type backupObject struct {
 	Body string `json:"body"`
 }
 
-// all: the store backups and the sensitivity markers, as they are
+// all: the store backups and the sensitivity markers, as they are — the read bucket's, then the write bucket's over
+// them (an object of the same name replaced)
 func (b *backupBucket) all() ([]backupObject, error) {
+	out, err := b.objects()
+	if err != nil || b.writer() == b {
+		return out, err
+	}
+	mine, err := b.writer().objects()
+	if err != nil {
+		return nil, err
+	}
+	at := map[string]int{}
+	for i, o := range out {
+		at[o.Key] = i
+	}
+	for _, o := range mine {
+		if i, ok := at[o.Key]; ok {
+			out[i] = o
+		} else {
+			out = append(out, o)
+		}
+	}
+	return out, nil
+}
+
+// objects: one bucket's backup objects
+func (b *backupBucket) objects() ([]backupObject, error) {
 	out := []backupObject{}
 	for _, prefix := range []string{"stores/", "keys/", "sensitive/"} {
 		keys, err := b.list(prefix)

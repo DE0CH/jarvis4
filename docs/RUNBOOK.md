@@ -357,6 +357,12 @@ After a box rebuild, re-run all of that box's parts (its age key is new).
 
 ### The backup bucket's read credential
 
+Jarvis 4's router (the cluster) holds its own credential `jarvis4-backup-read`: on `jarvis2-backup-de0ch` it may only
+read (Sid `Jarvis4ReadKeyOnlyReads`, PutObject denied too: Jarvis 2's latest backups stay Jarvis 2's), and it writes
+every key backup to Jarvis 4's own versioned bucket `jarvis4-backup-de0ch` (router env `BACKUP_WRITE_BUCKET`; Sid
+`Jarvis4KeyOnlyAdds`: reads and new versions only, `infra/backup-read-key.py own-bucket`). `GET /api/backups` serves
+both, Jarvis 4's object over Jarvis 2's of the same name, so a Recover brings back what was written in either.
+
 The router's only way into the bucket; Deyao never sees it. It is the Hetzner S3 credential `jarvis2-backup-read`
 in project "Cloud Code" (2827255), which also holds `de0ch-claude-6fdff6`. S3 credentials are project-wide, so
 bucket policies narrow this one (principal `arn:aws:iam:::user/p2827255:<access key>`): on `jarvis2-backup-de0ch` a

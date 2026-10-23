@@ -95,11 +95,13 @@ private struct Banners: View {
   var body: some View {
     let dead = model.sessions.filter(\.authFailed)
     let b = model.budget
-    if model.loadError != nil || (model.loaded && !model.coreUp) || !dead.isEmpty || b["capped"].bool == true || b["warned"].bool == true || model.fly["error"].text.map({ $0 != "FLY_READ_TOKEN not set" }) == true {
+    let trust = model.trustWarning
+    if model.loadError != nil || trust != nil || !dead.isEmpty || b["capped"].bool == true || b["warned"].bool == true || model.fly["error"].text.map({ $0 != "FLY_READ_TOKEN not set" }) == true {
       Section {
         if let e = model.loadError { ErrorRow(text: "Can't reach the router: \(e)", id: "banner-router") }
-        if model.loaded && !model.coreUp {
-          Label("Core not answering", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+        if let trust {
+          Label(trust, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+            .accessibilityElement(children: .combine).accessibilityIdentifier(model.kernelHealth == nil ? "banner-core" : "banner-kernel")
         }
         if !dead.isEmpty {
           LabeledContent {

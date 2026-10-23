@@ -45,6 +45,9 @@ spec:
             - { name: CORE_URL, value: "http://core.invalid:8090" }
             # no core on this box, only the kernel: the app's first launch sets up the kernel (GET /api/kernel "core")
             - { name: NO_CORE, value: "1" }
+            # the key backups (storedocs.go): read from Jarvis 2's bucket (BACKUP_BUCKET, the read key may only read
+            # there), written to Jarvis 4's own (versioned; the key adds versions only: infra/backup-read-key.py own-bucket)
+            - { name: BACKUP_WRITE_BUCKET, value: jarvis4-backup-de0ch }
             - { name: SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session:sha-5eac7314a533@sha256:b241176d01685baeec2328cdbbe726e40e100cd39d6cea1eb968745cd7786496" }
             # the CI key's signature over "jarvis2-session-image <SESSION_IMAGE>" (images.yml, keys/ci.pub): the phone checks it
             - { name: SESSION_IMAGE_SIG, value: "MEUCIQCXCSMZppnv+s1q3pYNzg9bO5kAY6Sw/EkqpllLV2CMMAIgX1xS0alyvuMoIETJKrWXjJdhPv6ofHIH6qi5Uuk7WZw=" }

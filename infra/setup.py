@@ -5,7 +5,7 @@ both). Values never print.
 
   JARVIS2_SETUP_KEY               the setup key (PEM, P-256); or ~/.jarvis2/setup-key.pem
   JARVIS2_SETUP_ACCESS_ID/SECRET  the Access service token for /setup; or ~/.jarvis2/cloudflare.env
-  HETZNER_S3_*                    the backup bucket (jarvis2-backup-de0ch)
+  HETZNER_S3_*                    the backup buckets (writes jarvis4-backup-de0ch, reads jarvis2-backup-de0ch)
 
   infra/setup.py status                the router's health: secret names present, session image, core up
   infra/setup.py identity              whether the core is empty or set up (and with which master public key),
@@ -98,7 +98,10 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 BASE = os.environ.get("JARVIS2_URL", "https://jarvis4.deyaochen.com")
 D = os.path.expanduser("~/.jarvis2")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BUCKET = os.environ.get("JARVIS2_BACKUP_BUCKET", "jarvis2-backup-de0ch")
+# what this script writes (store backups, sensitivity markers, the pins) goes to Jarvis 4's own bucket; Jarvis 2's
+# (READ_BUCKET) is only read: the pins until Jarvis 4's bucket has its own (the router serves both to the Recover)
+BUCKET = os.environ.get("JARVIS2_BACKUP_BUCKET", "jarvis4-backup-de0ch")
+READ_BUCKET = os.environ.get("JARVIS2_BACKUP_READ_BUCKET", "jarvis2-backup-de0ch")
 
 # ---- P-256 point addition (the combined key P + K; the cryptography library has no point add) ----------
 _p = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
@@ -236,12 +239,16 @@ def set_up():
 # key moves the master pin (Deyao's Reset). Anything else — a core someone else claimed first — gets nothing from here.
 
 def load_pins():
-    try:
-        o = s3().get_object(Bucket=BUCKET, Key="pins.json")["Body"].read()
-    except Exception as e:
-        if "NoSuchKey" in str(e) or "404" in str(e):
-            return {}
-        raise
+    o = None
+    for b in dict.fromkeys([BUCKET, READ_BUCKET]):
+        try:
+            o = s3().get_object(Bucket=b, Key="pins.json")["Body"].read()
+            break
+        except Exception as e:
+            if "NoSuchKey" not in str(e) and "404" not in str(e):
+                raise
+    if o is None:
+        return {}
     d = json.loads(o)
     if not _verify(keyfile("setup.pub"), d["doc"].encode(), d["sig"]):
         raise SystemExit("pins.json in the bucket isn't signed by the setup key")

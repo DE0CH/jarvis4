@@ -31,6 +31,8 @@ type Router struct {
 	// secretsStores: on a box with no core (NO_CORE=1), the store calls (lists, key writes, store keys, unlocks,
 	// versions) go to the kernel's serving secrets, whose store routes have the core's shapes (kernel/secrets/http.go)
 	secretsStores *CoreClient
+	// kernelHealthNow: the kernel's health as kernelhealth.go last checked it (nil: not checked yet)
+	kernelHealthNow atomic.Pointer[KernelHealth]
 	// db: the router's database (db.go); nil until connected
 	db atomic.Pointer[DB]
 	// objects: the router's blobs (objstore.go): the bucket, or memory for a router with none (tests)

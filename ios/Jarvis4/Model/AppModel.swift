@@ -39,6 +39,10 @@ final class AppModel {
   var messages: [PendingMessage] = []
   var messageRules: [MessageRule] = []
   var coreUp = false
+  /// the kernel's health on a box that runs no core (router/kernelhealth.go); nil on a box with a core
+  var kernelHealth: KernelHealth?
+  /// what the Sessions page warns about for the core or the kernel (nil: nothing)
+  var trustWarning: String? { KernelHealth.warning(loaded: loaded, coreUp: coreUp, kernel: kernelHealth) }
   /// the next core (blue/green, router/nextcore.go): {up, serving: empty | standby | serving | handed-off, signingKey};
   /// .null while the router runs none
   var coreNext: JSON = .null
@@ -221,6 +225,8 @@ final class AppModel {
       messages = j["messages"].array.map(PendingMessage.init)
       messageRules = j["messageRules"].array.map(MessageRule.init)
       coreUp = j["core"]["up"].bool == true
+      let k = j["kernel"]
+      kernelHealth = k.object == nil ? nil : KernelHealth(checked: k["checked"].bool == true, healthy: k["healthy"].bool == true, problems: k["problems"].strings)
       coreNext = j["core"]["next"]
       budget = j["budget"]
       fly = j["fly"]
