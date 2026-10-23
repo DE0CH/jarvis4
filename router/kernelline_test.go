@@ -287,3 +287,60 @@ func TestKernelSecretsFlip(t *testing.T) {
 		t.Fatal(blue.Mode(), green.Mode())
 	}
 }
+
+// A kernel release restarts the mover (new keys, a new roster signed): a running line's grant, signed by the old
+// mover, no longer opens. Its destroy still goes through: the line ends, so its grant isn't moved
+func TestDestroyAfterTheMoverRestarted(t *testing.T) {
+	rg, k := kernelRig(t)
+	sid, err := rg.r.CreateSession(NewSession{Label: "on the kernel", Harness: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a *Approval
+	waitFor(t, "the approval", func() bool {
+		rg.r.st.Do(func(d *persisted) {
+			for _, x := range d.Approvals {
+				if x.Session == sid {
+					a = x
+				}
+			}
+		})
+		return a != nil
+	})
+	signature, _ := k.Phone.Sign([]byte(a.Challenge.Payload))
+	if _, _, err := rg.r.Respond(a.ID, signature); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the machine", func() bool { s := kernelSession(rg, sid); return s.MachineID != "" && s.Kernel.MachineCert != nil })
+	m1 := k.Fly.Machine(kernelSession(rg, sid).MachineID)
+	k.Restart(t, "mover")
+	if err := k.PostRoster(""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gv.Open(*kernelSession(rg, sid).Kernel.Grant, k.Trust()); err == nil {
+		t.Fatal("the old mover's grant still opens")
+	}
+	pulledMachines.Delete(m1.ID) // the fake Fly's ids repeat across tests: an earlier test's pull would make this wait bootGrace
+	if err := rg.r.Destroy(sid); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		gone, state, why := false, "", ""
+		rg.r.st.Do(func(d *persisted) {
+			if x := d.Sessions[sid]; x != nil {
+				state, why = x.State, x.Error
+			} else {
+				gone = true
+			}
+		})
+		if gone {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("not destroyed: %s %s", state, why)
+		}
+	}
+	if m1.State != "destroyed" {
+		t.Fatalf("machine %s", m1.State)
+	}
+}

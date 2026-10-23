@@ -264,7 +264,10 @@ func (r *Router) kernelSpawn(sid string) {
 
 // kernelKill: the spawner kills the machine with its snapshot (required: keep it rather than lose its state), the
 // cert into the new source is notarized and the grant moves onto it. The snapshot hash it names ("" = none).
-func (r *Router) kernelKill(sid, machine string, required bool) (string, error) {
+// destroying: the line ends here, so the grant isn't moved (nothing takes it from the source, which the burn ends):
+// a grant signed by a mover that has since restarted (new keys) no longer opens, and must not block a destroy; a
+// repeat after the notarization went through finds the source already defined, which is the same outcome
+func (r *Router) kernelKill(sid, machine string, required, destroying bool) (string, error) {
 	in := map[string]any{"id": machine}
 	if s := r.snap(machine); s != nil && s.State == "committed" {
 		in["snapshot"] = map[string]any{"sha256": s.Sha256, "sig": s.Sig, "required": required}
@@ -289,8 +292,26 @@ func (r *Router) kernelKill(sid, machine string, required bool) (string, error) 
 		return "", nil
 	}
 	nz, err := r.kernel.Notarize(d)
+	var ke *KernelError
+	if destroying && err != nil && errors.As(err, &ke) && ke.Status == 409 && strings.Contains(ke.Msg, string(c.Succ)+" is already defined") {
+		err = nil // an earlier try of this destroy notarized it (the spawner's kill cert, and its source id, are kept)
+	}
 	if err != nil {
 		return "", fmt.Errorf("the kill's cert: %w", err)
+	}
+	if destroying {
+		r.st.Do(func(dd *persisted) {
+			if x := dd.Sessions[sid]; x != nil && x.Kernel != nil {
+				x.Kernel.Source, x.Kernel.SourceCert, x.Kernel.Grant = c.Succ, &d, nil
+				x.Kernel.SourceNz = nil
+				if nz.Sig != "" {
+					x.Kernel.SourceNz = &nz
+				}
+				x.Kernel.MachineCert, x.Kernel.MachineNz = nil, nil
+			}
+		})
+		log.Printf("session %s: %s killed into %s for its destroy (snapshot %q)", sid, machine, c.Succ, c.Source.Snapshot)
+		return c.Source.Snapshot, nil
 	}
 	var cur *gv.Signed
 	r.st.Do(func(dd *persisted) {
@@ -412,7 +433,7 @@ func (r *Router) isKernelMachine(machine string) bool {
 // kernelKillDone: snapsafe.go's kill for a kernel machine (after its final snapshot, or past a failed one with force)
 func (r *Router) kernelKillDone(id, machine string, destroying bool, serr error, ok *bool) bool {
 	r.lcNote(id, machine, "asked the kernel's spawner to kill the machine into the line's next source")
-	snap, err := r.kernelKill(id, machine, !destroying && serr == nil)
+	snap, err := r.kernelKill(id, machine, !destroying && serr == nil, destroying)
 	if err != nil {
 		r.lcNote(id, machine, "the kill failed: "+err.Error())
 		r.killFailed(id, machine, true, destroying, err)

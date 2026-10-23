@@ -199,7 +199,7 @@ func (r *Router) kernelResumeLost(s Session, op *lcHandle) bool {
 	m := l.Machine
 	op.machine(m)
 	op.note(m, "its machine "+lostWhat(l.FlyState)+" outside Jarvis: asked the kernel's spawner to kill it into the line's next source, with the newest signed snapshot")
-	snap, err := r.kernelKill(id, m, false)
+	snap, err := r.kernelKill(id, m, false, false)
 	if err != nil {
 		r.setState(id, "failed", fmt.Sprintf("Resume couldn't take machine %s off the line (%v): Resume tries again.", m, err))
 		return true
