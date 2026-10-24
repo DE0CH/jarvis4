@@ -1,4 +1,4 @@
-"""Who writes: the writer lease, in the index database itself (the Python twin of services/search/lib/lease.js).
+"""Who writes: the writer lease, in the index database itself (the Python twin of DE0CH/services search/lib/lease.js).
 
 Two replicas share ONE SQLite file on the volume (both pods on the box's one node; WAL). Both serve searches; exactly
 one, the WRITER, lists iCloud, reads files, spends the AI budget, embeds and backs up. The lease is a kv row

@@ -3,7 +3,7 @@
 Everything here runs from a Jarvis 4 session holding the `infra` store (JARVIS2_* keys, HETZNER_JARVIS2_MOCK_API,
 HETZNER_S3_*, CF tokens), with `JARVIS2_URL=https://jarvis4.deyaochen.com` for `infra/setup.py`. Jarvis 4 runs on two
 Hetzner boxes (DESIGN "The boxes"): the control box (`jarvis2-control`: the blue and green cores, the router,
-cloudflared) and the services box (`jarvis2-services`: transcript search, the watch runner, the iCloud index). Neither
+cloudflared) and the services box (`jarvis2-services`: the watch runner, the iCloud index). Neither
 has SSH or a reachable k8s API: they change only through git, and a box git can't fix is replaced.
 
 ## Deploying
@@ -351,9 +351,7 @@ The control box (`k8s/control/secrets/`, annotations in `k8s/control/apps/router
 
 The services box (`k8s/services/secrets/`, Secrets in jarvis2-services):
 
-- `infra/router-secrets.py --box services --part search STORAGEBOX_HOST STORAGEBOX_USER STORAGEBOX_PASSWORD
-  OPENROUTER_API` → `search.enc.yaml` (transcript search).
-- `--part icloud-index OPENROUTER_API LOBSTER_TOKEN STORAGEBOX_HOST STORAGEBOX_USER STORAGEBOX_PASSWORD
+- `infra/router-secrets.py --box cluster --part icloud-index OPENROUTER_API LOBSTER_TOKEN STORAGEBOX_HOST STORAGEBOX_USER STORAGEBOX_PASSWORD
   BACKUP_AGE_KEY=env:ICLOUD_BACKUP_AGE_KEY` (the last from the store `icloud-backup`) → `icloud-index.enc.yaml` (the
   iCloud index; LOBSTER_TOKEN for its DMs: login expired, budget used up).
 - `--part icloud-session ICLOUD_RCLONE_CONF=file:<rclone.conf with the [icloud] section>` → `icloud-session.enc.yaml`:
@@ -444,20 +442,17 @@ per account its email, expiry, last refresh, the participants of its refresh pro
   and gave it to every session whose cert names the core's old store `claude`. New sessions don't get that store; it
   stays in the core (a store can't be deleted) for those older lines.
 
-## Transcript search and the iCloud index
+## The iCloud index
 
-On the services box, in jarvis2-services (`services/search`, `services/icloud-index`; `k8s/services/apps/search/`,
-`k8s/services/apps/icloud-index/`), built by `.github/workflows/services.yml` (only the service that changed; its unit
-tests run inside the image build) and pinned by digest like the router. The router reaches them on the box's NodePorts
-over the Network (`SEARCH_URL` http://10.77.0.3:30090, `ICLOUD_INDEX_URL` …:30091, `WATCH_URL` …:30095). Only the router reaches them (`router/searchsvc.go`); API.md "Transcript search"
-and "iCloud index" for the calls. Check them from any Jarvis 4 session:
-`curl -s "$JARVIS_URL/api/search/status"` and `curl -s "$JARVIS_URL/api/icloud/status"`.
+Transcript search is not Jarvis's: DE0CH/services (README there), a tenant on the cluster in namespace `services`
+(`k8s/cluster/tenants/services.yaml`), at https://search.deyaochen.com.
 
-- **Search has no downtime on a rollout or a crash**: two replicas share the SQLite file, the rolling update starts
-  the new one before an old one goes (`maxUnavailable: 0`), and the writer lease (`services/search/lib/lease.js`)
-  passes on SIGTERM or lapses 45 s after a kill. `GET /api/search/status` names the writer, this replica's start,
-  memory and Kubernetes restarts (`replica`), and how the previous copy ended (`previousReplica`).
-- **The iCloud index has the same pattern** (`services/icloud-index/icloud_index/lease.py`, DECISIONS 174): two
+In jarvis4-services (`services/icloud-index`; `k8s/cluster/services/icloud-index/`), built by `.github/workflows/services.yml` (only the service that changed; its unit
+tests run inside the image build) and pinned by digest like the router. The router reaches it at `ICLOUD_INDEX_URL`
+(k8s/cluster/router/router.yaml). Only the router reaches it (`router/searchsvc.go`); API.md "iCloud index" for the
+calls. Check it from a Jarvis 4 session holding `identity`: `curl -s "$JARVIS_URL/api/icloud/status"`.
+
+- **The iCloud index has no downtime on a rollout or a crash** (`services/icloud-index/icloud_index/lease.py`, DECISIONS 174): two
   replicas on the one volume, every replica answers searches, only the writer-lease holder lists iCloud, reads files,
   spends the AI budget, embeds and backs up (every write and AI call checks the lease first, so a replica that lost
   it writes nothing). `GET /ready` (port 8091) turns 503 at SIGTERM; the replica serves `DRAIN_MS` more, stops its
@@ -469,8 +464,8 @@ and "iCloud index" for the calls. Check them from any Jarvis 4 session:
   otherwise; Deyao's app always). Its Storage Box copy is age-encrypted; the private key is `BACKUP_AGE_KEY` in the
   `icloud-index` part and `ICLOUD_BACKUP_AGE_KEY` in the sensitive store `icloud-backup` (re-run the part from that
   store after a box rebuild, or the copy can't be opened).
-- **Their databases live on the pods' volumes, with a copy on the Storage Box** (`claude-records/.jarvis2-services/`:
-  `search.db.gz` daily, `icloud-index.db.gz.age` weekly). A missing database (a new box, a lost volume) is seeded from
+- **Its database lives on the pods' volume, with a copy on the Storage Box** (`claude-records/.jarvis2-services/`:
+  `icloud-index.db.gz.age` weekly). A missing database (a new box, a lost volume) is seeded from
   that copy at start. The iCloud index refuses to start without one (`SEED_REQUIRED=1`): its database holds the AI
   budget's lifetime ledger (`ai_spent`, USD 25 cap, Deyao 2026-10-01), and starting empty would spend it again. To
   really start from nothing, set `SEED_REQUIRED` to "0" for one rollout.

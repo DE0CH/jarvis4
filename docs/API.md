@@ -140,7 +140,7 @@ session a router crash left mid-action comes back `failed` with `error` "the …
 | `POST /api/claude-login/refresh` | Refresh now → `{ok, refreshed, expiresAt}`; 409 (no login stored) / 502 `{error, needLogin}`. |
 | `POST /api/claude-login/start` | Re-login, step 1 → `{url}`: the CLI's sign-in page (claude.com/cai/oauth/authorize, PKCE, the manual redirect). The verifier is kept on the router's volume for 15 minutes, so a rollout doesn't lose it. |
 | `POST /api/claude-login/code` | Re-login, step 2: `{code}` = the `code#state` the sign-in page shows → the CLI's token exchange and profile → stored into the default account (its own Claude account only, once it has one) → `{ok, email, expiresAt}`; sessions stuck on "Please run /login" get "continue" on the next tick. In mode `follow` the new pair also goes to Jarvis 1. |
-| `GET /api/search`, `/api/search/context`, `/api/search/status`, `POST /api/search/reindex`; `GET /api/icloud/search`, `/api/icloud/file`, `/api/icloud/status`; `POST /api/icloud/relist`, `/api/icloud/retry` | The app's Search tab: forwarded to the box's own services (`router/searchsvc.go`; "Transcript search" and "iCloud index" below) with the query and body unchanged. 502 `{error: "… unreachable: …"}` when the service is down. |
+| `GET /api/icloud/search`, `/api/icloud/file`, `/api/icloud/status`; `POST /api/icloud/relist`, `/api/icloud/retry` | The app's Search tab: forwarded to the iCloud index (`router/searchsvc.go`; "iCloud index" below) with the query and body unchanged. 502 `{error: "… unreachable: …"}` when the service is down. |
 
 ### Archives (Storage Box, router env `STORAGEBOX_HOST/USER/PASSWORD`)
 
@@ -974,7 +974,7 @@ signed as every `/m` call). Any `:id` in the path must be the calling machine's 
 | wakeups, crons, notify-idle | The router (above). Delivered as the session's own signed request; nothing is put on the allow list. |
 | `DELETE /api/sessions/:id` | The router: the session retires itself (Destroy) → 202 `{started}`; 409 `{pending}` while it has wakeups, crons or watches. |
 | leases, watches | The router (above). |
-| search, iCloud index | `GET /m/api/search`, `/m/api/search/context`, `/m/api/search/status`, `POST /m/api/search/reindex` (any running session), `GET /m/api/icloud/search`, `/m/api/icloud/file`, `/m/api/icloud/status`, `POST /m/api/icloud/relist`, `/m/api/icloud/retry` (only a session whose cert holds the `identity` store; otherwise 403 `{error, needsStore: "identity"}`): the box's own services, as for the app. 403 for a machine with no running session. |
+| iCloud index | `GET /m/api/icloud/search`, `/m/api/icloud/file`, `/m/api/icloud/status`, `POST /m/api/icloud/relist`, `/m/api/icloud/retry` (only a session whose cert holds the `identity` store; otherwise 403 `{error, needsStore: "identity"}`): as for the app. 403 for a machine with no running session. |
 | device leases, content stores | The router (`router/leases.go`, `router/content.go`). |
 | `GET/POST /api/credentials` | The session's Claude account's login ("Claude accounts" above). |
 | `POST /api/requests/peer` | A peer message ("Peer messages" below; `jarvis2-message`). |
@@ -1021,24 +1021,11 @@ never a value. Pulling and asking are separate: a pull never answers a value, an
 | `{"op":"pull"}` | boot | a pull with the cert on disk (waits for a locked store): `n`, `names`, `stores`; no value |
 | `{"op":"boot-env"}` | the keeper; the boot steps | every held value, for the harness's env: answered to the keeper (root, the worker's parent) at each start of the harness, and to the boot steps (the pid in the keeper's root-owned `/run/jarvis2-keeper/harness.pid`) before `/run/jarvis2/booted` exists; refused to anyone else |
 
-## Transcript search (`services/search`)
+## Transcript search
 
-Two replicas (`k8s/services/apps/search/`, namespace jarvis2-services on the services box; any one answers, rolled one at a time with no gap), reached only through the router (above). One of them, the writer (a lease in the database), crawls; the other reloads when the index changes. It crawls
-`claude-records/` on the Storage Box every 10 minutes (and when the router archives a session): archived sessions of
-both Jarvises (`<dir>/transcript-<id>.jsonl`), Jarvis 1's pause snapshots (`.paused/<id>/`), running sessions of both
-(`.live/<id>/`) and the text records in archive dirs (`.md .txt .html .log`, the task records). Other dot-dirs
-(`.index/`, `.jarvis2-services/`) are skipped. Hybrid keyword (FTS5, 中文 as phrases/bigrams) + semantic
-(`qwen/qwen3-embedding-8b` via OpenRouter) retrieval, reranked by `cohere/rerank-4-fast`.
-
-| Call | |
-|---|---|
-| `GET /api/search?q=` | `&limit=` (1-50, 10), `&kind=msg,tool,doc`, `&after=`/`&before=` (YYYY-MM-DD), `&state=live,paused,archive` (the session's state now), `&archived=1` (only text read from an archive dir), `&session=` (id / dir / title fragment), `&mode=hybrid|keyword|semantic`, `&rerank=0`, `&group=1` (by session), `&full=1` (whole chunk text). `"quoted phrases"` must match. → `{query, mode, reranked, total, tookMs, timing, notes, terms, hits: [{id, score, via, kind, date, ts, title, sid, dir, state, machineId, file, lines, snippet, text?}]}` (or `sessions: [{title, sid, dir, state, machineId, date, score, count, hits}]` with `group=1`). |
-| `GET /api/search/context?id=&before=3&after=3` | The chunks around a hit, in file order → `{session, file, chunks: [{id, kind, ts, lineFrom, lineTo, text, hit?}]}`; 404 for an unknown id. |
-| `GET /api/search/status` | Counts (`chunks, sessions, files, vectors, kinds, sessions_by_state, span`), models and the indexer's state (`indexer: {state, lastRun, lastError, billing}`). Also, for the replica that answered: `replica: {pod, started, role: writer\|reader, draining, memory: {rssMB, peakRssMB, heapUsedMB, arrayBuffersMB, limitMB, ofLimit}, restartsInPod, restartedAfter, kubernetes: {restarts, containerStarted, lastTermination: {reason, exitCode, startedAt, finishedAt}}}`; `writer: {holder, since, until}`; `previousReplica` (the last copy that went away: `ended.how` = a clean SIGTERM, or killed with its `lastMemory`); `indexVersion`. |
-| `POST /api/search/reindex` | Crawl now (the writer at once; a reader passes it to the writer's next 10 s tick) → 202 `{started, by}`. |
-
-The index is one SQLite file on the pod's volume; a missing one is seeded from `claude-records/.jarvis2-services/search.db.gz`
-on the Storage Box, which the pod rewrites daily.
+Not part of Jarvis 4 (Deyao, 2026-10-24): one of Deyao's own services, DE0CH/services, a tenant on the cluster
+(`k8s/cluster/tenants/services.yaml`), at https://search.deyaochen.com behind its own Access app. Its API: that repo's
+README. The router neither forwards to it nor pokes it; it reads the Storage Box (`.live/`, archives) on its own.
 
 ## iCloud index (`services/icloud-index`)
 

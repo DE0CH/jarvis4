@@ -8,9 +8,7 @@ both). Values never print.
   HETZNER_S3_*                    the backup buckets (writes jarvis4-backup-de0ch, reads jarvis2-backup-de0ch)
 
   infra/setup.py status                the router's health: secret names present, session image, core up
-  infra/setup.py services [QUERY]      the shared services as the router reaches them: transcript search's counts and
-                                       a keyword search's hit count (QUERY, default "jarvis"), and a check run on the
-                                       watch runner
+  infra/setup.py services              the shared services as the router reaches them: a check run on the watch runner
   infra/setup.py identity              whether the core is empty or set up (and with which master public key),
                                        checked against keys/box.pub and the core's own signature
   infra/setup.py stores [--keys]       every store (the core's signed list) with the key NAMES it holds (--keys: each
@@ -418,7 +416,7 @@ def main():
     if cmd == "status":
         print(json.dumps(call("GET", "/setup/status"), indent=1))
     elif cmd == "services":
-        print(json.dumps(call("GET", "/setup/services" + ("?q=" + urllib.parse.quote(args[0]) if args else "")), indent=1))
+        print(json.dumps(call("GET", "/setup/services"), indent=1))
     elif cmd == "identity":
         me = identity()
         print(f"set up with master key {me['master'][:16]}…" if me["master"] else "empty: waiting for Reset or Recover in the app")

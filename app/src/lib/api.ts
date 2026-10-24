@@ -361,17 +361,9 @@ export type TasksOverview = { sessionImage?: string | null; templates: TaskTempl
 export const RUN_ACTIVE = (p: TaskRunPhase) => p === "queued" || p === "starting" || p === "running";
 export const isTaskLine = (m: Session) => (m.harness || "").startsWith("task:");
 
-// ---- search (api/search, api/icloud/*): forwarded by the router to Jarvis 1's services, Jarvis 1's shapes ----
+// ---- the iCloud index (api/icloud/*): forwarded by the router to the service, its own shapes ----
 // every archived, paused and running conversation (Jarvis 1's and Jarvis 4's: a running Jarvis 4 session's live
 // copy is under .live/<its id>, so `machineId` is that session's id) plus the task records
-export type SearchHit = {
-  id: number; score: number; via: ("keyword" | "semantic")[]; kind: "msg" | "tool" | "doc"; date: string | null; ts: string | null;
-  title: string; sid: string | null; dir: string | null; state: "archive" | "paused" | "live"; machineId: string | null; file: string; snippet: string;
-};
-export type SearchGroup = { title: string; sid: string | null; dir: string | null; state: SearchHit["state"]; machineId: string | null; date: string | null; count: number; hits: SearchHit[] };
-export type SearchResult = { query: string; reranked: boolean; total: number; tookMs: number; notes: string[]; terms: string[]; hits?: SearchHit[]; sessions?: SearchGroup[] };
-export type ContextChunk = { id: number; kind: SearchHit["kind"]; ts: string | null; text: string; hit?: boolean };
-export type SearchContext = { session: { title: string; dir: string | null } | null; file: string; chunks: ContextChunk[] };
 // Deyao's iCloud Drive, by name and content (Jarvis 1's icloud-index)
 export type IcloudHit = { path: string; size: number; mtime: string; kind: string; state?: string; note?: string; score: number; via: string[]; part?: string; src?: string; snippet: string };
 export type IcloudResult = { query: string; total: number; tookMs: number; notes: string[]; hits: IcloudHit[] };

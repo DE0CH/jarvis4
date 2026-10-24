@@ -199,7 +199,6 @@ func (r *Router) archive(id string) (*ArchiveInfo, error) {
 	}
 	info, err := r.archiveSession(box, &s)
 	if err == nil && info != nil {
-		pokeSearch() // searchable at once (searchsvc.go)
 	}
 	return info, err
 }

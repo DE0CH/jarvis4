@@ -7,7 +7,7 @@ package main
 //
 // Served by the router: wakeups and crons (schedule.go), watches (watches.go), notify-idle (autopilot.go's switch), and the session
 // retiring itself.
-// Transcript search and the iCloud index: the box's own services (searchsvc.go). Device leases: leases.go; content
+// The iCloud index (searchsvc.go). Device leases: leases.go; content
 // stores: content.go.
 // The shared Claude login (`/api/credentials`): claudelogin.go. Nothing is forwarded to Jarvis 1. The secrets and
 // changes calls never reach the router: the machine answers them itself (it holds its secrets and its repos).
@@ -50,7 +50,7 @@ func (r *Router) registerSessionAPI(app appRoute, m machineRoute) {
 		r.deleteCron(w, req.PathValue("id"), req.PathValue("name"))
 	})
 
-	r.registerSearchServices(app, m) // transcript search + the iCloud index, on this box (searchsvc.go)
+	r.registerSearchServices(app, m) // the iCloud index (searchsvc.go)
 
 	// ---- the session itself (through its machine's local proxy) -------------------------------------------
 	own := func(pattern string, fn func(w http.ResponseWriter, req *http.Request, sid string, body []byte)) {

@@ -1,17 +1,14 @@
 package main
 
-// Transcript search and the iCloud index: their own pods on the services box (services/search, services/icloud-index;
-// k8s/services/apps/search, k8s/services/apps/icloud-index, namespace jarvis2-services). The router forwards to them, for the
-// app's Search tab (/api/...) and for sessions (/m/api/..., the machine's local proxy; any session may search).
-// The iCloud index is identity-level (Deyao, 2026-10-13): its paths, OCR'd text and downloads act as Deyao's own
-// files, so a session reaches it only while its cert holds the `identity` store (where the iCloud login lives);
-// any other session gets 403. Deyao's app keeps it. Transcript search is open to every running session.
-// The services have no login of their own: only the router can reach them (their NetworkPolicies), and the router
-// is behind Cloudflare Access (the app) or the machine signature (sessions). Shapes: docs/API.md "Transcript
-// search", "iCloud index" (unchanged from Jarvis 1, whose services these were).
+// The iCloud index: its own pods (services/icloud-index; k8s/cluster/services/icloud-index, off since 2026-10-22). The
+// router forwards to it, for the app's Search tab (/api/...) and for sessions (/m/api/..., the machine's local proxy).
+// It is identity-level (Deyao, 2026-10-13): its paths, OCR'd text and downloads act as Deyao's own files, so a session
+// reaches it only while its cert holds the `identity` store (where the iCloud login lives); any other session gets
+// 403. It has no login of its own: only the router can reach it (its NetworkPolicy), and the router is behind
+// Cloudflare Access (the app) or the machine signature (sessions). Shapes: docs/API.md "iCloud index".
+// Transcript search is not Jarvis's: DE0CH/services, at search.deyaochen.com behind its own Access app.
 //
-// router env: SEARCH_URL (default http://10.77.0.3:30090), ICLOUD_INDEX_URL (default
-// http://10.77.0.3:30091).
+// router env: ICLOUD_INDEX_URL (default http://10.77.0.3:30091).
 
 import (
 	"bytes"
@@ -32,10 +29,6 @@ type svcRoute struct{ pattern, svc, path string }
 
 // searchRoutes: method + path under /api (the app; sessions get the same under /m/api) → service + its own path
 var searchRoutes = []svcRoute{
-	{"GET /api/search", "search", "/search"},
-	{"GET /api/search/context", "search", "/context"},
-	{"GET /api/search/status", "search", "/status"},
-	{"POST /api/search/reindex", "search", "/reindex"},
 	{"GET /api/icloud/search", "icloud", "/search"},
 	{"GET /api/icloud/file", "icloud", "/file"},
 	{"GET /api/icloud/status", "icloud", "/status"},
@@ -43,7 +36,7 @@ var searchRoutes = []svcRoute{
 	{"POST /api/icloud/retry", "icloud", "/retry"},
 }
 
-// searchClient: a search may take its time, but the services box answers a connect at once over the private Network;
+// searchClient: a search may take its time, but the service answers a connect at once inside the cluster;
 // one that doesn't (the box down, or no services box at all, as in CI) is an error in seconds, not after two minutes
 var searchClient = &http.Client{Timeout: 2 * time.Minute, Transport: &http.Transport{
 	Proxy:               http.ProxyFromEnvironment,
@@ -53,10 +46,7 @@ var searchClient = &http.Client{Timeout: 2 * time.Minute, Transport: &http.Trans
 }}
 
 func serviceBase(svc string) (base, name string) {
-	if svc == "icloud" {
-		return strings.TrimSuffix(env("ICLOUD_INDEX_URL", "http://10.77.0.3:30091"), "/"), "the iCloud index"
-	}
-	return strings.TrimSuffix(env("SEARCH_URL", "http://10.77.0.3:30090"), "/"), "transcript search"
+	return strings.TrimSuffix(env("ICLOUD_INDEX_URL", "http://10.77.0.3:30091"), "/"), "the iCloud index"
 }
 
 func (r *Router) registerSearchServices(app appRoute, m machineRoute) {
@@ -121,16 +111,4 @@ func forwardService(w http.ResponseWriter, req *http.Request, rt svcRoute, body 
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		log.Printf("[search] %s %s: %v", req.Method, u, err)
 	}
-}
-
-// pokeSearch: index what was just archived now, not at the next crawl (10 min). Never blocks, never fails.
-func pokeSearch() {
-	go func() {
-		base, _ := serviceBase("search")
-		req, _ := http.NewRequest("POST", base+"/reindex", nil)
-		c := &http.Client{Timeout: 10 * time.Second}
-		if resp, err := c.Do(req); err == nil {
-			resp.Body.Close()
-		}
-	}()
 }

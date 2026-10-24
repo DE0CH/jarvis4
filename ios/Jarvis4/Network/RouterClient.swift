@@ -79,7 +79,7 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
     return !ct.contains("json") || String(decoding: data, as: UTF8.self).contains("Access login required")
   }
   func url(_ path: String) -> URL {
-    // a path with a query ("api/search?q=…") is resolved as a relative reference, so the query stays a query
+    // a path with a query ("api/icloud/search?q=…") is resolved as a relative reference, so the query stays a query
     URL(string: path, relativeTo: base)?.absoluteURL ?? base.appending(path: path)
   }
   /// `upload`: raw bytes as the body instead of JSON, with `headers`

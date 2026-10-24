@@ -7,7 +7,7 @@ package main
 //     lists it as started (and logs whether that was before the machine's boot finished: the machine boots on its own,
 //     so the earliest machines may win that race; every later step of the machine runs blackholed).
 // The router also gets stand-ins for the box's other services, so the session-facing flows that used to reach Jarvis 1
-// run here too: transcript search (SEARCH_URL), the watch runner (WATCH_URL) and the Storage Box behind content stores
+// run here too: the watch runner (WATCH_URL) and the Storage Box behind content stores
 // (an in-memory WebDAV over TLS on 127.0.0.1, STORAGEBOX_HOST; its certificate is in the router's SSL_CERT_FILE).
 
 import (
@@ -114,24 +114,7 @@ func checkNoJarvis1(when string) {
 
 // ---- stand-ins for the box's services --------------------------------------------------------------------------
 
-// searchRequests: what the search stand-in was asked (path + query)
-var searchRequests = struct {
-	sync.Mutex
-	l []string
-}{}
-
 func serveStandIns() {
-	if a := os.Getenv("E2E_SEARCH_ADDR"); a != "" {
-		mux := http.NewServeMux()
-		mux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
-			searchRequests.Lock()
-			searchRequests.l = append(searchRequests.l, req.URL.RequestURI())
-			searchRequests.Unlock()
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{"query":%q,"hits":[{"text":"e2e-search-hit"}]}`, req.URL.Query().Get("q"))
-		})
-		go func() { log.Fatal(http.ListenAndServe(a, mux)) }()
-	}
 	if a := os.Getenv("E2E_WATCH_ADDR"); a != "" {
 		// the watch runner's contract (services/watch/runner.py): POST /run {script, name, timeout} → {exit, …}. The
 		// stand-in doesn't run the script (the real runner is a pod that kills every other process in its container):
@@ -305,18 +288,10 @@ func sessionAPI(method, path, body string) string {
 	return "su - claude -c \"" + strings.ReplaceAll(c, `"`, `\"`) + " http://127.0.0.1:7171" + path + "\""
 }
 
-// servicesStep: search, leases, watches and content from a running session, with Jarvis 1 out of reach
+// servicesStep: leases, watches and content from a running session, with Jarvis 1 out of reach
 func servicesStep(id, m, secret string) {
-	step("session services with Jarvis 1 unreachable: transcript search, a device lease, a watch, a content store")
+	step("session services with Jarvis 1 unreachable: a device lease, a watch, a content store")
 	expectBlackholed(m)
-	// transcript search: the box's own service (the stand-in), through the router
-	expectOnMachine(m, sessionAPI("GET", "/api/search?q=e2e-"+secret[:6], "")+" | grep -c e2e-search-hit", "1")
-	searchRequests.Lock()
-	n := len(searchRequests.l)
-	searchRequests.Unlock()
-	if n == 0 {
-		log.Fatal("the search stand-in got no request")
-	}
 	// a device lease: granted, listed in the app, returned
 	expectOnMachine(m, sessionAPI("POST", "/api/sessions/"+id+"/leases/e2e-device", `{"purpose":"e2e"}`)+" | grep -o '\"status\":\"[a-z]*\"'", `"status":"granted"`)
 	var l map[string]any

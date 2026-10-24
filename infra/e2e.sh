@@ -17,7 +17,7 @@
 #     a session machine runs, the WireGuard peer moving along (router/move.go; e2e/move.go): the gaps are measured
 # Always with Jarvis 1 unreachable (e2e/nojarvis1.go): the router runs in its own mount namespace (sudo unshare) whose
 #   /etc/hosts sends jarvis.deyaochen.com to a listener that fails the test on any connection; each machine gets it
-#   blackholed too; search, the watch runner and the Storage Box are local stand-ins
+#   blackholed too; the watch runner and the Storage Box are local stand-ins
 #   E2E_PEER (default jarvis2-e2e), E2E_PORT (default 28 → 28090/28080): another peer and ports let two runs go at once
 set -euo pipefail
 : "${JARVIS2_FLY_TOKEN:?}"
@@ -110,7 +110,7 @@ SH
 chmod 700 "$W/core-restart"
 # the core starts only the session image pinned by its linux/amd64 digest
 E2E_SESSION_IMAGE="$("$ROOT/infra/image-digest.sh" "${E2E_SESSION_IMAGE:-ghcr.io/de0ch/jarvis4-session:latest}")"
-# stand-ins for the box's other services (e2e/nojarvis1.go serves them): search, the watch runner, and the Storage Box
+# stand-ins for the box's other services (e2e/nojarvis1.go serves them): the watch runner and the Storage Box
 # (WebDAV over TLS with a throwaway certificate the router trusts through SSL_CERT_FILE, beside the system roots)
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 2 -subj /CN=127.0.0.1 \
   -addext subjectAltName=IP:127.0.0.1 -keyout "$W/dav.key" -out "$W/dav.crt" 2>/dev/null
@@ -136,7 +136,7 @@ exec env -i PATH="$PATH" HOME="$HOME" DATABASE_URL="$DBURL" ROUTER_THROWAWAY=1 \
   WG_CONFIG="$W/wg.conf" MACHINE_URL="http://$PEER._peer.internal:8081" POLICY_FILE="$W/policy.json" TASKS_DIR="$ROOT/tasks" \\
   SESSION_IMAGE="$E2E_SESSION_IMAGE" JARVIS1_PAUSED_URL="http://127.0.0.1:${PP}070/" \\
   STORAGEBOX_HOST=127.0.0.1:${PP}073 STORAGEBOX_USER=e2e STORAGEBOX_PASSWORD=e2e SSL_CERT_FILE="$W/roots.pem" \\
-  SEARCH_URL=http://127.0.0.1:${PP}071 WATCH_URL=http://127.0.0.1:${PP}072 \\
+  WATCH_URL=http://127.0.0.1:${PP}072 \\
   BACKUP_ENDPOINT=http://127.0.0.1:${PP}074 BACKUP_READ_ACCESS_KEY=e2e BACKUP_READ_SECRET_KEY="$S3_SECRET" \\
   $MOVE_ENV "$W/router"
 ENV
@@ -184,7 +184,7 @@ exec env -i PATH="$PATH" HOME="$HOME" DATABASE_URL="$DBURL" ROUTER_THROWAWAY=1 \
   DATA_DIR="$W/data-b" WEB_DIR="$W/web" MACHINE_URL="http://$PEER._peer.internal:8081" POLICY_FILE="$W/policy.json" TASKS_DIR="$ROOT/tasks" \\
   SESSION_IMAGE="$E2E_SESSION_IMAGE" JARVIS1_PAUSED_URL="http://127.0.0.1:${PP}070/" \\
   STORAGEBOX_HOST=127.0.0.1:${PP}073 STORAGEBOX_USER=e2e STORAGEBOX_PASSWORD=e2e SSL_CERT_FILE="$W/roots.pem" \\
-  SEARCH_URL=http://127.0.0.1:${PP}071 WATCH_URL=http://127.0.0.1:${PP}072 \\
+  WATCH_URL=http://127.0.0.1:${PP}072 \\
   BACKUP_ENDPOINT=http://127.0.0.1:${PP}074 BACKUP_READ_ACCESS_KEY=e2e BACKUP_READ_SECRET_KEY="$S3_SECRET" \\
   MOVE_FROM=http://127.0.0.1:${PP}082 MOVE_PUBLIC=http://127.0.0.1:${PP}080 MOVE_SELF=http://127.0.0.1:${PP}180 MOVE_KEY=$MOVE_KEY \\
   MOVE_AT="\$(cat "$W/move-at")" "$W/router-b"
@@ -202,5 +202,5 @@ fi
 sleep 3
 (cd "$ROOT/e2e" && E2E_ROUTER_B_START="$W/router-b-start" E2E_ROUTER_B=http://127.0.0.1:${PP}180 E2E_ROUTER_B_LOG="$W/router-b.log" E2E_CORE_RESTART="$W/core-restart" E2E_ROUTER_PID="$ROUTER_PID" E2E_ROUTER_LOG="$W/router.log" E2E_DATA_DIR="$W/data" E2E_DATABASE_URL="$DBURL" ROUTER_THROWAWAY=1 E2E_ROUTER=http://127.0.0.1:${PP}080 E2E_CORE=http://127.0.0.1:${PP}090 E2E_MASTER_KEY_FILE="$ROOT/e2e/testdata/master-test.pem" E2E_BOX_PUB="$(cat "$W/box.pub")" \
   E2E_JARVIS1_ADDR=127.0.0.1:${PP}070 E2E_FLY_TOKEN="$JARVIS2_FLY_TOKEN" E2E_CORE_FLY_TOKEN="${E2E_CORE_FLY_TOKEN:-$JARVIS2_FLY_TOKEN}" \
-  E2E_PEER="$PEER" E2E_J1_HITS="$W/j1-hits.log" E2E_SEARCH_ADDR=127.0.0.1:${PP}071 E2E_WATCH_ADDR=127.0.0.1:${PP}072 \
+  E2E_PEER="$PEER" E2E_J1_HITS="$W/j1-hits.log" E2E_WATCH_ADDR=127.0.0.1:${PP}072 \
   E2E_DAV_ADDR=127.0.0.1:${PP}073 E2E_DAV_CERT="$W/dav.crt" E2E_DAV_KEY="$W/dav.key" E2E_S3_DIR="$W/s3/jarvis2-backup-de0ch" go run .) || { echo "--- router log"; tail -40 "$W/router.log"; exit 1; }

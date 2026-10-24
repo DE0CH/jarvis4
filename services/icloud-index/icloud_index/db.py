@@ -13,7 +13,7 @@
 
 CJK has no word boundaries: text goes into FTS with every CJK character spaced apart (cjk_space),
 and a CJK query run becomes a phrase or its bigrams (search.py) — exact substring matching at
-any length, the same scheme as the transcript search (services/search/lib/db.js).
+any length, the same scheme as the transcript search (DE0CH/services search/lib/db.js).
 """
 import re
 import sqlite3

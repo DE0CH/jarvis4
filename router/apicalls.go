@@ -509,10 +509,6 @@ var callRules = map[string]callRule{
 	"GET /api/requests/calls/{id}":                callNo, // the Inbox
 	"POST /api/requests/{id}/approve":             callNo, // the Inbox
 	"POST /api/requests/{id}/done":                callNo, // the Inbox
-	"GET /api/search":                             callBody,
-	"GET /api/search/context":                     callBody,
-	"POST /api/search/reindex":                    callBody,
-	"GET /api/search/status":                      callBody,
 	"POST /api/sessions":                          callBody,
 	"GET /api/sessions/{id}/attachments/{name}":   callBody,
 	"POST /api/sessions/{id}/auto-pause":          callBody,

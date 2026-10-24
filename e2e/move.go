@@ -4,7 +4,7 @@ package main
 // by E2E_ROUTER_B_START with a MOVE_AT) while a real session machine on Fly runs, reaching the router over Fly's
 // private network as production's machines do (the WireGuard peer moves with the router, router/move.go). The
 // session keeps going (same machine, same boot, same supervisor); its calls through the router (the session API —
-// /m/api —, a lease, transcript search) are probed every 200 ms on the machine throughout; a wakeup is due inside the
+// /m/api — and a lease) are probed every 200 ms on the machine throughout; a wakeup is due inside the
 // handover's gap; an app exec (a long poll on the old router, waiting for the machine's answer) is in flight at the
 // freeze. Measured: the router's gap, each path's longest pause, the wakeup's lateness, how soon the machine's
 // /m/commands long poll takes work again.
@@ -41,7 +41,7 @@ func moveStep(id, m string) {
 	expectExec(id, "echo before", "before")
 
 	moveAt := time.Now().Add(75 * time.Second).Truncate(time.Second)
-	step("move: router B starts as the candidate (MOVE_AT %s); the machine probes the session API, a lease and search every 200 ms", moveAt.UTC().Format(time.RFC3339))
+	step("move: router B starts as the candidate (MOVE_AT %s); the machine probes the session API and a lease every 200 ms", moveAt.UTC().Format(time.RFC3339))
 	startProbe(m, id, 170)
 	cmd := exec.Command(start, moveAt.UTC().Format(time.RFC3339))
 	if err := cmd.Start(); err != nil {
@@ -174,14 +174,13 @@ func moveStep(id, m string) {
 	log.Printf("E2E PASSED (the router move only)")
 }
 
-// startProbe: on the machine, the session API, a lease and transcript search, every 200 ms for secs seconds
+// startProbe: on the machine, the session API and a lease, every 200 ms for secs seconds
 // (/tmp/move-probe.log: path, start ms, end ms, HTTP code)
 func startProbe(m, id string, secs int) {
 	probe := `end=$(( $(date +%s) + ` + strconv.Itoa(secs) + ` ))
 run() { while [ $(date +%s) -lt $end ]; do s=$(date +%s%3N); c=$(curl -s -o /tmp/probe-$P.out -w %{http_code} --max-time 90 "$@"); e=$(date +%s%3N); echo "$P $s $e $c" >> /tmp/move-probe.log; [ "$c" = 200 ] || echo "$P $s body $(head -c 300 /tmp/probe-$P.out | tr '\n' ' ')" >> /tmp/move-probe.log; sleep 0.2; done; }
 P=api run http://127.0.0.1:7171/api/sessions/` + id + `/wakeups &
 P=lease run -X POST -H 'Content-Type: application/json' -d '{"purpose":"e2e-move","ttl":600}' http://127.0.0.1:7171/api/sessions/` + id + `/leases/e2e-move &
-P=search run 'http://127.0.0.1:7171/api/search?q=e2e-move' &
 wait`
 	expectOnMachine(m, "rm -f /tmp/move-probe.log; cat > /tmp/move-probe.sh <<'EOF'\n"+probe+"\nEOF\nchmod 755 /tmp/move-probe.sh; touch /tmp/move-probe.log; chown claude /tmp/move-probe.sh /tmp/move-probe.log; "+
 		"su - claude -c 'nohup /tmp/move-probe.sh >/dev/null 2>&1 &'; echo ok", "ok")

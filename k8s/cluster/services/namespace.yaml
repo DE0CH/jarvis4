@@ -4,7 +4,7 @@ metadata:
   name: jarvis4-services
   labels: { pod-security.kubernetes.io/enforce: restricted, jarvis2/ns: services }
 ---
-# search 2 × 1 Gi, watch 2 × 192 Mi, the iCloud index 2 × 2 Gi, rolling surges included (+1 of each)
+# watch 2 × 192 Mi, the iCloud index 2 × 2 Gi, rolling surges included (+1 of each)
 apiVersion: v1
 kind: ResourceQuota
 metadata: { name: services, namespace: jarvis4-services }

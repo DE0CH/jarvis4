@@ -24,8 +24,6 @@ manifest so it restarts with the new Secret. SRC is `env:VAR` (default `env:KEY`
   --part devices router-devices.enc.yaml — CF_DEVICE_TOKENS_API only (router/devices.go)
   --part alloy   alloy.enc.yaml, Secret alloy in jarvis2-obs — GRAFANA_LOGS_URL/USER, GRAFANA_METRICS_URL/USER,
                  GRAFANA_WRITE_TOKEN: the host's Grafana Alloy reads it (infra/alloy/; no pod uses it)
-  --part search  (k8s/cluster/services/secrets) search.enc.yaml, Secret search-secrets in jarvis4-services —
-                 STORAGEBOX_HOST/USER/PASSWORD and OPENROUTER_API for transcript search
   --part icloud-index  (k8s/cluster/services/secrets) icloud-index.enc.yaml, Secret icloud-index-secrets — OPENROUTER_API,
                  LOBSTER_TOKEN, STORAGEBOX_HOST/USER/PASSWORD, BACKUP_AGE_KEY (the private half of the index copy's
                  age key, ICLOUD_BACKUP_AGE_KEY in the infra store)
@@ -58,7 +56,7 @@ BOXES = {  # box → (age recipient file, secrets dir, {part: manifest path unde
     "cluster": ("keys/cluster-age.pub", "k8s/cluster/secrets", {
         "": RT, "wg": RT, "backup": RT, "github": RT, "flyorgs": RT, "flypersonal": RT, "flyvolumes": RT,
         "browserbase": RT, "devices": RT, "alloy": None, "tunnel": None, "postgres": None, "postgres-app": None,
-        "search": "services/search/search.yaml", "icloud-index": "services/icloud-index/icloud-index.yaml",
+        "icloud-index": "services/icloud-index/icloud-index.yaml",
         "icloud-session": "services/icloud-index/icloud-index.yaml",
         "db": RT, "objects": RT, "seal": RT, "wg-b": RT}),
 }
@@ -84,11 +82,10 @@ PARTS = {  # part → (file, Secret name, annotation, namespace)
 }
 SVC = "jarvis4-services"
 PARTS |= {  # the services' parts live next to them (k8s/cluster/services/secrets), applied only once that tree is listed
-    "search": ("search.enc.yaml", "search-secrets", "jarvis2/secrets-rev-search", SVC),
     "icloud-index": ("icloud-index.enc.yaml", "icloud-index-secrets", "jarvis2/secrets-rev-icloud-index", SVC),
     "icloud-session": ("icloud-session.enc.yaml", "icloud-index-session", "jarvis2/secrets-rev-icloud-session", SVC),
 }
-PART_DIRS = {p: "k8s/cluster/services/secrets" for p in ("search", "icloud-index", "icloud-session")}
+PART_DIRS = {p: "k8s/cluster/services/secrets" for p in ("icloud-index", "icloud-session")}
 SECRET_TYPES = {"postgres-app": "kubernetes.io/basic-auth"}  # CloudNativePG's initdb secret is basic-auth
 
 

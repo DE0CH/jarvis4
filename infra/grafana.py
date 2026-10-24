@@ -102,7 +102,7 @@ def rules():
              PROM, f'count by (node) (last_over_time(node_time_seconds{{{N}}}[24h])) unless count by (node) (node_time_seconds{{{N}}})', 0,
              for_="0s", severity="critical",
              meaning="That node, its Alloy (the shipper) or its WARP link is down: what runs on it (on the server: Jarvis 4 "
-                     "itself; on the others: transcript search, watches, a router replica) may be down.",
+                     "itself; on the others: watches, a router replica) may be down.",
              action="Check whether Jarvis 4 answers in the app; a node that is gone is rebuilt from git (RUNBOOK)."),
         # and the whole cluster, which the per-node rule can't see once every node has been silent for 24 h
         rule("j4-silent-cluster", "Gone quiet",

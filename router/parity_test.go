@@ -41,18 +41,11 @@ func TestAppSearchForwardsToServices(t *testing.T) {
 			w.Write([]byte(`{"hits":[]}`))
 		}))
 	}
-	search, icloud := serve("search"), serve("icloud")
-	defer search.Close()
-	defer icloud.Close()
-	t.Setenv("SEARCH_URL", search.URL)
+	icloud := serve("icloud")
 	t.Setenv("ICLOUD_INDEX_URL", icloud.URL+"/")
 	t.Setenv("JARVIS1_SERVICES_ID", "id")
 	t.Setenv("JARVIS1_SERVICES_SECRET", "sec")
 	for _, c := range []struct{ method, target, body, svc, uri string }{
-		{"GET", "/api/search?q=hello+world&group=1", "", "search", "/search?q=hello+world&group=1"},
-		{"GET", "/api/search/context?id=7&before=3", "", "search", "/context?id=7&before=3"},
-		{"GET", "/api/search/status", "", "search", "/status"},
-		{"POST", "/api/search/reindex", "", "search", "/reindex"},
 		{"GET", "/api/icloud/search?q=passport", "", "icloud", "/search?q=passport"},
 		{"GET", "/api/icloud/file?path=Documents%2Fa.pdf", "", "icloud", "/file?path=Documents%2Fa.pdf"},
 		{"GET", "/api/icloud/status", "", "icloud", "/status"},
@@ -69,8 +62,8 @@ func TestAppSearchForwardsToServices(t *testing.T) {
 		}
 	}
 	// a service that is down: 502 in words
-	search.Close()
-	if code, out := appDo(t, r, "GET", "/api/search?q=x", ""); code != 502 || !strings.Contains(out["error"].(string), "transcript search unreachable") {
+	icloud.Close()
+	if code, out := appDo(t, r, "GET", "/api/icloud/search?q=x", ""); code != 502 || !strings.Contains(out["error"].(string), "the iCloud index unreachable") {
 		t.Fatalf("%d %v", code, out)
 	}
 }

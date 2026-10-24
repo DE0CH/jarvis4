@@ -6,7 +6,7 @@ package main
 //
 //	claude-records/.live/<session id>/<conversation uuid>.jsonl
 //
-// — Jarvis 1's layout, so Jarvis 1's transcript search (its indexer reads .live/<id>/) covers Jarvis 4 sessions
+// — Jarvis 1's layout, so transcript search (DE0CH/services; its indexer reads .live/<id>/) covers Jarvis 4 sessions
 // that are still running. The session id is the router's (s…), stable across the session's machines. On
 // destroy the archive takes every copy the snapshot doesn't hold, and only then does the router delete the copies it
 // archived (livearchive.go); one it didn't archive stays.

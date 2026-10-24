@@ -136,13 +136,9 @@ func TestMachineAPINothingGoesToJarvis1(t *testing.T) {
 	if code, _ := m.do(t, h, "POST", "/m/api/sessions/sA/content/x/zip", ""); code != 404 || seen != nil {
 		t.Fatalf("%d", code)
 	}
-	// search is the box's own service now, never Jarvis 1
-	var svc *http.Request
-	search := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) { svc = req; w.Write([]byte(`{"hits":[]}`)) }))
-	defer search.Close()
-	t.Setenv("SEARCH_URL", search.URL)
-	if code, _ := m.do(t, h, "GET", "/m/api/search?q=hello+world&n=5", ""); code != 200 || seen != nil || svc == nil || svc.URL.RequestURI() != "/search?q=hello+world&n=5" {
-		t.Fatalf("%d %v", code, svc)
+	// transcript search is not Jarvis's (DE0CH/services): no route
+	if code, _ := m.do(t, h, "GET", "/m/api/search?q=hello+world&n=5", ""); code != 404 || seen != nil {
+		t.Fatalf("search: %d", code)
 	}
 	// the iCloud index: only a session whose cert holds the identity store (Deyao, 2026-10-13)
 	var ic *http.Request
@@ -156,16 +152,12 @@ func TestMachineAPINothingGoesToJarvis1(t *testing.T) {
 			t.Fatalf("%s %s without identity: %d %v", c[0], c[1], code, out)
 		}
 	}
-	// transcript search isn't gated
-	if code, _ := m.do(t, h, "GET", "/m/api/search/status", ""); code != 200 {
-		t.Fatalf("search without identity: %d", code)
-	}
 	r.st.Do(func(d *persisted) { d.Sessions["sA"].Stores = []string{"default", "identity"} })
 	if code, _ := m.do(t, h, "GET", "/m/api/icloud/search?q=passport", ""); code != 200 || ic == nil || ic.URL.RequestURI() != "/search?q=passport" {
 		t.Fatalf("with identity: %d %v", code, ic)
 	}
-	// a machine with no running session can't search
-	if code, _ := newTestMachine(r, "mNone").do(t, h, "GET", "/m/api/search?q=x", ""); code != 403 {
+	// a machine with no running session can't reach the iCloud index
+	if code, _ := newTestMachine(r, "mNone").do(t, h, "GET", "/m/api/icloud/search?q=x", ""); code != 403 {
 		t.Fatalf("no session: %d", code)
 	}
 	// leases are Jarvis 4's own (leases.go): never forwarded

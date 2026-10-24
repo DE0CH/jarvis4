@@ -39,7 +39,6 @@ spec:
             # no old core in Jarvis 4: nothing answers here
             # the shared services (k8s/cluster/services, on the node jarvis2-cluster-2); the iCloud index is off (not
             # part of Jarvis, Deyao 2026-10-22), so its name doesn't resolve and the router answers it with a 502
-            - { name: SEARCH_URL, value: "http://search.jarvis4-services.svc.cluster.local:8090" }
             - { name: ICLOUD_INDEX_URL, value: "http://icloud-index.jarvis4-services.svc.cluster.local:8091" }
             - { name: WATCH_URL, value: "http://watch.jarvis4-services.svc.cluster.local:8095" }
             - { name: CORE_URL, value: "http://core.invalid:8090" }
@@ -115,9 +114,9 @@ spec:
     # Postgres (k8s/cluster/postgres, step 6)
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis4-db } } }]
       ports: [{ port: 5432 }]
-    # transcript search, the iCloud index and the watch runner (k8s/cluster/services)
+    # the iCloud index and the watch runner (k8s/cluster/services)
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis4-services } } }]
-      ports: [{ port: 8090 }, { port: 8091 }, { port: 8095 }]
+      ports: [{ port: 8091 }, { port: 8095 }]
     - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16] } }]
       ports: [{ port: 443 }]
 ---

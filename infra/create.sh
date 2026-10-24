@@ -137,6 +137,6 @@ print("server",s["id"],s["public_net"]["ipv6"]["ip"],os.environ.get("PRIVATE_IP"
 PY
 echo "$BOXPUB and $AGEPUB are the new box's keys (re-run infra/router-secrets.py --box $BOX_KIND for every part of this box, then commit and push)"
 if [ "$BOX_KIND" = cluster ]; then echo "the cluster node comes up on its own (k3s, Flux keeping k8s/cluster; about 10 min); commit keys/cluster-age.pub"; exit 0; fi
-if [ "$BOX_KIND" = services ]; then echo "the services box has no tunnel: check it with its Alloy logs in Grafana and the router's /api/search/status"; exit 0; fi
+if [ "$BOX_KIND" = services ]; then echo "the services box has no tunnel: check it with its Alloy logs in Grafana and infra/setup.py services"; exit 0; fi
 echo "the control box comes up on its own (k3s, Flux, the cores behind the tunnel; about 10 min). Its box key is in $BOXPUB:"
 echo "it becomes keys/box.pub (commit) before Deyao sets its core up (docs/RUNBOOK.md \"Rebuilding a box\")"

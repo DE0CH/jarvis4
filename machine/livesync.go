@@ -3,7 +3,7 @@ package main
 // Live transcript sync (Jarvis 1's session-image/sync-live-transcripts): every JARVIS2_LIVE_SYNC_SECONDS
 // (default 300) each conversation transcript under ~/.claude/projects that changed since its last copy goes to
 // the router (POST /m/live-transcript, X-Name = its file name, the whole file — the Storage Box's WebDAV has
-// no append), which puts it at claude-records/.live/<session id>/ for Jarvis 1's transcript search
+// no append), which puts it at claude-records/.live/<session id>/ for transcript search (DE0CH/services)
 // (router/livesync.go). The machine holds no Storage Box credentials. Jarvis's peer-message relays ("You are a
 // delivery relay…") are plumbing and are skipped, as in Jarvis 1.
 
