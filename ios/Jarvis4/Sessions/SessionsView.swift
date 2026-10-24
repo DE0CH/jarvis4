@@ -72,16 +72,20 @@ private struct SessionList: View {
           }
         }
       }
+      // a row in the list, not an overlay: the Fly section below would show through it
+      if model.loaded && sessions.isEmpty {
+        Section {
+          ContentUnavailableView {
+            Label("No sessions", systemImage: "rectangle.stack")
+          } description: {
+            Text("Start one with +.")
+          }
+        }
+      }
       FlyAccountSection()
     }
     .overlay {
-      if model.loaded && sessions.isEmpty {
-        ContentUnavailableView {
-          Label("No sessions", systemImage: "rectangle.stack")
-        } description: {
-          Text("Start one with +.")
-        }
-      } else if !model.loaded && model.loadError == nil {
+      if !model.loaded && model.loadError == nil {
         ProgressView("Loading…")
       }
     }

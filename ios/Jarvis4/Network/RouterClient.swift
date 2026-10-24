@@ -164,10 +164,16 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
   struct ContentStoreDTO: Decodable, Identifiable, Hashable { let name: String; let files: Int; let bytes: Int; var id: String { name } }
   private struct ContentList: Decodable { let stores: [ContentStoreDTO] }
   func contentStores() async throws -> [ContentStoreDTO] { try await json("GET", "api/content", as: ContentList.self).stores }
+  /// who signs the store documents: the kernel's secrets on a box with no core (router storeCore: the store calls go
+  /// there), else the core
+  private func storesKey() async throws -> String {
+    if let k = try? await kernelStatus(), k.configured, !k.core { return try KernelTrust.key() }
+    return try CoreTrust.key()
+  }
   /// the signed list itself
   func storesDoc() async throws -> StoresDoc {
     let n = CoreCrypto.nonce()
-    let d = try CoreCrypto.decode(try await json("POST", "api/core/stores", ["nonce": n], as: SignedDoc.self), by: try CoreTrust.key(), as: StoresDoc.self, what: "the store list")
+    let d = try CoreCrypto.decode(try await json("POST", "api/core/stores", ["nonce": n], as: SignedDoc.self), by: try await storesKey(), as: StoresDoc.self, what: "the store list")
     guard d.kind == "stores", d.nonce == n else { throw TrustError.stale("store list") }
     return d
   }
@@ -180,7 +186,7 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
   static func coreHeaders(_ next: Bool) -> [String: String] { next ? ["X-Jarvis2-Core": "next"] : [:] }
   func unlocked() async throws -> [UnlockRow] {
     let n = CoreCrypto.nonce()
-    let d = try CoreCrypto.decode(try await json("POST", "api/core/unlocked", ["nonce": n], as: SignedDoc.self), by: try CoreTrust.key(), as: UnlockedDoc.self, what: "the unlocked list")
+    let d = try CoreCrypto.decode(try await json("POST", "api/core/unlocked", ["nonce": n], as: SignedDoc.self), by: try await storesKey(), as: UnlockedDoc.self, what: "the unlocked list")
     guard d.kind == "unlocked-list", d.nonce == n else { throw TrustError.stale("unlocked list") }
     return d.unlocked
   }
@@ -189,7 +195,7 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
   func unlockBegin(_ store: String, for forNonce: String? = nil) async throws -> UnlockBegin {
     var body: [String: Any] = ["store": store]
     if let forNonce { body["for"] = forNonce }
-    let b = try CoreCrypto.decode(try await json("POST", "api/core/unlock/begin", body, as: SignedDoc.self), by: try CoreTrust.key(), as: UnlockBegin.self, what: "the unlock")
+    let b = try CoreCrypto.decode(try await json("POST", "api/core/unlock/begin", body, as: SignedDoc.self), by: try await storesKey(), as: UnlockBegin.self, what: "the unlock")
     guard b.kind == "unlock-begin", b.store == store else { throw TrustError.stale("unlock of \(b.store)") }
     if let got = b.forNonce, !got.isEmpty, got != (forNonce ?? "") { throw TrustError.stale("unlock of \(b.store) for another session") }
     if forNonce == nil, let got = b.forNonce, !got.isEmpty { throw TrustError.stale("unlock of \(b.store) for one session") }
@@ -203,19 +209,19 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
     var m: [String: Any] = [:]
     for (k, x) in zip(b.keys, shares) { m[k.key] = try CoreCrypto.sealShare(x, to: b.t) }
     let body: [String: Any] = ["pending": b.pending, "shares": m]
-    let d = try CoreCrypto.decode(try await json("POST", "api/core/unlock/finish", body, as: SignedDoc.self), by: try CoreTrust.key(), as: KindDoc.self, what: "the unlocked answer")
+    let d = try CoreCrypto.decode(try await json("POST", "api/core/unlock/finish", body, as: SignedDoc.self), by: try await storesKey(), as: KindDoc.self, what: "the unlocked answer")
     guard d.kind == "unlocked", d.store == b.store else { throw TrustError.stale("unlocked \(d.store ?? "?")") }
   }
   func lock(_ id: String) async throws {
-    let d = try CoreCrypto.decode(try await json("POST", "api/core/lock", ["id": id], as: SignedDoc.self), by: try CoreTrust.key(), as: KindDoc.self, what: "the locked answer")
+    let d = try CoreCrypto.decode(try await json("POST", "api/core/lock", ["id": id], as: SignedDoc.self), by: try await storesKey(), as: KindDoc.self, what: "the locked answer")
     guard d.kind == "locked", d.id == id else { throw TrustError.stale("lock") }
   }
   func markSensitive(_ name: String) async throws {
-    let d = try CoreCrypto.decode(try await json("POST", "api/core/stores/mark-sensitive", ["name": name], as: SignedDoc.self), by: try CoreTrust.key(), as: KindDoc.self, what: "the mark")
+    let d = try CoreCrypto.decode(try await json("POST", "api/core/stores/mark-sensitive", ["name": name], as: SignedDoc.self), by: try await storesKey(), as: KindDoc.self, what: "the mark")
     guard d.kind == "marked-sensitive", d.name == name else { throw TrustError.stale("mark") }
   }
   func createStore(_ name: String) async throws {
-    let d = try CoreCrypto.decode(try await json("POST", "api/core/stores/create", ["name": name], as: SignedDoc.self), by: try CoreTrust.key(), as: KindDoc.self, what: "the new store")
+    let d = try CoreCrypto.decode(try await json("POST", "api/core/stores/create", ["name": name], as: SignedDoc.self), by: try await storesKey(), as: KindDoc.self, what: "the new store")
     guard d.kind == "store-created", d.name == name else { throw TrustError.stale("create") }
   }
 

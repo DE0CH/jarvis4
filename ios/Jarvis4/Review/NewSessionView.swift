@@ -39,6 +39,8 @@ struct NewSessionView: View {
   /// the Claude accounts (GET api/claude-accounts, router/claudeaccounts.go): the default pre-picked; the session keeps it
   @State private var accounts: [JSON]?
   @State private var account = ""
+  /// on the kernel (Jarvis 4, no core): the router files a kernel-source approval; Start opens its page here
+  @State private var kernelApproval: RouterClient.ApprovalDTO?
 
   static let defaultRepo = "DE0CH/claude-env"
   private var hidden: Set<String> { model.harnessHidden }
@@ -78,6 +80,9 @@ struct NewSessionView: View {
       }
     }
     .interactiveDismissDisabled(busy != nil)
+    .navigationDestination(isPresented: Binding(get: { kernelApproval != nil }, set: { if !$0 { kernelApproval = nil } })) {
+      if let a = kernelApproval { KernelApprovalView(a: a, inbox: nil, request: .newSession) }
+    }
     .task { await load() }
     .onChange(of: harness) { pickModel() }
     .onChange(of: model.models) { pickModel() }
@@ -295,7 +300,9 @@ struct NewSessionView: View {
     let want = picked.sorted(), rid = CoreCrypto.nonce()
     let title = label.trimmingCharacters(in: .whitespacesAndNewlines)
     do {
-      let key = try CoreTrust.key()
+      // a new line goes on the kernel once it serves (router/flows.go): no core key, a kernel-source approval
+      let kernel = (try? await RouterClient.shared.kernelStatus())?.serves == true
+      let key = try kernel ? "" : CoreTrust.key()
       busy = "Requesting…"
       let chosen = model.repos.filter { repos.contains($0.name) }
       let attached = try await upload(rid)
@@ -314,11 +321,13 @@ struct NewSessionView: View {
         let st = try await RouterClient.shared.approvalsState()
         if let s = st.sessions.first(where: { $0.createRequestId == rid }) {
           if s.state == "failed" { throw RouterError(message: "The router couldn't make the request.") }
-          found = st.approvals.first { $0.session == s.id && $0.kind == "new-session" }
+          found = st.approvals.first { $0.session == s.id && $0.kind == (kernel ? "kernel-source" : "new-session") }
         }
         if found == nil { try await Task.sleep(for: .milliseconds(700)) }
       }
       guard let a = found else { throw RouterError(message: "No approval yet: it will wait in the Inbox.") }
+      // the kernel's page checks and signs it (what it carries, the image, the stores it unlocks)
+      if kernel { busy = nil; kernelApproval = a; return }
       let r = try Checks.review(challenge: a.challenge, coreKey: key)
       // sign only what was chosen here
       try Checks.matchesPicked(r, stores: want, harnessStores: model.policy[harness] ?? [], harness: harness, permissionMode: perm)
