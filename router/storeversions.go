@@ -6,7 +6,9 @@ package main
 // secrets' signed key-written receipt for it and the backup object the router wrote for it — and null for a key the
 // router never saw written (a Recover's). A restore writes each earlier entry back to secrets with its receipt
 // (writer "replay": secrets checks the receipt is its own for exactly that entry and keeps the writer it names), and
-// deletes the keys the earlier version didn't have; the put-back keys' backups go back into the bucket first.
+// deletes the keys the earlier version didn't have; the put-back keys' backups go back into the bucket first, and each
+// removed key gets a delete marker there after (writer "replay" with secrets' receipt of the delete, which the app's
+// Recover checks against the secrets its kit derives), so a Recover from the bucket doesn't bring it back.
 //
 //	POST /api/core/stores/versions {store, nonce}     the router's list (the app checks each key's receipt)
 //	POST /api/core/stores/restore/begin {store, seq}  what putting version seq back changes: put (with receipts),
@@ -387,6 +389,26 @@ func (r *Router) KernelRestoreBegin(store string, seq int) (map[string]any, erro
 		"put":  put, "remove": remove, "keep": keep, "cannot": cannot, "t": ""}, nil
 }
 
+// putRemoval: a removed key's delete marker over its last backup (keys/<store>/<key>.json): writer "replay" with
+// secrets' signed receipt of the delete; a few tries, the store already changed
+func putRemoval(b *backupBucket, store, key string, receipt *Doc, ident []byte) error {
+	obj := map[string]any{"kind": "key-backup", "store": store, "key": key, "deleted": true, "sealed": nil, "backupSha256": "", "e": "",
+		"dataSha256": "", "writer": map[string]any{"by": "replay", "receipt": receipt}, "explanation": "removed by a restore",
+		"at": time.Now().UTC().Format(time.RFC3339)}
+	if json.Valid(ident) {
+		obj["core"] = json.RawMessage(ident)
+	}
+	raw, _ := json.Marshal(obj)
+	var err error
+	for i := 0; i < 3; i++ {
+		if err = b.put("keys/"+store+"/"+key+".json", raw); err == nil {
+			return nil
+		}
+		time.Sleep(time.Duration(i+1) * time.Second)
+	}
+	return err
+}
+
 func sortedNames(m map[string]*verEntry) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
@@ -440,9 +462,8 @@ func (r *Router) KernelRestoreFinish(pending string) (map[string]any, error) {
 	keys := currentKeys(latest, names, version)
 	sc := r.storeCore()
 	// the backups first: no key changes in secrets before its backup is in the bucket (each key put back gets the very
-	// backup object written with it, which the app's Recover checks as it did then). A key the restore removes keeps
-	// its last backup: a delete marker would need a writer the app's backup check takes, and secrets' receipt isn't one
-	// (CoreSetup.checkKeyBackup), so a Recover from the bucket alone brings such a key back.
+	// backup object written with it, which the app's Recover checks as it did then). A key the restore removes gets its
+	// delete marker once secrets' receipt of the delete exists (below).
 	for _, k := range p.Put {
 		e := p.To.Keys[k]
 		if len(e.Backup) != 0 {
@@ -465,6 +486,8 @@ func (r *Router) KernelRestoreFinish(pending string) (map[string]any, error) {
 		last = nr.Version
 		keys[k] = &verEntry{Wrapped: e.Wrapped, Data: e.Data, BackupSha256: e.BackupSha256, Receipt: d, Backup: e.Backup}
 	}
+	_, ident, _ := sc.Raw("GET", "/identity", nil)
+	unmarked := []string{}
 	for _, k := range p.Remove {
 		d, err := sc.Call("/stores/write-key", map[string]any{"store": p.Store, "key": k, "delete": true, "writer": "replay"})
 		if err != nil {
@@ -474,10 +497,18 @@ func (r *Router) KernelRestoreFinish(pending string) (map[string]any, error) {
 		d.Decode(&nr)
 		last = nr.Version
 		delete(keys, k)
+		if err := putRemoval(b, p.Store, k, d, ident); err != nil {
+			log.Printf("store %s: %s removed, but its delete marker isn't in the bucket: %v", p.Store, k, err)
+			unmarked = append(unmarked, k)
+		}
 	}
 	seq, err := r.addVersion(ctx, p.Store, last, verCause{Kind: "restore", From: p.To.Seq}, keys)
 	if err != nil {
 		log.Printf("store %s: the restored version wasn't kept: %v", p.Store, err)
+	}
+	if len(unmarked) > 0 {
+		r.DM(fmt.Sprintf("🔴 Jarvis 4: store %s was restored, but the bucket couldn't take the removal of %v: a Recover from the bucket alone would bring %s back.",
+			p.Store, unmarked, map[bool]string{true: "it", false: "them"}[len(unmarked) == 1]))
 	}
 	log.Printf("store %s: version %d put back as version %d (%d keys back, %d removed)", p.Store, p.To.Seq, seq, len(p.Put), len(p.Remove))
 	r.dropRequests(func(q *InboxRequest) bool { return q.Kind == requestKindRestore && q.Params.Store == p.Store }, outcomeApproved, nil)

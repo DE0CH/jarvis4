@@ -210,5 +210,22 @@ if let spk {
   check(code == 200 && String(decoding: body, as: UTF8.self).contains("fly-token-set"), "the spawner opens the Fly token the app sealed to it")
 }
 
+// ---- a key a restore removed (router/storeversions.go): its delete marker carries secrets' receipt, which a Recover
+// checks against the secrets the kit derives ----
+let (rmCode, rmBody) = call("/stores/write-key", ["store": "default", "key": "B", "delete": true, "writer": "replay"])
+check(rmCode == 200, "secrets removes a key for a restore (writer replay)")
+let rm = doc(rmBody)
+func marker(_ receipt: SignedDoc, key: String = "B") -> CoreSetup.BackupObject {
+  let body: [String: Any] = ["kind": "key-backup", "store": "default", "key": key, "deleted": true, "sealed": NSNull(), "backupSha256": "", "e": "",
+                             "dataSha256": "", "writer": ["by": "replay", "receipt": ["payload": receipt.payload, "sig": receipt.sig]], "at": "2026-10-24T12:00:00Z"]
+  return try! JSONDecoder().decode(CoreSetup.BackupObject.self, from: JSONSerialization.data(withJSONObject: [
+    "key": "keys/default/\(key).json", "body": String(decoding: try! JSONSerialization.data(withJSONObject: body), as: UTF8.self)]))
+}
+check(!throwsErr { _ = try CoreSetup.checkKeyBackup(marker(rm), setupKey: setupPub, boxKey: nil, secretsKey: derived.signingKey) },
+      "the removal's delete marker checks against the kit's secrets")
+check(throwsErr { _ = try CoreSetup.checkKeyBackup(marker(rm), setupKey: setupPub, boxKey: nil, secretsKey: otherPub) }, "…not against another secrets")
+check(throwsErr { _ = try CoreSetup.checkKeyBackup(marker(rm), setupKey: setupPub, boxKey: nil) }, "…nor with no secrets to check it with")
+check(throwsErr { _ = try CoreSetup.checkKeyBackup(marker(rm, key: "A"), setupKey: setupPub, boxKey: nil, secretsKey: derived.signingKey) }, "…nor as another key's removal")
+
 print(failures == 0 ? "all kernel checks passed" : "\(failures) kernel check(s) FAILED")
 exit(failures == 0 ? 0 : 1)

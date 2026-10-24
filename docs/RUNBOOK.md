@@ -635,7 +635,8 @@ notarizer, mover, merger, spawner, identity, gullible, minter and secrets. Only 
 deploy keys) reach the internet; each copy's secrets reaches only its own minter (`KERNEL_MINTER_URL`, NetworkPolicies
 `kernel-secrets-minter-<copy>`). Store versions on a box with no core are the router's (Postgres `store_versions`,
 DECISIONS 232): a store's Versions page and its restore work as before, with no phone signature (each key put back
-carries secrets' receipt).
+carries secrets' receipt; each key removed gets a delete marker carrying secrets' receipt of the delete, so a Recover
+from the bucket leaves it out).
 
 Testing it on real Fly from a session: `session-secret --keys JARVIS2_FLY_TOKEN --exec infra/e2e-kernel.sh` (a new
 session on the kernel, its boot from its documents, pause into a source with its snapshot, resume, destroy).

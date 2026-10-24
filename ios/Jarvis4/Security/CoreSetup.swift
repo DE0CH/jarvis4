@@ -68,7 +68,8 @@ enum CoreSetup {
   struct BackupDoc: Decodable { let kind: String; let name: String; let sensitive: Bool; let sealed: [String: String]; var at: Double? = nil }
   /// keys/<store>/<key>.json (router/storedocs.go)
   struct KeyBackup: Decodable {
-    /// setup: sig; machine: sig + cert; restore: the core's signed receipt (a phone-approved restore, core/history.go)
+    /// setup: sig; machine: sig + cert; restore: the core's signed receipt (a phone-approved restore, core/history.go);
+    /// replay: the kernel secrets' signed receipt of a key a restore removed (router/storeversions.go)
     struct Writer: Decodable { let by: String; var sig: String? = nil; var cert: SignedDoc? = nil; var receipt: SignedDoc? = nil }
     let kind: String; let store: String; let key: String; let deleted: Bool
     var sealed: [String: String]? = nil
@@ -101,8 +102,9 @@ enum CoreSetup {
   }
 
   /// every store in the backups, checked (setup key; a session-written key: its machine's cert from a core the box key
-  /// vouched for) and decrypted (master key): each store's whole-store backup, then its later key backups
-  static func readBackups(_ objects: [BackupObject], master: MasterKey, setupKey: String, boxKey: String? = nil) throws -> [RecoveredStore] {
+  /// vouched for; a key a kernel restore removed: the receipt of `secretsKey`, the kernel secrets the kit derives) and
+  /// decrypted (master key): each store's whole-store backup, then its later key backups
+  static func readBackups(_ objects: [BackupObject], master: MasterKey, setupKey: String, boxKey: String? = nil, secretsKey: String? = nil) throws -> [RecoveredStore] {
     var marked = Set<String>()
     for o in objects {
       guard let n = name(of: o.key, prefix: "sensitive/") else { continue }
@@ -127,7 +129,7 @@ enum CoreSetup {
     var seen = Set<String>()
     for o in objects where o.key.hasPrefix("keys/") {
       guard seen.insert(o.key).inserted else { throw TrustError.backup("\(o.key) comes twice.") }
-      let (b, value) = try openKeyBackup(o, master: master, setupKey: setupKey, boxKey: boxKey)
+      let (b, value) = try openKeyBackup(o, master: master, setupKey: setupKey, boxKey: boxKey, secretsKey: secretsKey)
       guard let at = Checks.isoDate(b.at) else { throw TrustError.backup("\(o.key) has no time it was written.") }
       keyed.append((b.store, b.key, value, at))
     }
@@ -155,7 +157,7 @@ enum CoreSetup {
 
   /// one key backup: it names its own store and key, its hash is of its sealed value, its writer signed it (the setup
   /// key, or a machine certified by a core the box key vouched for). Problems as one plain sentence.
-  static func checkKeyBackup(_ o: BackupObject, setupKey: String, boxKey: String?) throws -> KeyBackup {
+  static func checkKeyBackup(_ o: BackupObject, setupKey: String, boxKey: String?, secretsKey: String? = nil) throws -> KeyBackup {
     guard let (store, key) = keyName(o.key) else { throw TrustError.backup("\(o.key) isn't a key backup.") }
     guard let b = try? JSONDecoder().decode(KeyBackup.self, from: Data(o.body.utf8)), b.kind == "key-backup" else { throw TrustError.backup("\(o.key) isn't a key backup.") }
     guard b.store == store, b.key == key else { throw TrustError.backup("\(o.key) names another key.") }
@@ -188,6 +190,15 @@ enum CoreSetup {
         guard (r.put ?? []).contains(where: { $0.key == key && $0.e == b.e && $0.dataSha256 == b.dataSha256 && $0.backupSha256 == b.backupSha256 })
         else { throw TrustError.backup("\(o.key)'s restore receipt doesn't name this value.") }
       }
+    case "replay":
+      // a restore on a box with no core removed this key (router/storeversions.go): the kernel secrets' signed receipt
+      // of exactly that delete, checked against the secrets the kit derives (`secretsKey`)
+      struct Written: Decodable { let kind: String; let store: String; let key: String; let deleted: Bool }
+      guard b.deleted, let secretsKey, let rd = b.writer.receipt,
+            let r = try? CoreCrypto.decode(rd, by: secretsKey, as: Written.self, what: "the removal's receipt"),
+            r.kind == "key-written", r.deleted, r.store == store, r.key == key else {
+        throw TrustError.backup("\(o.key)'s removal isn't one the kernel's secrets signed.")
+      }
     case "machine":
       guard let cert = b.writer.cert else { throw TrustError.backup("\(o.key)'s session writer can't be checked.") }
       let k = try vouchedCore("session writer")
@@ -201,8 +212,8 @@ enum CoreSetup {
   }
 
   /// a key backup checked and opened: its value (nil for a delete)
-  static func openKeyBackup(_ o: BackupObject, master: MasterKey, setupKey: String, boxKey: String?) throws -> (KeyBackup, String?) {
-    let b = try checkKeyBackup(o, setupKey: setupKey, boxKey: boxKey)
+  static func openKeyBackup(_ o: BackupObject, master: MasterKey, setupKey: String, boxKey: String?, secretsKey: String? = nil) throws -> (KeyBackup, String?) {
+    let b = try checkKeyBackup(o, setupKey: setupKey, boxKey: boxKey, secretsKey: secretsKey)
     guard !b.deleted, let sealed = b.sealed else { return (b, nil) }
     let plain: Data
     do { plain = try CoreCrypto.open(sealed, with: master.agreement, info: CoreCrypto.backupInfo, aad: CoreCrypto.keyAAD(store: b.store, key: b.key)) }
@@ -284,12 +295,12 @@ extension CoreSetup {
   static let exportFormat = "jarvis2-backup-export", exportVersion = 1
 
   /// the same per-object checks as readBackups, minus opening: signed, the setup key's, the doc names its own key
-  static func checkSignatures(_ objects: [BackupObject], setupKey: String, boxKey: String? = nil) -> [BackupCheck] {
+  static func checkSignatures(_ objects: [BackupObject], setupKey: String, boxKey: String? = nil, secretsKey: String? = nil) -> [BackupCheck] {
     var seen = Set<String>()
     return objects.map { o in
       if o.key.hasPrefix("keys/") {
         guard seen.insert(o.key).inserted else { return BackupCheck(key: o.key, problem: "Comes twice") }
-        do { _ = try checkKeyBackup(o, setupKey: setupKey, boxKey: boxKey); return BackupCheck(key: o.key, problem: nil) }
+        do { _ = try checkKeyBackup(o, setupKey: setupKey, boxKey: boxKey, secretsKey: secretsKey); return BackupCheck(key: o.key, problem: nil) }
         catch { return BackupCheck(key: o.key, problem: (error as? LocalizedError)?.errorDescription ?? "Not a key backup") }
       }
       guard let s = try? JSONDecoder().decode(Signed.self, from: Data(o.body.utf8)) else { return BackupCheck(key: o.key, problem: "Not a signed document") }

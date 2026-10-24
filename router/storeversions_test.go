@@ -90,17 +90,32 @@ func TestAKernelRestoreReplaysTheEarlierEntry(t *testing.T) {
 	if len(u.Keys) != 1 || u.Keys[0].Key != "A" || u.Keys[0].DataSha256 != hexSha("D1") || u.Keys[0].Writer.By != "setup" || u.Keys[0].Writer.Sig != "SD1" {
 		t.Fatalf("secrets after the restore: %+v", u.Keys)
 	}
-	// the bucket: version 1's backup of A back; B keeps its last backup (no delete marker the app's Recover would refuse)
+	// the bucket: version 1's backup of A back; B's delete marker over its last backup, its writer secrets' receipt of
+	// the delete (what the app's Recover checks against the secrets its kit derives), so a Recover leaves B out
 	var a1, aNow map[string]any // the same object (Postgres's jsonb keeps it, not its bytes)
 	json.Unmarshal(v1Backup, &a1)
 	json.Unmarshal(fb.objs["keys/default/A.json"], &aNow)
 	if aNow["dataSha256"] != hexSha("D1") || aNow["backupSha256"] != a1["backupSha256"] || aNow["at"] != a1["at"] {
 		t.Fatalf("A's backup isn't version 1's: %v", aNow)
 	}
-	var bobj map[string]any
+	var bobj struct {
+		Kind, Store, Key, DataSha256 string
+		Deleted                      bool
+		Sealed                       any
+		Writer                       struct {
+			By      string `json:"by"`
+			Receipt *Doc   `json:"receipt"`
+		} `json:"writer"`
+	}
 	json.Unmarshal(fb.objs["keys/default/B.json"], &bobj)
-	if bobj["deleted"] != false || bobj["dataSha256"] != hexSha("D3") {
-		t.Fatalf("B's backup: %v", bobj)
+	var brc keyReceipt
+	if !bobj.Deleted || bobj.Kind != "key-backup" || bobj.Key != "B" || bobj.Sealed != nil || bobj.DataSha256 != "" || bobj.Writer.By != "replay" ||
+		bobj.Writer.Receipt == nil || bobj.Writer.Receipt.Decode(&brc) != nil {
+		t.Fatalf("B's delete marker: %s", fb.objs["keys/default/B.json"])
+	}
+	if !sig.Verify(k.Identity("secrets").SigningKey, []byte(bobj.Writer.Receipt.Payload), bobj.Writer.Receipt.Sig) || brc.Kind != "key-written" ||
+		!brc.Deleted || brc.Store != "default" || brc.Key != "B" {
+		t.Fatalf("the marker's receipt isn't secrets' of B's delete: %+v", brc)
 	}
 	if asked, _ := out["refreshAsked"].([]any); len(asked) != 1 {
 		t.Fatalf("refresh %v", out["refreshAsked"])

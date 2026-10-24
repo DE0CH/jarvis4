@@ -236,11 +236,12 @@ struct KernelSetupView: View {
       // Jarvis 2's backups: the setup key signed them, the box key vouched for the core that wrote them (keys/*.pub);
       // every store's backup opens only with the kit they were sealed to, which is how a box with no core checks the kit
       let setupKey = try await KeySource.key("setup.pub"), boxKey = try await KeySource.key("box.pub")
-      let stores = try CoreSetup.readBackups(try await RouterClient.shared.backups(), master: m, setupKey: setupKey, boxKey: boxKey)
-      guard !stores.isEmpty else { throw TrustError.backup("The backups hold no store, so this kit can't be checked against them.") }
-      busy = "Setting up the kernel…"
       let seed = KernelContinuity.seed(m)
       let derived = try KernelContinuity.keys(seed: seed)
+      // a key a kernel restore removed: its delete marker carries the receipt of the secrets this kit derives
+      let stores = try CoreSetup.readBackups(try await RouterClient.shared.backups(), master: m, setupKey: setupKey, boxKey: boxKey, secretsKey: derived.signingKey)
+      guard !stores.isEmpty else { throw TrustError.backup("The backups hold no store, so this kit can't be checked against them.") }
+      busy = "Setting up the kernel…"
       // the deploy-key stores an earlier secrets from the same kit kept (no backup): its line state, checked as the core's
       var line: CoreSetup.LineStateDoc?
       if let l = try await RouterClient.shared.kernelLineState(), CoreSetup.lineStateSigned(l, coreKey: derived.signingKey) {

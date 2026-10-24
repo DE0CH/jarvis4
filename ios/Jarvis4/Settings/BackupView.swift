@@ -86,7 +86,7 @@ struct BackupView: View {
                   stores: objects.count { CoreSetup.name(of: $0.key, prefix: "stores/") != nil },
                   keys: objects.count { CoreSetup.keyName($0.key) != nil },
                   markers: objects.count { CoreSetup.name(of: $0.key, prefix: "sensitive/") != nil },
-                  checks: CoreSetup.checkSignatures(objects, setupKey: setupKey, boxKey: boxKey))
+                  checks: CoreSetup.checkSignatures(objects, setupKey: setupKey, boxKey: boxKey, secretsKey: KernelTrust.pinned?.signingKey))
     } catch {
       copy = nil
       self.error = "Could not download the backup: " + errText(error)

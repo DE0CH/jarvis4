@@ -2692,3 +2692,13 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      `infra/setup_roster_test.py`; the interop Kernel test (the payload with retired keys and `secretsBoot` byte for byte
      Go's, the app's takeover checks).
 
+234. **A store restore's removals survive a Recover** (`router/storeversions.go`, the app's `CoreSetup.checkKeyBackup`).
+     A kernel restore that removed a key deleted it in secrets but left its last backup in the bucket (the router's
+     credential can't delete; a delete marker needed a writer the app's Recover takes, and `replay` was none), so a
+     Recover from the bucket brought the removed key back. Now each removal, once secrets answered it, gets a delete
+     marker over the key's last backup (`deleted: true`, writer `{by: "replay", receipt}` = secrets' signed `key-written`
+     receipt of exactly that delete; three tries, then a DM naming the key), and the app's Recover takes a `replay`
+     delete only with a receipt the secrets its own kit derives signed, for that store and key (the setup session's
+     backup check page uses the pinned secrets). A replay put needs no marker: the router writes back the very backup
+     object the key had. Tested: router `TestAKernelRestoreReplaysTheEarlierEntry` (B's marker, its receipt secrets'
+     own); the interop Kernel test (a real secrets' removal receipt checks; another secrets, none, another key: refused).

@@ -467,9 +467,11 @@ the same three routes are the router's own (the kernel's secrets keeps no histor
   whose value then the router never saw: left as they are */, t: ""}`; 403 a repo's store, 404 no such store or
   version, 409 already that version. The app checks every `put` receipt against the pinned secrets.
 - `POST /api/stores/restore/finish {pending}` → each put key's backup object back into the bucket, then
-  `stores/write-key` with writer `replay` and its receipt, then a `replay` delete of each removed key (which keeps its
-  last backup) → `{ok, restored: {kind: "store-restored", pending, store, from, seq, version}, refreshAsked}`; 409 when
-  the store changed since the begin, 404 an unknown or spent pending.
+  `stores/write-key` with writer `replay` and its receipt, then a `replay` delete of each removed key and its delete
+  marker over its last backup (`keys/<store>/<key>.json`: `deleted: true`, writer `{by: "replay", receipt}` = secrets'
+  signed `key-written` answer of that delete, which the app's Recover checks against the secrets its kit derives; three
+  tries, then a DM) → `{ok, restored: {kind: "store-restored", pending, store, from, seq, version}, refreshAsked}`; 409
+  when the store changed since the begin, 404 an unknown or spent pending.
 
 With the core:
 
