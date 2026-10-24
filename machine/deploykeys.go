@@ -38,7 +38,7 @@ const (
 	deployKeyPrefix  = "GITHUB_DEPLOY_KEY_"
 	deployKeyDir     = ".ssh/jarvis2-deploy"
 	githubKnownHosts = ".ssh/jarvis2-github-known-hosts"
-	sshConfigBegin   = "# >>> jarvis2 deploy keys (jarvis2-machine rewrites this block)"
+	sshConfigBegin   = "# >>> jarvis2 deploy keys (jarvis-machine rewrites this block)"
 	sshConfigEnd     = "# <<< jarvis2 deploy keys"
 	aliasPrefix      = "github.com-jarvis2-"
 )

@@ -33,7 +33,7 @@ import (
 	"syscall"
 )
 
-const imageEnvFile = "/opt/jarvis2/image.env" // the image's own ENV, written at build (session-image/Dockerfile)
+const imageEnvFile = "/opt/jarvis/image.env" // the image's own ENV, written at build (session-image/Dockerfile)
 
 // what Fly itself sets in a machine (values only: they never name code)
 var flyEnv = []string{"FLY_MACHINE_ID", "FLY_APP_NAME", "FLY_REGION", "FLY_PRIVATE_IP", "FLY_PUBLIC_IP", "FLY_IMAGE_REF",

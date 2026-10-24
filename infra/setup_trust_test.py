@@ -14,7 +14,7 @@ os.environ["JARVIS2_SETUP_KEY"] = setup_k.private_bytes(serialization.Encoding.P
 pub = lambda k: base64.b64encode(k.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)).decode()
 sig = lambda k, t: base64.b64encode(k.sign(t.encode(), ec.ECDSA(hashes.SHA256()))).decode()
 open(os.path.join(keys, "setup.pub"), "w").write(pub(setup_k))
-os.environ["JARVIS2_KEYS_DIR"] = keys
+os.environ["JARVIS_KEYS_DIR"] = keys
 spec = importlib.util.spec_from_file_location("setup", os.path.join(ROOT, "infra", "setup.py"))
 S = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(S)

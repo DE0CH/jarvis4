@@ -10,7 +10,7 @@ made around it; the app's own list is `app/DECISIONS.md`.
 2. **The router is new code** (~1,200 lines of Go), not Jarvis 1's backend. Not in M1: tasks, schedules,
    wakeups, terminal, transcript search, content stores, repo picker, Discord channels, the Fly budget cap,
    auto-pause on idle.
-3. **The session image is Jarvis 1's image (pinned by digest)** with `jarvis2-machine` in front: keys, wait for
+3. **The session image is Jarvis 1's image (pinned by digest)** with `jarvis-machine` in front: keys, wait for
    `jarvis2-init`, take the core's key from the Fly config, check the cert, restore the snapshot, pull the secrets,
    then Jarvis 1's unchanged entrypoint. One image serves production and the end-to-end test (it names no master
    key).
@@ -104,7 +104,7 @@ made around it; the app's own list is `app/DECISIONS.md`.
 ## Tasks (2026-10-09)
 
 32. **A task's code is fixed by its cert** (building on 29): the instance's line has harness `task:<template>` (the
-    core signs the harness string as it is), and the template is baked into the session image (`/opt/jarvis2/tasks`),
+    core signs the harness string as it is), and the template is baked into the session image (`/opt/jarvis/tasks`),
     whose digest the cert pins. The machine runs that template instead of a harness. So the router can't change what
     runs (cloning templates at run time would have let it, through the unsigned repo list), and a changed template
     reaches an existing task only through `run {upgrade: true}`, which the phone approves.
@@ -299,7 +299,7 @@ shouldnt unlock the whole infra [store] for that one task."
     `store-keys.json` in its data volume, written only by the setup session's signed `POST /setup/store-keys` (every
     `infra/setup.py write` sends it; `infra/store-keys.sh` fills it from the layout file after a new box). A repo store's
     two names follow from the repo. The store list itself stays the core's signed list (passed on as `signed`, and
-    checked by `jarvis2 stores`), and a store whose names were never recorded shows `keys: null`, never a guess.
+    checked by `jarvis stores`), and a store whose names were never recorded shows `keys: null`, never a guess.
     Every session sees every store's names (not only its own), since that is what it needs to pick one to add.
 
 ## Carried secrets, 2026-10-11
@@ -544,9 +544,9 @@ session setting (`Checks.configKeys`) if a session should keep its screen from t
     inert or harmless in a Jarvis 4 machine, so the move is mechanical: `restore-snapshot` (replaced by a no-op in the
     session layer), the kubeconfig the entrypoint writes only when a store carries KUBE_SERVER + KUBE_TOKEN, the
     `jarvis.deyaochen.com` default of `JARVIS_URL` in pull-secrets / content-sync / push-claude-credentials (never used:
-    jarvis2-machine always sets `JARVIS_URL` to its local proxy), `sync-live-transcripts` (runs only when a store carries
+    jarvis-machine always sets `JARVIS_URL` to its local proxy), `sync-live-transcripts` (runs only when a store carries
     STORAGEBOX_*; goes with the transcript-search port), and the entrypoint's handling of SESSION_SECRETS_JSON and
-    CLAUDE_* (jarvis2-machine relies on it). The forks' builds are pinned here by `fork-pin.yml`
+    CLAUDE_* (jarvis-machine relies on it). The forks' builds are pinned here by `fork-pin.yml`
     (entry 156).
 102. **The image checks moved with it**: the build job fails, so nothing pins, when the session image isn't anonymously
     pullable or needs more than 8.0e9 bytes on disk unpacked (Jarvis 1's limit and script, `infra/image-unpacked-size.py`).
@@ -616,7 +616,7 @@ key to decrypt it offline"; the download in the iPhone app, the decryptor a comm
 112. **The iCloud index is identity-level** (Deyao, 2026-10-13: "the index should be guarded by key identity store"). A
     session reaches `/m/api/icloud/*` only while its cert holds the `identity` store (where the iCloud login lives):
     the router checks the session's cert stores (`Session.Stores`, which follow add-store and downgrade) and answers
-    any other session 403 `{error: "… jarvis2-request add-store identity …", needsStore: "identity"}`. Deyao's app
+    any other session 403 `{error: "… jarvis-request add-store identity …", needsStore: "identity"}`. Deyao's app
     keeps `/api/icloud/*`. Transcript search stays open to every running session. On the box the index keeps its own
     SOPS parts (`icloud-index`, `icloud-session`), its pod admits only the router, and its Storage Box copy is
     age-encrypted (`icloud-index.db.gz.age`) to a key whose private half is only in that pod's SOPS part and, for a
@@ -802,7 +802,7 @@ iCloud index and leases (decided while Deyao was away; the safe, reversible defa
      `paraphrase-to-content` and `proton-send` read and write content stores through the local API (`content.py`) and take
      `AES_KEY` from a key store picked in a `optionsFrom: "stores"` field (Jarvis 1's `secretKeys` has no Jarvis 4 form: the
      whole picked store reaches the task, as every store does). `new-session` is not ported: a scheduled new line would
-     need the phone each day; a session proposes one instead (`jarvis2-request new-session`). Jarvis 1's five instances
+     need the phone each day; a session proposes one instead (`jarvis-request new-session`). Jarvis 1's five instances
      and three schedules (all disabled since 2026-10-04) are not recreated: each instance is a new line approved on the
      phone, and no Jarvis 4 store holds the `AES_KEY` they use. Change: Deyao makes them from the Tasks tab when he wants
      them.
@@ -943,7 +943,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
 ## Two add-stores pending for one session, 2026-10-13
 
 157. **An add-store is always answered onto the machine's newest cert** (Deyao, 2026-10-13: "The race shouldn't happen.
-     Fix the root issue."). What happened: a session filed `jarvis2-request add-store identity` and, 20 minutes later,
+     Fix the root issue."). What happened: a session filed `jarvis-request add-store identity` and, 20 minutes later,
      `… yyc`; Deyao approved both close together (the waiters logged "added yyc" 05:29:47, "added identity" 05:29:59
      UTC) and the session ended with identity only. Each challenge is made from the cert the machine has when it is
      filed (`stores = s.Stores + X`), so both continued the same cert. The live core (sha-06ab2452f8ad, from before R1)
@@ -982,7 +982,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
      the respond says "approve it again". That path is dead once the held core goes live; delete it then. A 409 for a
      store the session already holds is the approval done.
      *The machine*: `~/.secrets`, the cert file and the deploy keys are written under one flock
-     (`~/.jarvis2-secrets.lock`); a waiter pulls inside the lock, after the previous write, so it pulls from the router's
+     (`~/.jarvis-secrets.lock`); a waiter pulls inside the lock, after the previous write, so it pulls from the router's
      newest cert at that moment and a slower waiter can't write an older pull over a newer file (machine
      secretslock_test.go). A downgrade holds the same lock and starts again (new key pair) when an add-store made its
      challenge stale. The waiter reads the machine's keys on every poll (a downgrade replaces them).
@@ -1081,7 +1081,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
      *A batch is one message*: its items go together once all are decided, or 30 s after the newest decision (an item
      filed as a duplicate into another batch, or never decided, doesn't hold the rest back).
      *Older images*: a machine that answers "unknown delivery kind" is given up on at once (its outcomes stay
-     listed); `jarvis2-request outcomes` / `wait ID` read the router's record (`GET /m/api/requests/outcomes`), the
+     listed); `jarvis-request outcomes` / `wait ID` read the router's record (`GET /m/api/requests/outcomes`), the
      session's own choice to read, like `lease.py status`.
      *The app's "done"*: `POST /api/requests/:id/done` (Deyao's Access login) is what says an unlock went through, so
      an unlock's "approved" rests on it. A grant or deploy key is told from the signed answer when it is stored, before
@@ -1110,7 +1110,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
      that comes back behind (a resume), the router files an unlock request for each running session holding the store
      (one batch); the phone's unlock for a running machine's cert makes the router send it `refresh-secrets`, and the
      machine pulls the store as it is now. What each key is for is the router's record (`store-docs.json`), required
-     for a new key name, shown in the app, the web page and `jarvis2 stores --keys`, and carried in each key backup.
+     for a new key name, shown in the app, the web page and `jarvis stores --keys`, and carried in each key backup.
      *Security reasoning*:
      - Reading: unchanged. A written value is sealed to P + K; only the phone's share plus the core's key open it, and
        the core gives a value only to a cert the phone approved for that store, from an unlock the phone made or the
@@ -1166,7 +1166,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
      the web, as before: the core's own store (`core`), the deploy-key token's store (`github-deploy-keys`, the router
      refuses it too) and a harness's stores (they come with the harness). The Restore and Jarvis 1 import flows take
      their stores from the record / the import form and never filtered sensitivity; the web page has no add-store (a
-     session asks for one with `jarvis2-request add-store`). The iPhone app needed no change.
+     session asks for one with `jarvis-request add-store`). The iPhone app needed no change.
 
 ## Restoring a store to an earlier version, 2026-10-13
 
@@ -1307,7 +1307,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
 
 ## Downgrade names its mode, 2026-10-15
 
-170. **`jarvis2 downgrade` takes `--keep STORE…`, `--drop STORE…` or `--none`; bare store names are refused**
+170. **`jarvis downgrade` takes `--keep STORE…`, `--drop STORE…` or `--none`; bare store names are refused**
      (Deyao, 2026-10-15). Twice a session meant one of keep/drop and ran the other (the command read its names as
      the keep-set, the claude-env skill's `downgrade.sh` as the drop-set), and the session lost every store it wanted.
      Now the mode is always spelled out, every name must be a store the session's newest cert holds (a typo or a
@@ -1556,7 +1556,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      ("then adds the store to session …"), checks the challenge is exactly that store for that session, and signs it
      under the same Face ID. Other asking sessions' add-stores wait in the Inbox on their own; a session that isn't
      running gets none. The add-store's origin is the request's caller and call without its signed filing (the session
-     hears the repo's outcome; `jarvis2-request add-repo` starts the store's waiter). An app from before this signs the
+     hears the repo's outcome; `jarvis-request add-repo` starts the store's waiter). An app from before this signs the
      add-store as a second item, as before.
 183. **An API call can be an item of a batch** (`{"intent": "call", "method", "path", "body" | "bodyText"}`), from a
      session's requests or its actions only, checked exactly as a single call request (callRules) before anything is
@@ -1595,7 +1595,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      RUNBOOK "The Claude accounts"): one login hub per account, its pair on the router's volume
      (`claude-accounts/<store>.json`), each refreshed by the router alone with the same refresh protocol (115-118), its
      participants the machines of its own sessions. `Session.ClaudeAccount` is set when the session is made (New session
-     in the app and web page, `jarvis2-request new-session --account`, a prompt task's instance, a restore: the account
+     in the app and web page, `jarvis-request new-session --account`, a prompt task's instance, a restore: the account
      it ran on, a Jarvis 1 import) — named, else the default one Deyao sets — and a resume keeps it; a running session
      never switches. Harnesses that need one say so in the policy (`claudeAccount`: claude, openclaw). Settings → Claude
      accounts (web and iPhone): each account's login state and usage, Refresh token, Re-login (must be the same Claude
@@ -1666,7 +1666,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      the list never names them (seen with a logging hook on 2.1.300), so they come from SubagentStart/SubagentStop, and a
      turn's Stop clears any left. *A stopping subagent's own list entry is dropped* (the list still has it as running).
      The harness's internal agents (empty `agent_type`: prompt suggestions, `/btw`) are not counted. *Installed by the
-     machine at boot* (`jarvis2-machine workers-hook` in `~/.claude/settings.json`, next to whatever else is there), only
+     machine at boot* (`jarvis-machine workers-hook` in `~/.claude/settings.json`, next to whatever else is there), only
      for the claude harness; the counts live in `~/.claude/jarvis2-workers/<conversation>.json` (ids and types, never a
      command or a description; not in the snapshot; emptied on each boot and on SessionStart startup/resume) and travel
      in the status report (section `__WORKERS__`), not a new endpoint. The router keeps the host conversation's in its
@@ -1766,17 +1766,17 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
 192. **The supervisor: its build choices (Deyao's design, 2026-10-16; DESIGN "The supervisor and the guard").** Deyao
      decided the shape (one long-running process with the guard as one component, OOM-protected and restarted, its log
      and the lifecycle log in the app, secrets in RAM only); Claude chose how:
-     - **Keeper and worker.** `jarvis2-machine supervisor` is a tiny keeper that only sets `oom_score_adj` -1000 (sudo
+     - **Keeper and worker.** `jarvis-machine supervisor` is a tiny keeper that only sets `oom_score_adj` -1000 (sudo
        `tee`) and restarts `supervisor --worker` (backoff 1 s → 30 s). The worker inherits the score; what it starts for
-       the session goes through `jarvis2-machine unprotected` (raises itself back to 0: no privilege needed). The
+       the session goes through `jarvis-machine unprotected` (raises itself back to 0: no privilege needed). The
        freeze's `kill(-1, SIGSTOP)` stops the keeper too, so the worker SIGCONTs it at once. *Not chosen*: restarting
        the supervisor from the harness launcher (the harness isn't protected, so it could die first).
      - **Pause and resume of the Claude process** stop the launcher, every tmux pane's process and all their children,
        parents first (so the launcher's watchdog can't relaunch a stopped host), and resume children first. The router
        sends them as one-word commands (`POST /api/sessions/:id/harness`); no app button.
      - **The worker count** moved into the supervisor: the hook sends a boiled-down event (ids, types, the event name)
-       over `/run/jarvis2/workers.sock` and exits 0 whatever happens; the count lives in the supervisor (and
-       `/run/jarvis2/workers.json` for a worker restart). The status report's `__WORKERS__` section is unchanged for
+       over `/run/jarvis/workers.sock` and exits 0 whatever happens; the count lives in the supervisor (and
+       `/run/jarvis/workers.json` for a worker restart). The status report's `__WORKERS__` section is unchanged for
        the router.
      - **Secrets in RAM.** The supervisor alone pulls; boot and the CLI (`await-store`, `downgrade`) ask it to over its
        socket (`pull`, `reload`). A worker restart keeps the values through a **memfd the keeper holds** (fd 3), since a
@@ -1923,7 +1923,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
        prints usage without asking on anything malformed; no mode prints a value.
      - **Boot keeps one hand-over of every value, `boot-env`**, because the harness's env carries the session's keys
        (`$VAR` in the agent's commands). The supervisor answers it only to the boot process (the pid in `harness.pid`,
-       which boot writes before starting the supervisor) and only before `/run/jarvis2/booted` exists, so no process
+       which boot writes before starting the supervisor) and only before `/run/jarvis/booted` exists, so no process
        of the agent can use it. The agent runs as the same user, so this is a line the log shows, not a wall: the
        aim is that every request names what it takes.
      - **Not chosen:** refusing a `get` that names every held key. It makes a script that needs many keys (`infra/
@@ -1957,7 +1957,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      current sessions.").** A session with fewer secrets could SendMessage one with more (infra, bypass) and get it to
      act. Now every session's managed settings refuse Claude Code's cross-session messages (`crossSessionInbound:
      "refuse"`, which refuses on every ingress: Remote Control and the peer socket alike), sessions use
-     `jarvis2-message` (`POST /m/api/requests/peer`), and the router delivers equal and downward messages at once and
+     `jarvis-message` (`POST /m/api/requests/peer`), and the router delivers equal and downward messages at once and
      puts upward ones in the Inbox for one tap. The receiving machine re-checks the direction against its cert and
      wraps the text with the verified sender, both sides' stores and modes and the direction.
      - **Jarvis's own messages move to an MCP channel** (`jarvis-channel`): "refuse" also refuses the peer socket
@@ -2120,7 +2120,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      whole-store guard (the 2026-10-13 footgun: a whole-store write of 2 keys wiped 24 — impossible now that no write
      touches another key), `POST /setup/store-keys` and the key names it recorded (`store-keys.json`, which may linger
      on the data volume, unread), the repo stores' derived names, and the deploy-key `blob` relay. Store key names come
-     only from the core's signed list (`keysFrom` is always `core`); the machine's `jarvis2 stores` checks every store's
+     only from the core's signed list (`keysFrom` is always `core`); the machine's `jarvis stores` checks every store's
      names against it and the web page no longer shows a "recorded" or "key names not known" state.
      - **The iOS app, e2e and the web page follow (2026-10-20):** their branches for a core from before keys are cut
        the same way (CoreCrypto, RouterClient, SetupView, CoreSetup, the stores pages, interop; e2e's plaintext and blobs
@@ -2311,7 +2311,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
 
 ## The supervisor is Fly's main child, 2026-10-21
 
-218. **The keeper (`jarvis2-machine boot`, root) is Fly's main child for the machine's whole life; the harness is its
+218. **The keeper (`jarvis-machine boot`, root) is Fly's main child for the machine's whole life; the harness is its
      child, as user claude, started again whenever it ends; a stop signal is a teardown that uploads the most important
      first** (Deyao, 2026-10-21: "The supervisor should be the main child. Nothing should be able to kill the
      supervisor other than a sigterm or sigkill from something with higher privilege." and "sigterm sigint etc should
@@ -2324,27 +2324,27 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      its own session) died with it, so the Upgrade's final snapshot failed. Boot used to start the supervisor and then
      exec into the entrypoint, which exec'd the launcher. Now (`machine/keeper.go`, DESIGN "The supervisor and the
      guard", The keeper):
-     - The image's USER is root for the entry point only. The keeper starts the boot steps (`jarvis2-machine prepare`,
+     - The image's USER is root for the entry point only. The keeper starts the boot steps (`jarvis-machine prepare`,
        claude), the worker (root) and the harness (claude), each with setsid, never in the keeper's process group.
      - *How the worker keeps claude's files*: root's uid with claude's fsuid/fsgid and groups (every thread,
-       `AllThreadsSyscall`; the image builds with CGO off). Its files, sockets, `~`, `/data` and `/run/jarvis2` stay
+       `AllThreadsSyscall`; the image builds with CGO off). Its files, sockets, `~`, `/data` and `/run/jarvis` stay
        exactly as before, while kill(2) from claude fails (the target's real and saved uid are 0) and its `/proc` files
-       are root's. Every command it runs for the session goes through `jarvis2-machine unprotected`, which as root
+       are root's. Every command it runs for the session goes through `jarvis-machine unprotected`, which as root
        sets the default OOM score (and so the floor: the session can't take -1000 back), drops to claude's uid, gid and
        groups for good, then execs (`sessionCommand`; a test fails on a new direct `exec.Command`). The freeze's
        `kill(-1)` runs as claude through it (as root it would stop every process on the machine).
        *Not chosen*: a dedicated uid (it couldn't write claude's files without chowning everything it writes, restore
        and the volume included); ruid root with euid claude (bash resets its euid to the real uid, so every shell the
        supervisor starts would be root); a root keeper with a claude worker (the session could still kill the worker:
-       `pkill -f jarvis2-machine` would cut a snapshot off).
+       `pkill -f jarvis-machine` would cut a snapshot off).
      - *The secrets*: `boot-env` goes to the keeper (uid 0 and the worker's parent) at each start of the harness, and to
-       the boot steps (named in the keeper's root-owned `/run/jarvis2-keeper/harness.pid`) before booted; the harness's
+       the boot steps (named in the keeper's root-owned `/run/jarvis-keeper/harness.pid`) before booted; the harness's
        env without values comes from the boot steps over a pipe. A restarted harness gets what the supervisor holds then
        (a downgrade sticks), never more than a reboot's resume would. The sockets serve claude and root
        (`sessionPeer`), as before.
      - *Restarting the harness* (Claude's guesses, reversible): backoff 1 s doubling to 1 min, back to 1 s after 10 min
        up; what is left of the dead launcher's process group (its loops: api-proxy, inbox, tunnel) is ended first
-       (SIGTERM, SIGKILL after 5 s), since the next launcher starts its own; `JARVIS2_HARNESS_START=n` makes the
+       (SIGTERM, SIGKILL after 5 s), since the next launcher starts its own; `JARVIS_HARNESS_START=n` makes the
        entrypoint skip the Claude login and account (the supervisor keeps them current; the boot-time account would
        undo a switch), the content stores (`rm -rf ~/content` would lose unpushed changes) and the on-start hooks
        (still running); `harness-claude.sh` keeps a Claude host still running in tmux (its turn goes on) and starts
@@ -2375,7 +2375,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      `oom_score_adj` and reading the worker's environ all fail; the user's SIGTERM to the launcher and its `kill -TERM
      -1` leave the keeper up and the harness started again; the teardown ends the user's processes. The built binary
      as root in a private mount and pid namespace on a session machine (a stand-in router): the process tree (keeper
-     root, worker root with fsuid/fsgid 1001, boot steps claude), `/run/jarvis2` all claude's, `session-secret` and
+     root, worker root with fsuid/fsgid 1001, boot steps claude), `/run/jarvis` all claude's, `session-secret` and
      `pull-secrets` reach the root worker, every kill from claude refused, SIGINT → teardown → exit. The e2e
      (`e2e/keeper.go`) checks the same on a real Fly machine, then a SIGTERM to the main child → the transcript tail
      and the committed snapshot at the router, the session paused and resumed from it.
@@ -2386,7 +2386,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      option for starting a session"). Neither app has a permission-mode picker on New session any more; the iPhone page
      shows "bypass" as a fixed row, and Start still checks that the signed challenge names it (the mode stays signed,
      DECISIONS 30). The router's `CreateSession` takes `permissionMode` "bypass" or none and refuses any other value
-     (400), so every path that starts a line does the same: a session's `jarvis2-request new-session`, the web page, a
+     (400), so every path that starts a line does the same: a session's `jarvis-request new-session`, the web page, a
      task instance, a Jarvis 1 import, and a restore of a destroyed session (whatever mode the archived one ran in). A
      clean cut: no fallback to auto. Switching a RUNNING or paused session's mode (`POST /api/sessions/:id/permission-mode`,
      the `terminal` grant for raising it to bypass) is unchanged, so a session can still be lowered to auto; existing
@@ -2544,7 +2544,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      a "Machine lost" operation, Deyao a DM. Resume of a kernel line goes through the kernel: the spawner kills the
      machine into a fresh source naming the newest signed snapshot and a new machine starts from it (or Resume refuses
      with `noSnapshot`). The stopped machine is never started again in place: its key pair lives in its memory only
-     (`/run/jarvis2` is a tmpfs the keeper mounts at boot; the pair is never written to a disk, the volume or a
+     (`/run/jarvis` is a tmpfs the keeper mounts at boot; the pair is never written to a disk, the volume or a
      snapshot), so a Fly machine started again has no keys its cert names and can't prove it is that machine. Why
      memory only (Deyao, 2026-10-23): a key pair on the volume outlives the machine's run and can be read by anyone
      with the volume, and the work kept by an in-place start doesn't justify that; the snapshot is the one thing a

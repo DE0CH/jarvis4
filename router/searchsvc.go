@@ -63,7 +63,7 @@ func (r *Router) registerSearchServices(app appRoute, m machineRoute) {
 				return
 			}
 			if rt.svc == "icloud" && !slices.Contains(stores, icloudStore) {
-				writeJSON(w, 403, map[string]any{"error": "the iCloud index needs the " + icloudStore + " store in this session: jarvis2-request add-store " + icloudStore + ` --why "…"`, "needsStore": icloudStore})
+				writeJSON(w, 403, map[string]any{"error": "the iCloud index needs the " + icloudStore + " store in this session: jarvis-request add-store " + icloudStore + ` --why "…"`, "needsStore": icloudStore})
 				return
 			}
 			forwardService(w, req, rt, body)

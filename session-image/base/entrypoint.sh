@@ -17,11 +17,11 @@
 #   SESSION_ONE_SHOT        "1" = one-shot: claude exits once SESSION_PROMPT is done and Jarvis
 #                           archives + destroys the machine (see one_shot_watch in harness-claude.sh)
 #   SESSION_MODEL           model id (default claude-opus-5-5, see harness-claude.sh)
-#   JARVIS2_HARNESS_START   which start of the harness this is on this machine (1, 2, …): the keeper starts it again
+#   JARVIS_HARNESS_START   which start of the harness this is on this machine (1, 2, …): the keeper starts it again
 #                           whenever it ends; a restart (> 1) skips the one-time steps below (the Claude login and
 #                           account, which the supervisor keeps current; the content stores, which may hold unpushed
 #                           changes; the on-start hooks, still running)
-# Fly itself sets FLY_MACHINE_ID. jarvis2-machine runs first (machine/main.go): it restores the predecessor's signed
+# Fly itself sets FLY_MACHINE_ID. jarvis-machine runs first (machine/main.go): it restores the predecessor's signed
 # snapshot (transcripts placed under the project, ~/.claude.json, ~/workspace, ~/artifacts), has the supervisor pull
 # the secrets and builds the env; then the keeper (machine/keeper.go, root, Fly's main child) starts this script as
 # user claude, in its own session; harness-claude.sh then `claude --resume`s the newest transcript.
@@ -30,11 +30,11 @@ HOME=/home/claude; cd "$HOME"
 # ~/artifacts: anything the session puts (or symlinks) here is archived to the Storage Box by
 # Jarvis when the session is destroyed (alongside the transcripts) — see CLAUDE.md.
 mkdir -p "$HOME/.claude" "$HOME/workspace" "$HOME/artifacts"
-RESTART=0; [ "${JARVIS2_HARNESS_START:-1}" -gt 1 ] 2>/dev/null && RESTART=1
-[ "$RESTART" = 1 ] && echo "[entrypoint] harness start ${JARVIS2_HARNESS_START} on this machine: the one-time steps are skipped"
+RESTART=0; [ "${JARVIS_HARNESS_START:-1}" -gt 1 ] 2>/dev/null && RESTART=1
+[ "$RESTART" = 1 ] && echo "[entrypoint] harness start ${JARVIS_HARNESS_START} on this machine: the one-time steps are skipped"
 
 # --- environment secrets ---------------------------------------------------
-# The secrets are already in this process's env (RAM only): jarvis2-machine boot took them from the supervisor,
+# The secrets are already in this process's env (RAM only): jarvis-machine boot took them from the supervisor,
 # which holds them and later serves a command the keys it names (`session-secret --keys …`; `pull-secrets` has it
 # pull from the core again, handing out nothing). Nothing writes them to disk.
 

@@ -419,7 +419,7 @@ func (h *heldSecrets) reloadKernel(c *client, drop, lockHeld bool) (int, error) 
 	return n, err
 }
 
-// downgradeKernel: `jarvis2 downgrade` on a kernel machine: the router has the identity signer narrow this machine's
+// downgradeKernel: `jarvis downgrade` on a kernel machine: the router has the identity signer narrow this machine's
 // grant to the stores kept (a cert (M, M, P), notarized, the grant moved along it) and the supervisor pulls with the
 // narrower grant, holding only those stores' keys from then on (no key rotation: secrets serves a pull only to the
 // stores the grant names)

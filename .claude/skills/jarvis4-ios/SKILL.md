@@ -1,9 +1,9 @@
 ---
-name: jarvis2-ios
+name: jarvis4-ios
 description: Work on the Jarvis 4 iPhone/iPad app, the native SwiftUI app in ios/ (bundle dev.de0ch.jarvis4, TestFlight "Jarvis 4"). How it is laid out, the security rules every review page must keep, how to build and test it with no Mac (GitHub macOS runners), the walkthrough, transitions and phone-replica tests, and shipping to TestFlight. Use when a task touches ios/, the app's Face ID review pages, its CI (ios.yml, transitions.yml) or a TestFlight build. Follow the swiftui-pro and swift-concurrency-pro skills for code style.
 ---
 
-# jarvis2-ios
+# jarvis4-ios
 
 One native SwiftUI app for iPhone and iPad (Deyao, 2026-10-11). It uses Apple frameworks and our Swift only: no
 packages, no pods, no React Native. The web page is a separate Expo app in `app/`. Decisions: `app/DECISIONS.md`.

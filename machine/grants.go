@@ -5,7 +5,7 @@ package main
 //   - a phone grant: the phone's signature over {kind "grant", holder, session, scope "shell", expires}, at most
 //     10 minutes long. The phone's key comes from this machine's core-signed cert.
 //   - a standing rule: the phone's signature over {kind "rule", holder, session, scope "shell", until}.
-//   - this session's own allow list (~/.jarvis2-allow.json, written by `jarvis2-machine allow`): the machine
+//   - this session's own allow list (~/.jarvis2-allow.json, written by `jarvis-machine allow`): the machine
 //     approving for itself. It travels in the snapshot, so it survives a pause.
 // A session holding a sensitive store accepts only a phone grant. The core takes no part.
 
@@ -150,7 +150,7 @@ func runExec(c *client, e Exec) {
 	}
 }
 
-// allowCmd: `jarvis2-machine allow <holder name> <duration>` (e.g. archive 720h) or `allow --remove <name>`;
+// allowCmd: `jarvis-machine allow <holder name> <duration>` (e.g. archive 720h) or `allow --remove <name>`;
 // the holder's key comes from the router's list of feature keys
 func allowCmd(args []string) error {
 	home, _ := os.UserHomeDir()
@@ -171,7 +171,7 @@ func allowCmd(args []string) error {
 		return nil
 	}
 	if len(args) != 2 {
-		return errors.New("usage: jarvis2-machine allow [<holder> <duration> | --remove <holder>]")
+		return errors.New("usage: jarvis-machine allow [<holder> <duration> | --remove <holder>]")
 	}
 	d, err := time.ParseDuration(args[1])
 	if err != nil {

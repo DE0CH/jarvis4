@@ -40,7 +40,7 @@ func blackholeMachines() {
 	for _, h := range jarvis1Hosts {
 		line += "0.0.0.0 " + h + "\n:: " + h + "\n" // both families: a v6 lookup must not fall through to DNS
 	}
-	cmd := fmt.Sprintf("grep -q '%s' /etc/hosts || printf '%%s' '%s' >> /etc/hosts; test -e /run/jarvis2/booted && echo after || echo before", jarvis1Hosts[0], line)
+	cmd := fmt.Sprintf("grep -q '%s' /etc/hosts || printf '%%s' '%s' >> /etc/hosts; test -e /run/jarvis/booted && echo after || echo before", jarvis1Hosts[0], line)
 	for {
 		req, _ := http.NewRequest("GET", "https://api.machines.dev/v1/apps/jarvis4-sessions/machines", nil)
 		req.Header.Set("Authorization", "Bearer "+os.Getenv("E2E_FLY_TOKEN"))
@@ -318,7 +318,7 @@ func servicesStep(id, m, secret string) {
 	}
 	// content: the session pulled the store at boot (SESSION_CONTENT); a push from the session reaches the store
 	expectOnMachine(m, "cat /home/claude/content/e2e-content/hello.txt", "content-"+secret)
-	// (the harness's env, as jarvis2-machine sets it: a Fly exec's shell has none of it)
+	// (the harness's env, as jarvis-machine sets it: a Fly exec's shell has none of it)
 	env := "SESSION_CONTENT=e2e-content JARVIS_URL=http://127.0.0.1:7171 SESSION_API_TOKEN=jarvis2-local-proxy SESSION_ID=" + id
 	expectOnMachine(m, "su - claude -c 'echo back-"+secret+" > ~/content/e2e-content/back.txt && "+env+" content-sync push e2e-content 2>&1 | tail -1'", "e2e-content: pushed 1 new, 0 changed, 0 deleted")
 	s, b := callRaw("GET", "/api/content/e2e-content/file?path=back.txt", nil)

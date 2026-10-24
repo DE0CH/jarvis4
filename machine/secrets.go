@@ -11,7 +11,7 @@ package main
 //     for the cert's stores.
 //   - RAM only: the values live in the worker's memory and in a memfd the keeper holds (secretsFD), so a restarted
 //     worker has them again without a new pull (the core may have locked the stores again since). A memfd is anonymous
-//     memory, not a file on any filesystem; nothing is written to ~/.secrets, /run/jarvis2 or the snapshot.
+//     memory, not a file on any filesystem; nothing is written to ~/.secrets, /run/jarvis or the snapshot.
 //   - Serving: the unix socket secretsSock (0600, user claude; root may connect too): one JSON request per
 //     connection, {"op": "names" | "get" (with "keys") | "pull" | "reload" | "boot-env"}. A process gets values only
 //     with "get", naming each key it needs: there is no request for all keys (answerSecrets). Asking never pulls;
@@ -46,7 +46,7 @@ import (
 
 var (
 	secretsSock  = dir + "/secrets.sock"
-	secretsFDEnv = "JARVIS2_SECRETS_FD" // the worker's fd of the keeper's memfd
+	secretsFDEnv = "JARVIS_SECRETS_FD" // the worker's fd of the keeper's memfd
 )
 
 const sysMemfdCreate = 319 // linux/amd64
@@ -64,12 +64,12 @@ var held = &heldSecrets{vals: map[string]string{}}
 
 // newMemfd: an anonymous RAM file (the keeper's, handed to every worker)
 func newMemfd() (*os.File, error) {
-	name := []byte("jarvis2-secrets\x00")
+	name := []byte("jarvis-secrets\x00")
 	fd, _, errno := syscall.Syscall(sysMemfdCreate, uintptr(unsafe.Pointer(&name[0])), 0, 0)
 	if errno != 0 {
 		return nil, errno
 	}
-	return os.NewFile(fd, "memfd:jarvis2-secrets"), nil
+	return os.NewFile(fd, "memfd:jarvis-secrets"), nil
 }
 
 // loadHeld: the worker's start: the values the memfd holds (from an earlier worker), if any
@@ -79,7 +79,7 @@ func (h *heldSecrets) loadHeld() {
 	if err != nil || fd < 3 {
 		return
 	}
-	h.mem = os.NewFile(uintptr(fd), "memfd:jarvis2-secrets")
+	h.mem = os.NewFile(uintptr(fd), "memfd:jarvis-secrets")
 	b, err := io.ReadAll(io.NewSectionReader(h.mem, 0, 64<<20))
 	if err != nil || len(b) == 0 {
 		return
@@ -342,7 +342,7 @@ func answerGet(keys []string, caller string) secretsResp {
 	names := strings.Join(clipNames(keys), " ")
 	if len(missing) > 0 {
 		log.Printf("secrets: refused get %s for %s%s", names, caller, missingText(missing))
-		return secretsResp{Error: "not held in this session: " + strings.Join(missing, ", ") + " (session-secret --names lists what it holds; `jarvis2 stores` shows which store has a key)"}
+		return secretsResp{Error: "not held in this session: " + strings.Join(missing, ", ") + " (session-secret --names lists what it holds; `jarvis stores` shows which store has a key)"}
 	}
 	log.Printf("secrets: get %s for %s", names, caller)
 	return secretsResp{OK: true, Secrets: out}
@@ -407,10 +407,10 @@ func peerOf(conn net.Conn) (int, int, string) {
 	}
 	comm, _ := os.ReadFile(filepath.Join(procRoot, strconv.Itoa(int(cred.Pid)), "comm"))
 	name := strings.TrimSpace(string(comm))
-	if name == "exe" { // jarvis2-machine started as /proc/self/exe: its subcommand says more
+	if name == "exe" { // jarvis-machine started as /proc/self/exe: its subcommand says more
 		if cl, err := os.ReadFile(filepath.Join(procRoot, strconv.Itoa(int(cred.Pid)), "cmdline")); err == nil {
 			if f := strings.Split(string(cl), "\x00"); len(f) > 1 {
-				name = "jarvis2-machine " + clip(f[1], 20)
+				name = "jarvis-machine " + clip(f[1], 20)
 			}
 		}
 	}

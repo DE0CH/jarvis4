@@ -75,7 +75,7 @@ func codeSessionsGet(url, tok string, out any) (int, error) {
 	req.Header.Set("anthropic-version", "2023-06-01")
 	req.Header.Set("anthropic-beta", "ccr-byoc-2025-07-29,oauth-2025-04-20")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "jarvis2-machine/1")
+	req.Header.Set("User-Agent", "jarvis-machine/1")
 	resp, err := appHTTP.Do(req)
 	if err != nil {
 		return 0, err

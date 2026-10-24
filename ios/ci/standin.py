@@ -50,7 +50,7 @@ def keys(d):
 
 def load_setup(d):
     """infra/setup.py itself, its keys/ being the stand-ins"""
-    os.environ["JARVIS2_KEYS_DIR"] = os.path.join(d, "keys")
+    os.environ["JARVIS_KEYS_DIR"] = os.path.join(d, "keys")
     spec = importlib.util.spec_from_file_location("setup", os.path.join(ROOT, "infra", "setup.py"))
     setup = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(setup)

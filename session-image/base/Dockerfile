@@ -1,5 +1,5 @@
 # Jarvis 4 session image, base layer: the tools, harnesses, entrypoint and harness launchers every session machine runs.
-# session-image/Dockerfile puts Jarvis 4's machine side (jarvis2-machine) on top of it, FROM this image pinned by digest.
+# session-image/Dockerfile puts Jarvis 4's machine side (jarvis-machine) on top of it, FROM this image pinned by digest.
 # Built by .github/workflows/images.yml (job `base`) only when session-image/base/ changes, pushed to the public
 # package ghcr.io/de0ch/jarvis4-session as tag base-sha-<commit>; the pin job moves session-image/Dockerfile's BASE.
 # Size: Fly refuses an image that needs more than 8 GiB ON DISK once unpacked (block-rounded, not tar bytes; the

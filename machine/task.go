@@ -1,7 +1,7 @@
 package main
 
 // Task lines (router/tasks.go, DECISIONS 32-37): a machine whose signed harness is "task:<template>" runs that
-// template from the image (/opt/jarvis2/tasks/<template>, fixed by the cert's image digest) instead of a harness,
+// template from the image (/opt/jarvis/tasks/<template>, fixed by the cert's image digest) instead of a harness,
 // reports the result to /m/task-result, and waits to be paused. No AI is in the loop unless the template is a
 // prompt (claude -p). No shell grant is involved, so a line holding a sensitive store runs unattended too.
 //
@@ -35,7 +35,7 @@ const (
 )
 
 var (
-	tasksRoot      = "/opt/jarvis2/tasks" // baked into the session image (session-image/Dockerfile)
+	tasksRoot      = "/opt/jarvis/tasks" // baked into the session image (session-image/Dockerfile)
 	taskTemplateRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
 	envNameRE      = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	taskReportWait = 10 * time.Second

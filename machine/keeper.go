@@ -1,6 +1,6 @@
 package main
 
-// The keeper (docs/DESIGN.md "The keeper"; DECISIONS 2026-10-21): `jarvis2-machine boot`, the image's ENTRYPOINT, run
+// The keeper (docs/DESIGN.md "The keeper"; DECISIONS 2026-10-21): `jarvis-machine boot`, the image's ENTRYPOINT, run
 // as root. It is Fly's main child for the machine's whole life: Fly ends the machine when its main child ends, so
 // nothing but the keeper's own exit can end it, and only root can signal it (Deyao, 2026-10-21: "The supervisor
 // should be the main child. Nothing should be able to kill the supervisor other than a sigterm or sigkill from
@@ -18,18 +18,18 @@ package main
 //	→ harness-*.sh)                                                conversation resumed
 //
 // The split by uid: user claude (the session, with its sudo) can't signal a root process (kill(2) needs the sender's
-// uid to match the target's real or saved uid), so `kill PID`, `pkill -f jarvis2-machine`, `kill -TERM -1` and a
+// uid to match the target's real or saved uid), so `kill PID`, `pkill -f jarvis-machine`, `kill -TERM -1` and a
 // process-group kill from the session all fail with EPERM on the keeper and the worker; root through sudo can (higher
 // privilege: accepted). Root processes' /proc files (environ, mem, oom_score_adj) are root's too, and both are
 // marked not dumpable, so the session can't read the supervisor's memory or change its OOM score. The worker keeps
 // root's uid but takes user claude's file identity (setfsuid/setfsgid and claude's groups), so every file it reads or
-// writes under ~ and /data, its sockets and /run/jarvis2 are exactly as before (owned by claude); every command it
-// runs for the session goes through `jarvis2-machine unprotected`, which drops to user claude for good (uid, gid,
+// writes under ~ and /data, its sockets and /run/jarvis are exactly as before (owned by claude); every command it
+// runs for the session goes through `jarvis-machine unprotected`, which drops to user claude for good (uid, gid,
 // groups) and back to the default OOM score (sessionCommand).
 //
 // A dead harness never ends the machine: the keeper logs how it ended (exit code or signal) and its uptime, kills
 // what is left of its process group, and starts it again after the backoff with the secrets the supervisor holds
-// now (never more than it holds: a downgrade sticks) and JARVIS2_HARNESS_START=n, so the entrypoint skips its
+// now (never more than it holds: a downgrade sticks) and JARVIS_HARNESS_START=n, so the entrypoint skips its
 // one-time steps and harness-claude.sh adopts a Claude host still running in tmux (else resumes the newest
 // conversation, as a reboot's resume would). Each start and end is in the supervisor log, and the status report
 // carries the count (__HARNESS__, router/registry.go). No restart once the session is stopped for its final
@@ -60,7 +60,7 @@ import (
 )
 
 var (
-	keeperDir        = "/run/jarvis2-keeper"       // root's (0755): what only the keeper writes
+	keeperDir        = "/run/jarvis-keeper"       // root's (0755): what only the keeper writes
 	harnessPIDPath   = keeperDir + "/harness.pid"  // the boot steps' pid, then the harness launcher's (each start)
 	harnessStatePath = keeperDir + "/harness.json" // the harness's starts and last end (the status report)
 	sessionUser      = "claude"
@@ -121,7 +121,7 @@ func sessionPeer(uid int) bool { return uid == 0 || uid == session().uid || uid 
 // privileged: this process runs as root (the keeper and the worker on the image)
 var privileged = func() bool { return os.Geteuid() == 0 }
 
-// sessionCommand: a command the supervisor runs for the session. As root it goes through `jarvis2-machine
+// sessionCommand: a command the supervisor runs for the session. As root it goes through `jarvis-machine
 // unprotected`, which takes user claude's identity for good and the default OOM score, then execs it; otherwise (a
 // CLI command, the tests) it runs as it is. ctx may be nil.
 var sessionCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
@@ -165,7 +165,7 @@ func unprotected(args []string) error {
 		args = args[1:]
 	}
 	if len(args) == 0 {
-		return errors.New("usage: jarvis2-machine unprotected [--rescue] -- <command> [args…]")
+		return errors.New("usage: jarvis-machine unprotected [--rescue] -- <command> [args…]")
 	}
 	os.WriteFile("/proc/self/oom_score_adj", []byte("0\n"), 0o644)
 	if privileged() {
@@ -227,11 +227,11 @@ func notDumpable() {
 	syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 0, 0)
 }
 
-// signalSessionCmd: `jarvis2-machine signal-session SIG`: kill(-1, SIG) as user claude, i.e. to every process of the
+// signalSessionCmd: `jarvis-machine signal-session SIG`: kill(-1, SIG) as user claude, i.e. to every process of the
 // session but this one; never to root's (the keeper, the worker, Fly's)
 func signalSessionCmd(args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: jarvis2-machine signal-session STOP|CONT|TERM|KILL")
+		return errors.New("usage: jarvis-machine signal-session STOP|CONT|TERM|KILL")
 	}
 	sig, ok := map[string]syscall.Signal{"STOP": syscall.SIGSTOP, "CONT": syscall.SIGCONT, "TERM": syscall.SIGTERM, "KILL": syscall.SIGKILL}[args[0]]
 	if !ok {
@@ -338,8 +338,8 @@ func newKeeper() *keeperT {
 	return k
 }
 
-// keeperDirs: /run/jarvis2 (user claude's, as before) and the keeper's own /run/jarvis2-keeper (root's). On a Fly
-// machine /run/jarvis2 is a tmpfs of its own: the machine's key pair (private.json) lives there, in memory only, never
+// keeperDirs: /run/jarvis (user claude's, as before) and the keeper's own /run/jarvis-keeper (root's). On a Fly
+// machine /run/jarvis is a tmpfs of its own: the machine's key pair (private.json) lives there, in memory only, never
 // on a disk (Fly's root overlay is on one) or the volume (DECISIONS 228).
 func keeperDirs() error {
 	s := session()
@@ -514,7 +514,7 @@ func (k *keeperT) harnessLoop(spec harnessSpec) {
 			log.Printf("the session is stopped for its final snapshot: the harness isn't started again")
 			return
 		}
-		env := append(spec.env(k.secretsFn()), "JARVIS2_HARNESS_START="+strconv.Itoa(n))
+		env := append(spec.env(k.secretsFn()), "JARVIS_HARNESS_START="+strconv.Itoa(n))
 		cmd := sessionCommand(nil, baseEntry)
 		cmd.Env = env
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr

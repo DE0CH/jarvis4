@@ -42,7 +42,7 @@ changes nobody can see — no single compromised component is enough.
 - **iPhone:** the highest privilege: approves any challenge after Deyao's click on a hardened path; sets the core
   up (Reset or Recover).
 - **Session machine (Fly):** its image generates at boot an **encryption key pair** and a **signing key pair**;
-  private halves never leave the machine and live in its memory only (`/run/jarvis2` is a tmpfs; never on a disk, its
+  private halves never leave the machine and live in its memory only (`/run/jarvis` is a tmpfs; never on a disk, its
   volume or a snapshot), so they end with the machine's run. It trusts the core that created it: the core puts its signing key in
   the machine's Fly config.
 - **Box key:** made by the trusted setup session when it creates the box and delivered in Hetzner user-data
@@ -142,7 +142,7 @@ key's names as associated data (`store + "\n" + key`), and that data key is wrap
 (the core signs it for the claimed phone: `store_key`). Anyone can seal to it; only the phone and the core together
 open a key. Writing a key (`write_key`) replaces that one key; the store's other keys are never read, sent or changed.
 
-**Who writes.** Any running session (its machine key: `jarvis2 put-key STORE KEY < value`, `jarvis2 delete-key`), with
+**Who writes.** Any running session (its machine key: `jarvis put-key STORE KEY < value`, `jarvis delete-key`), with
 no approval (Deyao, 2026-10-13: "writing a key is perfectly safe (has backup, so can't overwrite, and also can't
 read)"), and the setup session (`infra/setup.py write`). The writer takes the store key and the master public key from
 the core's signed identity and store key (a machine checks them against its core key), seals the value to the store
@@ -172,7 +172,7 @@ again (`refresh-secrets`) and its supervisor holds the store as it is now (RAM o
 
 **What each key is for** is the router's own record (`store-docs.json`, not a secret and in no trust decision): a new
 key name needs its explanation when it is written, the setup session and Deyao (app, web) can edit them, and every
-key's backup carries it. The app, the web page, `jarvis2 stores --keys` and the setup session list them with each
+key's backup carries it. The app, the web page, `jarvis stores --keys` and the setup session list them with each
 key's name and writer (`GET /api/stores`).
 
 Sensitivity markers (`sensitive/<name>.json`, signed by the setup key) and older whole-store backups
@@ -222,7 +222,7 @@ The master-key-sealed bucket backups stay the disaster path (Recover), untouched
   No phone signature or share: nothing is opened, and writing is the router's to protect.
 
 The plaintext a restore touches exists only inside the core, for the length of the finish call (like a deploy key's
-token). A write never silently drops keys: every write is one key (`jarvis2 put-key`, `infra/setup.py write`), and the
+token). A write never silently drops keys: every write is one key (`jarvis put-key`, `infra/setup.py write`), and the
 store's other keys are never read or touched.
 
 ## Setting a core up: Reset and Recover (on the iPhone)
@@ -559,7 +559,7 @@ by the core, approved by the phone; the box alone can never make one, and no AI 
   no store unlocked, no Face ID.
 - **Resume with a change (e.g. newer image), approved:** `succession(old, …)` ← iPhone (shows the difference,
   Deyao clicks) → `start` → `certify`. Rejecting leaves the session paused as it was.
-- **Add a store to a running session:** the session finds the store holding the key it needs (`jarvis2 stores`:
+- **Add a store to a running session:** the session finds the store holding the key it needs (`jarvis stores`:
   every store's key names, never values — the router's record, kept by the setup session's writes; repo stores'
   names follow from the repo), then asks through the router (signed with its machine key) for
   one more store → `succession(machine → same machine, set + store)` → `approve_by_phone` (the same Face ID unlocks
@@ -674,7 +674,7 @@ A batch is told once, all items together; a paused session hears at its next sta
 
 ## Machine side (in the image)
 
-`jarvis2-machine boot`, the image's entry point, runs as root and is Fly's main child for the machine's whole life:
+`jarvis-machine boot`, the image's entry point, runs as root and is Fly's main child for the machine's whole life:
 the keeper ("The supervisor and the guard", The keeper). It starts the boot steps as user `claude`; they make the machine's keys and wait. `jarvis2-init` (run by the core through Fly, no arguments) prints the
 public keys and lets boot go on: it takes the core's key from its own Fly config (the core sets it when it creates
 the machine; only the core's token, and the setup session's org token, can create or change machines in the app,
@@ -718,7 +718,7 @@ refused, so claude.ai MCP connectors are not available in these sessions.
 
 ### The supervisor and the guard (Deyao, 2026-10-16)
 
-**The supervisor** is the machine's one long-running process that talks to the control plane (`jarvis2-machine
+**The supervisor** is the machine's one long-running process that talks to the control plane (`jarvis-machine
 supervisor --worker`, `machine/supervisor.go`), a child of the keeper (below). The keeper starts it as soon as init
 asked, before the boot steps need it, so it answers the router from the machine's first seconds to the kill; the
 harness's launcher (for Claude `harness-claude.sh`, which only keeps the `claude --remote-control` host alive in tmux)
@@ -752,25 +752,25 @@ snapshot, and resume-harness is refused then too.
 sigkill from something with higher privilege." Fly ends a machine when its main child (the image's entry point) ends,
 so that process is the supervisor's and nothing in the session can end it (`machine/keeper.go`, DECISIONS 218):
 
-- **The keeper** is `jarvis2-machine boot`, run as root for the machine's whole life. Its children, each in its own
-  session (setsid): the boot steps (`jarvis2-machine prepare`, user `claude`, which end by handing the harness's env
+- **The keeper** is `jarvis-machine boot`, run as root for the machine's whole life. Its children, each in its own
+  session (setsid): the boot steps (`jarvis-machine prepare`, user `claude`, which end by handing the harness's env
   over a pipe, never on disk), the supervisor's worker (`supervisor --worker`, started again whenever it exits, backoff
   1 s doubling to 30 s) and the harness (Jarvis 1's entrypoint, then `harness-*.sh`, user `claude`).
 - **The uid split.** The session runs as `claude` (with its sudo: root through sudo is the higher privilege, accepted).
-  The keeper and the worker run as root, so `kill`, `pkill -f jarvis2-machine`, `kill -TERM -1` and process-group
+  The keeper and the worker run as root, so `kill`, `pkill -f jarvis-machine`, `kill -TERM -1` and process-group
   kills from the session fail with EPERM on them; their `/proc` files (environ, mem, oom_score_adj) are root's and
   both are marked not dumpable. The worker keeps root's uid but takes `claude`'s file identity (setfsuid/setfsgid and
-  `claude`'s groups), so what it reads and writes under `~`, `/data` and `/run/jarvis2` (its sockets included) is
+  `claude`'s groups), so what it reads and writes under `~`, `/data` and `/run/jarvis` (its sockets included) is
   checked and owned exactly as before, and its sockets serve `claude` and root. Every command it runs for the session
   (git, tmux, an exec, the text into the harness, a watch's check, the freeze's `kill -1`) goes through
-  `jarvis2-machine unprotected`, which takes `claude`'s uid, gid and groups for good and the default OOM score; the
+  `jarvis-machine unprotected`, which takes `claude`'s uid, gid and groups for good and the default OOM score; the
   freeze and the Upgrade's free signal only `claude`'s processes. What only the keeper writes is in
-  `/run/jarvis2-keeper` (root's): `harness.pid` (the boot steps', then each harness's launcher) and `harness.json`.
+  `/run/jarvis-keeper` (root's): `harness.pid` (the boot steps', then each harness's launcher) and `harness.json`.
 - **The harness is started again.** A harness that ends (killed by anything, or exiting) never ends the machine: the
   keeper logs how it ended (exit status or signal) and its uptime in the supervisor log, ends what is left of its
   process group (SIGTERM, SIGKILL after 5 s) and starts it again after a backoff (1 s doubling to 1 min, back to 1 s
   after 10 min up) with the secrets the supervisor holds now (`boot-env`, answered to the keeper: a downgrade sticks)
-  and `JARVIS2_HARNESS_START=n`. The entrypoint then skips its one-time steps (the Claude login and account, which the
+  and `JARVIS_HARNESS_START=n`. The entrypoint then skips its one-time steps (the Claude login and account, which the
   supervisor keeps current; the content stores, which may hold unpushed changes; the on-start hooks, still running),
   and `harness-claude.sh` keeps a Claude host still running in tmux, else resumes the newest conversation as a
   reboot's resume would. Not once the session is stopped for its final snapshot. The status report carries the
@@ -778,7 +778,7 @@ so that process is the supervisor's and nothing in the session can end it (`mach
 - **Kept alive.** The keeper sets its own `oom_score_adj` to -1000 as root; the worker inherits it. The harness and the
   session's other processes are not protected: `unprotected` sets the default score as root before it drops, which
   also sets the floor, so a session process can't take -1000 back. A restarted worker carries on from files in
-  `/run/jarvis2` (the signed final snapshot, the worker count, how far the log was pushed) and the secrets in the
+  `/run/jarvis` (the signed final snapshot, the worker count, how far the log was pushed) and the secrets in the
   keeper's memfd.
 - **Memory for the control plane** (`oomguard.go`, DECISIONS 221). Every session process runs under the cgroup v1
   memory cgroup `jarvis2-session`, which the keeper makes at boot with a limit of the machine's RAM minus 640 MB;
@@ -804,8 +804,8 @@ to this machine, through the router): at boot when boot asks, on the router's `r
 the session asks it to pull (`pull-secrets`, add-store's waiter, a downgrade, which empties the copy if the pull
 fails). It holds exactly what the core sealed for the cert's stores, in its memory and in a memfd its keeper keeps (so
 a restarted worker has them without a new pull); nothing is written to disk: no `~/.secrets`, nothing in
-`/run/jarvis2`, the await logs, the delivery dir or the snapshot. It answers on a unix socket only the session's
-user (and root) can reach, `/run/jarvis2/secrets.sock`, and keeps two kinds of request strictly apart (Deyao,
+`/run/jarvis`, the await logs, the delivery dir or the snapshot. It answers on a unix socket only the session's
+user (and root) can reach, `/run/jarvis/secrets.sock`, and keeps two kinds of request strictly apart (Deyao,
 2026-10-20):
 - **Pulling** (`pull-secrets`): the supervisor pulls the session's stores from the core into its RAM now. Agents and
   scripts may call it, but it hands the caller no secret: no value, nothing in its env, no file; it prints only the
@@ -821,13 +821,13 @@ the values (the keeper builds it from them at each start of the harness, RAM onl
 value, `boot-env`, which the supervisor answers only to the keeper (root, its parent) and, before the machine has
 booted, to the boot steps named in the keeper's `harness.pid`), so `$VAR` works in the agent's commands;
 a process started before a change gets a key through `session-secret --keys KEY --exec`. The repos' deploy keys stay in RAM too: the
-supervisor's own ssh-agent (`/run/jarvis2/ssh-agent.sock`, read-only to callers, every signature logged with the
+supervisor's own ssh-agent (`/run/jarvis/ssh-agent.sock`, read-only to callers, every signature logged with the
 repo and the caller) holds them, and `~/.ssh` has only their public halves, which each repo's SSH alias names
 (`IdentityFile …pub`, `IdentitiesOnly`, `IdentityAgent`). What stays on disk by Deyao's choice: the Claude login
 (`~/.claude/.credentials.json`) and a file a session writes itself with `session-secret --keys … --write`.
 
 **The supervisor log.** The boot steps, the keeper and the worker write each log line as JSON (`{at, text}`, the text
-prefixed `boot:`, `keeper:` or `supervisor:`) to `/run/jarvis2/supervisor.log` (`claude`'s file) (tmpfs, rotated once pushed); the worker pushes new lines
+prefixed `boot:`, `keeper:` or `supervisor:`) to `/run/jarvis/supervisor.log` (`claude`'s file) (tmpfs, rotated once pushed); the worker pushes new lines
 to the router every 2 s (`POST /m/supervisor-log`), which keeps the session's log for its whole life and puts it in
 the session's archive on Destroy. Lines name commands, ids, counts and errors, never a command's text, a prompt or a
 secret value; as a second line of defence every secret value the supervisor holds (8 characters or more) is replaced by `[secret]`
@@ -1038,7 +1038,7 @@ any of the line's stores is sensitive, and the **line id** (the line's first mac
     at most 10 minutes long;
   - a **standing rule**: the phone signs `{kind "rule", …, until}` once, for things that happen while Deyao is
     away (auto-pause, the changes check);
-  - the session's **own allow list** (`jarvis2-machine allow <holder> <duration>`, kept in the snapshot): the
+  - the session's **own allow list** (`jarvis-machine allow <holder> <duration>`, kept in the snapshot): the
     machine approving for itself.
 - A session holding a **sensitive** store accepts only a fresh phone grant.
 - Messages into a session are no holder's: they are deliveries, approved per message ("Message approvals").

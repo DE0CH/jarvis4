@@ -343,7 +343,7 @@ jobs:
       - name: Every flow (video + screenshots)
         run: |
           W="$RUNNER_TEMP/stack"
-          export REPLICA_ENV="$W/env" JARVIS2_KEYS_DIR="$W/keys"
+          export REPLICA_ENV="$W/env" JARVIS_KEYS_DIR="$W/keys"
           # the host opens the app's saved encrypted backup with tools/decrypt-backup.py (needs cryptography)
           nohup "$W/venv/bin/python" ios/ci/replica-host.py "$SIM_UDID" "$PWD/ios/ci/replica-setup.sh" > out/host.log 2>&1 &
           # a deploy key ever seen on the test repo (the repos flow checks it was added, then removed)

@@ -2,18 +2,18 @@
 """Tell another Jarvis 4 session something: the only way one session's words reach another (docs/API.md
 "Peer messages"). Claude Code's own SendMessage between sessions is refused in every Jarvis 4 session.
 
-  jarvis2-message SESSION "text"        SESSION: its id (s…) or its exact title
-  jarvis2-message SESSION < file
-  jarvis2-message --wait SESSION "text"  also wait (up to 11 min) for what became of it
+  jarvis-message SESSION "text"        SESSION: its id (s…) or its exact title
+  jarvis-message SESSION < file
+  jarvis-message --wait SESSION "text"  also wait (up to 11 min) for what became of it
 
 Jarvis names this session as the sender (from the machine's key) and checks the direction:
   equal or downward (the receiver holds no store this session lacks, and runs in no more permissive a mode)
       → delivered at once, wrapped with this session's id, title, stores and mode;
   upward (the receiver holds a store this session lacks, or bypasses while this session doesn't)
       → an Inbox item Deyao approves or denies with one tap; delivered once approved; a denial or lapse comes back
-        to this session like any request's outcome (`jarvis2-request outcomes`).
+        to this session like any request's outcome (`jarvis-request outcomes`).
 With other asks to file, send it as an item of the same batch instead, so Deyao gets one Inbox entry:
-  jarvis2-request batch --item-json '{"intent":"peer","to":"SESSION","text":"…"}' --item … --summary "…"
+  jarvis-request batch --item-json '{"intent":"peer","to":"SESSION","text":"…"}' --item … --summary "…"
 """
 import json, os, subprocess, sys, urllib.request
 
@@ -29,10 +29,10 @@ def main():
     to = args[0]
     text = " ".join(args[1:]) if len(args) > 1 else sys.stdin.read()
     if not text.strip():
-        sys.exit("jarvis2-message: empty message")
+        sys.exit("jarvis-message: empty message")
     base = os.environ.get("JARVIS_URL", "http://127.0.0.1:7171").rstrip("/")
     req = urllib.request.Request(base + "/api/requests/peer", data=json.dumps({"to": to, "text": text}).encode(),
-                                 headers={"Content-Type": "application/json", "User-Agent": "jarvis2-message"}, method="POST")
+                                 headers={"Content-Type": "application/json", "User-Agent": "jarvis-message"}, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             out = json.load(r)
@@ -41,10 +41,10 @@ def main():
             msg = json.load(e).get("error", "")
         except Exception:
             msg = ""
-        sys.exit("jarvis2-message: HTTP %d %s" % (e.code, msg))
+        sys.exit("jarvis-message: HTTP %d %s" % (e.code, msg))
     print(json.dumps(out))
     if wait and out.get("id"):
-        sys.exit(subprocess.call(["jarvis2-request", "wait", out["id"]]))
+        sys.exit(subprocess.call(["jarvis-request", "wait", out["id"]]))
 
 
 if __name__ == "__main__":

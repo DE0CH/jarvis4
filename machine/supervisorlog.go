@@ -42,7 +42,7 @@ type logLine struct {
 type fileLog struct{ path, tag string }
 
 func (f fileLog) Write(p []byte) (int, error) {
-	text := strings.TrimSuffix(strings.TrimPrefix(string(p), "[jarvis2] "), "\n")
+	text := strings.TrimSuffix(strings.TrimPrefix(string(p), "[jarvis] "), "\n")
 	b, _ := json.Marshal(logLine{At: time.Now().UTC().Format(time.RFC3339Nano), Text: f.tag + ": " + text})
 	if fh, err := os.OpenFile(f.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
 		if privileged() { // the keeper (root): the file stays user claude's, as the worker reads and rotates it

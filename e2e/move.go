@@ -37,7 +37,7 @@ func moveStep(id, m string) {
 		return strings.TrimSpace(out)
 	}
 	before := ident()
-	expectOnMachine(m, "su - claude -c 'jarvis2 allow terminal 1h' && echo ok", "ok")
+	expectOnMachine(m, "su - claude -c 'jarvis allow terminal 1h' && echo ok", "ok")
 	expectExec(id, "echo before", "before")
 
 	moveAt := time.Now().Add(75 * time.Second).Truncate(time.Second)

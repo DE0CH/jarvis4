@@ -173,7 +173,7 @@ func (r *Router) fileCall(w http.ResponseWriter, c Caller, path string, b []byte
 }
 
 // sameSessionCaller: the session's own two credentials (its requests and its actions, both its machine key) are one
-// caller for reading a call's result: a call filed in a session's batch (jarvis2-request) is read like its actions' own
+// caller for reading a call's result: a call filed in a session's batch (jarvis-request) is read like its actions' own
 func sameSessionCaller(a, b Caller) bool {
 	own := func(c Caller) bool { return (c.Kind == "session" || c.Kind == "actions") && c.Session != "" }
 	return a == b || own(a) && own(b) && a.Session == b.Session

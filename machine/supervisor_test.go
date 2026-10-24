@@ -121,8 +121,8 @@ func TestSupervisorLogPush(t *testing.T) {
 	c := testClient(t, srv.URL)
 	boot := fileLog{supervisorLogPath, "boot"}
 	sup := fileLog{supervisorLogPath, "supervisor"}
-	boot.Write([]byte("[jarvis2] keys ready; waiting for init\n"))
-	sup.Write([]byte("[jarvis2] exec x refused: token hunter2hunter2 and it's a long one, short\n"))
+	boot.Write([]byte("[jarvis] keys ready; waiting for init\n"))
+	sup.Write([]byte("[jarvis] exec x refused: token hunter2hunter2 and it's a long one, short\n"))
 	if err := pushLogOnce(c); err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestSupervisorLogPush(t *testing.T) {
 		t.Fatalf("not redacted: %q", lines[1].Text)
 	}
 	for i := 0; i < 10; i++ { // past the roll size: rotated after the push, nothing lost or repeated
-		sup.Write([]byte("[jarvis2] line " + itoa(i) + "\n"))
+		sup.Write([]byte("[jarvis] line " + itoa(i) + "\n"))
 		pushLogOnce(c)
 	}
 	if len(lines) != 12 || lines[11].Text != "supervisor: line 9" {

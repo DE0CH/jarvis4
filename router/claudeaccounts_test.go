@@ -221,7 +221,7 @@ func TestNewSessionClaudeAccount(t *testing.T) {
 	if id, err := r.CreateSession(NewSession{Label: "o", Harness: "opencode", Account: "work"}); err != nil || acct(id) != "" {
 		t.Fatal("an account for a harness that takes none", err, acct(id))
 	}
-	// the app's, the web page's and jarvis2-request's body names it as "account"
+	// the app's, the web page's and jarvis-request's body names it as "account"
 	var ns NewSession
 	json.Unmarshal([]byte(`{"label":"w","harness":"claude","account":"claude-work"}`), &ns)
 	if id, err = r.CreateSession(ns); err != nil || acct(id) != "claude-work" {

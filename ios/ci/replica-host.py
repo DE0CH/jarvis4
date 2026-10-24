@@ -9,7 +9,7 @@ served to the UI test (ReplicaUITests) on 127.0.0.1:18300.
   GET /log?msg=M            a line in this helper's log
   GET /memwarn              the simulator's memory warning (Debug → Simulate Memory Warning)
   GET /backup-open?kit=K    the app's saved encrypted backup (its tmp/backups/*.json) opened offline with this run's
-                            throwaway kit by tools/decrypt-backup.py (checked against setup.pub in JARVIS2_KEYS_DIR, the
+                            throwaway kit by tools/decrypt-backup.py (checked against setup.pub in JARVIS_KEYS_DIR, the
                             run's throwaway keys; else keys/): "ok <store>,…"
                             (a sensitive store ends in *; no values), or why not
 
@@ -59,7 +59,7 @@ def backup_open(kit):
         return f"no saved backup in {data}/tmp/backups"
     out = os.path.join(tempfile.mkdtemp(), "plain.json")
     p = subprocess.run([sys.executable, os.path.join(REPO, "tools", "decrypt-backup.py"), files[-1], "--kit-file", "-",
-                        "--setup-pub", os.path.join(os.environ.get("JARVIS2_KEYS_DIR") or os.path.join(REPO, "keys"), "setup.pub"), "--out", out], input=kit, capture_output=True, text=True)
+                        "--setup-pub", os.path.join(os.environ.get("JARVIS_KEYS_DIR") or os.path.join(REPO, "keys"), "setup.pub"), "--out", out], input=kit, capture_output=True, text=True)
     if p.returncode != 0:
         return f"decrypt-backup exit {p.returncode}: {p.stderr.strip()[-400:]}"
     with open(out) as f:

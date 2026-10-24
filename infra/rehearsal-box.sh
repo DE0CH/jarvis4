@@ -237,7 +237,7 @@ PY
   rm -f "$W/fly-read"
   mkdir -p "$W/keys"; cp "$ROOT/keys/setup.pub" "$W/keys/setup.pub"
   # what setup.py and create.sh's wait need, pointed at the test box
-  export JARVIS2_URL="https://$HOST" JARVIS2_BACKUP_BUCKET="$BUCKET" JARVIS2_KEYS_DIR="$W/keys"
+  export JARVIS2_URL="https://$HOST" JARVIS_BACKUP_BUCKET="$BUCKET" JARVIS_KEYS_DIR="$W/keys"
   export JARVIS2_SETUP_ACCESS_ID="$SETUP_ACCESS_ID" JARVIS2_SETUP_ACCESS_SECRET="$SETUP_ACCESS_SECRET"
 }
 

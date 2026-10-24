@@ -61,7 +61,7 @@ func TestSetupVolumeBindMountsTheState(t *testing.T) {
 	}
 }
 
-// /run/jarvis2 on a Fly machine: a tmpfs of its own, so the machine's key pair is in memory only (DECISIONS 228); the
+// /run/jarvis on a Fly machine: a tmpfs of its own, so the machine's key pair is in memory only (DECISIONS 228); the
 // keeper started again in the same boot leaves it (and the keys in it) as they are. Needs root (mount): skipped otherwise.
 func TestMemoryDirIsATmpfs(t *testing.T) {
 	if os.Geteuid() != 0 {

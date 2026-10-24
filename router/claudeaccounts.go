@@ -7,7 +7,7 @@ package main
 // it refreshes with (claude-accounts/<store>.json on the volume, 0600, one loginHub each, claudelogin.go): the pair
 // rotates every 8 hours with nobody there (DECISIONS 115), and the core gives a store back only with the phone.
 //
-//   - A session's account is chosen when it is made (New session in the app and web page, `jarvis2-request
+//   - A session's account is chosen when it is made (New session in the app and web page, `jarvis-request
 //     new-session --account`, a task instance, a restore) and kept for the session's life (Session.ClaudeAccount): a
 //     resume keeps it, a running session never switches. Harnesses that need one (policy/stores.json
 //     `claudeAccount`: claude, openclaw) and prompt tasks get the default account when none is named. Trusted as the

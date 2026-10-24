@@ -5,7 +5,7 @@ package main
 // Workers, docs/DECISIONS.md "Workers"); the status report carries it.
 //
 // Claude Code documents no live list of its tasks, so the count comes from its documented hooks
-// (code.claude.com/docs/en/hooks): boot installs `jarvis2-machine workers-hook` in ~/.claude/settings.json for
+// (code.claude.com/docs/en/hooks): boot installs `jarvis-machine workers-hook` in ~/.claude/settings.json for
 // SessionStart, SubagentStart, SubagentStop, Stop and PostToolUse (Bash|Monitor|Agent). The hook only NOTIFIES the
 // supervisor: it boils the event down to ids, types and the event name (never a command, a description or a tool's
 // output) and sends that over the supervisor's local socket (workersSock); it never fails a turn (any error, or no
@@ -34,7 +34,7 @@ import (
 	"time"
 )
 
-const workersHookCmd = "/usr/local/bin/jarvis2-machine workers-hook"
+const workersHookCmd = "/usr/local/bin/jarvis-machine workers-hook"
 
 var (
 	workersSock  = dir + "/workers.sock"

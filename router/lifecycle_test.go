@@ -200,7 +200,7 @@ func TestPauseRecordsItsLifecycleLog(t *testing.T) {
 	fly.event("m2", "exit", "stopped", now)
 	fly.event("m2", "destroy", "destroyed", now.Add(10*time.Millisecond))
 	fly.log("m2", "runner", "Machine destroyed", now.Add(20*time.Millisecond))
-	fly.log("m2", "app", "[jarvis2] stdout of the machine", now.Add(20*time.Millisecond))
+	fly.log("m2", "app", "[jarvis] stdout of the machine", now.Add(20*time.Millisecond))
 	supPush(t, rg.r, m, "supervisor: snapshot committed")
 	if err := rg.r.Pause("s1"); err != nil {
 		t.Fatal(err)

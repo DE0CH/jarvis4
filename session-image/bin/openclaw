@@ -1,11 +1,11 @@
 #!/bin/sh
 # `openclaw` for an OpenClaw session (Jarvis 4's copy of Jarvis 1's wrapper). OpenClaw and its Node are a runtime
 # bundle fetched on first use (Fly's 8 GB image limit), from the GitHub release pinned in
-# /opt/jarvis2/openclaw-runtime.json — by URL AND sha256, so the code that runs is fixed by this image's digest,
+# /opt/jarvis/openclaw-runtime.json — by URL AND sha256, so the code that runs is fixed by this image's digest,
 # not by whatever the release serves later (docs/DESIGN.md "Inputs to a machine"). A bundle that doesn't match is
 # deleted and nothing runs.
 set -e
-PIN=/opt/jarvis2/openclaw-runtime.json
+PIN=/opt/jarvis/openclaw-runtime.json
 url="$(python3 -I -c "import json;print(json.load(open('$PIN'))['url'])")"
 want="$(python3 -I -c "import json;print(json.load(open('$PIN'))['sha256'])")"
 dir="$HOME/.cache/openclaw-runtime/$(printf %.12s "$want")"

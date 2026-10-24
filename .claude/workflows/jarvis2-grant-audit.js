@@ -1,5 +1,5 @@
 export const meta = {
-  name: 'jarvis2-grant-audit',
+  name: 'jarvis4-grant-audit',
   description: 'Audit Jarvis 4: nothing advertised as core-gated can happen without the core; the core is minimal and stateless',
   phases: [
     { title: 'Inventory', detail: 'every advertised core-gated action and the core surface' },

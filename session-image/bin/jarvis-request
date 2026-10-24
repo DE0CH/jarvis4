@@ -3,19 +3,19 @@
 Jarvis 4 app (docs/API.md "Requests"). He sees exactly what would be signed, the call this made (the router names
 this session as the caller, from the machine's key) and the reason given here, and allows or denies it.
 
-  jarvis2-request add-repo OWNER/NAME --why TEXT [--sensitive] [--no-store]
+  jarvis-request add-repo OWNER/NAME --why TEXT [--sensitive] [--no-store]
                                     a deploy key (read + push) for a repo, in its own store (github-NAME), which comes
                                     into THIS session in the same approval (one Face ID); a waiter pulls it into
                                     the supervisor (RAM) and sets up its SSH key. --no-store: only make the key (e.g. for a
                                     proposed session's repos)
-  jarvis2-request grant HOLDER [--minutes N | --days N] --why TEXT
+  jarvis-request grant HOLDER [--minutes N | --days N] --why TEXT
                                     let a router feature into THIS session (terminal, status, archive,
                                     remote): 1-10 minutes, or a standing rule for N days
-  jarvis2-request unlock --why TEXT the locked stores this session waits on
-  jarvis2-request add-store STORE --why TEXT
+  jarvis-request unlock --why TEXT the locked stores this session waits on
+  jarvis-request add-store STORE --why TEXT
                                     one more store for this running session (its machine keeps its keys); once
                                     approved (within 1 h) the supervisor pulls it (a background waiter asks)
-  jarvis2-request new-session --label TEXT --prompt-file FILE [--stores a,b] [--repos URL,URL] [--model M]
+  jarvis-request new-session --label TEXT --prompt-file FILE [--stores a,b] [--repos URL,URL] [--model M]
                   [--size small|medium|large] [--harness claude] [--account NAME] [--request-id ID]
                   [--attach FILE]… --why TEXT
                                     propose a NEW session: it appears in the Inbox like the app's New session and starts
@@ -26,28 +26,28 @@ this session as the caller, from the machine's key) and the reason given here, a
                                     prompt, as the app's New session attaches them: uploaded to the router first, their
                                     sha256 + size signed with the line (the approval shows each, images with a preview),
                                     and the new session finds them in ~/uploads
-  jarvis2-request batch (--file FILE | --item ITEM… | --item-json JSON…) --summary TEXT
+  jarvis-request batch (--file FILE | --item ITEM… | --item-json JSON…) --summary TEXT
                                     several of the above as ONE Inbox entry, allowed together under one Face ID (or
                                     denied together). FILE: a JSON list of items, each {"intent": …} plus that
                                     intent's fields: {"intent":"repo/add","repo":"OWNER/NAME"},
                                     {"intent":"grant","holder":"terminal","minutes":5}, {"intent":"unlock"},
                                     {"intent":"add-store","store":"gmail"},
                                     {"intent":"call","method":"POST","path":"/api/sessions/ID/resume","body":{…}}
-                                    (an app API call run as Deyao, as `jarvis2-actions.py request call`; read its result
-                                    with `jarvis2-actions.py call-result ID`),
+                                    (an app API call run as Deyao, as `jarvis4-actions.py request call`; read its result
+                                    with `jarvis4-actions.py call-result ID`),
                                     {"intent":"new-session","label":…,"prompt":…,"stores":[…],"repos":…,
                                     "attach":["FILE",…]} (attach: files uploaded first, as --attach),
                                     {"intent":"peer","to":SESSION,"text":…} (a message to another session, as
-                                    `jarvis2-message`: upward waits in the batch for Deyao's tap, equal or downward
+                                    `jarvis-message`: upward waits in the batch for Deyao's tap, equal or downward
                                     is delivered at once when the batch is filed: its item says "delivering");
                                     or --item INTENT,key=value,… once per item (e.g. --item grant,holder=status,minutes=5),
                                     or --item-json '{"intent":…}' for an item with a JSON body or commas;
                                     an item may carry its own "explanation"; --summary (required) says what the
                                     whole batch is for. At most 20 items; a batch counts as one of the 3 waiting
                                     proposals. Every item is checked first: one bad item and nothing is filed
-  jarvis2-request list              this session's requests still waiting
-  jarvis2-request outcomes          what became of this session's requests (approved, denied, lapsed, dropped, failed)
-  jarvis2-request wait ID [--timeout SECONDS]
+  jarvis-request list              this session's requests still waiting
+  jarvis-request outcomes          what became of this session's requests (approved, denied, lapsed, dropped, failed)
+  jarvis-request wait ID [--timeout SECONDS]
                                     block until the request (an Inbox id, a batch id, or for add-store this session's
                                     id) is decided, then print its outcome (default timeout 660 s; exit 0 approved,
                                     1 anything else, 2 still waiting)
@@ -152,9 +152,9 @@ def repo_store(repo):
 def start_await(store):
     """the approval only lands in the cert: a detached waiter pulls the store's secrets once it does (no second ask; a
     foreground wait would outlive a tool call's timeout)"""
-    log = os.path.expanduser("~/.jarvis2-await-" + "".join(c if c.isalnum() or c in "-_" else "_" for c in store) + ".log")
+    log = os.path.expanduser("~/.jarvis-await-" + "".join(c if c.isalnum() or c in "-_" else "_" for c in store) + ".log")
     with open(log, "ab") as f:
-        subprocess.Popen(["jarvis2-machine", "await-store", store], stdout=f, stderr=f, stdin=subprocess.DEVNULL,
+        subprocess.Popen(["jarvis-machine", "await-store", store], stdout=f, stderr=f, stdin=subprocess.DEVNULL,
                          start_new_session=True)
     print(f"Once he allows {store}, the supervisor pulls it by itself (log: {log}); then run a command with the keys it "
           "needs as `session-secret --keys K1,K2 --exec CMD` (this shell's env doesn't change).", file=sys.stderr)
@@ -258,7 +258,7 @@ def main():
             print("Nothing of it waits in the Inbox as a batch: see each item above.", file=sys.stderr)
             return
         print("Waiting in Deyao's Inbox as one batch (the Jarvis 4 app); nothing happens until he allows it. The outcome of "
-              f"every item arrives in this session as a message once decided (or block: jarvis2-request wait {out.get('id')}).",
+              f"every item arrives in this session as a message once decided (or block: jarvis-request wait {out.get('id')}).",
               file=sys.stderr)
         return
     why = opt(args, "--why")
@@ -317,7 +317,7 @@ def main():
     print(json.dumps(out))
     ref = out.get("id") or os.environ.get("JARVIS2_SESSION_ID", "")
     print("Waiting in Deyao's Inbox (the Jarvis 4 app); nothing happens until he allows it. The outcome arrives in this "
-          f"session as a message once decided (or block: jarvis2-request wait {ref}).", file=sys.stderr)
+          f"session as a message once decided (or block: jarvis-request wait {ref}).", file=sys.stderr)
 
 
 if __name__ == "__main__":

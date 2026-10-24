@@ -148,7 +148,7 @@ func TestMachineAPINothingGoesToJarvis1(t *testing.T) {
 	r.st.Do(func(d *persisted) { d.Sessions["sA"].Stores = []string{"default"} })
 	for _, c := range [][2]string{{"GET", "/m/api/icloud/search?q=passport"}, {"GET", "/m/api/icloud/file?path=a"}, {"GET", "/m/api/icloud/status"}, {"POST", "/m/api/icloud/relist"}, {"POST", "/m/api/icloud/retry"}} {
 		code, out := m.do(t, h, c[0], c[1], "")
-		if code != 403 || ic != nil || out["needsStore"] != "identity" || !strings.Contains(out["error"].(string), "jarvis2-request add-store identity") {
+		if code != 403 || ic != nil || out["needsStore"] != "identity" || !strings.Contains(out["error"].(string), "jarvis-request add-store identity") {
 			t.Fatalf("%s %s without identity: %d %v", c[0], c[1], code, out)
 		}
 	}

@@ -3,7 +3,7 @@ package main
 // The session-facing API, machine side. Jarvis 1's session scripts (schedule-wakeup.sh, schedule-cron.sh,
 // lease.py, transcript-search.py, content-sync, retire-session.sh, …) call `$JARVIS_URL/api/...`
 // with Cloudflare Access headers and the session's SESSION_API_TOKEN. In a Jarvis 4 session JARVIS_URL is this
-// proxy (127.0.0.1:7171, served by the supervisor, `jarvis2-machine supervisor`): it drops those headers and forwards each request to
+// proxy (127.0.0.1:7171, served by the supervisor, `jarvis-machine supervisor`): it drops those headers and forwards each request to
 // the router as /m/api/<rest>, signed with the machine key like every other /m call.
 //
 // Two calls never leave the machine: GET …/secrets (refused: the supervisor serves the secrets on its own socket,
@@ -36,7 +36,7 @@ const (
 
 // serveAPIProxy: runs for the supervisor's life
 func serveAPIProxy(c *client) {
-	addr := os.Getenv("JARVIS2_API_ADDR")
+	addr := os.Getenv("JARVIS_API_ADDR")
 	if addr == "" {
 		addr = apiProxyAddr
 	}

@@ -25,7 +25,7 @@ both). Values never print.
   infra/setup.py versions NAME         the store's earlier versions the core keeps (number, time, what made it, key
                                        names), from the core's signed list; put one back with `request restore`
   infra/setup.py docs NAME [--about TEXT] [KEY=TEXT…]
-                                       what a store and its keys are for (shown in the app, the web page, `jarvis2 stores
+                                       what a store and its keys are for (shown in the app, the web page, `jarvis stores
                                        --keys`); KEY= with no text removes one
   infra/setup.py mark-sensitive NAME   the one-way upgrade, in the core and in the backup
   infra/setup.py backup NAME KEY[=SRC]… [--not-sensitive]
@@ -109,8 +109,8 @@ D = os.path.expanduser("~/.jarvis2")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # what this script writes (store backups, sensitivity markers, the pins) goes to Jarvis 4's own bucket; Jarvis 2's
 # (READ_BUCKET) is only read: the pins until Jarvis 4's bucket has its own (the router serves both to the Recover)
-BUCKET = os.environ.get("JARVIS2_BACKUP_BUCKET", "jarvis4-backup-de0ch")
-READ_BUCKET = os.environ.get("JARVIS2_BACKUP_READ_BUCKET", "jarvis2-backup-de0ch")
+BUCKET = os.environ.get("JARVIS_BACKUP_BUCKET", "jarvis4-backup-de0ch")
+READ_BUCKET = os.environ.get("JARVIS_BACKUP_READ_BUCKET", "jarvis2-backup-de0ch")
 
 # ---- P-256 point addition (the combined key P + K; the cryptography library has no point add) ----------
 _p = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
@@ -192,8 +192,8 @@ def call(method, path, body=None):
 
 
 def keyfile(name):
-    """keys/<name> from this checkout (JARVIS2_KEYS_DIR: another directory, for CI's stand-in keys)"""
-    return open(os.path.join(os.environ.get("JARVIS2_KEYS_DIR") or os.path.join(ROOT, "keys"), name)).read().strip()
+    """keys/<name> from this checkout (JARVIS_KEYS_DIR: another directory, for CI's stand-in keys)"""
+    return open(os.path.join(os.environ.get("JARVIS_KEYS_DIR") or os.path.join(ROOT, "keys"), name)).read().strip()
 
 
 def identity():
@@ -357,7 +357,7 @@ def key_write(store, key, value, me, explanation=""):
 # core's open create_store lets anyone (the router) create a name first, so the writer checks the core's word against
 # this list and marks a store sensitive before it writes into it (R1 audit). A change here is a visible commit.
 NOT_SENSITIVE = ("default", "openrouter", "tunnel", "shopping") + tuple(
-    n for n in os.environ.get("JARVIS2_NOT_SENSITIVE", "").split(",") if n)  # test boxes add their own (rehearsals)
+    n for n in os.environ.get("JARVIS_NOT_SENSITIVE", "").split(",") if n)  # test boxes add their own (rehearsals)
 
 
 def s3():
@@ -595,7 +595,7 @@ KERNEL_ROLES = ["notary", "notarizer", "mover", "merger", "spawner", "identity",
 def write_root_key(k):
     """keys/root.pub (what the app and setup sessions read) and the copy the kernel's ConfigMap is made from (no
     newline: it becomes KERNEL_ROOT)"""
-    keys = os.environ.get("JARVIS2_KEYS_DIR") or os.path.join(ROOT, "keys")
+    keys = os.environ.get("JARVIS_KEYS_DIR") or os.path.join(ROOT, "keys")
     with open(os.path.join(keys, "root.pub"), "w") as f:
         f.write(k + "\n")
     with open(os.path.join(ROOT, "k8s", "cluster", "kernel", "root.pub"), "w") as f:

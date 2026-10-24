@@ -18,13 +18,13 @@ import (
 	"time"
 )
 
-// keeperStandIn (from TestMain): the test binary stands in for jarvis2-machine when the keeper's code re-runs
+// keeperStandIn (from TestMain): the test binary stands in for jarvis-machine when the keeper's code re-runs
 // /proc/self/exe (unprotected, signal-session) and for the probes of the root tests below
 func keeperStandIn() {
-	if u := os.Getenv("JARVIS2_TEST_SESSION_USER"); u != "" {
+	if u := os.Getenv("JARVIS_TEST_SESSION_USER"); u != "" {
 		sessionUser = u
 	}
-	if g, r, ok := strings.Cut(os.Getenv("JARVIS2_TEST_CGROUPS"), ","); ok { // oomguard_test.go
+	if g, r, ok := strings.Cut(os.Getenv("JARVIS_TEST_CGROUPS"), ","); ok { // oomguard_test.go
 		sessionCgroup, rescueCgroup = g, r
 	}
 	if len(os.Args) > 1 {
@@ -121,7 +121,7 @@ func TestExitHow(t *testing.T) {
 	}
 }
 
-// keeperRig: a harness that records each start (its JARVIS2_HARNESS_START and pid) and ends the way the test says
+// keeperRig: a harness that records each start (its JARVIS_HARNESS_START and pid) and ends the way the test says
 func keeperRig(t *testing.T, script string) (k *keeperT, starts func() []string, done chan struct{}) {
 	t.Helper()
 	d := t.TempDir()
@@ -131,7 +131,7 @@ func keeperRig(t *testing.T, script string) (k *keeperT, starts func() []string,
 	}
 	rec := filepath.Join(d, "starts")
 	entry := filepath.Join(d, "entry.sh")
-	os.WriteFile(entry, []byte("#!/bin/sh\necho \"$JARVIS2_HARNESS_START $$ $API_KEY\" >> "+rec+"\n"+script+"\n"), 0o755)
+	os.WriteFile(entry, []byte("#!/bin/sh\necho \"$JARVIS_HARNESS_START $$ $API_KEY\" >> "+rec+"\n"+script+"\n"), 0o755)
 	oldE, oldB, oldS := baseEntry, harnessBackoff0, finalSnapshotSig
 	oldSt := harnessStatePath
 	t.Cleanup(func() { baseEntry, harnessBackoff0, finalSnapshotSig, harnessStatePath = oldE, oldB, oldS, oldSt })
@@ -149,7 +149,7 @@ func keeperRig(t *testing.T, script string) (k *keeperT, starts func() []string,
 	})
 	done = make(chan struct{})
 	go func() {
-		k.harnessLoop(harnessSpec{Clean: []string{"PATH=" + os.Getenv("PATH"), "JARVIS2_TEST_SESSION_USER=" + os.Getenv("JARVIS2_TEST_SESSION_USER")}, Fixed: map[string]string{}})
+		k.harnessLoop(harnessSpec{Clean: []string{"PATH=" + os.Getenv("PATH"), "JARVIS_TEST_SESSION_USER=" + os.Getenv("JARVIS_TEST_SESSION_USER")}, Fixed: map[string]string{}})
 		close(done)
 	}()
 	starts = func() []string {
@@ -374,14 +374,14 @@ func TestEveryCommandGoesThroughSessionCommand(t *testing.T) {
 
 // ---- as root, with a real second user (the uid split) -------------------------------------------------------------
 //
-// sudo env JARVIS2_TEST_SESSION_USER=<a throwaway user> go test -run AsRoot   (the user must not be the one running
+// sudo env JARVIS_TEST_SESSION_USER=<a throwaway user> go test -run AsRoot   (the user must not be the one running
 // anything else: kill -TERM -1 as that user ends all of its processes)
 
 func rootRig(t *testing.T) string {
 	t.Helper()
-	u := os.Getenv("JARVIS2_TEST_SESSION_USER")
+	u := os.Getenv("JARVIS_TEST_SESSION_USER")
 	if os.Geteuid() != 0 || u == "" {
-		t.Skip("needs root and JARVIS2_TEST_SESSION_USER")
+		t.Skip("needs root and JARVIS_TEST_SESSION_USER")
 	}
 	old := sessionUser
 	sessionUser, sessionOnce = u, sync.Once{}

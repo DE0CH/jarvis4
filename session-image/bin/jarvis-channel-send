@@ -4,7 +4,7 @@
   jarvis-channel-send [--from NAME] < text
 
 Prints one JSON line in the shape the old peer sender printed ({"success", "message", "ack"}); "target session not
-found" while no channel is listening (claude is still starting), so Jarvis retries. Used by jarvis2-machine
+found" while no channel is listening (claude is still starting), so Jarvis retries. Used by jarvis-machine
 (machine/deliver.go sendToHarness) and the router's resume-prompt path (router/peer.go peerCommand).
 """
 import json, os, sys, time, uuid

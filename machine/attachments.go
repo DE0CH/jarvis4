@@ -5,7 +5,7 @@ package main
 // the harness starts, then the router drops them. Jarvis 1's session-attachments script (run by the
 // supervisor for the first prompt) still does the rest exactly as in Jarvis 1 — copies them into ~/uploads,
 // writes the paths into the first message, images inline — reading from a local file:// "box" instead of the
-// Storage Box: SESSION_ATTACH_DAV_BASE=file://$HOME, SESSION_ATTACH_DIR=.jarvis2-uploads. (Not ~/uploads
+// Storage Box: SESSION_ATTACH_DAV_BASE=file://$HOME, SESSION_ATTACH_DIR=.jarvis-uploads. (Not ~/uploads
 // itself: the script opens its source and then truncates its destination, which must not be the same file.)
 //
 // Each file is taken only when (1) its bytes hash to the sha256 and size the cert names (the phone signed them with the
@@ -26,7 +26,7 @@ import (
 	"strings"
 )
 
-const attachStaging = ".jarvis2-uploads"
+const attachStaging = ".jarvis-uploads"
 
 // fetchAttachments: env for the harness, or nil when no file matches the cert. Only the files the cert names
 // (name, sha256, size: the phone approved them with the new line), each checked against its hash and attested; a file

@@ -27,7 +27,7 @@ func fakeProc(t *testing.T) string {
 	}
 	proc("1", "init", 0, 1000)
 	proc("10", "harness", 1000, 50000)
-	proc("11", "jarvis2-machine", 1000, 20000)
+	proc("11", "jarvis-machine", 1000, 20000)
 	proc("12", "claude", 1000, 900000)
 	proc("13", "chrome", 1000, 600000)
 	proc("14", "sshd", 0, 700000)

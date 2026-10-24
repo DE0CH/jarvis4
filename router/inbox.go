@@ -289,7 +289,7 @@ func (r *Router) FileRequest(kind string, p RequestParams, explanation string, o
 			return
 		}
 		if mine, _ := callerLoad(d, o.Caller); mine >= requestPerCaller {
-			err = &tooMany{fmt.Sprintf("this caller has %d requests waiting already: wait for Deyao to answer them, or deny some (DELETE /api/requests/ID, jarvis2-actions.py deny ID), then file again", requestPerCaller)}
+			err = &tooMany{fmt.Sprintf("this caller has %d requests waiting already: wait for Deyao to answer them, or deny some (DELETE /api/requests/ID, jarvis4-actions.py deny ID), then file again", requestPerCaller)}
 			return
 		}
 		d.Inbox[q.ID] = q
@@ -832,7 +832,7 @@ func (r *Router) registerInbox(app appRoute, m machineRoute, public publicRoute)
 	public("GET /setup/requests", setupOnly(func(w http.ResponseWriter, req *http.Request, _ []byte) {
 		writeJSON(w, 200, map[string]any{"requests": r.Inbox(), "batches": r.InboxBatches(nil)})
 	}))
-	// the sessions and their current machines (ids, states, and why a failed one failed): the phone replica runs jarvis2-request in a
+	// the sessions and their current machines (ids, states, and why a failed one failed): the phone replica runs jarvis-request in a
 	// session's machine (flyctl exec) and finds it here, since machines carry no router env any more
 	public("GET /setup/sessions", setupOnly(func(w http.ResponseWriter, req *http.Request, _ []byte) {
 		out := []map[string]any{}

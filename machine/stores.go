@@ -1,8 +1,8 @@
 package main
 
-// jarvis2 stores [--keys | --json]: every store and the key NAMES it holds (never a value), with what each key is for,
+// jarvis stores [--keys | --json]: every store and the key NAMES it holds (never a value), with what each key is for,
 // from the router's GET /m/stores (router/storedocs.go), so a session knows which store to ask for with
-// `jarvis2 add-store <name>`. The store list, sensitivity and key names are the core's signed list, checked here
+// `jarvis add-store <name>`. The store list, sensitivity and key names are the core's signed list, checked here
 // against the core's key; the explanations are the router's record (words, not a trust decision).
 
 import (
@@ -50,7 +50,7 @@ func storesCmd(args []string) error {
 	asJSON := len(args) == 1 && args[0] == "--json"
 	withKeys := len(args) == 1 && args[0] == "--keys"
 	if len(args) > 0 && !asJSON && !withKeys {
-		return fmt.Errorf("usage: jarvis2 stores [--keys | --json]   (--keys: each key on its own line with what it is for)")
+		return fmt.Errorf("usage: jarvis stores [--keys | --json]   (--keys: each key on its own line with what it is for)")
 	}
 	c, err := newClient()
 	if err != nil {

@@ -12,7 +12,7 @@
 #      (node-ip on the dummy interface k3s0), then k3s starts with it
 #   5. waits until the core answers through the tunnel (setup.py identity, as create.sh does)
 # Env: HCLOUD_PROJECT_TOKEN (default HETZNER_JARVIS2_MOCK_API), SERVER_LABEL (default role=jarvis2), CONFIRM=yes,
-#      SKIP_WAIT=1 (a test box without a core), and what setup.py identity needs (JARVIS2_URL, JARVIS2_SETUP_ACCESS_ID/SECRET, JARVIS2_KEYS_DIR as for create.sh).
+#      SKIP_WAIT=1 (a test box without a core), and what setup.py identity needs (JARVIS2_URL, JARVIS2_SETUP_ACCESS_ID/SECRET, JARVIS_KEYS_DIR as for create.sh).
 # The throwaway key is deleted on exit; the rescue system is single-use (Hetzner turns it off after one boot).
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

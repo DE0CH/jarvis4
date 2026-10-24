@@ -498,7 +498,7 @@ var profileOf = func(token string) (uuid, email string, err error) {
 	req, _ := http.NewRequest("GET", oauthProfileURL, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
-	req.Header.Set("User-Agent", "jarvis2-machine/1")
+	req.Header.Set("User-Agent", "jarvis-machine/1")
 	resp, err := profileHTTP.Do(req)
 	if err != nil {
 		return "", "", err

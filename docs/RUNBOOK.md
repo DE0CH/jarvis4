@@ -128,7 +128,7 @@ pinned yet (a new bucket, a rehearsal box).
 
 ### Store key names
 
-The app, sessions (`jarvis2 stores`) and `infra/setup.py stores` list every store's key names (API.md `GET
+The app, sessions (`jarvis stores`) and `infra/setup.py stores` list every store's key names (API.md `GET
 /api/stores`), from the core's own signed list (`keysFrom: core`): a key is listed once it is written, and nothing at
 the router records names. A new key in a store: add it to the layout file, then write it (`infra/setup.py write`).
 
@@ -228,11 +228,11 @@ Claude never adds a repo or allows anything itself: it files a request and Deyao
 - Setup session: `infra/setup.py request add-repo DE0CH/claude-env --why "…"` (also `remove-repo`, `grant SESSION
   HOLDER [--minutes N | --days N]`, `unlock SESSION`); `infra/setup.py requests` lists what waits, `infra/setup.py
   repos` the router's repo list (check it before asking for a repo that may be there already).
-- Inside a session: `jarvis2-request add-repo OWNER/NAME --why "…"`, `jarvis2-request grant HOLDER --minutes 5 --why
-  "…"`, `jarvis2-request unlock --why "…"`, `jarvis2-request add-store STORE --why "…"`, `jarvis2-request list`
-  (`session-image/bin/jarvis2-request`, through the machine's proxy). `add-store` also starts a background
-  `jarvis2-machine await-store STORE`, which has the supervisor pull the store (RAM only) once the approval lands in
-  the cert (log `~/.jarvis2-await-STORE.log`); a command then gets the keys it needs with `session-secret --keys K1,K2 --exec CMD`, and `pull-secrets` makes the supervisor pull again at once (it hands out no value); before the waiter, an approved store stayed unpulled (2026-10-12).
+- Inside a session: `jarvis-request add-repo OWNER/NAME --why "…"`, `jarvis-request grant HOLDER --minutes 5 --why
+  "…"`, `jarvis-request unlock --why "…"`, `jarvis-request add-store STORE --why "…"`, `jarvis-request list`
+  (`session-image/bin/jarvis-request`, through the machine's proxy). `add-store` also starts a background
+  `jarvis-machine await-store STORE`, which has the supervisor pull the store (RAM only) once the approval lands in
+  the cert (log `~/.jarvis-await-STORE.log`); a command then gets the keys it needs with `session-secret --keys K1,K2 --exec CMD`, and `pull-secrets` makes the supervisor pull again at once (it hands out no value); before the waiter, an approved store stayed unpulled (2026-10-12).
 
 The reason is required, plain text, ≤ 600 characters. A request (and an approval in the Inbox) goes after 10 minutes (Deyao, 2026-10-12): ask again if it lapsed.
 
@@ -245,16 +245,16 @@ grant, unlock, add-store, new-session, jarvis1-import); at most 20 items; every 
   grant,session=sID,holder=terminal,minutes=5` (or `--file items.json`, a JSON list of `{"intent": …, …}`);
   several Jarvis 1 imports: `infra/setup.py jarvis1 import ID1 ID2 … --stores a,b --why "…" [--summary "…"]` (the
   summary defaults to the ids).
-- Inside a session: `jarvis2-request batch --summary "…" --item grant,holder=status,minutes=5 --item
+- Inside a session: `jarvis-request batch --summary "…" --item grant,holder=status,minutes=5 --item
   add-store,store=gmail` (or `--file`); `--item new-session,label=…,prompt=…,stores=a|b` (lists with `|`; a long
   prompt goes in a `--file` item). A batch counts as one of the session's 3 waiting proposals.
-- `infra/setup.py requests` / `jarvis2-request list` show the batches (`b…` ids) after the loose requests.
+- `infra/setup.py requests` / `jarvis-request list` show the batches (`b…` ids) after the loose requests.
 
 **The outcome comes back by itself** (Deyao, 2026-10-13): once Deyao decides an item a session filed, that session gets
 a message from Jarvis, `[Inbox outcome] … APPROVED / DENIED / LAPSED / DROPPED / FAILED: …` (a batch in one message,
 numbered like its items), with what was checked (the phone's grant, the new cert naming the store, the new session's
-id). No polling needed; a paused session hears at its next start. `jarvis2-request outcomes` lists them;
-`jarvis2-request wait ID` blocks on one (exit 0 approved). An outcome that wasn't delivered shows `not delivered: …` in
+id). No polling needed; a paused session hears at its next start. `jarvis-request outcomes` lists them;
+`jarvis-request wait ID` blocks on one (exit 0 approved). An outcome that wasn't delivered shows `not delivered: …` in
 `outcomes` (e.g. an image from before outcomes); the router logs `[outcome]` lines.
 
 ### Emptying the core without its kit
@@ -273,7 +273,7 @@ change the `jarvis2/restart` annotation of the serving core's Deployment (`activ
   session's env or `file:PATH`, never printed); the store's other keys are never read or touched. Each is wrapped to
   the phone + core key and backed up first to S3 (bucket `jarvis2-backup-de0ch`, versioned, `keys/<store>/<key>.json`,
   encrypted to the master key the core was set up with, signed by the setup key). Sessions write the same way with
-  `jarvis2 put-key` (`scripts/store-put.py` in claude-env).
+  `jarvis put-key` (`scripts/store-put.py` in claude-env).
 - `infra/setup.py delete NAME KEY…` — removes keys (their backups keep the earlier versions).
 - `infra/setup.py versions NAME` — the store's earlier versions the core keeps (the last 50 each).
 - `infra/setup.py request restore NAME VERSION --why TEXT` — asks Deyao (Inbox) to put that version back (below).
@@ -413,7 +413,7 @@ still runs, follows one account through `/peer/claude-login`). `infra/setup.py c
 per account its email, expiry, last refresh, the participants of its refresh protocol (`m:<machine>` per session,
 `jarvis1`), the sessions using it, and the default.
 
-- **Pick an account:** New session (app, web page) lists the accounts with the default pre-picked; `jarvis2-request
+- **Pick an account:** New session (app, web page) lists the accounts with the default pre-picked; `jarvis-request
   new-session --account NAME`; a prompt task's account is picked when the task is made. A session keeps its account for
   its life (resumes included) and shows up in that account's Claude app (lessons/59). A running session can't switch.
 - **Manage:** Settings → Claude accounts (web page or app). Add: a name, then the sign-in page opens; sign in, copy the
@@ -425,7 +425,7 @@ per account its email, expiry, last refresh, the participants of its refresh pro
 - **A dead login** (the refresh was refused) DMs Deyao once, naming the account; nothing else happens by itself: only
   that account's sessions stop on "Please run /login" once their token runs out, and get "continue" after its Re-login.
 - **Sessions:** a machine asks the router for its session's account's pair at boot (404 `noAccount`: no login, e.g.
-  OpenCode) and keeps a long poll open (`jarvis2-machine creds-sync`, its log in the machine's output), writing every
+  OpenCode) and keeps a long poll open (`jarvis-machine creds-sync`, its log in the machine's output), writing every
   newer pair. A pair for another account than the machine's (the session's account was switched, `POST
   /api/sessions/:id/account`, DECISIONS 202) is installed under the running claude: credentials and `oauthAccount`
   replaced under the CLI's refresh lock, the token's account checked with Anthropic (`~/.claude/.jarvis-account`, the
@@ -758,7 +758,7 @@ Jarvis 4 on the same runner (`ios/ci/replica-stack.sh`):
   Release build reads them from; the job's GITHUB_TOKEN can push it, never main: the ruleset's `update` rule), the
   backup bucket on rclone's S3 server on the runner;
 - the setup session's part (`ios/ci/replica-setup.sh`, called by the host helper for each message from the test): the
-  stores written with `infra/setup.py` after the Reset, `jarvis2-request` run inside the session's machine with
+  stores written with `infra/setup.py` after the Reset, `jarvis-request` run inside the session's machine with
   `flyctl machine exec`, `setup.py request add-repo/remove-repo`, and the test repo's deploy keys checked on GitHub.
 
 `ios/UITests/ReplicaUITests.swift` taps every flow: Reset (the kit read off the page, backgrounded mid-flow), stores (a
@@ -809,20 +809,20 @@ not running in time. The video, screenshots and logs (core, router, the setup an
   signed answer the router keeps (certs, the input log in the router's `input-log.jsonl`).
 - A session's supervisor log (boot, the keeper and the supervisor, DESIGN "The supervisor and the guard"): the app's Log beside
   the terminal (source Supervisor), or `GET /api/sessions/:id/events`; kept for the session's life, and in its archive
-  (`jarvis2/supervisor-log.jsonl`) after Destroy. On the machine itself: `/run/jarvis2/supervisor.log`.
+  (`jarvis2/supervisor-log.jsonl`) after Destroy. On the machine itself: `/run/jarvis/supervisor.log`.
 - What a boot, pause, resume, Upgrade or destroy did, step by step (the router's steps, Fly's events and platform log,
   the supervisor's lines): the same Log, each operation from its start mark to its end mark; archived as
   `jarvis2/lifecycle.json`.
 - A session machine's log: `FLY_API_TOKEN=$JARVIS2_FLY_TOKEN flyctl logs -a jarvis4-sessions --machine <id> --no-tail`
 - The supervisor stopped answering (a pause waits on "the machine never reported"): the keeper (Fly's main child,
-  `jarvis2-machine boot`, root) restarts the worker within 30 s; the restarts are in the supervisor log ("supervisor
+  `jarvis-machine boot`, root) restarts the worker within 30 s; the restarts are in the supervisor log ("supervisor
   worker exited …"). Both are out of the OOM killer's reach (`oom_score_adj` -1000) and out of the session's reach
   (root: user claude can't signal them), so an out-of-memory machine or a stray `kill` loses harness processes, not
   the supervisor (DESIGN "The supervisor and the guard", The keeper).
 - The harness died (Remote Control gone, the app's session "disconnected"), the machine still up: the keeper starts it
   again with the same conversation; each end is a supervisor log line `keeper: HARNESS ENDED (<how>) after <uptime>
   (start n, pid p) … starting it again in <backoff>`, and the session's `registry.harness` (`/api/state`) has the count
-  and the last end. On the machine: `/run/jarvis2-keeper/harness.json`. Who killed it is not recorded; a signal name
+  and the last end. On the machine: `/run/jarvis-keeper/harness.json`. Who killed it is not recorded; a signal name
   (`killed by SIGTERM`) with no OOM in Fly's log points at a process of the session.
 - A machine that stopped by itself (Fly's stop, a host event): the keeper's teardown logged `teardown 1/2` (the
   transcripts it sent) and `snapshot streamed and committed` when the final snapshot made it; Pause then finds the

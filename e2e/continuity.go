@@ -160,8 +160,8 @@ func continuityStep(p *phone, master *ecdsa.PrivateKey, phoneAgreement string, r
 	}
 
 	step("continuity: the running session's machine reads the store list, adds a store and pulls (its e2e from the carry)")
-	expectOnMachine(m1, "su - claude -c 'jarvis2 stores' >/dev/null 2>&1 && echo ok", "ok")
-	go flyExec(m1, []string{"su", "-", "claude", "-c", "jarvis2 add-store e2e-more"})
+	expectOnMachine(m1, "su - claude -c 'jarvis stores' >/dev/null 2>&1 && echo ok", "ok")
+	go flyExec(m1, []string{"su", "-", "claude", "-c", "jarvis add-store e2e-more"})
 	pending := waitApprovals("add-store", id, 1)
 	unlock(p, "e2e-more", nonceOf(*pending[0].Challenge))
 	approve(p, pending[0])

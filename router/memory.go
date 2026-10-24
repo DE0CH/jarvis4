@@ -150,7 +150,7 @@ func memMessage(name, size string, a *MemAlert) string {
 func upgradedText(from, to string) string {
 	return fmt.Sprintf("Jarvis: this session ran out of memory and was moved from a %s to a %s machine. ", sizeText(from), sizeText(to)) +
 		"To free memory for the move, every process of the old machine was stopped: Claude itself, background jobs, builds, dev servers, browsers. " +
-		"Their list is in ~/artifacts/jarvis2-upgrade-freed.txt. Check which of them the task still needs, restart only those, then carry on with the task as before: the bigger machine has the room, so do not cut back on parallel work. " +
+		"Their list is in ~/artifacts/jarvis-upgrade-freed.txt. Check which of them the task still needs, restart only those, then carry on with the task as before: the bigger machine has the room, so do not cut back on parallel work. " +
 		"This is an automated message from Jarvis."
 }
 

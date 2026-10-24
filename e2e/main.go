@@ -273,8 +273,8 @@ func main() {
 	waitState(id, "started", 6*time.Minute)
 	m1 := machineOf(id)
 	expectOnMachine(m1, "session-secret --names | grep -cx E2E_SECRET", "1")
-	// the secrets are in the supervisor's RAM only: no ~/.secrets, no private key under ~/.ssh or /run/jarvis2
-	expectOnMachine(m1, "test -e /home/claude/.secrets && echo present || echo absent; grep -rl 'PRIVATE KEY' /home/claude/.ssh /run/jarvis2 2>/dev/null | wc -l", "absent\n0")
+	// the secrets are in the supervisor's RAM only: no ~/.secrets, no private key under ~/.ssh or /run/jarvis
+	expectOnMachine(m1, "test -e /home/claude/.secrets && echo present || echo absent; grep -rl 'PRIVATE KEY' /home/claude/.ssh /run/jarvis 2>/dev/null | wc -l", "absent\n0")
 	expectNoUnlocks("after the Start's pull")
 	if continuity {
 		continuityStep(p, master, phoneAgreement, recovered, id, m1, secret)
@@ -308,9 +308,9 @@ func main() {
 	must2(call(router, "POST", "/api/sessions/"+id+"/grants", map[string]string{"payload": draft.Text, "sig": p.sign(draft.Text)}, &grant))
 	expectExec(id, "echo hi from $(whoami)", "hi from claude")
 	must2(call(router, "DELETE", "/api/grants/"+grant.ID, nil, nil))
-	expectOnMachine(m1, "su - claude -c 'jarvis2 allow terminal 1h' && echo ok", "ok")
+	expectOnMachine(m1, "su - claude -c 'jarvis allow terminal 1h' && echo ok", "ok")
 	expectExec(id, "echo allowed", "allowed")
-	expectOnMachine(m1, "su - claude -c 'jarvis2 allow --remove terminal' && echo ok", "ok")
+	expectOnMachine(m1, "su - claude -c 'jarvis allow --remove terminal' && echo ok", "ok")
 	must2(call(router, "POST", "/api/sessions/"+id+"/grants/draft", map[string]any{"holder": "terminal", "kind": "rule", "until": time.Now().Add(24 * time.Hour)}, &draft))
 	must2(call(router, "POST", "/api/sessions/"+id+"/grants", map[string]string{"payload": draft.Text, "sig": p.sign(draft.Text)}, &grant))
 
@@ -334,7 +334,7 @@ func main() {
 		time.Sleep(2 * time.Second)
 	}
 	expectOnMachine(m1, "su - claude -c \"curl -s -X POST -H 'Content-Type: application/json' -d '{\\\"prompt\\\":\\\"e2e wake\\\",\\\"delaySeconds\\\":3600,\\\"name\\\":\\\"e2e\\\"}' http://127.0.0.1:7171/api/sessions/"+id+"/wakeups\" | grep -c '\"ok\":true'", "1")
-	expectOnMachine(m1, "su - claude -c 'jarvis2 allow' | grep -c '\"scheduler\"' || true", "0")
+	expectOnMachine(m1, "su - claude -c 'jarvis allow' | grep -c '\"scheduler\"' || true", "0")
 	expectOnMachine(m1, "su - claude -c 'curl -s -o /dev/null -w %{http_code} http://127.0.0.1:7171/api/sessions/s0000000000000000/wakeups'", "403")
 	var wk struct{ Wakeups []map[string]any }
 	must2(call(router, "GET", "/api/sessions/"+id+"/wakeups", nil, &wk))
@@ -352,13 +352,13 @@ func main() {
 	keeperStep(id, m1) // keeper.go: the keeper and the uid split; the harness killed and started again
 
 	step("store key names: the core's, listed to the session for every store (not only its own)")
-	expectOnMachine(m1, "su - claude -c 'jarvis2 stores' | grep -c '^e2e-extra \\[sensitive, locked\\]: E2E_EXTRA$'", "1")
-	expectOnMachine(m1, "su - claude -c 'jarvis2 stores' | grep -c '^e2e \\[in this session, locked\\]: E2E_SECRET$'", "1")
+	expectOnMachine(m1, "su - claude -c 'jarvis stores' | grep -c '^e2e-extra \\[sensitive, locked\\]: E2E_EXTRA$'", "1")
+	expectOnMachine(m1, "su - claude -c 'jarvis stores' | grep -c '^e2e \\[in this session, locked\\]: E2E_SECRET$'", "1")
 
 	step("two add-stores pending at once (e2e-extra, e2e-more), each unlocked for its own add-store only, answered in the order " +
 		"they weren't filed: the session ends with both (2026-10-13: the second answer used to drop the first store); e2e comes from the carried secrets")
-	go flyExec(m1, []string{"su", "-", "claude", "-c", "jarvis2 add-store e2e-extra"})
-	go flyExec(m1, []string{"su", "-", "claude", "-c", "jarvis2 add-store e2e-more"})
+	go flyExec(m1, []string{"su", "-", "claude", "-c", "jarvis add-store e2e-extra"})
+	go flyExec(m1, []string{"su", "-", "claude", "-c", "jarvis add-store e2e-more"})
 	pending := waitApprovals("add-store", id, 2)
 	byStore := map[string]approval{}
 	for _, a := range pending {
@@ -382,11 +382,11 @@ func main() {
 
 	step("a session writes one key into a store it doesn't hold, with no approval: backed up first (the bucket stand-in), " +
 		"the explanation listed, the phone shown which session wrote it; nobody holds the store, so no refresh is asked")
-	expectOnMachine(m1, "su - claude -c \"printf note-"+secret+" | jarvis2 put-key e2e-notes E2E_NOTE --explain 'the e2e note'\" 2>&1 | grep -c 'E2E_NOTE written in e2e-notes'", "1")
+	expectOnMachine(m1, "su - claude -c \"printf note-"+secret+" | jarvis put-key e2e-notes E2E_NOTE --explain 'the e2e note'\" 2>&1 | grep -c 'E2E_NOTE written in e2e-notes'", "1")
 	if _, err := os.Stat(filepath.Join(os.Getenv("E2E_S3_DIR"), "keys", "e2e-notes", "E2E_NOTE.json")); err != nil {
 		log.Fatalf("no backup of the written key in the bucket: %v", err)
 	}
-	expectOnMachine(m1, "su - claude -c 'jarvis2 stores --keys' | grep -c '^  E2E_NOTE: the e2e note \\[written by session '", "1")
+	expectOnMachine(m1, "su - claude -c 'jarvis stores --keys' | grep -c '^  E2E_NOTE: the e2e note \\[written by session '", "1")
 	unlock(p, "e2e-notes", "")
 	if lastUnlockWriters["e2e-notes/E2E_NOTE"] != "machine "+m1 {
 		log.Fatalf("the phone isn't shown the session's machine as the writer: %v", lastUnlockWriters)
@@ -398,7 +398,7 @@ func main() {
 
 	step("a key written into a store the session holds: its copy stays as it was until the phone's refresh, which the router " +
 		"asks for at once; once allowed (an unlock for its cert) the machine pulls by itself, and the other keys are untouched")
-	expectOnMachine(m1, "su - claude -c \"printf more2-"+secret+" | jarvis2 put-key e2e-more E2E_MORE --explain 'the e2e more key'\" >/dev/null 2>&1; "+
+	expectOnMachine(m1, "su - claude -c \"printf more2-"+secret+" | jarvis put-key e2e-more E2E_MORE --explain 'the e2e more key'\" >/dev/null 2>&1; "+
 		"session-secret --keys E2E_MORE --exec env 2>/dev/null | grep -c more2- || true", "0")
 	if q := waitRequestFor(id, 30*time.Second); q == "" {
 		log.Fatal("no refresh asked for the session that holds the written store")
@@ -413,14 +413,14 @@ func main() {
 	denyRequestsFor(id) // the harness unlocked as the app would; the request itself is done with
 
 	step("delete a key: gone from the core's list")
-	expectOnMachine(m1, "su - claude -c 'jarvis2 delete-key e2e-notes E2E_NOTE' >/dev/null 2>&1; su - claude -c 'jarvis2 stores' | grep -c '^e2e-notes \\[.*\\]: $'", "1")
+	expectOnMachine(m1, "su - claude -c 'jarvis delete-key e2e-notes E2E_NOTE' >/dev/null 2>&1; su - claude -c 'jarvis stores' | grep -c '^e2e-notes \\[.*\\]: $'", "1")
 
 	step("downgrade in place: back to [e2e], new keys, the extra secret shredded")
-	expectOnMachine(m1, "su - claude -c 'jarvis2 downgrade --keep e2e' >/dev/null 2>&1 && session-secret --names | grep -cx E2E_SECRET && session-secret --names | grep -cx E2E_EXTRA || true", "1\n0")
+	expectOnMachine(m1, "su - claude -c 'jarvis downgrade --keep e2e' >/dev/null 2>&1 && session-secret --names | grep -cx E2E_SECRET && session-secret --names | grep -cx E2E_EXTRA || true", "1\n0")
 
 	step("a key written into e2e before the pause, its refresh not allowed: the resumed session's carried copy is behind, " +
 		"and the router asks the phone again after its first pull")
-	expectOnMachine(m1, "su - claude -c \"printf late-"+secret+" | jarvis2 put-key e2e E2E_LATE --explain 'written before the pause'\" >/dev/null 2>&1; echo done", "done")
+	expectOnMachine(m1, "su - claude -c \"printf late-"+secret+" | jarvis put-key e2e E2E_LATE --explain 'written before the pause'\" >/dev/null 2>&1; echo done", "done")
 	if q := waitRequestFor(id, 30*time.Second); q == "" {
 		log.Fatal("no refresh asked after the write")
 	}
@@ -544,9 +544,9 @@ func main() {
 	step("a new session's Claude is logged in with no grant: the machine took its account's pair from the router at boot")
 	expectOnMachine(om, "grep -c e2e-fake-refresh /home/claude/.claude/.credentials.json; stat -c %a /home/claude/.claude/.credentials.json", "1\n600")
 	// the Claude login sync is the supervisor's (machine/claudelogin.go credsSync, started once booted)
-	expectOnMachine(om, "grep -c 'the supervisor keeps the pair in step' /run/jarvis2/supervisor.log", "1")
+	expectOnMachine(om, "grep -c 'the supervisor keeps the pair in step' /run/jarvis/supervisor.log", "1")
 	// the supervisor (the keeper and its worker) is out of the OOM killer's reach; the harness is not
-	expectOnMachine(om, "for p in /proc/[0-9]*; do case \"$(tr '\\0' ' ' < $p/cmdline 2>/dev/null)\" in '/proc/self/exe supervisor '*|'/usr/local/bin/jarvis2-machine boot '*) cat $p/oom_score_adj;; esac; done | sort | uniq -c | awk '{print $1, $2}'", "2 -1000")
+	expectOnMachine(om, "for p in /proc/[0-9]*; do case \"$(tr '\\0' ' ' < $p/cmdline 2>/dev/null)\" in '/proc/self/exe supervisor '*|'/usr/local/bin/jarvis-machine boot '*) cat $p/oom_score_adj;; esac; done | sort | uniq -c | awk '{print $1, $2}'", "2 -1000")
 	expectOnMachine(om, "cat /proc/$(pgrep -o -f harness-claude)/oom_score_adj", "0")
 	// its log reaches the router
 	for i := 0; ; i++ {

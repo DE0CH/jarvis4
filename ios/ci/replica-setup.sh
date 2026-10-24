@@ -7,8 +7,8 @@
 #   repo-added  the test repo has its one deploy key now (the app shows the repo added) → "ok"
 #   repo-check  …and none left after the app removed it → "ok"
 #   inbox-setup-add / inbox-setup-remove   infra/setup.py request add-repo / remove-repo for the test repo → "ok"
-#   inbox-session:<sid>:<holder>           jarvis2-request grant <holder> run inside that session's machine (flyctl exec)
-#   inbox-batch:<sid>                      jarvis2-request batch (two grants, one summary) inside that session's machine
+#   inbox-session:<sid>:<holder>           jarvis-request grant <holder> run inside that session's machine (flyctl exec)
+#   inbox-batch:<sid>                      jarvis-request batch (two grants, one summary) inside that session's machine
 #   session-file:<sid>:<name>              the image attached on New session is on that session's machine (the
 #                                          machine's hash-checked copy, or the harness's ~/uploads copy)
 #   done        the end → "ok"
@@ -37,7 +37,7 @@ case "$msg" in
     printf '%s' "$REPLICA_REPO_TOKEN" > "$W/deploy-keys.tok"; chmod 600 "$W/deploy-keys.tok"
     if ( set -e
          export RH_PLAIN="plain-$rnd" RH_SECRET="secret-$rnd" CF_ACCESS_CLIENT_ID="tunnel-id-$rnd" CF_ACCESS_CLIENT_SECRET="tunnel-secret-$rnd"
-         export JARVIS2_NOT_SENSITIVE=rh-plain
+         export JARVIS_NOT_SENSITIVE=rh-plain
          S pin-master
          S create rh-plain
          S write rh-plain RH_PLAIN --explain 'RH_PLAIN=replica test value (not secret)'
@@ -53,12 +53,12 @@ case "$msg" in
   inbox-setup-remove) S request remove-repo "$REPLICA_REPO" --why "replica: Claude asks to remove it (deny this)" >> "$L" 2>&1 && echo ok || echo "request failed: $(tail -1 "$L")" ;;
   inbox-session:*)
     IFS=: read -r _ sid holder <<<"$msg"; m=$(machine_of "$sid")
-    if [ -n "$m" ] && fexec "$m" "/usr/local/bin/jarvis2-request grant $holder --minutes 5 --why replica-the-session-asks-for-$holder" >> "$L" 2>&1; then echo ok
+    if [ -n "$m" ] && fexec "$m" "/usr/local/bin/jarvis-request grant $holder --minutes 5 --why replica-the-session-asks-for-$holder" >> "$L" 2>&1; then echo ok
     else echo "session request failed (machine ${m:-none}): $(tail -2 "$L" | tr '\n' ' ')"; fi ;;
   inbox-batch:*) # not status: the grants step later forgets ITS status grant by the row's identifier
     sid=${msg#inbox-batch:}; m=$(machine_of "$sid"); o="$W/batch.out"
     # flyctl exec exits 0 whatever the command did: the router's batch id is the proof
-    if [ -n "$m" ] && fexec "$m" "/usr/local/bin/jarvis2-request batch --summary replica-the-session-asks-for-two-grants --item grant,holder=archive,minutes=5 --item grant,holder=remote,minutes=5" > "$o" 2>&1 \
+    if [ -n "$m" ] && fexec "$m" "/usr/local/bin/jarvis-request batch --summary replica-the-session-asks-for-two-grants --item grant,holder=archive,minutes=5 --item grant,holder=remote,minutes=5" > "$o" 2>&1 \
          && grep -q '"id": "b' "$o"; then cat "$o" >> "$L"; echo ok
     else cat "$o" >> "$L"; echo "session batch failed (machine ${m:-none}): $(tail -2 "$o" | tr '\n' ' ')"; fi ;;
   session-file:*)
@@ -67,7 +67,7 @@ case "$msg" in
     found=""; m=""
     for _ in $(seq 1 18); do
       m=$(machine_of "$sid")
-      [ -n "$m" ] && found=$(fexec "$m" "find /root /home -maxdepth 3 -type f -name $name -size +0c" 2>>"$L" | tr -d "\r" | grep -E "/(\.jarvis2-uploads|uploads)/$name\$" || true)
+      [ -n "$m" ] && found=$(fexec "$m" "find /root /home -maxdepth 3 -type f -name $name -size +0c" 2>>"$L" | tr -d "\r" | grep -E "/(\.jarvis-uploads|uploads)/$name\$" || true)
       [ -n "$found" ] && break; sleep 10
     done
     if [ -n "$found" ]; then echo "ok $(echo $found)"; else echo "not on the machine (${m:-none}): $(tail -2 "$L" | tr '\n' ' ')"; fi ;;

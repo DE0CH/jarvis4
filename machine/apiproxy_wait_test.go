@@ -11,7 +11,7 @@ func TestWaitAPIProxy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("JARVIS2_API_ADDR", l.Addr().String())
+	t.Setenv("JARVIS_API_ADDR", l.Addr().String())
 	t0 := time.Now()
 	waitAPIProxy(5 * time.Second)
 	if time.Since(t0) > 2*time.Second {

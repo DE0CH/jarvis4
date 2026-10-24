@@ -166,7 +166,7 @@ func TestProxyTakesAContentFileOnlyAttested(t *testing.T) {
 	}
 }
 
-// jarvis2-request batch: the batch reaches the router as /m/api/requests/batch, signed, body unchanged (the router
+// jarvis-request batch: the batch reaches the router as /m/api/requests/batch, signed, body unchanged (the router
 // names the session from the machine key)
 func TestProxyForwardsABatch(t *testing.T) {
 	t.Setenv("JARVIS2_SESSION_ID", "s1")

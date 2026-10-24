@@ -1,23 +1,23 @@
-// jarvis2-machine: the session machine's side of Jarvis 4 (docs/DESIGN.md,
+// jarvis-machine: the session machine's side of Jarvis 4 (docs/DESIGN.md,
 // "Machine side"). It is the image's entry point and its fixed init entry point:
 //
-//	jarvis2-machine boot       ENTRYPOINT, as root: the keeper (keeper.go), Fly's main child for the machine's
+//	jarvis-machine boot       ENTRYPOINT, as root: the keeper (keeper.go), Fly's main child for the machine's
 //	                           whole life. It starts the boot steps (prepare), the supervisor's worker and then
 //	                           the harness, each as its own child, restarts the worker and the harness when they
 //	                           die, and turns Fly's stop signal into the priority teardown.
-//	jarvis2-machine prepare    the boot steps, as user claude (started by the keeper): make the machine's key
+//	jarvis-machine prepare    the boot steps, as user claude (started by the keeper): make the machine's key
 //	                           pairs, wait for init, then check the succession cert, restore the predecessor's
 //	                           snapshot, have the supervisor pull the secrets, clone the repos and hand the
 //	                           harness's env (no secret value) to the keeper. Any failed check → start nothing.
-//	jarvis2-machine init       what the core runs through Fly exec (no arguments): asks boot to go on.
-//	jarvis2-machine supervisor --worker
+//	jarvis-machine init       what the core runs through Fly exec (no arguments): asks boot to go on.
+//	jarvis-machine supervisor --worker
 //	                           started by the keeper once init asked: the machine's long-running process that
 //	                           talks to the router (supervisor.go), with the guard (guard.go) in front of the
 //	                           commands that need it. Root, with user claude's file access (keeper.go).
-//	jarvis2-machine stores [--json]
+//	jarvis-machine stores [--json]
 //	                           every store and the key NAMES it holds (never a value), to know which store to
 //	                           ask for (stores.go).
-//	jarvis2-machine add-store <name>
+//	jarvis-machine add-store <name>
 //	                           asks Deyao to add one store to this session; on approval the supervisor
 //	                           pulls the secrets again (RAM only).
 //
@@ -60,7 +60,7 @@ import (
 )
 
 const (
-	dir         = "/run/jarvis2"
+	dir         = "/run/jarvis"
 	keysPath    = dir + "/keys.json" // public halves, printed by init for the core (through Fly exec)
 	coreKeyPath = dir + "/core-key"  // the core's key, from the machine's Fly config (the core set it)
 	coreKeyEnv  = "JARVIS2_CORE_KEY" // the core that created this machine puts its signing key here
@@ -114,9 +114,9 @@ type private struct {
 
 func main() {
 	log.SetFlags(0)
-	log.SetPrefix("[jarvis2] ")
+	log.SetPrefix("[jarvis] ")
 	if len(os.Args) < 2 {
-		log.Fatal("usage: jarvis2-machine boot | init | stores [--json] | put-key <store> <key> [--explain <text>] < value | delete-key <store> <key> | add-store <name> | await-store <name> | downgrade --keep <store>… | --drop <store>… | --none | allow [<holder> <duration> | --remove <holder>] | supervisor")
+		log.Fatal("usage: jarvis-machine boot | init | stores [--json] | put-key <store> <key> [--explain <text>] < value | delete-key <store> <key> | add-store <name> | await-store <name> | downgrade --keep <store>… | --drop <store>… | --none | allow [<holder> <duration> | --remove <holder>] | supervisor")
 	}
 	var err error
 	switch os.Args[1] {
@@ -128,12 +128,12 @@ func main() {
 		err = initCmd()
 	case "add-store":
 		if len(os.Args) != 3 {
-			log.Fatal("usage: jarvis2-machine add-store <name>")
+			log.Fatal("usage: jarvis-machine add-store <name>")
 		}
 		err = addStore(os.Args[2])
-	case "await-store": // after `jarvis2-request add-store`: no second ask, only the wait and the pull
+	case "await-store": // after `jarvis-request add-store`: no second ask, only the wait and the pull
 		if len(os.Args) != 3 {
-			log.Fatal("usage: jarvis2-machine await-store <name>")
+			log.Fatal("usage: jarvis-machine await-store <name>")
 		}
 		err = awaitStore(os.Args[2])
 	case "stores":
@@ -149,7 +149,7 @@ func main() {
 		}
 	case "supervisor": // supervisor.go: the worker, started (and restarted) by the keeper
 		if len(os.Args) != 3 || os.Args[2] != "--worker" {
-			log.Fatal("usage: jarvis2-machine supervisor --worker (the keeper starts it)")
+			log.Fatal("usage: jarvis-machine supervisor --worker (the keeper starts it)")
 		}
 		err = supervise()
 	case "unprotected": // keeper.go: a command for the session: back under the OOM killer, as user claude, then exec
@@ -367,7 +367,7 @@ func prepare() (spec harnessSpec, err error) {
 	// and gets them when Deyao's unlock goes through (the router's refresh-secrets)
 	secrets := map[string]string{}
 	if _, err := askSecrets(secretsReq{Op: "pull"}, 20*time.Minute); errors.Is(err, errStoresLocked) {
-		log.Printf("%v: starting without secrets; the supervisor takes them once the store is unlocked (Unlock… in the app, or `jarvis2-request unlock`)", err)
+		log.Printf("%v: starting without secrets; the supervisor takes them once the store is unlocked (Unlock… in the app, or `jarvis-request unlock`)", err)
 	} else if err != nil {
 		return spec, err
 	} else {
@@ -433,7 +433,7 @@ func prepare() (spec harnessSpec, err error) {
 // waitAPIProxy: the supervisor starts the local Jarvis API once bootedPath exists (polled every second); the
 // harness's entrypoint calls it at once (content-sync pull), so wait until it accepts connections (at most d)
 func waitAPIProxy(d time.Duration) {
-	addr := os.Getenv("JARVIS2_API_ADDR")
+	addr := os.Getenv("JARVIS_API_ADDR")
 	if addr == "" {
 		addr = apiProxyAddr
 	}
@@ -875,7 +875,7 @@ func addStore(name string) error {
 }
 
 // awaitStore: wait (up to 1 h) for a cert of this machine that holds the store, then pull the secrets. Also what
-// `jarvis2-request add-store` runs after its request, which asks by itself (with a reason) and so must not ask again.
+// `jarvis-request add-store` runs after its request, which asks by itself (with a reason) and so must not ask again.
 func awaitStore(name string) error {
 	if _, ok := readKernelTrust(); ok {
 		return awaitStoreKernel(name)
@@ -967,7 +967,7 @@ func hasStore(stores []string, name string) bool {
 // secretsLockPath: one pull into the supervisor's copy at a time (with the cert file and the deploy keys it implies)
 func secretsLockPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".jarvis2-secrets.lock")
+	return filepath.Join(home, ".jarvis-secrets.lock")
 }
 
 // withSecretsLock: run fn holding the machine-wide secrets lock

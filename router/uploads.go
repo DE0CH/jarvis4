@@ -356,7 +356,7 @@ func (r *Router) registerUploads(app appRoute, m machineRoute) {
 		af, err := r.StageUpload(req.Header.Get("x-upload-id"), "", name, req.Body)
 		writeUpload(w, af, err)
 	})
-	// a session stages a file for a new session it will propose (jarvis2-request new-session --attach): the raw bytes,
+	// a session stages a file for a new session it will propose (jarvis-request new-session --attach): the raw bytes,
 	// the upload id and name in the path (the machine signs the path and the body's hash)
 	m("PUT /m/api/sessions/{id}/uploads/{upload}/{name}", func(w http.ResponseWriter, req *http.Request, machine string, body []byte) {
 		sid, err := r.machineSession(machine)

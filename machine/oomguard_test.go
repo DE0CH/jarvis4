@@ -88,7 +88,7 @@ func TestRescueOutsideTheSessionAsRoot(t *testing.T) {
 	oldS, oldR := sessionCgroup, rescueCgroup
 	sessionCgroup = "/sys/fs/cgroup/memory/jarvis2-test-session-" + strconv.Itoa(os.Getpid())
 	rescueCgroup = "/sys/fs/cgroup/memory/jarvis2-test-rescue-" + strconv.Itoa(os.Getpid())
-	t.Setenv("JARVIS2_TEST_CGROUPS", sessionCgroup+","+rescueCgroup)
+	t.Setenv("JARVIS_TEST_CGROUPS", sessionCgroup+","+rescueCgroup)
 	var hog *exec.Cmd
 	t.Cleanup(func() {
 		if hog != nil && hog.Process != nil {

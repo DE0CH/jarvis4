@@ -19,7 +19,7 @@ import (
 // the machine's own run dir: the restore temp files and the private keys go to a temp dir (a test host may itself be a
 // session machine: the client re-reads privPath before signing and would sign with that machine's real key)
 func TestMain(m *testing.M) {
-	keeperStandIn() // keeper_test.go: when the binary is re-run as jarvis2-machine
+	keeperStandIn() // keeper_test.go: when the binary is re-run as jarvis-machine
 	d, _ := os.MkdirTemp("", "jarvis2-run")
 	restoreTmp, predecessorTmp = filepath.Join(d, "restore.tar.gz"), filepath.Join(d, "predecessor.tar.gz")
 	privPath = filepath.Join(d, "private.json")

@@ -4,7 +4,7 @@ package main
 // Claude Code's own cross-session channels are refused in every session (session-image/claude-code/
 // managed-settings.json: crossSessionInbound "refuse"), so a session with fewer secrets can't get one with more to act
 // for it (a confused deputy) behind Deyao's back. A session calls POST /m/api/requests/peer {to, text}
-// (`jarvis2-message`); the router names the sender from its machine key and decides the direction:
+// (`jarvis-message`); the router names the sender from its machine key and decides the direction:
 //
 //   equal     the receiver holds exactly the sender's stores, in the same permission mode
 //   downward  the receiver holds no store the sender lacks, and bypasses only if the sender does

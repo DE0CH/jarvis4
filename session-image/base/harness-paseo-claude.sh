@@ -10,7 +10,7 @@
 #                  Remote page) and the daemon's web UI behind Cloudflare Access through the cf-tunnel on the
 #                  session's own origin https://<session id>-s.deyaochen.com/ (paseo-front.js), as for OpenCode.
 #   api-proxy.js   every Claude call goes through it (ANTHROPIC_BASE_URL; logged into ~/artifacts/api-log) and it
-#                  sends the session's CURRENT Claude login (~/.claude/.credentials.json, which jarvis2-machine
+#                  sends the session's CURRENT Claude login (~/.claude/.credentials.json, which jarvis-machine
 #                  keeps in step with the router: machine/claudelogin.go), read fresh per request. That is what
 #                  makes an account switch transparent: the machine writes the new account's pair and the next
 #                  request goes out on it, mid-turn included, with nothing restarted (router/accountswap.go).

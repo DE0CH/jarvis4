@@ -14,7 +14,7 @@ keys = tempfile.mkdtemp()
 setup_k = ec.generate_private_key(ec.SECP256R1())
 os.environ["JARVIS2_SETUP_KEY"] = setup_k.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
                                                          serialization.NoEncryption()).decode()
-os.environ["JARVIS2_KEYS_DIR"] = keys
+os.environ["JARVIS_KEYS_DIR"] = keys
 os.environ.update(KERNEL_ID_ACCESS_ID="id", KERNEL_ID_ACCESS_SECRET="secret")
 spec = importlib.util.spec_from_file_location("setup", os.path.join(ROOT, "infra", "setup.py"))
 S = importlib.util.module_from_spec(spec)

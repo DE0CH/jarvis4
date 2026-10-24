@@ -330,7 +330,7 @@ func (r *Router) outcomeTick() {
 	}
 }
 
-// ---- the session reads its own (jarvis2-request wait / outcomes) -----------------------------------------------
+// ---- the session reads its own (jarvis-request wait / outcomes) -----------------------------------------------
 
 type outcomeView struct {
 	Ref       string     `json:"ref"`

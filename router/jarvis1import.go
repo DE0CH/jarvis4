@@ -373,7 +373,7 @@ func j1DefaultPrompt(id string, stores []string) string {
 	return "[Jarvis 4] This conversation was moved from Jarvis 1 to Jarvis 4 on " + time.Now().UTC().Format("2006-01-02") +
 		" (Jarvis 1 session " + id + "). Its transcript, ~/workspace and ~/artifacts were restored from the Jarvis 1 pause snapshot, and " +
 		"any wakeups or crons it had armed were re-armed on Jarvis 4 (see ~/artifacts/jarvis1-import/rearmed.txt). It now runs on Jarvis 4 with " +
-		"the stores " + strings.Join(stores, ", ") + " (`jarvis2 stores` lists them; `jarvis2-request add-store` asks for another). " +
+		"the stores " + strings.Join(stores, ", ") + " (`jarvis stores` lists them; `jarvis-request add-store` asks for another). " +
 		"Jarvis 1 is being frozen, so don't use its API. Nothing to do now: reply with one short line and wait for Deyao."
 }
 

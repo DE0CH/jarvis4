@@ -342,7 +342,7 @@ func (r *Router) checkBatchItem(c Caller, raw json.RawMessage) (*batchItem, erro
 			}
 		})
 		if it.machine == "" {
-			return nil, &badRequest{fmt.Sprintf("add-store: session %q has no running machine: a store is added to a paused session at its resume (jarvis2-request add-store once it runs)", sid)}
+			return nil, &badRequest{fmt.Sprintf("add-store: session %q has no running machine: a store is added to a paused session at its resume (jarvis-request add-store once it runs)", sid)}
 		}
 		it.store, it.args = in.Store, map[string]any{"intent": in.Intent, "session": sid, "store": in.Store}
 		return it, nil

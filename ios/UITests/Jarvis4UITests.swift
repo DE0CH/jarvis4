@@ -118,7 +118,7 @@ final class Jarvis4UITests: JarvisUITestCase {
     XCTAssertTrue(wait(el("resume-\(sid)"), 60, "paused after the rejected resume"), "[\(tag)] a rejected resume leaves it paused")
   }
 
-  /// a single request in the Inbox (a grant asked for the session, as a session's jarvis2-request files it), denied each
+  /// a single request in the Inbox (a grant asked for the session, as a session's jarvis-request files it), denied each
   /// way the app offers: the review page's Deny (top left), the page's "Deny request", and a swipe on the row. Each time
   /// the item leaves the Inbox and the router has dropped it (Deyao, 2026-10-13: the page's Deny only closed the page)
   func inboxDenySingle(_ sid: String) {

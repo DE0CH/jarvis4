@@ -3,7 +3,7 @@ package main
 // Grants (docs/DESIGN.md "Grants"): each router feature that needs a shell in a session has its own key pair
 // (a holder), kept on the router's volume. A session's machine runs a holder's command when the phone signed a
 // grant (10 minutes at most) or a standing rule for that holder and line, or when the session put the holder on
-// its own allow list (`jarvis2-machine allow`). The machine checks all of it against its core-signed cert; the
+// its own allow list (`jarvis-machine allow`). The machine checks all of it against its core-signed cert; the
 // router only drafts the text for the phone, keeps what the phone signed, and relays requests and results.
 
 import (

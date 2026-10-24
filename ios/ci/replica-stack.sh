@@ -143,7 +143,7 @@ grep -q "WireGuard peer from" "$W/m-gateway.log" || { echo "the gateway has no W
 
 # what the setup answers (ios/ci/replica-setup.sh) need: setup.py pointed at this stack
 cat > "$W/env" <<EOF
-export JARVIS2_URL=http://127.0.0.1:18080 JARVIS2_KEYS_DIR="$W/keys" JARVIS2_BACKUP_BUCKET=jarvis2-backup-replica
+export JARVIS2_URL=http://127.0.0.1:18080 JARVIS_KEYS_DIR="$W/keys" JARVIS_BACKUP_BUCKET=jarvis2-backup-replica
 export JARVIS2_SETUP_KEY="\$(cat "$W/setup-key.pem")" JARVIS2_SETUP_ACCESS_ID=none JARVIS2_SETUP_ACCESS_SECRET=none
 export HETZNER_S3_ENDPOINT=http://127.0.0.1:18098 HETZNER_S3_REGION=fsn1 HETZNER_S3_ACCESS_KEY=replica HETZNER_S3_SECRET_KEY="$S3_SECRET"
 export REPLICA_W="$W" REPLICA_PY="$W/venv/bin/python"

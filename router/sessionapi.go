@@ -1,7 +1,7 @@
 package main
 
 // The session-facing API (Jarvis 1's `$JARVIS_URL/api/...` as its session scripts call it). In a Jarvis 4
-// session JARVIS_URL points at the machine's local proxy (the supervisor, `jarvis2-machine supervisor`, machine/apiproxy.go), which
+// session JARVIS_URL points at the machine's local proxy (the supervisor, `jarvis-machine supervisor`, machine/apiproxy.go), which
 // signs each request with the machine key and sends it here as /m/api/<rest>. Any session id in the path must
 // be the calling machine's own session.
 //
@@ -61,7 +61,7 @@ func (r *Router) registerSessionAPI(app appRoute, m machineRoute) {
 				return
 			}
 			if id := req.PathValue("id"); id != "" && id != sid {
-				writeJSON(w, 403, map[string]string{"error": fmt.Sprintf("this machine is session %s, not %s: these routes act on the calling session only; to act on another session use its actions (scripts/jarvis2-actions.py, /m/api/actions/sessions/%s/…) or message it", sid, id, id)})
+				writeJSON(w, 403, map[string]string{"error": fmt.Sprintf("this machine is session %s, not %s: these routes act on the calling session only; to act on another session use its actions (scripts/jarvis4-actions.py, /m/api/actions/sessions/%s/…) or message it", sid, id, id)})
 				return
 			}
 			fn(w, req, sid, body)
@@ -339,7 +339,7 @@ func (r *Router) proposeSession(w http.ResponseWriter, c Caller, prefix string, 
 	waiting := 0
 	r.st.Do(func(d *persisted) { _, waiting = callerLoad(d, c) })
 	if waiting >= maxProposedSessions {
-		writeJSON(w, 429, map[string]string{"error": fmt.Sprintf("%d proposed sessions already wait for Deyao: wait for his answer, or deny one (jarvis2-actions.py deny ID), then propose again", waiting)})
+		writeJSON(w, 429, map[string]string{"error": fmt.Sprintf("%d proposed sessions already wait for Deyao: wait for his answer, or deny one (jarvis4-actions.py deny ID), then propose again", waiting)})
 		return
 	}
 	id, err := r.CreateSession(ns)
@@ -373,7 +373,7 @@ func (r *Router) checkProposal(c Caller, prefix string, in proposalIn, explRequi
 	var attached []string
 	if in.Attachments != nil {
 		if c.Kind != "session" {
-			return NewSession{}, &badRequest{"attachments come only with a session's own proposal (jarvis2-request new-session --attach FILE)"}
+			return NewSession{}, &badRequest{"attachments come only with a session's own proposal (jarvis-request new-session --attach FILE)"}
 		}
 		var err error
 		r.st.Do(func(d *persisted) {

@@ -36,8 +36,8 @@ import (
 )
 
 var (
-	sessionCgroup  = "/sys/fs/cgroup/memory/jarvis2-session"
-	rescueCgroup   = "/sys/fs/cgroup/memory/jarvis2-rescue"
+	sessionCgroup  = "/sys/fs/cgroup/memory/jarvis-session"
+	rescueCgroup   = "/sys/fs/cgroup/memory/jarvis-rescue"
 	sessionReserve = int64(640 << 20) // bytes kept outside the session's limit
 	rescueMax      = int64(384 << 20) // the rescue cgroup's limit (of the reserve)
 )

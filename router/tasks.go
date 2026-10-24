@@ -4,7 +4,7 @@ package main
 // run on a click or on a daily SCHEDULE. In Jarvis 4 an instance is a session LINE:
 //
 //   template  tasks/<name>/task.json + its files, in this repo. Baked into the session image
-//             (/opt/jarvis2/tasks) and the router image (/tasks, for the forms). task.json: {title, description?,
+//             (/opt/jarvis/tasks) and the router image (/tasks, for the forms). task.json: {title, description?,
 //             run? ("run.py" | "run.sh" | "run.js" | any executable) or prompt? ("prompt.md": claude -p),
 //             stores? [...], timeoutSeconds? (600), size? ("small"), fields: [{name, label?, type
 //             (text|textarea|number|select|multiselect|checkbox), required?, default?, options?, optionsFrom?

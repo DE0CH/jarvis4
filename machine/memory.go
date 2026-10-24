@@ -12,7 +12,7 @@ package main
 // so its work stops early to give the snapshot the memory: the harness (the machine's main process, whose exit
 // stops the Fly machine) is SIGSTOPped, and every other process of this user except the supervisor is SIGKILLed (Jarvis
 // 1's FREEZE_CMD; Deyao, 2026-10-10: kill the AI too, or it starts the build again). The list of what was killed
-// goes to ~/artifacts/jarvis2-upgrade-freed.txt, inside the snapshot, for the next machine's "upgraded" message.
+// goes to ~/artifacts/jarvis-upgrade-freed.txt, inside the snapshot, for the next machine's "upgraded" message.
 
 import (
 	"bufio"
@@ -156,7 +156,7 @@ func memoryReporter(c *client) {
 
 // ---- free (before an Upgrade's snapshot) -------------------------------------------------------------------
 
-var freedFile = "artifacts/jarvis2-upgrade-freed.txt"
+var freedFile = "artifacts/jarvis-upgrade-freed.txt"
 
 // signalProc: the kill(2) the free step uses (a test replaces it)
 var signalProc = func(pid int, sig syscall.Signal) error { return syscall.Kill(pid, sig) }

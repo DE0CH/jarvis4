@@ -7,8 +7,8 @@ package main
 // store key, the master key and the phone come from the core's signed documents, checked against the core key this
 // machine was started with, so the router can't hand it a key of its own.
 //
-//	jarvis2 put-key STORE KEY [--explain TEXT] < value     the value from stdin (never an argument)
-//	jarvis2 delete-key STORE KEY
+//	jarvis put-key STORE KEY [--explain TEXT] < value     the value from stdin (never an argument)
+//	jarvis delete-key STORE KEY
 //
 // The session's own copy doesn't change: a session holding the store (this one too) gets the new value at its next
 // pull with a new cert (an add-store, a resume); the router files no request for it (Deyao, 2026-10-22).
@@ -162,9 +162,9 @@ func keyWriteRequest(storeKey, master string, sig *ecdh.PrivateKey, store, key s
 	return req, nil
 }
 
-// putKeyCmd: jarvis2 put-key STORE KEY [--explain TEXT] (value on stdin) | jarvis2 delete-key STORE KEY
+// putKeyCmd: jarvis put-key STORE KEY [--explain TEXT] (value on stdin) | jarvis delete-key STORE KEY
 func putKeyCmd(args []string, del bool) error {
-	usage := "usage: jarvis2 put-key STORE KEY [--explain TEXT] < value   |   jarvis2 delete-key STORE KEY"
+	usage := "usage: jarvis put-key STORE KEY [--explain TEXT] < value   |   jarvis delete-key STORE KEY"
 	explain := ""
 	rest := []string{}
 	for i := 0; i < len(args); i++ {
@@ -196,7 +196,7 @@ func putKeyCmd(args []string, del bool) error {
 		}
 		value = []byte(strings.TrimSuffix(string(v), "\n")) // `echo x |` adds one
 		if len(value) == 0 {
-			return errors.New("no value on stdin (an empty key is a delete: jarvis2 delete-key)")
+			return errors.New("no value on stdin (an empty key is a delete: jarvis delete-key)")
 		}
 	}
 	coreKey, secretsAgreement, err := writeTrust()
