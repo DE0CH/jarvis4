@@ -86,7 +86,8 @@ spec:
   replicas: 1
   selector: { matchLabels: { app: kernel-id } }
   template:
-    metadata: { labels: { app: kernel-id } }
+    # nginx reads default.conf only at start: change jarvis2/conf with every ConfigMap edit, so the pod restarts onto it
+    metadata: { labels: { app: kernel-id }, annotations: { jarvis2/conf: role-copy } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
