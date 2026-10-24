@@ -1,0 +1,52 @@
+# A tenant on the cluster: Deyao's own services (DE0CH/services: transcript search), not part of Jarvis 4 (Deyao,
+# 2026-10-24: Jarvis 4's job is secrets and the lifecycle of Fly containers and runners). Jarvis 4 only hosts them: the
+# namespace `services`, its quota, and a Flux sync of that repo's k8s/ applied as flux-services, which is admin in
+# `services` and nothing else, so nothing that repo holds can touch Jarvis. Its Secrets are SOPS-encrypted to the
+# cluster's age key (keys/cluster-age.pub), decrypted with the same sops-age as k8s/cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: services
+  labels: { pod-security.kubernetes.io/enforce: restricted }
+---
+# search 2 × 1 Gi + cloudflared 2 × 128 Mi, rolling surges included (+1 of each)
+apiVersion: v1
+kind: ResourceQuota
+metadata: { name: services, namespace: services }
+spec:
+  hard: { limits.memory: 4Gi, requests.memory: 2Gi, limits.cpu: "3", persistentvolumeclaims: "2", requests.storage: 20Gi }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: flux-services, namespace: flux-system }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: flux-services, namespace: services }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: admin }
+subjects: [{ kind: ServiceAccount, name: flux-services, namespace: flux-system }]
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata: { name: services, namespace: flux-system }
+spec:
+  interval: 1m
+  url: https://github.com/DE0CH/services
+  ref: { branch: main }
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: { name: services, namespace: flux-system }
+spec:
+  interval: 1m
+  retryInterval: 30s
+  timeout: 3m
+  sourceRef: { kind: GitRepository, name: services }
+  path: ./k8s
+  prune: true
+  wait: false
+  targetNamespace: services
+  serviceAccountName: flux-services
+  decryption:
+    provider: sops
+    secretRef: { name: sops-age }
