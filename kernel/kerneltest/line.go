@@ -119,7 +119,7 @@ func (k *Kernel) Line(t testing.TB, sid, image string, settings json.RawMessage,
 	}
 	snz := k.Notarize(t, sc)
 	g := k.Move(t, gv.Signed{Grant: k.RootTop(), By: "root"}, sc, snz)
-	created, err := k.post("spawner", "/spawn", map[string]any{"cert": sc, "notarized": snz, "notarizer": k.Identity("notarizer"), "region": "lhr", "size": "medium"})
+	created, err := k.post("spawner", "/spawn", map[string]any{"cert": sc, "notarized": snz, "notarizer": k.Identity("notarizer"), "region": "lhr", "size": "medium", "diskGb": 10})
 	if err != nil {
 		t.Fatal(err)
 	}

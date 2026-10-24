@@ -204,6 +204,17 @@ box). A session is a kernel line when its record has `kernel` (its source, the c
 main grant, and while a machine runs the spawner's cert naming it); every lifecycle of it goes through the kernel.
 New sessions start on the kernel once it is configured and the root's grant is in (`kernelServes`).
 
+A component's error answer is signed `{kind: "error", error, reason?}`; `reason` is a stable word the router matches,
+never the message. The spawner's calls (`kernel/spawner`), each single Fly calls with no waiting (the router retries):
+`POST /spawn {cert, notarized, notarizer, region, size, diskGb}` → `{kind: "created", id, source, volume}` (reasons
+`host-full`: the volume's host had no room and the volume is deleted, spawn again; `fly`; `no-fly-token`);
+`POST /init {id}` → the cert (source, fly-M, ⊤) (`not-started` = not yet, `wrong-image`, `unknown-machine`);
+`POST /kill {id, snapshot?: {sha256, sig}}` → `{kind: "killed", id, cert, volumeLeft}` (`not-destroyed` = kill again,
+`bad-snapshot`; the same cert on every repeat, one try at the volume each; `volumeLeft` names it while Fly still has it);
+`POST /destroy {id}` → `{kind: "destroyed", id, volumeLeft}` for a machine it made that never came up (`came-up`: it
+has a cert, kill it instead); `POST /fly-token {sealed}`. The notarizer's reasons: `already-defined`,
+`already-has-successor`.
+
 | Route | |
 |---|---|
 | `GET /api/kernel` | `{configured, core, serves, root, roster, health}` (`health`: as `/api/state`'s `kernel`); `roster`: `{state: none\|pending\|current\|stale, rootKey, pending, copy, id, at, results, stale: ["roster stale: component X restarted (…)"]}` |

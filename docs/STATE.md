@@ -253,11 +253,14 @@ Kernel lines (kernelline.go). "Idempotent" says why a repeat is safe; **bold** m
 kernelline.go:167 kernelSpawn):
 1. `notarize-new`: notarize the phone-signed (sink, source-x) cert and move the root's ⊤ onto source-x. Idempotent:
    notarizing the same cert answers the same; the mover holds no state, the moved grant is stored with the step.
-2. `spawn`: spawner `POST /spawn` from source-x. **Not idempotent today**: `Spawner.Spawn` (kernel/spawner/spawner.go:163)
-   makes a new Fly machine on every call. Prerequisite: the spawner answers a second spawn from the same source with
-   the live machine it already made for it (it keeps `machines` with their `Source`, spawner.go:58), so the step can
-   simply be repeated. Writes `machines(id, state=created)`.
-3. `init`: spawner `GET /init` until the machine gave its keys (409 = waiting). Idempotent (a read).
+2. `spawn`: spawner `POST /spawn` from source-x, a new volume and machine on every call (single Fly calls). Safe to
+   repeat through the router (kernelline.go `kernelAdopt`): before each spawn it lists Fly's machines with its read-only
+   token and takes the one whose metadata names source-x (`jarvis4_source`) and that the spawner knows, destroying
+   any other (`POST /destroy`); a second machine could never take the line anyway (the notarizer refuses source-x's
+   second successor). Reason `host-full` (Fly's 412 volume_placement_capacity; the spawner deleted the volume) or
+   `fly` = spawn again, up to 3. Writes `machines(id, state=created)` with the volume and the size the router asked for.
+3. `init`: spawner `POST /init` until the machine gave its keys (reason `not-started` = waiting). Idempotent: the first
+   cert signed is answered again.
 4. `notarize-machine`: notarize (source, fly-M), move the grant onto M; `machines.state=certified`. Idempotent as 1.
 5. `await-boot`: waiting until the machine's first status report (`machines.state=booted`), up to 15 min
    (lifecycle.go `lcBootMax`). Woken by `NOTIFY` from `/m/status`.
@@ -267,8 +270,11 @@ kernelline.go:167 kernelSpawn):
 1. `ask-snapshot`: enqueue the `snapshot` command in `machine_queue` (once: the step records the queue row id).
 2. `await-snapshot`: waiting until `snapshots.state` is committed/none/failed, with the stall rules of snapwait.go
    (10 min without progress, 3 min silent) evaluated from `snapshots.moved_at` and the machine's last status.
-3. `kill`: spawner `/kill` with the snapshot's sha256 and sig (kernelline.go:266). Idempotent: the spawner answers a
-   repeated kill with the same cert (spawner.go:284), notarize and move as above; 409 "not destroyed yet" = waiting.
+3. `kill`: spawner `/kill` with the snapshot's sha256 and sig when the machine's key signed it (kernelline.go
+   `kernelKill`; a pause that needs the state and has no such snapshot doesn't ask, the machine is kept). Idempotent:
+   the spawner answers a repeated kill with the same cert, notarize and move as above; reason `not-destroyed` =
+   waiting. Each kill tries the volume once; `volumeLeft` goes on `Started.kernelVolumeLeft` and the leader kills again
+   every minute until it is gone.
 4. `done`: `sessions.state=paused, machine_id=null, paused_at`; delete the session's older snapshot objects.
 
 **resume** (flows.go:994, kernelline.go:447): `spawn` from the source the kill made (its snapshot), then steps 3-6 of
@@ -409,13 +415,13 @@ Each step ships alone, keeps the router working, and is a clean cut for what it 
    beside it. Rows older than a day are swept.
 7. **Durable jobs** (section 3), one action at a time: pause, destroy, start/resume, upgrade/restart/disk, the switches,
    approved flows, task runs. Each action's goroutine and its `lock`/`begin` go as it moves. Prerequisite for start:
-   the spawner's idempotent spawn. Done as the first cut (jobs.go, migrations/0008): every lifecycle action is a row of `jobs`, one
+   a spawn safe to repeat (the router adopts an earlier spawn's machine, kernelAdopt). Done as the first cut (jobs.go, migrations/0008): every lifecycle action is a row of `jobs`, one
    running per session (the 409 on any replica), held under a 60 s lease renewed every 20 s; a replica's `jobsLoop`
    claims a job whose lease ran out and carries it on. Pause and destroy run again from their start (each of their
    effects is safe to repeat: the machine signs one snapshot, the kill answers the same cert, the archive skips what it
    holds). A kernel line's start and resume carry on from where the records say they are (kernelContinue:
-   the old machine's pause first, else the spawn from the kept source, which the spawner answers with the machine it
-   already made, else only the wait for its boot); the permission-mode switch runs again; the account switch tells the
+   the old machine's pause first, else the spawn from the kept source, where the router adopts the machine an earlier
+   spawn made, else only the wait for its boot); the permission-mode switch runs again; the account switch tells the
    machine again and checks it afresh. An approved add-store is answered within its request (the app sends the same
    signatures again after a failure; every step repeats safely). Only an old-core line's start or resume is still cut
    off (Jarvis 4 runs no old core).

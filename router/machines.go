@@ -39,9 +39,13 @@ type flyMachineDetail struct {
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 	Config    struct {
-		Image string            `json:"image"`
-		Env   map[string]string `json:"env"`
-		Guest *flyGuest         `json:"guest"`
+		Image    string            `json:"image"`
+		Env      map[string]string `json:"env"`
+		Guest    *flyGuest         `json:"guest"`
+		Metadata map[string]string `json:"metadata"` // a kernel machine's names its source (kernel/spawner SourceMeta)
+		Mounts   []struct {
+			Volume string `json:"volume"`
+		} `json:"mounts"`
 	} `json:"config"`
 	ImageRef struct {
 		Registry   string `json:"registry"`

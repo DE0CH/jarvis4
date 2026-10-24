@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/DE0CH/jarvis4/kernel/gv"
 	"github.com/DE0CH/jarvis4/kernel/kerneltest"
 	"github.com/DE0CH/jarvis4/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/spawner"
 )
 
 const kernelImage = "ghcr.io/de0ch/jarvis4-session:sha-aaaaaaaaaaaa@sha256:1111111111111111111111111111111111111111111111111111111111111111"
@@ -33,7 +35,28 @@ func kernelRig(t *testing.T) (*rig, *kerneltest.Kernel) {
 	rg.r.cfg.SessionImage, rg.r.cfg.Region = kernelImage, "lhr"
 	rg.r.policy.Harnesses["claude"] = HarnessPolicy{}
 	rg.r.st.Do(func(d *persisted) { d.KernelRoot = &gv.Signed{Grant: k.RootTop(), By: "root"} })
+	old := listFlyMachines
+	t.Cleanup(func() { listFlyMachines = old })
+	listFlyMachines = func() ([]flyMachineDetail, error) { return fakeFlyList(k, true), nil }
 	return rg, k
+}
+
+// fakeFlyList: the fake Fly's machines as the router's read-only token lists them (destroyed: with the destroyed ones,
+// which Fly lists for a while)
+func fakeFlyList(k *kerneltest.Kernel, destroyed bool) []flyMachineDetail {
+	out := []flyMachineDetail{}
+	for _, m := range k.Fly.List() {
+		if m.State == "destroyed" && !destroyed {
+			continue
+		}
+		d := flyMachineDetail{ID: m.ID, State: m.State}
+		d.Config.Metadata = map[string]string{spawner.SourceMeta: m.Source}
+		d.Config.Mounts = []struct {
+			Volume string `json:"volume"`
+		}{{Volume: m.Volume}}
+		out = append(out, d)
+	}
+	return out
 }
 
 // kdo: a request signed by a kernel machine's key, as the supervisor signs it (machine/main.go client.raw)
@@ -342,5 +365,117 @@ func TestDestroyAfterTheMoverRestarted(t *testing.T) {
 	}
 	if m1.State != "destroyed" {
 		t.Fatalf("machine %s", m1.State)
+	}
+}
+
+// kernelStart: a new kernel session, its source signed by the phone (the spawn runs)
+func kernelStart(t *testing.T, rg *rig, k *kerneltest.Kernel, label string) string {
+	t.Helper()
+	sid, err := rg.r.CreateSession(NewSession{Label: label, Harness: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a *Approval
+	waitFor(t, "the approval", func() bool {
+		rg.r.st.Do(func(d *persisted) {
+			for _, x := range d.Approvals {
+				if x.Session == sid {
+					a = x
+				}
+			}
+		})
+		return a != nil
+	})
+	signature, _ := k.Phone.Sign([]byte(a.Challenge.Payload))
+	if _, _, err := rg.r.Respond(a.ID, signature); err != nil {
+		t.Fatal(err)
+	}
+	return sid
+}
+
+// the spawner makes single calls and the router retries: ✱ a volume on a host with no room for the machine (Fly's 412
+// volume_placement_capacity) is deleted by the spawner and the router spawns again, a new volume on another host;
+// ✱ a create whose answer was lost left a machine the spawner never recorded: the router finds it by its source with
+// its read-only token, has the spawner destroy it, and spawns again; the line ends with one live machine either way
+func TestAKernelSpawnIsRetriedByTheRouter(t *testing.T) {
+	rg, k := kernelRig(t)
+	old := kernelInitStep
+	kernelInitStep = 10 * time.Millisecond
+	t.Cleanup(func() { kernelInitStep = old })
+	live := func(source doc.Object) []kerneltest.FakeMachine {
+		out := []kerneltest.FakeMachine{}
+		for _, m := range k.Fly.List() {
+			if m.Source == string(source) && m.State != "destroyed" {
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+
+	k.Fly.Full = 2
+	sid := kernelStart(t, rg, k, "full hosts")
+	waitFor(t, "the machine", func() bool { s := kernelSession(rg, sid); return s.MachineID != "" && s.Kernel.MachineCert != nil })
+	s := kernelSession(rg, sid)
+	if ms := live(s.Kernel.Source); len(ms) != 1 || ms[0].ID != s.MachineID {
+		t.Fatalf("live machines %+v, the session's %s", ms, s.MachineID)
+	}
+	if vols := k.Fly.Volumes(); len(vols) != 1 {
+		t.Fatalf("volumes left by the full hosts: %v", vols)
+	}
+	var st *Started
+	rg.r.st.Do(func(d *persisted) { st = d.Started[s.MachineID] })
+	if st == nil || st.Volume == nil || st.Volume.SizeGB != defaultDisk || st.Volume.ID != k.Fly.Volumes()[0] {
+		t.Fatalf("the router's record of the volume: %+v", st)
+	}
+
+	k.Fly.Lose = 1
+	sid2 := kernelStart(t, rg, k, "lost answer")
+	waitFor(t, "the machine", func() bool { s := kernelSession(rg, sid2); return s.MachineID != "" && s.Kernel.MachineCert != nil })
+	s2 := kernelSession(rg, sid2)
+	if ms := live(s2.Kernel.Source); len(ms) != 1 || ms[0].ID != s2.MachineID {
+		t.Fatalf("live machines %+v, the session's %s", ms, s2.MachineID)
+	}
+	n := 0
+	for _, m := range k.Fly.List() {
+		if m.Source == string(s2.Kernel.Source) {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Fatalf("%d machines from the source: the lost one and the line's", n)
+	}
+}
+
+// ✱ a pause that needs the machine's state (required) with no snapshot signed by the machine's key: the router doesn't
+// ask for the kill and the machine stays; ✱ a volume Fly won't delete yet: the kill goes through, the router keeps the
+// volume on the machine's record and kills it again until the spawner answers it gone
+func TestAKernelKillKeepsWhatItMust(t *testing.T) {
+	rg, k, sid, m1 := lostRig(t)
+	if _, err := rg.r.kernelKill(sid, m1.ID, true, false); err == nil || !strings.Contains(err.Error(), "kept, not killed") {
+		t.Fatal(err)
+	}
+	if k.Fly.Machine(m1.ID).State != "started" {
+		t.Fatal("the machine was killed")
+	}
+	k.Fly.StuckVolumes = true
+	if _, err := rg.r.kernelKill(sid, m1.ID, false, false); err != nil {
+		t.Fatal(err)
+	}
+	left := func() string {
+		v := ""
+		rg.r.st.Do(func(d *persisted) { v = d.Started[m1.ID].KernelVolumeLeft })
+		return v
+	}
+	if k.Fly.Machine(m1.ID).State != "destroyed" || left() != m1.Volume {
+		t.Fatalf("machine %s, volume left %q", k.Fly.Machine(m1.ID).State, left())
+	}
+	rg.r.kernelVolumesTick() // still stuck
+	if left() != m1.Volume {
+		t.Fatal("the volume was forgotten")
+	}
+	k.Fly.StuckVolumes = false
+	rg.r.kernelVolumesTick()
+	if left() != "" || slices.Contains(k.Fly.Volumes(), m1.Volume) {
+		t.Fatalf("volume left %q, Fly's %v", left(), k.Fly.Volumes())
 	}
 }

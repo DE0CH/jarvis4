@@ -1,6 +1,7 @@
 package spawner
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/DE0CH/jarvis4/kernel/doc"
 	"github.com/DE0CH/jarvis4/kernel/internal/kt"
+	"github.com/DE0CH/jarvis4/kernel/internal/serve"
 	"github.com/DE0CH/jarvis4/kernel/notarizer"
 	"github.com/DE0CH/jarvis4/kernel/perm"
 	"github.com/DE0CH/jarvis4/kernel/sig"
@@ -18,22 +20,23 @@ import (
 const img = "ghcr.io/de0ch/jarvis4-session@sha256:" + "2222222222222222222222222222222222222222222222222222222222222222"
 
 type fakeM struct {
-	image, state, volume, spawn string
-	keys                        *sig.Signer
-	enc                         *sig.Signer
+	image, state, volume, source string
+	keys                         *sig.Signer
+	enc                          *sig.Signer
 }
 
 type fakeFly struct {
-	mu       sync.Mutex
-	n        int
-	ms       map[string]*fakeM
-	vols     map[string]bool
-	swap     string // report this image instead
-	slowStop bool
-	creates  int
-	lose     bool             // Create makes the machine but answers an error (a lost answer)
-	full     int              // the next this-many Creates answer that the volume's host is full (412 volume_placement_capacity)
-	guests   []map[string]any // the compute hint of each CreateVolume
+	mu        sync.Mutex
+	n         int
+	ms        map[string]*fakeM
+	vols      map[string]bool
+	swap      string // report this image instead
+	slowStop  bool
+	creates   int
+	lose      bool             // Create makes the machine but answers an error (a lost answer)
+	full      bool             // Create answers that the volume's host is full (412 volume_placement_capacity)
+	stuckVols bool             // DeleteVolume fails
+	guests    []map[string]any // the compute hint of each CreateVolume
 }
 
 func newFly() *fakeFly { return &fakeFly{ms: map[string]*fakeM{}, vols: map[string]bool{}} }
@@ -48,34 +51,22 @@ func (f *fakeFly) CreateVolume(_ string, _ int, guest map[string]any) (string, e
 	f.vols[v] = true
 	return v, nil
 }
-func (f *fakeFly) Create(image, region string, guest map[string]any, env map[string]string, volume, spawnKey string) (string, error) {
+func (f *fakeFly) Create(image, region string, guest map[string]any, env map[string]string, volume, source string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.full > 0 {
-		f.full--
-		return "", fmt.Errorf(`POST /machines: HTTP 412 {"error":"failed_precondition: insufficient resources to create new machine with existing volume '%s'","status":"volume_placement_capacity"}`, volume)
+	if f.full {
+		return "", &FlyError{HTTP: 412, Status: "volume_placement_capacity", Msg: fmt.Sprintf(`POST /machines: HTTP 412 {"error":"failed_precondition: insufficient resources to create new machine with existing volume '%s'","status":"volume_placement_capacity"}`, volume)}
 	}
 	f.n++
 	f.creates++
 	id := fmt.Sprintf("%014x", f.n)
 	s, _ := sig.NewSigner()
 	e, _ := sig.NewSigner()
-	f.ms[id] = &fakeM{image: image, state: "created", volume: volume, keys: s, enc: e, spawn: spawnKey}
+	f.ms[id] = &fakeM{image: image, state: "created", volume: volume, keys: s, enc: e, source: source}
 	if f.lose {
 		return "", fmt.Errorf("connection reset")
 	}
 	return id, nil
-}
-func (f *fakeFly) Find(spawnKey string) ([]string, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	ids := []string{}
-	for id, m := range f.ms {
-		if m.spawn == spawnKey && m.state != "destroyed" {
-			ids = append(ids, id)
-		}
-	}
-	return ids, nil
 }
 func (f *fakeFly) start(id string) { f.mu.Lock(); f.ms[id].state = "started"; f.mu.Unlock() }
 func (f *fakeFly) Inspect(id string) (FlyMachine, error) {
@@ -89,7 +80,7 @@ func (f *fakeFly) Inspect(id string) (FlyMachine, error) {
 	if f.swap != "" {
 		im = f.swap
 	}
-	return FlyMachine{State: m.state, Image: strings.Replace(im, "ghcr.io/", "ghcr.io/", 1)}, nil
+	return FlyMachine{State: m.state, Image: im, Volume: m.volume, Source: m.source}, nil
 }
 func (f *fakeFly) Init(id string) (MachineKeys, error) {
 	f.mu.Lock()
@@ -110,19 +101,12 @@ func (f *fakeFly) Destroy(id string) error {
 func (f *fakeFly) DeleteVolume(v string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.stuckVols {
+		return &FlyError{HTTP: 412, Msg: "volume is attached"}
+	}
 	delete(f.vols, v)
 	return nil
 }
-func (f *fakeFly) Start(id string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if m := f.ms[id]; m != nil && m.state != "destroyed" {
-		m.state = "started"
-		return nil
-	}
-	return fmt.Errorf("HTTP 404")
-}
-func (f *fakeFly) ExtendVolume(string, int) (bool, error) { return true, nil }
 
 type rig struct {
 	t    *testing.T
@@ -172,15 +156,19 @@ func (r *rig) source() (sig.Doc, sig.Doc) {
 	return cert, r.notarize(cert)
 }
 
+func (r *rig) input(cert, nz sig.Doc) SpawnInput {
+	return SpawnInput{Cert: cert, Notarized: nz, Notarizer: r.w.C["notarizer"].Identity, Region: "lhr", Size: "medium", DiskGB: 10}
+}
+
 func (r *rig) spawn() (string, sig.Doc) {
 	r.t.Helper()
 	cert, nz := r.source()
-	out, err := r.sp.Spawn(SpawnInput{Cert: cert, Notarized: nz, Notarizer: r.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"})
+	out, err := r.sp.Spawn(r.input(cert, nz))
 	if err != nil {
 		r.t.Fatal(err)
 	}
 	id := out.(map[string]any)["id"].(string)
-	if _, err := r.sp.Init(id); err == nil || !strings.Contains(err.Error(), "not started") {
+	if _, err := r.sp.Init(id); reason(err) != ReasonNotStarted {
 		r.t.Fatalf("init before start: %v", err)
 	}
 	r.fly.start(id)
@@ -189,6 +177,24 @@ func (r *rig) spawn() (string, sig.Doc) {
 		r.t.Fatal(err)
 	}
 	return id, d
+}
+
+// reason: the stable reason of a spawner refusal
+func reason(err error) string {
+	var e *serve.Error
+	if errors.As(err, &e) {
+		return e.Reason
+	}
+	return ""
+}
+
+func killCert(t *testing.T, out any, err error) (sig.Doc, string) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := out.(map[string]any)
+	return o["cert"].(sig.Doc), o["volumeLeft"].(string)
 }
 
 // spawn → a cert the notarizer takes; kill with the machine's signed snapshot → a source the notarizer takes, holding
@@ -200,61 +206,58 @@ func TestSpawnAndKill(t *testing.T) {
 	if err != nil || c.Succ != doc.Object("fly-"+id) || c.Machine == nil || c.Machine.SigningKey != r.fly.ms[id].keys.PublicKey() {
 		t.Fatal(err, c)
 	}
+	if r.fly.ms[id].source != string(c.Pred) {
+		t.Fatalf("the machine's Fly metadata names %q, not its source", r.fly.ms[id].source)
+	}
 	r.notarize(d)
 	sum := strings.Repeat("ef", 32)
 	ssig, _ := r.fly.ms[id].keys.Sign([]byte(sum))
-	kd, err := r.sp.Kill(id, &Snapshot{Sha256: sum, Sig: ssig, Required: true})
-	if err != nil {
-		t.Fatal(err)
-	}
+	out, err := r.sp.Kill(id, &Snapshot{Sha256: sum, Sig: ssig})
+	kd, left := killCert(t, out, err)
 	kc, err := doc.OpenCert(kd, r.w.C["spawner"].Identity.SigningKey)
 	if err != nil || kc.Source.Snapshot != sum || kc.Source.Image != img || kc.Pred != doc.Object("fly-"+id) {
 		t.Fatal(err, kc)
 	}
 	r.notarize(kd)
-	if len(r.fly.vols) != 0 {
-		t.Fatalf("volumes left: %v", r.fly.vols)
+	if len(r.fly.vols) != 0 || left != "" {
+		t.Fatalf("volumes left: %v %q", r.fly.vols, left)
 	}
 	sp2, err := Open(r.path, r.w.C["spawner"], r.w.Trust, r.fly, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := sp2.Kill(id, nil)
-	if err != nil || again != kd {
-		t.Fatal("a second kill signed another cert", err)
+	out, err = sp2.Kill(id, nil)
+	if again, _ := killCert(t, out, err); again != kd {
+		t.Fatal("a second kill signed another cert")
+	}
+	// the first cert wins: init again answers the cert it signed
+	if again, err := sp2.Init(id); err != nil || again != d {
+		t.Fatal("init signed a second cert", err)
 	}
 }
 
-// ✱ a required snapshot that isn't the machine's keeps it; ✱ a snapshot signed by another key; none at all
-func TestARequiredSnapshotKeepsTheMachine(t *testing.T) {
+// ✱ a snapshot that isn't signed by the machine's key (another key, not a hash) is refused and the machine untouched;
+// ✱ none: the source's own snapshot is passed on
+func TestABadSnapshotIsRefused(t *testing.T) {
 	r := newRig(t)
 	id, _ := r.spawn()
 	other, _ := sig.NewSigner()
 	sum := strings.Repeat("ef", 32)
 	bad, _ := other.Sign([]byte(sum))
-	for _, s := range []*Snapshot{{Sha256: sum, Sig: bad, Required: true}, {Required: true}, {Sha256: "x", Sig: bad, Required: true}} {
-		if _, err := r.sp.Kill(id, s); err == nil || !strings.Contains(err.Error(), "kept") {
+	for _, s := range []*Snapshot{{Sha256: sum, Sig: bad}, {}, {Sha256: "x", Sig: bad}} {
+		if _, err := r.sp.Kill(id, s); reason(err) != ReasonBadSnapshot {
 			t.Fatal(err)
 		}
 	}
 	if r.fly.ms[id].state != "started" {
 		t.Fatal("the machine was touched")
 	}
-	// not required: killed, its source with no snapshot
-	kd, err := r.sp.Kill(id, &Snapshot{Sha256: sum, Sig: bad})
-	if err != nil {
-		t.Fatal(err)
-	}
-	kc, _ := doc.OpenCert(kd, r.w.C["spawner"].Identity.SigningKey)
-	if kc.Source.Snapshot != "" {
-		t.Fatal("an unvouched snapshot was named")
-	}
 	// a machine of a source with a snapshot that signs none passes that snapshot on
 	r2 := newRig(t)
 	src := kt.SourceContent("t")
 	src.Image, src.Snapshot = img, strings.Repeat("cd", 32)
 	cert := r2.w.Cert(doc.ByIPhone, doc.Sink, kt.Source(), perm.Top(), src, nil)
-	out, err := r2.sp.Spawn(SpawnInput{Cert: cert, Notarized: r2.notarize(cert), Notarizer: r2.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"})
+	out, err := r2.sp.Spawn(r2.input(cert, r2.notarize(cert)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,40 +266,49 @@ func TestARequiredSnapshotKeepsTheMachine(t *testing.T) {
 	if _, err := r2.sp.Init(id2); err != nil {
 		t.Fatal(err)
 	}
-	kd2, err := r2.sp.Kill(id2, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	out, err = r2.sp.Kill(id2, nil)
+	kd2, _ := killCert(t, out, err)
 	if kc2, _ := doc.OpenCert(kd2, r2.w.C["spawner"].Identity.SigningKey); kc2.Source.Snapshot != src.Snapshot {
 		t.Fatalf("the source's snapshot wasn't passed on: %q", kc2.Source.Snapshot)
 	}
 }
 
-// ✱ a spawn from a cert that isn't notarized, or not into a source, or with another image; ✱ Fly running another digest
+// ✱ a spawn from a cert that isn't notarized, or not into a source, or with another image, or with no disk; ✱ Fly
+// running another digest
 func TestSpawnRefuses(t *testing.T) {
 	r := newRig(t)
 	cert, nz := r.source()
 	other, _ := r.source()
-	if _, err := r.sp.Spawn(SpawnInput{Cert: other, Notarized: nz, Notarizer: r.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"}); err == nil {
+	if _, err := r.sp.Spawn(r.input(other, nz)); err == nil {
 		t.Fatal("spawned from a cert not notarized")
 	}
 	src := kt.SourceContent("t")
 	src.Image = "docker.io/evil/image@sha256:" + strings.Repeat("3", 64)
 	evil := r.w.Cert(doc.ByIPhone, doc.Sink, kt.Source(), perm.Top(), src, nil)
-	if _, err := r.sp.Spawn(SpawnInput{Cert: evil, Notarized: r.notarize(evil), Notarizer: r.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"}); err == nil {
+	if _, err := r.sp.Spawn(r.input(evil, r.notarize(evil))); err == nil {
 		t.Fatal("spawned another repo's image")
 	}
-	if _, err := r.sp.Spawn(SpawnInput{Cert: cert, Notarized: nz, Notarizer: r.w.C["notarizer"].Identity, Region: "lhr", Size: "huge"}); err == nil {
+	in := r.input(cert, nz)
+	in.Size = "huge"
+	if _, err := r.sp.Spawn(in); err == nil {
 		t.Fatal("a size that isn't one")
 	}
-	out, err := r.sp.Spawn(SpawnInput{Cert: cert, Notarized: nz, Notarizer: r.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"})
+	in = r.input(cert, nz)
+	in.DiskGB = 0
+	if _, err := r.sp.Spawn(in); err == nil {
+		t.Fatal("no disk size")
+	}
+	out, err := r.sp.Spawn(r.input(cert, nz))
 	if err != nil {
 		t.Fatal(err)
 	}
 	id := out.(map[string]any)["id"].(string)
 	r.fly.start(id)
 	r.fly.swap = "ghcr.io/de0ch/jarvis4-session@sha256:" + strings.Repeat("4", 64)
-	if _, err := r.sp.Init(id); err == nil || !strings.Contains(err.Error(), "not its source's") {
+	if _, err := r.sp.Init(id); reason(err) != ReasonWrongImage {
+		t.Fatal(err)
+	}
+	if _, err := r.sp.Init("nosuch"); reason(err) != ReasonUnknown {
 		t.Fatal(err)
 	}
 }
@@ -305,152 +317,54 @@ func TestSpawnRefuses(t *testing.T) {
 func TestKillWaitsForFly(t *testing.T) {
 	r := newRig(t)
 	cert, nz := r.source()
-	out, _ := r.sp.Spawn(SpawnInput{Cert: cert, Notarized: nz, Notarizer: r.w.C["notarizer"].Identity, Region: "lhr", Size: "small"})
+	out, _ := r.sp.Spawn(r.input(cert, nz))
 	id := out.(map[string]any)["id"].(string)
 	r.fly.slowStop = true
-	if _, err := r.sp.Kill(id, nil); err == nil || !strings.Contains(err.Error(), "not destroyed yet") {
+	if _, err := r.sp.Kill(id, nil); reason(err) != ReasonNotDestroyed {
 		t.Fatal(err)
 	}
 	r.fly.slowStop = false
-	d, err := r.sp.Kill(id, nil)
-	if err != nil || !strings.Contains(d.Payload, `"up":false`) {
-		t.Fatal(err, d.Payload)
+	out, err := r.sp.Kill(id, nil)
+	d, _ := killCert(t, out, err)
+	if !strings.Contains(d.Payload, `"up":false`) {
+		t.Fatal(d.Payload)
 	}
 }
 
-// a spawn is idempotent per notarized cert: ✱ a repeat answers the machine already made; ✱ a crash between Fly's
-// create and the state write finds that machine in Fly after the restart; ✱ a lost create answer is found the same
-// way; ✱ once the machine is killed, the same cert spawns a new one
-func TestSpawnIsIdempotent(t *testing.T) {
+// a volume Fly won't delete yet: the kill still answers its cert and names the volume left; the next kill deletes it
+// and answers the same cert
+func TestAKillTriesTheVolumeOnce(t *testing.T) {
 	r := newRig(t)
-	cert, nz := r.source()
-	in := SpawnInput{Cert: cert, Notarized: nz, Notarizer: r.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"}
-	a, err := r.sp.Spawn(in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := r.sp.Spawn(in)
-	if err != nil || fmt.Sprint(a) != fmt.Sprint(b) || r.fly.creates != 1 || len(r.fly.vols) != 1 {
-		t.Fatalf("repeat: %v %v creates=%d vols=%d", b, err, r.fly.creates, len(r.fly.vols))
-	}
-	sp2, _ := Open(r.path, r.w.C["spawner"], r.w.Trust, r.fly, map[string]string{"JARVIS2_URL": "http://router"})
-	if c, err := sp2.Spawn(in); err != nil || fmt.Sprint(a) != fmt.Sprint(c) || r.fly.creates != 1 {
-		t.Fatalf("repeat after a restart: %v %v creates=%d", c, err, r.fly.creates)
-	}
-
-	// killed: the same cert spawns again (a failed start retried)
-	id := a.(map[string]any)["id"].(string)
-	if _, err := sp2.Kill(id, nil); err != nil {
-		t.Fatal(err)
-	}
-	d, err := sp2.Spawn(in)
-	if err != nil || d.(map[string]any)["id"] == id || r.fly.creates != 2 {
-		t.Fatalf("after the kill: %v %v creates=%d", d, err, r.fly.creates)
-	}
-}
-
-func TestSpawnAfterACrashFindsItsMachine(t *testing.T) {
-	r := newRig(t)
-	cert, nz := r.source()
-	in := SpawnInput{Cert: cert, Notarized: nz, Notarizer: r.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"}
-	crashAfterCreate = func() { panic("crash") }
-	func() {
-		defer func() { recover() }()
-		r.sp.Spawn(in)
-	}()
-	crashAfterCreate = nil
-	if r.fly.creates != 1 {
-		t.Fatalf("creates: %d", r.fly.creates)
-	}
-	sp2, err := Open(r.path, r.w.C["spawner"], r.w.Trust, r.fly, map[string]string{"JARVIS2_URL": "http://router"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, err := sp2.Spawn(in)
-	if err != nil || r.fly.creates != 1 || len(r.fly.vols) != 1 {
-		t.Fatalf("after the crash: %v %v creates=%d vols=%d", out, err, r.fly.creates, len(r.fly.vols))
-	}
-	id := out.(map[string]any)["id"].(string)
-	if out.(map[string]any)["volume"] != r.fly.ms[id].volume {
-		t.Fatalf("volume: %v vs %s", out, r.fly.ms[id].volume)
-	}
-	r.fly.start(id)
-	if _, err := sp2.Init(id); err != nil {
-		t.Fatalf("the adopted machine's init: %v", err)
-	}
-
-	// a lost answer: Fly made it, the spawner heard an error; it is found, not made again or its volume deleted
-	r2 := newRig(t)
-	cert2, nz2 := r2.source()
-	r2.fly.lose = true
-	out, err = r2.sp.Spawn(SpawnInput{Cert: cert2, Notarized: nz2, Notarizer: r2.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"})
-	if err != nil || r2.fly.creates != 1 || len(r2.fly.vols) != 1 {
-		t.Fatalf("lost answer: %v %v creates=%d vols=%d", out, err, r2.fly.creates, len(r2.fly.vols))
-	}
-}
-
-// a machine stopped outside Jarvis starts again on its own volume, keeping its cert (no new one is signed); ✱ a machine
-// never up, one killed, one Fly destroyed, one the spawner never made
-func TestStartAStoppedMachine(t *testing.T) {
-	r := newRig(t)
-	id, d := r.spawn()
+	id, _ := r.spawn()
 	vol := r.fly.ms[id].volume
-	r.fly.mu.Lock()
-	r.fly.ms[id].state = "stopped"
-	r.fly.mu.Unlock()
-	out, err := r.sp.Start(id)
-	if err != nil {
-		t.Fatal(err)
+	r.fly.stuckVols = true
+	out, err := r.sp.Kill(id, nil)
+	kd, left := killCert(t, out, err)
+	if left != vol || !r.fly.vols[vol] {
+		t.Fatalf("volume left %q, Fly's %v", left, r.fly.vols)
 	}
-	if o := out.(map[string]any); o["was"] != "stopped" || o["volume"] != vol || r.fly.ms[id].state != "started" {
-		t.Fatalf("%v %s", o, r.fly.ms[id].state)
-	}
-	if again, err := r.sp.Init(id); err != nil || again != d {
-		t.Fatal("the restart changed the machine's cert", err)
-	}
-	if _, err := r.sp.Start(id); err != nil { // already started: nothing to do
-		t.Fatal(err)
-	}
-	if _, err := r.sp.Start("nosuch"); err == nil || !strings.Contains(err.Error(), "isn't one") {
-		t.Fatal(err)
-	}
-	// never up
-	cert, nz := r.source()
-	o2, _ := r.sp.Spawn(SpawnInput{Cert: cert, Notarized: nz, Notarizer: r.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"})
-	if _, err := r.sp.Start(o2.(map[string]any)["id"].(string)); err == nil || !strings.Contains(err.Error(), "never came up") {
-		t.Fatal(err)
-	}
-	// destroyed on Fly
-	id3, _ := r.spawn()
-	r.fly.mu.Lock()
-	r.fly.ms[id3].state = "destroyed"
-	r.fly.mu.Unlock()
-	if _, err := r.sp.Start(id3); err == nil || !strings.Contains(err.Error(), "destroyed") {
-		t.Fatal(err)
-	}
-	// killed
-	if _, err := r.sp.Kill(id, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := r.sp.Start(id); err == nil || !strings.Contains(err.Error(), "killed") {
-		t.Fatal(err)
+	r.fly.stuckVols = false
+	out, err = r.sp.Kill(id, nil)
+	again, left := killCert(t, out, err)
+	if again != kd || left != "" || len(r.fly.vols) != 0 {
+		t.Fatalf("second kill: same cert %v, left %q, Fly's %v", again == kd, left, r.fly.vols)
 	}
 }
 
-// a volume is pinned to its host: when that host has no room for the machine, the spawn makes a new volume (another
-// host) and tries again, and the volume it gave up on goes; every volume is made with the machine's size as its hint
-func TestSpawnMovesOffAFullHost(t *testing.T) {
+// a spawn is single calls: ✱ Fly's 412 volume_placement_capacity answers host-full and deletes the volume it made (the
+// router spawns again); ✱ every volume is made with the machine's size as its hint; ✱ a lost create answer leaves the
+// machine, which the router's destroy takes off Fly with its volume, also after a restart forgot it; ✱ a machine with
+// a cert isn't destroyed, and nor is one the spawner didn't make
+func TestSpawnIsSingleCalls(t *testing.T) {
 	r := newRig(t)
 	cert, nz := r.source()
-	in := SpawnInput{Cert: cert, Notarized: nz, Notarizer: r.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"}
-	r.fly.full = 2
-	a, err := r.sp.Spawn(in)
-	if err != nil {
-		t.Fatal(err)
+	r.fly.full = true
+	if _, err := r.sp.Spawn(r.input(cert, nz)); reason(err) != ReasonHostFull || len(r.fly.vols) != 0 {
+		t.Fatalf("host full: %v, volumes %v", err, r.fly.vols)
 	}
-	vol := a.(map[string]any)["volume"].(string)
-	if r.fly.creates != 1 || len(r.fly.vols) != 1 || !r.fly.vols[vol] || len(r.fly.guests) != 3 {
-		t.Fatalf("after two full hosts: creates=%d vols=%v volume=%s volume creates=%d", r.fly.creates, r.fly.vols, vol, len(r.fly.guests))
+	r.fly.full = false
+	if _, err := r.sp.Spawn(r.input(cert, nz)); err != nil {
+		t.Fatal(err)
 	}
 	for _, g := range r.fly.guests {
 		if g["cpus"] == nil || g["memory_mb"] == nil || g["cpu_kind"] == nil {
@@ -458,12 +372,43 @@ func TestSpawnMovesOffAFullHost(t *testing.T) {
 		}
 	}
 
-	// full every time: the spawn gives up after placementTries volumes, leaving none behind
 	r2 := newRig(t)
 	cert2, nz2 := r2.source()
-	r2.fly.full = 100
-	_, err = r2.sp.Spawn(SpawnInput{Cert: cert2, Notarized: nz2, Notarizer: r2.w.C["notarizer"].Identity, Region: "lhr", Size: "medium"})
-	if err == nil || !strings.Contains(err.Error(), "volume_placement_capacity") || len(r2.fly.vols) != 0 || len(r2.fly.guests) != placementTries {
-		t.Fatalf("always full: err=%v vols=%v volume creates=%d", err, r2.fly.vols, len(r2.fly.guests))
+	r2.fly.lose = true
+	if _, err := r2.sp.Spawn(r2.input(cert2, nz2)); reason(err) != ReasonFly {
+		t.Fatal(err)
 	}
+	r2.fly.lose = false
+	var stray string
+	for id := range r2.fly.ms {
+		stray = id
+	}
+	if r2.fly.ms[stray].source != string(mustPeek(cert2).Succ) {
+		t.Fatalf("the stray's metadata: %q", r2.fly.ms[stray].source)
+	}
+	sp2, _ := Open(r2.path, r2.w.C["spawner"], r2.w.Trust, r2.fly, map[string]string{"JARVIS2_URL": "http://router"})
+	out, err := sp2.Destroy(stray)
+	if err != nil || out.(map[string]any)["volumeLeft"] != "" || r2.fly.ms[stray].state != "destroyed" || len(r2.fly.vols) != 0 {
+		t.Fatalf("destroy: %v %v %s %v", out, err, r2.fly.ms[stray].state, r2.fly.vols)
+	}
+	if _, err := sp2.Init(stray); err == nil {
+		t.Fatal("a destroyed machine initialised")
+	}
+	if _, err := sp2.Destroy(stray); err != nil {
+		t.Fatal("a repeated destroy:", err)
+	}
+
+	id, _ := r.spawn()
+	if _, err := r.sp.Destroy(id); reason(err) != ReasonCameUp || r.fly.ms[id].state != "started" {
+		t.Fatal(err)
+	}
+	r.fly.ms["elsewhere"] = &fakeM{state: "started"}
+	if _, err := r.sp.Destroy("elsewhere"); reason(err) != ReasonUnknown || r.fly.ms["elsewhere"].state != "started" {
+		t.Fatal(err)
+	}
+}
+
+func mustPeek(d sig.Doc) doc.Cert {
+	c, _ := doc.PeekCert(d)
+	return c
 }

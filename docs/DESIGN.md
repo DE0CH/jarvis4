@@ -1092,10 +1092,17 @@ sink, by the root key).
   refuses; a move can only narrow.
 - **Grant merger:** two grants on one machine with identical conditions → (M, allowed₁ ∪ allowed₂, conditions);
   otherwise refuses.
-- **Spawner:** alone holds the Fly token. Spawn from source-x (given source-x's notarized cert): start a Fly machine with
-  the source's image and settings, read its keys, sign (source-x, M, ⊤). Kill M: check it is alive, kill it, confirm it
-  dead through the Fly API, take its snapshot hash, sign (M, source-y, ⊤), source-y holding M's image, settings and that
-  hash. It attests Fly facts only, so its P is always ⊤.
+- **Spawner:** alone holds the Fly token, which never leaves it. Spawn from source-x (given source-x's notarized cert):
+  make an empty volume (the machine's size as Fly's placement hint) and a Fly machine on it with only the source's own
+  `jarvis4-session` image by digest, its env naming the source, the kernel's roster and root key. Init: once Fly says the
+  machine is started with that digest, read its keys through Fly and sign (source-x, M, ⊤); the first cert signed is
+  kept. Kill M: destroy it and sign only after Fly says destroyed, take its snapshot hash only if M's key signed it, sign
+  (M, source-y, ⊤), source-y holding M's image, settings and that hash; one kill cert per machine, kept on its volume.
+  Destroy: a machine it made that never came up, no cert. It attests Fly facts only, so its P is always ⊤. Its calls
+  are single Fly calls with no waiting or retrying; the router retries: it spawns again when the volume's host was full
+  (the spawner deleted that volume), finds the machine of a spawn whose answer was lost with its read-only token and
+  adopts or destroys it (a second machine can't take the line: the notarizer refuses a second successor), doesn't ask
+  for a kill that would lose state it needs, and kills again while a volume is left.
 - **Identity signer:** signs (M, M, P) for any P; the router picks P. Narrowing a running machine's grant = moving it along
   M's identity edge.
 - **Gullible signer:** signs any pair given to it; it counts only where the table accepts any signer (ending).

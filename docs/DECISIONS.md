@@ -2580,3 +2580,26 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      build and reads the same in a review; the golang base image's tag can still move a binary unseen, accepted.
      Tested: `infra/kernel_pin_test.py`; on this repo's history c347ec6 and c899479 would move nothing, dcc425b only the
      spawner and only with the trailer.
+
+231. **The kernel's spawner keeps only what protects something; retrying, adopting and bookkeeping are the router's**
+     (Deyao, 2026-10-24; `kernel/spawner`, `router/kernelline.go`). Its design was "Fly: single calls, no waiting or
+     retrying (the router retries)", and it had grown a spawn record keyed by the cert with a Fly lookup after a lost
+     answer, a volume-placement retry loop, a refusal to kill without a required snapshot, an orphan-volume list, disk
+     sizes, an in-place Start and a volume Extend. A component the root key vouches for should hold only what keeps a
+     line honest, so the spawner now does: the Fly token never leaves it; it spawns only a notarized source's own
+     `jarvis4-session` image by digest, on an empty volume it makes itself (the machine's size as Fly's placement hint),
+     with the machine's env (source, roster, root); init checks Fly's started state and image digest and reads the keys
+     through Fly, the first cert winning; kill signs only after Fly says destroyed, takes the snapshot hash only if the
+     machine's key signed it, one kill cert per machine, kept. Everything else is the router's: Fly's 412
+     volume_placement_capacity (the spawner deletes the volume and answers `host-full`) and other Fly failures → spawn
+     again, up to 3; a spawn whose answer was lost → the router lists the app's machines with its read-only token, adopts
+     the one whose Fly metadata names the source (`jarvis4_source`) if the spawner knows it and has the spawner destroy
+     the rest (`POST /destroy`, only a machine it made that has no cert); a second machine can't take the line anyway,
+     since the notarizer refuses a source's second successor. A pause that needs the machine's state with no snapshot
+     signed by its key doesn't call `/kill`. Each kill makes one try at the volume and answers `volumeLeft`; the router
+     keeps it on the machine's `Started` record and its leader kills again every minute until it is gone (the volume
+     sweep, DECISIONS 195, is the backstop). The router records the disk size it asked for. Start (in place) went with
+     DECISIONS 228 (a key pair in memory only can't survive a restart), Extend had no caller. The errors the router acts
+     on carry a stable `reason` (`serve.FailBecause`) instead of words it matched. Tested: `kernel/spawner`
+     (`TestSpawnIsSingleCalls`, `TestAKillTriesTheVolumeOnce`, `TestABadSnapshotIsRefused`), router
+     `TestAKernelSpawnIsRetriedByTheRouter`, `TestAKernelKillKeepsWhatItMust`, `TestAKernelStartCarriedOn`.

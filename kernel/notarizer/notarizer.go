@@ -22,6 +22,12 @@ import (
 // ChallengeSkew: how far a challenge's time may be from the notarizer's clock
 const ChallengeSkew = 10 * time.Minute
 
+// The reasons of the refusals the router acts on (the error answer's "reason", serve.FailBecause)
+const (
+	ReasonDefined      = "already-defined"       // 409: the cert's source was defined by an earlier cert
+	ReasonHasSuccessor = "already-has-successor" // 409: the cert's source already has its first successor
+)
+
 // Keys: the phone's and the root key, as secrets signs them after the claim ({"kind":"keys",…})
 type Keys struct {
 	Kind  string `json:"kind"` // "keys"
@@ -164,7 +170,7 @@ func (n *Notarizer) Notarize(in Input) (sig.Doc, error) {
 	var rec []entry
 	if c.Succ.Kind() == "source" {
 		if n.defined[c.Succ] {
-			return sig.Doc{}, serve.Fail(409, "%s is already defined", c.Succ)
+			return sig.Doc{}, serve.FailBecause(409, ReasonDefined, "%s is already defined", c.Succ)
 		}
 		rec = append(rec, entry{Defined: c.Succ})
 	}
@@ -174,7 +180,7 @@ func (n *Notarizer) Notarize(in Input) (sig.Doc, error) {
 		}
 		first := c.Signer == doc.BySpawner || c.Signer == doc.ByIPhone // the table's "first successor" rows
 		if first && n.succeeded[c.Pred] {
-			return sig.Doc{}, serve.Fail(409, "%s already has a successor", c.Pred)
+			return sig.Doc{}, serve.FailBecause(409, ReasonHasSuccessor, "%s already has a successor", c.Pred)
 		}
 		rec = append(rec, entry{Succeeded: c.Pred})
 	}

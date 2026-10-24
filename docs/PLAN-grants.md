@@ -51,7 +51,7 @@ component can be read alone.
 | notarizer | the sources that have a successor (own volume) | its key | `POST /notarize` |
 | mover | none | its key | `POST /move` |
 | merger | none | its key | `POST /merge` |
-| spawner | the machines it made and their volumes | the Fly token | `POST /spawn`, `/kill`, `/extend`, `/fly-token` |
+| spawner | the machines it made and their kill certs | the Fly token | `POST /spawn`, `/init`, `/kill`, `/destroy`, `/fly-token` |
 | identity | none | its key | `POST /sign` (M, M, P) |
 | gullible | none | its key | `POST /sign` any (X, Y, P) |
 | secrets | stores, unlocks, phone and root keys (claimed) | the stores | today's core store API, `POST /pull` with a grant |
