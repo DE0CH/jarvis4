@@ -1,15 +1,36 @@
 // vectors: kernel documents as the Go side makes them, for the app's interop test (ios/interop Kernel): a new
-// source's cert for session s1, an add-store's two certs, and the payloads that must be refused. Outside kernel/ so
-// it never counts as a kernel image input.
+// source's cert for session s1, an add-store's two certs, the payloads that must be refused, and store keys P + K
+// (sig.StoreKey: the app computes its own). Outside kernel/ so it never counts as a kernel image input.
 package main
 
 import (
+	"crypto/ecdh"
 	"encoding/json"
 	"os"
 
 	"github.com/DE0CH/jarvis4/kernel/doc"
 	"github.com/DE0CH/jarvis4/kernel/perm"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
+
+// point: the public key of a small scalar (base64 X9.63)
+func point(n byte) string {
+	d := make([]byte, 32)
+	d[31] = n
+	k, err := ecdh.P256().NewPrivateKey(d)
+	if err != nil {
+		panic(err)
+	}
+	return sig.B64.EncodeToString(k.PublicKey().Bytes())
+}
+
+func storeKey(p, k string) string {
+	c, err := sig.StoreKey(p, k)
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
 
 func cert(c doc.Cert) string {
 	if err := c.Check(); err != nil {
@@ -44,6 +65,9 @@ func main() {
 		"otherImage": cert(doc.Cert{Kind: "succession", Pred: doc.Sink, Succ: src, Pair: stores,
 			Source: &doc.Source{Image: "ghcr.io/evil/x@sha256:1111111111111111111111111111111111111111111111111111111111111111", Settings: settings},
 			Signer: doc.ByIPhone, IssuedAt: "2026-10-21T15:00:00Z"}),
+		// the store key: 7G + 11G, and 5G + 5G (a doubling)
+		"storeKeyPhone": point(7), "storeKeySecrets": point(11), "storeKey": storeKey(point(7), point(11)),
+		"storeKeyTwice": point(5), "storeKeyDouble": storeKey(point(5), point(5)),
 	}
 	json.NewEncoder(os.Stdout).Encode(out)
 }

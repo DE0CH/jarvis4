@@ -22,7 +22,8 @@ package main
 //
 //	GET /api/stores, GET /m/stores, GET /setup/stores/keys → {stores: [StoreRow], signed}
 //	GET /m/store-key, GET /setup/store-key → {identity, storeKey}: what a writer seals to (the core's signed identity,
-//	    naming the master key, and its signed store key for the claimed phone)
+//	    naming the master key, and its signed store key for the claimed phone; on a box with no core only secrets'
+//	    identity: each writer computes P + K itself from secrets' signed state and its roster keys)
 //	POST /m/stores/{store}/keys/{key}      a session writes or deletes one key (machine-signed: core.WriterText)
 //	POST /setup/stores/{store}/keys/{key}  the same as the setup session (setup-key signed)
 //	POST /setup/store-docs, PUT /api/stores/{store}/docs {about?, keys: {KEY: text}} → {ok}
@@ -260,7 +261,8 @@ func (r *Router) serveStoreList(w http.ResponseWriter) {
 }
 
 // storeKeyFor: what a writer seals to — the core's identity (its keys, the box key's signature, its signed state
-// naming the master key and the phone) and its signed store key for that phone
+// naming the master key and the phone) and its signed store key for that phone; the kernel's secrets signs no store key
+// (its writers compute P + K: sig.StoreKey)
 func (r *Router) storeKeyFor() (map[string]any, error) {
 	sc := r.storeCore()
 	status, b, err := sc.Raw("GET", "/identity", nil)
@@ -278,6 +280,9 @@ func (r *Router) storeKeyFor() (map[string]any, error) {
 	}
 	if id.State == nil || id.State.Decode(&st) != nil || st.Phone.AgreementKey == "" {
 		return nil, errors.New("the core isn't set up (no phone in its signed state)")
+	}
+	if r.secretsStores != nil {
+		return map[string]any{"identity": json.RawMessage(b)}, nil
 	}
 	sk, err := sc.Call("/store-key", map[string]string{"phone": st.Phone.AgreementKey})
 	if err != nil {
@@ -416,6 +421,12 @@ func (r *Router) WriteKey(writer, machine, store, key string, in keyWriteIn) (ma
 	if err != nil {
 		return nil, err
 	}
+	var entry *verEntry // storeversions.go: the version this write makes (a box with no core)
+	if !in.Delete {
+		wb, _ := json.Marshal(in.Wrapped)
+		entry = &verEntry{Wrapped: wb, Data: in.Data, BackupSha256: in.BackupSha256, Backup: raw}
+	}
+	r.recordKeyWrite(store, key, entry, receipt)
 	if expl != "" {
 		if err := r.SetStoreDocs(store, nil, map[string]string{key: expl}); err != nil {
 			log.Printf("store %s: the explanation of %s wasn't kept: %v", store, key, err)

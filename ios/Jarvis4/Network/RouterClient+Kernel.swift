@@ -47,14 +47,10 @@ extension RouterClient {
   func kernelPostRoster(_ payload: String, rootSig: Data) async throws {
     try await call("POST", "api/kernel/roster", ["payload": payload, "rootSig": rootSig.base64EncodedString()])
   }
-  /// secrets' store key C = P + K for this phone, with `secrets` (a Recover's derived K), checked against `signedBy`
-  func kernelStoreKey(signedBy: String, secrets: String, next: Bool = false) async throws -> String {
-    struct SK: Decodable { let kind: String; let phone: String; let storeKey: String; let secrets: String? }
-    let phone = try PhoneKeys.shared.publicKeys().agreementKey
-    let d = try await json("POST", "api/kernel/secrets/store-key" + Self.q(next), ["phone": phone, "secrets": secrets], as: SignedDoc.self)
-    let sk = try CoreCrypto.decode(d, by: signedBy, as: SK.self, what: "secrets' store key")
-    guard sk.kind == "store-key", sk.phone == phone, sk.secrets == secrets else { throw TrustError.stale("store key") }
-    return sk.storeKey
+  /// secrets' store key C = P + K for this phone and `secrets` (the pinned K, or a Recover's derived one): computed
+  /// here from keys this iPhone trusts (secrets signs no store key)
+  func kernelStoreKey(secrets: String) throws -> String {
+    try CoreCrypto.storeKey(phone: try PhoneKeys.shared.publicKeys().agreementKey, secrets: secrets)
   }
   /// the kernel secrets' line state the router kept (its deploy-key stores, which have no backup); nil when it has none
   /// (the caller checks it: CoreSetup.checkLineState against the derived key)

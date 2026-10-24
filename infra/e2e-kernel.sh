@@ -46,7 +46,7 @@ trap cleanup EXIT
 trap 'exit 130' INT TERM HUP
 sweep
 
-for r in notary notarizer mover merger spawner identity gullible secrets; do (cd "$ROOT/kernel" && go build -o "$W/$r" "./cmd/$r"); done
+for r in notary notarizer mover merger spawner identity gullible minter secrets; do (cd "$ROOT/kernel" && go build -o "$W/$r" "./cmd/$r"); done
 (cd "$ROOT/core" && go build -o "$W/core" .)
 (cd "$ROOT/router" && go build -o "$W/router" .)
 openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$W/box-key.pem" 2>/dev/null
@@ -58,9 +58,9 @@ MURL="http://$PEER._peer.internal:8081"
 # the kernel: each component on 127.0.1.<n>:8080, its state in its own directory
 { cat /etc/hosts; } > "$W/hosts"
 n=1
-for r in notary notarizer mover merger spawner identity gullible secrets; do
+for r in notary notarizer mover merger spawner identity gullible minter secrets; do
   mkdir -p "$W/k-$r"
-  extra=""; [ "$r" = spawner ] && extra="KERNEL_MACHINE_URL=$MURL"
+  extra=""; [ "$r" = spawner ] && extra="KERNEL_MACHINE_URL=$MURL"; [ "$r" = secrets ] && extra="KERNEL_MINTER_URL=http://127.0.1.8:8080"  # the minter is the 8th
   env KERNEL_BOX_KEY="$W/box-key.pem" KERNEL_DATA="$W/k-$r" KERNEL_ADDR="127.0.1.$n:8080" $extra "$W/$r" > "$W/kernel-$r.log" 2>&1 & PIDS+=($!)
   echo "127.0.1.$n $r.kernel.e2e" >> "$W/hosts"
   n=$((n+1))

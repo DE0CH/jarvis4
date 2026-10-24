@@ -25,6 +25,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -32,6 +33,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 // claudeStoreInCert: a new session's cert names its account's store (claude-<name>), so the phone vouches for the
@@ -140,31 +143,65 @@ func (r *Router) writeAccountStore(store, credentials, account string) error {
 func (r *Router) writeRouterKey(store, key string, value []byte, del bool) error {
 	in := map[string]any{"store": store, "key": key, "writer": "router", "delete": del}
 	if !del {
-		t, err := r.storeKeyFor()
+		storeKey, err := r.routerStoreKey()
 		if err != nil {
 			return err
 		}
-		var sk struct {
-			StoreKey string `json:"storeKey"`
-		}
-		d, _ := t["storeKey"].(*Doc)
-		if d == nil || d.Decode(&sk) != nil || sk.StoreKey == "" {
-			return fmt.Errorf("the core answered no store key")
-		}
 		dk := make([]byte, 32)
 		rand.Read(dk)
-		e, wrapped, err := sealToPoint(sk.StoreKey, dk, "jarvis2/store-data-key", nil)
+		e, wrapped, err := sealToPoint(storeKey, dk, "jarvis2/store-data-key", nil)
 		if err != nil {
 			return fmt.Errorf("the store key: %w", err)
 		}
 		in["wrapped"] = map[string]string{"e": e, "wrapped": wrapped}
 		in["data"] = base64.StdEncoding.EncodeToString(gcmSealKey(dk, value, []byte(store+"\n"+key)))
 	}
-	_, err := r.storeCore().Call("/stores/write-key", in)
+	d, err := r.storeCore().Call("/stores/write-key", in)
 	if err != nil && del && strings.Contains(err.Error(), "has no key") {
 		return nil
 	}
+	if err == nil { // storeversions.go: the version this write makes (a box with no core)
+		var entry *verEntry
+		if !del {
+			wb, _ := json.Marshal(in["wrapped"])
+			entry = &verEntry{Wrapped: wb, Data: in["data"].(string)}
+		}
+		r.recordKeyWrite(store, key, entry, d)
+	}
 	return err
+}
+
+// routerStoreKey: P + K for the router's own writes — the core's signed store key, or on a box with no core computed
+// from secrets' identity (its agreement key and the phone its signed state names)
+func (r *Router) routerStoreKey() (string, error) {
+	t, err := r.storeKeyFor()
+	if err != nil {
+		return "", err
+	}
+	if r.secretsStores != nil {
+		var id struct {
+			AgreementKey string `json:"agreementKey"`
+			State        *Doc   `json:"state"`
+		}
+		var st struct {
+			Phone struct {
+				AgreementKey string `json:"agreementKey"`
+			} `json:"phone"`
+		}
+		raw, _ := t["identity"].(json.RawMessage)
+		if json.Unmarshal(raw, &id) != nil || id.State == nil || id.State.Decode(&st) != nil {
+			return "", fmt.Errorf("secrets' identity isn't readable")
+		}
+		return sig.StoreKey(st.Phone.AgreementKey, id.AgreementKey)
+	}
+	var sk struct {
+		StoreKey string `json:"storeKey"`
+	}
+	d, _ := t["storeKey"].(*Doc)
+	if d == nil || d.Decode(&sk) != nil || sk.StoreKey == "" {
+		return "", fmt.Errorf("the core answered no store key")
+	}
+	return sk.StoreKey, nil
 }
 
 // sealToPoint: ephemeral ECDH with the recipient point, HKDF-SHA256(info), AES-256-GCM (nonce ‖ ciphertext ‖ tag),

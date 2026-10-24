@@ -701,7 +701,7 @@ func mustSucc(d *sig.Doc) doc.Object {
 //	GET  /api/kernel/root-grant/draft   {payload}: what the root key signs
 //	POST /api/kernel/root-grant         {grant}: the root key's ⊤ on the sink (the app signs it once, after
 //	                                    secrets' claim, behind the root key's own warning screen); kept, passed on
-//	GET|POST /api/kernel/secrets/{path} secrets' own API, relayed as is (claim, identity, store-key, unlock, lock, …):
+//	GET|POST /api/kernel/secrets/{path} secrets' own API, relayed as is (claim, identity, unlock, lock, …):
 //	                                    every answer is signed by secrets, which the app checks
 func (r *Router) registerKernel(app func(string, http.HandlerFunc)) {
 	app("GET /api/kernel", func(w http.ResponseWriter, req *http.Request) {

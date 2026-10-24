@@ -210,6 +210,16 @@ The master-key-sealed bucket backups stay the disaster path (Recover), untouched
 - **Who asks.** The app's Stores page (a store's page → Versions → Restore…), or an Inbox request (`…/requests/restore
   {store, seq}`) from the web page (Propose restore) or the setup session (`infra/setup.py request restore STORE V`);
   never a session, never in a batch. Only the phone approves.
+- **Once the kernel serves** (DECISIONS 232): the kernel's secrets keeps no history. The router keeps each store's
+  last 50 versions in Postgres (`router/storeversions.go`, `store_versions`): after every write secrets took, each entry
+  it saw written (`P + K`-wrapped), secrets' signed `key-written` receipt for it and the backup object written with it
+  (a key it never saw written, a Recover's, counts as unseen: kept as it is, never put back). The same routes answer:
+  the list, and a plan (`replay: true`: keys put back with their receipts, removed, kept, and those it can't put back),
+  which the app shows only after checking every receipt against the pinned secrets. Allow has the router write each
+  key's backup object back, then each entry back to secrets as a `write_key` with writer `replay` carrying its
+  receipt (secrets checks it is its own, for exactly that store, key, `E`, data and backup, and keeps the writer and
+  time it names), then delete the keys the version didn't have (writer `replay`; a removed key keeps its last backup).
+  No phone signature or share: nothing is opened, and writing is the router's to protect.
 
 The plaintext a restore touches exists only inside the core, for the length of the finish call (like a deploy key's
 token). A write never silently drops keys: every write is one key (`jarvis2 put-key`, `infra/setup.py write`), and the
@@ -508,6 +518,16 @@ by the core, approved by the phone; the box alone can never make one, and no AI 
   (api.github.com, fixed in the core), and keeps the app's blob as the store. Its signed answer carries the public
   key.
 - **Remove:** the same request and approval; the core deletes the titled keys on GitHub and the store.
+- **Once the kernel serves** (DECISIONS 232: secrets hands out, the minter uses): the same calls and phone approval, but
+  secrets never uses the token. After checking the phone's signature and opening the token store with its share,
+  secrets seals the token to the **minter**'s agreement key (from the root key's roster) and sends it the begin
+  document, the phone's signature and secrets' signed keys statement. The minter (`kernel/minter`, the kernel's only
+  GitHub egress) checks that request itself (secrets signed the begin, the phone signed exactly it), makes exactly one
+  GitHub call — add the begin's public key, or delete the key **by the id GitHub gave it at the add** (secrets records
+  it, and it travels in the line state) — drops the token and answers signed; secrets checks the answer against the
+  roster's minter and then writes or deletes the store. Nothing is listed or deleted by title: a re-add answers the
+  earlier key's id as `replacedKeyId`, and a key no store knows (a re-add's, a lost race's, a Recover's from before
+  ids) is an orphan the router can find with a read token and remove by id (`keyId` on a remove: only that key goes).
 - **Sessions:** a session that includes `github-<repo>` gets the key with its other secrets; the machine writes it
   with an SSH host alias that uses only that key and pins GitHub's host keys, and git rewrites that repo's URLs to
   the alias, so clone, pull and push work with no setup, and no other repo is reachable with it.
@@ -1043,7 +1063,7 @@ the holders' shell grants ("Grants" above), the core's automatic locks and the C
 
 | layer | parts | trust |
 |---|---|---|
-| Kernel | log notary, succession notarizer, grant mover, grant merger, spawner, identity signer, gullible signer, secrets | trusted; each small and isolated, a separate component; checks only exact-string set operations and a policy table |
+| Kernel | log notary, succession notarizer, grant mover, grant merger, spawner, identity signer, gullible signer, secrets, minter | trusted; each small and isolated, a separate component; checks only exact-string set operations and a policy table |
 | Interpreters | the guard (in each machine's supervisor), the iPhone app | give the strings meaning; can only refuse, or act within the grant they hold |
 | Router | everything else on the box | untrusted. Authenticates its callers (Cloudflare Access, API keys, machine signatures); the kernel trusts it only for transport over the k8s network. It stores, carries and schedules; it can deny service but grants nothing. **Writing secrets is protected only by the router.** |
 
@@ -1110,7 +1130,14 @@ sink, by the root key).
   merger), returns the stores its `allowed` names (`store:x`), encrypted to the grant's machine and signed. An unlock is
   per store; it never locks by itself (no release after a pull, no timer): unlocks end with a lock call, and the phone sees
   open ones. Any written key is served on the next pull, whoever wrote it (secrets are not code and the model never reads
-  them). The Claude login is the `claude` store: the router writes it, the guard pulls again.
+  them). The Claude login is the `claude` store: the router writes it, the guard pulls again. It hands secrets out and
+  never uses one, and keeps nothing it doesn't need (DECISIONS 232): no store history (the router keeps it; a restore
+  is a write carrying secrets' earlier receipt), no store key (every writer computes `P + K`), and no internet: a
+  deploy-key call's token goes sealed to the minter.
+- **Minter:** the only component with GitHub egress and the only one that uses a secret. Given a phone-approved
+  deploy-key request (secrets' begin, the phone's signature over it, secrets' keys statement) and the token sealed to
+  it, it checks the request itself, makes exactly one GitHub call (add a key, or delete one by id), drops the token and
+  answers signed. Holds nothing but the approvals it has served (each reaches GitHub once).
 
 **Signers of succession certs**
 

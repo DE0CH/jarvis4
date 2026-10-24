@@ -2,6 +2,8 @@
 // document only — the version put back and the one it replaces, every key put back with who wrote it, every key
 // removed. Allow signs that document and gives this phone's share of each key put back under ONE Face ID; the core
 // opens them, seals their backups to the master key, the router writes those, and the core commits. No recovery kit.
+// Once the kernel serves, the plan is the router's (it keeps the versions) and every key put back carries secrets' own
+// receipt, checked before the page shows it; Allow has the router write those entries back (no signature, no shares).
 import SwiftUI
 
 struct RestoreReviewView: View {
@@ -86,10 +88,18 @@ struct RestoreReviewView: View {
   }
 
   private func allow() async {
-    guard let b, let doc else { return }
+    guard let b else { return }
     failure = nil
     do {
       busy = "Restoring…"
+      if b.replay == true {
+        _ = try await RouterClient.shared.restoreReplay(b)
+        busy = nil
+        model.say("Store restored")
+        model.secureCompleted(true)
+        return
+      }
+      guard let doc else { busy = nil; return }
       let payload = doc.payload, es = b.es, reason = "Restore \(b.store) to version \(b.to.seq)"
       let out = try await offMain { try PhoneKeys.shared.signAndShares(payload, es: es, reason: reason) }
       guard let sig = out.signature, out.shares.count == es.count else { throw TrustError.stale("the restore's signature") }

@@ -4,10 +4,10 @@ package secrets
 //
 //  1. Secrets' long-lived keys come from the master key: the app derives a 32-byte seed (its own label,
 //     SecretsSeed, so these keys are never the old core's) and sends it in the claim bundle; from it secrets derives its
-//     signing key, its store share K, the nonce key and the state key (DeriveCoreKeys). Every Recover with the same kit
+//     signing key, its store share K and the state key (DeriveCoreKeys). Every Recover with the same kit
 //     brings back the same secrets, and the store key P + K stays the same.
-//  2. The state: the stores as secrets holds them (each key wrapped to P + K), the deploy-key stores' repos (they have
-//     no backup) and the stores that aren't sensitive, sealed under the state key and signed with a head {seq,
+//  2. The state: the stores as secrets holds them (each key wrapped to P + K), the deploy-key stores' repos and GitHub
+//     key ids (they have no backup) and the stores that aren't sensitive, sealed under the state key and signed with a head {seq,
 //     sha256}; every answer carries X-Line-Seq and the router keeps the newest. A Recover takes back the deploy-key
 //     stores from it; a takeover (blue/green: at most one secrets with these keys serves) takes it whole.
 
@@ -26,35 +26,20 @@ import (
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/DE0CH/jarvis4/kernel/minter"
 )
 
 const (
-	seedInfo      = "jarvis2/kernel-secrets-seed" // HKDF info: master private scalar → secrets' seed
-	coreKeyInfo   = "jarvis2/kernel-secrets/"     // + signing | agreement | carry | nonce | line-state
+	coreKeyInfo   = "jarvis2/kernel-secrets/" // + signing | agreement | line-state (the app derives the seed: KernelContinuity.seed)
 	lineStateAAD  = "jarvis2/kernel-secrets-state"
 	lineSeqHeader = "X-Line-Seq"
 )
-
-// CoreSeed: the seed the app derives from the master private key (its 32-byte scalar, CryptoKit's rawRepresentation)
-func CoreSeed(masterScalar []byte) ([]byte, error) {
-	return hkdf.Key(sha256.New, masterScalar, nil, seedInfo, 32)
-}
-
-// CoreSeedFromKey: the same from a parsed master key (tests, e2e)
-func CoreSeedFromKey(k *ecdsa.PrivateKey) ([]byte, error) {
-	d, err := k.Bytes()
-	if err != nil {
-		return nil, err
-	}
-	return CoreSeed(d)
-}
 
 // coreKeys: what DeriveCoreKeys makes
 type coreKeys struct {
 	signer    *Signer
 	agreement *ecdh.PrivateKey
-	carry     []byte
-	nonce     []byte
 	state     []byte
 }
 
@@ -98,16 +83,11 @@ func DeriveCoreKeys(seed []byte) (*coreKeys, error) {
 	if err != nil {
 		return nil, err
 	}
-	k := &coreKeys{signer: &Signer{sk}, agreement: ak}
-	for _, x := range []struct {
-		label string
-		out   *[]byte
-	}{{"carry", &k.carry}, {"nonce", &k.nonce}, {"line-state", &k.state}} {
-		if *x.out, err = hkdf.Key(sha256.New, seed, nil, coreKeyInfo+x.label, 32); err != nil {
-			return nil, err
-		}
+	st, err := hkdf.Key(sha256.New, seed, nil, coreKeyInfo+"line-state", 32)
+	if err != nil {
+		return nil, err
 	}
-	return k, nil
+	return &coreKeys{signer: &Signer{sk}, agreement: ak, state: st}, nil
 }
 
 // ---- the line state ------------------------------------------------------------------------------------------
@@ -120,6 +100,7 @@ type lineState struct {
 	Phone        string                          `json:"phone"`
 	Stores       map[string]map[string]*KeyEntry `json:"stores"`
 	RepoOwner    map[string]string               `json:"repoOwner"`
+	RepoKeyID    map[string]int64                `json:"repoKeyId,omitempty"` // a deploy-key store's GitHub key id
 	NotSensitive []string                        `json:"notSensitive"`
 	// a handoff's final state only: the open unlocks, so a blue/green flip keeps them (they never end by themselves)
 	Unlocked map[string]*carriedUnlock `json:"unlocked,omitempty"`
@@ -158,7 +139,7 @@ func setList(m map[string]bool) []string {
 
 // lineSnapshot: the current state with seq 0 (callers hold c.mu)
 func (c *Secrets) lineSnapshot() lineState {
-	return lineState{Phone: c.phoneAgreement, Stores: c.stores, RepoOwner: c.repoOwner, NotSensitive: setList(c.notSensitive)}
+	return lineState{Phone: c.phoneAgreement, Stores: c.stores, RepoOwner: c.repoOwner, RepoKeyID: c.repoKeyID, NotSensitive: setList(c.notSensitive)}
 }
 
 // syncLine: after every call — when the line state changed, the next seq, sealed and signed (a serving core with
@@ -270,7 +251,7 @@ func (c *Secrets) restoreLine(st lineState, all bool) []string {
 		ns[n] = true
 	}
 	valid := func(s string, keys map[string]*KeyEntry) bool {
-		if !storeName(s) || s == FlyStore {
+		if !storeName(s) {
 			return false
 		}
 		for k, x := range keys {
@@ -283,6 +264,7 @@ func (c *Secrets) restoreLine(st lineState, all bool) []string {
 	if all {
 		stores := map[string]map[string]*KeyEntry{}
 		owners := map[string]string{}
+		ids := map[string]int64{}
 		notSensitive := map[string]bool{}
 		for s, keys := range st.Stores {
 			if !valid(s, keys) {
@@ -292,38 +274,39 @@ func (c *Secrets) restoreLine(st lineState, all bool) []string {
 				keys = map[string]*KeyEntry{}
 			}
 			stores[s] = keys
-			if repo := st.RepoOwner[s]; repo != "" && repoRE.MatchString(repo) {
+			if repo := st.RepoOwner[s]; repo != "" && minter.RepoOK(repo) {
 				owners[s] = repo
+				if id := st.RepoKeyID[s]; id > 0 {
+					ids[s] = id
+				}
 			}
 			if ns[s] {
 				notSensitive[s] = true
 			}
 			back = append(back, s)
 		}
-		c.stores, c.repoOwner, c.notSensitive = stores, owners, notSensitive
+		c.stores, c.repoOwner, c.repoKeyID, c.notSensitive = stores, owners, ids, notSensitive
 		c.unlocked = map[string]*unlocked{}
 		for n, u := range st.Unlocked {
 			if _, ok := c.stores[n]; ok && u != nil && len(u.IDs) > 0 {
 				c.unlocked[n] = &unlocked{values: u.Values, version: u.Version, ids: u.IDs}
 			}
 		}
-		c.history, c.historySeq = nil, nil
-		for _, n := range sortedKeys(c.stores) {
-			c.record(n, VersionCause{Kind: "takeover"})
-		}
 		sort.Strings(back)
 		return back
 	}
 	for s, repo := range st.RepoOwner {
 		keys := st.Stores[s]
-		if _, have := c.stores[s]; have || len(keys) == 0 || !repoRE.MatchString(repo) || !valid(s, keys) {
+		if _, have := c.stores[s]; have || len(keys) == 0 || !minter.RepoOK(repo) || !valid(s, keys) {
 			continue
 		}
 		c.stores[s], c.repoOwner[s] = keys, repo
+		if id := st.RepoKeyID[s]; id > 0 {
+			c.repoKeyID[s] = id
+		}
 		if ns[s] {
 			c.notSensitive[s] = true
 		}
-		c.record(s, VersionCause{Kind: "recover"})
 		back = append(back, s)
 	}
 	sort.Strings(back)
@@ -367,7 +350,7 @@ func (c *Secrets) Handoff() (*LineStateDoc, error) {
 		return nil, err
 	}
 	c.mode, c.lineDoc, c.lineHash = modeHandedOff, d, ""
-	c.unlocked, c.pending, c.pendingKeys, c.restores = map[string]*unlocked{}, map[string]pendingUnlock{}, map[string]pendingDeployKey{}, nil
+	c.unlocked, c.pending, c.pendingKeys = map[string]*unlocked{}, map[string]pendingUnlock{}, map[string]pendingDeployKey{}
 	c.logf("handed off: final line state %d; serving nothing from now on", c.lineSeq)
 	return d, nil
 }
@@ -406,7 +389,7 @@ func allowedIn(mode, pattern string) bool {
 		return true
 	case "POST /handoff":
 		return mode == modeHandedOff
-	case "POST /takeover", "POST /store-key":
+	case "POST /takeover":
 		return mode == modeStandby
 	}
 	return false

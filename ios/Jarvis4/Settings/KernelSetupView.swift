@@ -237,7 +237,7 @@ struct KernelSetupView: View {
         _ = try CoreSetup.checkLineState(l, coreKey: derived.signingKey, atLeast: LineWitness.seen(derived.signingKey))
         line = l
       }
-      let sk = try await RouterClient.shared.kernelStoreKey(signedBy: k.signingKey, secrets: derived.agreementKey, next: next)
+      let sk = try RouterClient.shared.kernelStoreKey(secrets: derived.agreementKey)
       let bundle = try KernelSetup.bundle(stores, storeKey: sk, seed: seed, lineState: line)
       let body = try KernelSetup.claim(secrets: k, phone: try PhoneKeys.shared.publicKeys(), root: try RootKey.shared.publicKey(), master: m, bundle: bundle,
                                        identity: derived, standby: next)

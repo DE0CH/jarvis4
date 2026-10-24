@@ -237,8 +237,7 @@ func seededClaim(t *testing.T, c *Secrets, master, p, root *phone, seed []byte, 
 	}
 	derived := b64.EncodeToString(dk.agreement.PublicKey().Bytes())
 	rb := claimBundle{Format: "keys", Stores: []string{"default"}, SecretsSeed: b64.EncodeToString(seed), LineState: line}
-	sk := pl(t)(c.StoreKey(p.agreementKey(), derived)) // the store key with the derived K, as the app wraps a Recover
-	C, _ := b64.DecodeString(sk["storeKey"].(string))
+	C := storeKey(t, p, derived) // the store key with the derived K, as the app wraps a Recover
 	for _, k := range sortedKeys(testValues["default"]) {
 		dkey := make([]byte, 32)
 		rand.Read(dkey)

@@ -137,10 +137,23 @@ func WrapToPoint(combined, dataKey []byte) (WrappedKey, error) {
 	return WrappedKey{E: b64.EncodeToString(e.PublicKey().Bytes()), Wrapped: b64.EncodeToString(gcmSeal(kdf(xOf(shared), infoStore), dataKey, nil))}, nil
 }
 
+// storeKey: C = P + K, as the app computes it for its phone and a secrets' agreement key (base64 X9.63)
+func storeKey(t *testing.T, p *phone, secretsAgreement string) []byte {
+	t.Helper()
+	k, err := b64.DecodeString(secretsAgreement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	C, err := AddPoints(p.agr.PublicKey().Bytes(), k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return C
+}
+
 func appWrap(t *testing.T, c *Secrets, p *phone, name string, vals map[string]string) []KeyEntry {
 	t.Helper()
-	sk := pl(t)(c.StoreKey(p.agreementKey(), ""))
-	C, _ := b64.DecodeString(sk["storeKey"].(string))
+	C := storeKey(t, p, c.Key()["agreementKey"])
 	out := []KeyEntry{}
 	for _, k := range sortedKeys(vals) {
 		dk := make([]byte, 32)

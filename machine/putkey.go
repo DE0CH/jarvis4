@@ -93,8 +93,9 @@ func writeTrust() (signing, agreement string, err error) {
 }
 
 // sealTargets: the store key and the master key, from the core's (or the kernel secrets') signed documents, checked
-// with its key
-func sealTargets(c *client, coreKey string) (storeKey, master string, err error) {
+// with its key. secretsAgreement: the kernel's secrets' agreement key K from the roster ("" = the core): secrets signs
+// no store key, so the machine computes P + K itself from the phone its signed state names
+func sealTargets(c *client, coreKey, secretsAgreement string) (storeKey, master string, err error) {
 	var out struct {
 		Identity struct {
 			SigningKey string     `json:"signingKey"`
@@ -114,6 +115,10 @@ func sealTargets(c *client, coreKey string) (storeKey, master string, err error)
 	}
 	if out.Identity.SigningKey != coreKey || verifyDoc(coreKey, out.Identity.State, &st) != nil || st.Kind != "core-state" && st.Kind != "secrets-state" || st.Master == "" || st.Phone == nil {
 		return "", "", errors.New("the core's state isn't signed by this machine's core, or the core isn't set up")
+	}
+	if secretsAgreement != "" {
+		storeKey, err := sig.StoreKey(st.Phone.AgreementKey, secretsAgreement)
+		return storeKey, st.Master, err
 	}
 	var sk struct {
 		Kind, Phone, StoreKey string
@@ -202,7 +207,7 @@ func putKeyCmd(args []string, del bool) error {
 	if err != nil {
 		return err
 	}
-	storeKey, master, err := sealTargets(c, coreKey)
+	storeKey, master, err := sealTargets(c, coreKey, secretsAgreement)
 	if err != nil {
 		return err
 	}

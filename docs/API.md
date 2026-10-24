@@ -132,8 +132,8 @@ session a router crash left mid-action comes back `failed` with `error` "the …
 | `POST /api/uploads` | First-prompt attachments: one raw file per request, headers `x-upload-id` (`[A-Za-z0-9_-]{1,64}`, groups a form's files) and `x-upload-name` (URI-encoded; made a safe basename as in Jarvis 1) → `{name, size, isImage}`. ≤ 20 files, 25 MB each (413). Staged on the router's volume; unbound uploads go after 24 h, bound ones with their session. The app binds only its own uploads (not a session's, `PUT /m/api/sessions/:id/uploads/…`). Each bound file's sha256 and size go into the new line's signed config (`attachments: [{name, sha256, size}]`). |
 | `GET /api/sessions/:id/attachments/:name` | The bytes of a file staged for that session (until its first machine has fetched them; 404 after): the app's approval page shows it and hashes it against the signed config. |
 | `GET /api/repos` | Deyao's repo list, for Settings → Repos and New session's `repos`: `{repos: [{name, url /* https://github.com/<repo>.git */, repo /* owner/name */, store /* github-<repo> */, sensitive, fingerprint?, keyAt?}]}`. GitHub repos only; an entry is added or removed only by the core's answer to `POST /api/repos/key/finish` (below). |
-| `POST /api/repos/key/begin {action: add \| remove, repo: owner/name \| GitHub URL, sensitive?, store, title, publicKey?, keys?}` | Relayed to the core's `deploy-keys/begin`, or, once the kernel serves (its root grant is in), to the serving kernel secrets' `deploy-keys/begin` (`kernel/secrets/deploykeys.go`: the same call and signed documents under secrets' key; its refusals come back as `{error}` with their status). The app's key title is `jarvis4 <store>`, so a re-add replaces only Jarvis 4's key on GitHub, never Jarvis 2's (`jarvis2 <store>`) (the repo normalised to `owner/name`; the app's store, title and key pair as sent): its signed begin document, which the shell's secure page checks and the phone answers. 400 for a non-GitHub repo or another action; 501 `{error}` from a core older than deploy keys. |
-| `POST /api/repos/key/finish {pending, signature, share}` | Relayed to `deploy-keys/finish` (the core's, or the kernel secrets' as for begin); on the core's signed `deploy-key-added` the repo goes on the list (with `sensitive`, and `fingerprint` = SHA256 of the answer's `publicKey`, or the answer's own `fingerprint` from a core before R2), on `deploy-key-removed` it comes off. The answer is the core's, unchanged; `?inbox=ID` (the request the page answers): when sessions asked for this repo (`repo/add` from a session), each running one that doesn't hold `github-<repo>` gets an add-store approval at once, and the one for that request comes back beside the core's document as `{payload, sig, followups: [approvalId]}`, for the phone to check and sign under the same Face ID (DECISIONS 182). |
+| `POST /api/repos/key/begin {action: add \| remove, repo: owner/name \| GitHub URL, sensitive?, store, title, publicKey?, keys?, keyId?}` | Relayed to the core's `deploy-keys/begin`, or, once the kernel serves (its root grant is in), to the serving kernel secrets' `deploy-keys/begin` (`kernel/secrets/deploykeys.go`: the same call and signed documents under secrets' key, a remove's naming the GitHub `keyId` it deletes; `keyId` on a remove: an orphan key by id, `orphan: true`, the repo's store stays; its refusals come back as `{error}` with their status). The app's key title is `jarvis4 <store>`, so a re-add replaces only Jarvis 4's key on GitHub, never Jarvis 2's (`jarvis2 <store>`) (the repo normalised to `owner/name`; the app's store, title and key pair as sent): its signed begin document, which the shell's secure page checks and the phone answers. 400 for a non-GitHub repo or another action; 501 `{error}` from a core older than deploy keys. |
+| `POST /api/repos/key/finish {pending, signature, share}` | Relayed to `deploy-keys/finish` (the core's, or the kernel secrets' as for begin); on the core's signed `deploy-key-added` the repo goes on the list (with `sensitive`, and `fingerprint` = SHA256 of the answer's `publicKey`, or the answer's own `fingerprint` from a core before R2), on `deploy-key-removed` it comes off (not for an `orphan` one; a kernel add's `replacedKeyId`, the earlier key left on GitHub, is logged). The answer is the core's, unchanged; `?inbox=ID` (the request the page answers): when sessions asked for this repo (`repo/add` from a session), each running one that doesn't hold `github-<repo>` gets an add-store approval at once, and the one for that request comes back beside the core's document as `{payload, sig, followups: [approvalId]}`, for the phone to check and sign under the same Face ID (DECISIONS 182). |
 | `GET /api/github/repos` | `{repos: [{fullName, url, htmlUrl, private, fork, archived, description, language, pushedAt, owner}], cachedAt, configured}` (5 min cache, `?refresh=1`), listed with `GITHUB_READ_TOKEN` (router env; Metadata read picked explicitly, else GitHub lists public repos only — sessions push with their repos' deploy keys). 503 without it. |
 | `GET /api/usage` | The default Claude account's quota (each account's: `GET /api/claude-accounts/{store}/usage`), read by the router with its stored access token (Jarvis 1's shape, `router/claudelogin.go`): `{fetchedAt, limits: [{kind, group, percent, severity, resetsAt, model, surface, active}], extraUsage: {enabled, monthlyLimit, usedCredits, utilization, currency, decimalPlaces, disabledReason, spendLimitReached} \| null, cached, stale?, error?}`; cached a minute (`?refresh=1` skips it); a failed fetch answers the last good reading with `stale`; 409 `{error, needLogin}` when Claude refuses the token. |
 | `GET /api/claude-login` | The default Claude account's login ("Claude accounts" below), no secrets: `{hasLogin, expiresAt, expired, email, accountUuid, source, updatedAt, refreshedAt, participants: [{id, seen}], loginInProgress, preparing, error?, rejected?, needLogin?}` (below, "Claude accounts"). |
@@ -198,8 +198,8 @@ now, plus a one-off wakeup `missed-<name>` 5 minutes after boot when a run fell 
 
 ## The kernel (`kernel/`, `router/kernel.go`, `router/kernelline.go`; DESIGN "Target design", docs/PLAN-grants.md)
 
-The kernel runs beside the old core with keys of its own (DECISIONS 216): eight components at `KERNEL_URL`
-(`%s` = the role: notary, notarizer, mover, merger, spawner, identity, gullible, secrets; unset = no kernel on this
+The kernel runs beside the old core with keys of its own (DECISIONS 216): nine components at `KERNEL_URL`
+(`%s` = the role: notary, notarizer, mover, merger, spawner, identity, gullible, minter, secrets; unset = no kernel on this
 box). A session is a kernel line when its record has `kernel` (its source, the cert into it and its notarization, the
 main grant, and while a machine runs the spawner's cert naming it); every lifecycle of it goes through the kernel.
 New sessions start on the kernel once it is configured and the root's grant is in (`kernelServes`).
@@ -220,14 +220,14 @@ has a cert, kill it instead); `POST /fly-token {sealed}`. The notarizer's reason
 | `GET /api/kernel` | `{configured, core, serves, root, roster, health}` (`health`: as `/api/state`'s `kernel`); `roster`: `{state: none\|pending\|current\|stale, rootKey, pending, copy, id, at, results, stale: ["roster stale: component X restarted (…)"]}` |
 | `POST /api/kernel/root-key` | `{rootKey}` (base64 X9.63): the app's root key, kept until the setup session commits it (`keys/root.pub`, `k8s/cluster/kernel/root.pub`) |
 | `GET /setup/kernel/root-key` | `{rootKey}`, setup-signed (`infra/setup.py kernel-root-key`) |
-| `POST /setup/kernel/roster` | `{copy, payload, setupSig}`, setup-signed: `payload` exactly `sig.RosterPayload` of the 8 roles, `setupSig` the setup key's over it; kept as pending (`infra/setup.py kernel-roster`) |
+| `POST /setup/kernel/roster` | `{copy, payload, setupSig}`, setup-signed: `payload` exactly `sig.RosterPayload` of the 9 roles, `setupSig` the setup key's over it; kept as pending (`infra/setup.py kernel-roster`) |
 | `GET /setup/kernel/roster` | `{current, secretsServing, status}`, setup-signed |
 | `GET /api/kernel/roster/pending` | `{copy, payload, setupSig, at}`: what the app checks against `keys/setup.pub` and the root key signs |
-| `POST /api/kernel/roster` | `{payload, rootSig}`: checked against the registered root key, posted as `{"roster": {payload, sig}}` to all 9 Deployments (notary, notarizer, mover, merger, spawner, identity, gullible, secrets-blue, secrets-green) → `{id, results}` (per Deployment `taken`, `standby, not named: …` for the next secrets, `refused: …`, `unreachable: …`); kept as current |
+| `POST /api/kernel/roster` | `{payload, rootSig}`: checked against the registered root key, posted as `{"roster": {payload, sig}}` to all 10 Deployments (notary, notarizer, mover, merger, spawner, identity, gullible, minter, secrets-blue, secrets-green) → `{id, results}` (per Deployment `taken`, `standby, not named: …` for the next secrets, `refused: …`, `unreachable: …`); kept as current |
 | `GET /api/kernel/roster` | the current `{copy, payload, sig, at, results, status}`; a component that answers it has no roster (a restart) gets it again, and refuses it (new keys): the roster is stale until a new one is signed (one DM) |
 | `GET /api/kernel/root-grant/draft` | `{payload}`: ⊤ on the sink with the sink's (hash-to-curve) keys: what the root key signs once |
 | `POST /api/kernel/root-grant` | `{grant: {payload, sig}}`: checked against the root key secrets names (`/keys`), then kept (`kernelRoot`) |
-| `GET\|POST /api/kernel/secrets/{path}` | secrets' own API relayed as is (`identity`, `claim`, `store-key`, `stores`, `unlock/begin`, `unlock/finish`, `lock`, `unlocked`, `keys`, `wipe`, versions, restore, deploy keys): every answer is signed by secrets |
+| `GET\|POST /api/kernel/secrets/{path}` | secrets' own API relayed as is (`identity`, `claim`, `stores`, `unlock/begin`, `unlock/finish`, `lock`, `unlocked`, `keys`, `wipe`, deploy keys): every answer is signed by secrets. It answers no store key (each writer computes P + K from secrets' signed state and its roster keys: `sig.StoreKey`, the app's `StorePoint`) and keeps no versions (below, "Store versions and restore"). Its `stores/write-key` also takes writer `replay` with `receipt` (an earlier `key-written` answer of secrets' for exactly that entry: the entry comes back with the writer and time the receipt names; a `replay` delete needs none; never into a repo's store or a store that doesn't exist) |
 | `POST /setup/kernel/secrets/flip` | blue/green: the serving secrets hands off, the next (Recovered alongside with `?secrets=next`) takes over → `{serving}` |
 | `GET /api/kernel/spawner/identity`, `POST /api/kernel/spawner/fly-token` | the app's Recover: the spawner's identity (the roster names its keys), and the Fly token from the core store's backup sealed to it |
 | `GET /setup/kernel/spawner/identity`, `POST /setup/kernel/spawner/fly-token` | the setup session: the spawner's identity (checked against the root key's current roster), and the Fly token sealed to it (`infra/setup.py kernel-fly-token`) |
@@ -441,9 +441,25 @@ Core continuity (`core/continuity.go`, `router/linestate.go`; DESIGN "Core conti
 - `POST store-key {phone, core?}`: with `core` (an agreement public key, X9.63 base64) the answer is P + that point and
   names it (`core`); what a Recover wraps to before the claim gives the core its derived K.
 
-## Store versions and restore (`core/history.go`, `router/storerestore.go`)
+## Store versions and restore (`core/history.go`, `router/storerestore.go`, `router/storeversions.go`)
 
-DESIGN "Restoring a store". A core from before stores kept versions answers 404.
+DESIGN "Restoring a store". A core from before stores kept versions answers 404. On a box with no core (NO_CORE=1)
+the same three routes are the router's own (the kernel's secrets keeps no history, DECISIONS 232), unsigned:
+
+- `POST /api/core/stores/versions {store, nonce}` (and `/setup/stores/versions`) → `{"kind":"store-versions", nonce,
+  store, current, sensitive, versions: [{seq, at, version, cause: {kind: write | delete | restore, key?, writer?,
+  from?}, keys: [{name, e, dataSha256, backupSha256?, at, writer, receipt /* secrets' signed key-written answer; null:
+  a key the router never saw written */}]}]}`, newest first, at most 50 (`store_versions`).
+- `POST /api/core/stores/restore/begin {store, seq}` → `{"kind":"store-restore-begin", replay: true, pending, store,
+  sensitive, from, to, put: [{key, e, dataSha256, backupSha256, at, writer, receipt}], remove, keep, cannot /* keys
+  whose value then the router never saw: left as they are */, t: ""}`; 403 a repo's store, 404 no such store or
+  version, 409 already that version. The app checks every `put` receipt against the pinned secrets.
+- `POST /api/stores/restore/finish {pending}` → each put key's backup object back into the bucket, then
+  `stores/write-key` with writer `replay` and its receipt, then a `replay` delete of each removed key (which keeps its
+  last backup) → `{ok, restored: {kind: "store-restored", pending, store, from, seq, version}, refreshAsked}`; 409 when
+  the store changed since the begin, 404 an unknown or spent pending.
+
+With the core:
 
 - `POST /api/core/stores/versions {store, nonce}` (relayed; `/setup/stores/versions` the same) → the core's signed
   `{"kind":"store-versions", nonce, store, current /* the store's version now */, sensitive, versions: [{seq, at,
@@ -525,8 +541,19 @@ share}}` (one share for each key the begin named).
   `/api/repos/key/finish` turns a 403/404 into what the token needs: Repository "Administration: read and write").
 - `POST store-key {phone}` → the core's signed `{"kind":"store-key", phone, storeKey}`: `storeKey` = P + K (X9.63
   base64) for that phone agreement key P. Open, also on an empty core: what the app wraps a data key to (one-off e,
-  HKDF-SHA256 of x(e·storeKey) with info `"jarvis2/store-data-key"`, AES-256-GCM nonce‖ciphertext), since CryptoKit
-  can't add points: a deploy key's store, and every store of a Recover's bundle (`claim`, above).
+  HKDF-SHA256 of x(e·storeKey) with info `"jarvis2/store-data-key"`, AES-256-GCM nonce‖ciphertext): a deploy key's
+  store, and every store of a Recover's bundle (`claim`, above). The kernel's secrets has none: the app adds the
+  points itself (`StorePoint`).
+
+The kernel's secrets (`kernel/secrets/deploykeys.go`) answers the same two calls with these differences (DECISIONS
+230): it checks no title or key format (the phone signs over exactly what it made); a remove's begin names `keyId`,
+the GitHub key it deletes (recorded at the add; 0 = none known: only the store goes) and, for a `keyId` asked for
+that isn't the store's, `orphan: true` (only that key goes). Finish seals the token to the minter (`kernel/minter`,
+`POST /mint {begin, phoneSig, keys, token}` in the cluster), which checks the same phone-signed request and makes one
+GitHub call — `POST /repos/{repo}/keys`, or `DELETE /repos/{repo}/keys/{keyId}` — and answers signed
+`{"kind":"deploy-key-minted", pending, action, repo, keyId}`; secrets checks it against the roster's minter. An add
+answers `keyId` and, when it replaced a recorded key, `replacedKeyId` (that key stays on GitHub: an orphan); a lost
+store-name race answers 409 naming the new key as an orphan.
 
 ## Actions (`/m/api/actions/*`, `router/actions.go`)
 
@@ -680,7 +707,7 @@ off.
 | `POST /m/supervisor-log` | `{lines: [{at /* RFC 3339 */, text}]}` (≤ 500 lines; a line over 2000 bytes is clipped; an `at` more than a minute ahead or a day behind the router's clock becomes the router's): the supervisor's own log lines, pushed from its first second (also while the machine boots, before its first `/m/status`), written free of secrets by the machine. Appended to the session's supervisor log (`GET /api/sessions/:id/supervisor-log`). 400 malformed or too many lines, 404 a machine of no session. |
 | `POST /m/memory` | Body `{totalKb, availKb, oomKills, psiFull60, top: [{rssKb, comm}]}` (≤ 10 processes): the machine's RAM, every 10 s once booted (`machine/memory.go`), for the starvation watch (`router/memory.go`). 400 for a malformed sample. |
 | `GET /m/stores` | Every store (all of them, not only this session's) with its keys and what each is for, as `GET /api/stores`, so the session knows which one to ask for. `jarvis2 stores [--keys \| --json]` prints it, checks the list and the key names against the core's signature and marks this session's own stores. |
-| `GET /m/store-key` | `{identity, storeKey}`: the core's identity (keys, box signature, its signed state naming the master key and the phone) and its signed `store-key` for that phone — what a writer seals to. The machine checks both against its core key. |
+| `GET /m/store-key` | `{identity, storeKey}`: the core's identity (keys, box signature, its signed state naming the master key and the phone) and its signed `store-key` for that phone — what a writer seals to. The machine checks both against its core key. On a box with no core only `{identity}` (secrets'): the machine computes P + K from the phone its signed state names and secrets' agreement key in the roster (`sig.StoreKey`). |
 | `POST /m/stores/{store}/keys/{key}` | A running session writes or deletes one key, no approval (`jarvis2 put-key STORE KEY [--explain TEXT] < value`, `jarvis2 delete-key`): `{delete, wrapped: {e, wrapped}, data, backup: {e, data}, backupSha256, sig, explanation}` — the value sealed to the store key (AAD `store\nkey`), its backup sealed to the master key (HKDF info `"jarvis2/backup"`, the same AAD), `backupSha256 = sha256(backup.e + "\n" + backup.data)`, `sig` this machine's signature over `WriterText`. The router writes the backup first (`keys/<store>/<key>.json`), then the key into the core with the machine's newest cert (`/stores/write-key`, writer `machine`), keeps the explanation (required for a key name with none yet). No Inbox request: a session holding the store gets the key at its next pull with a new cert (an add-store, a resume; Deyao, 2026-10-22). → `{ok, receipt /* the core's key-written doc */}`. 400 malformed, missing explanation or backup; 403 the core or deploy-key token store, or a session that isn't running; the core's own refusals as they are (e.g. 403 a repo's deploy-key store, 404 no such store). |
 | `POST /m/add-store` | Body `{store}`: asks Deyao (an `add-store` approval) to add one store to this session. With a reason: `POST /m/api/requests/add-store` (Requests). |
 | `POST /m/downgrade` | Body `{stores, newEncryptionKey, newSigningKey}` → `{challenge}`, which the machine signs with its OLD key. |

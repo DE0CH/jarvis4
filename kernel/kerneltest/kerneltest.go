@@ -1,6 +1,6 @@
 // Package kerneltest: the whole kernel for other modules' tests (the router's, the machine's). Every component
-// runs in-process on its own httptest server, on a fake Fly whose machines have real key pairs, with a box key, a
-// phone key and a root key the test holds, and secrets already claimed (Reset: no stores).
+// runs in-process on its own httptest server, on a fake Fly whose machines have real key pairs and a fake GitHub
+// (the minter's), with a phone key and a root key the test holds, and secrets already claimed (Reset: no stores).
 package kerneltest
 
 import (
@@ -22,6 +22,7 @@ import (
 	"github.com/DE0CH/jarvis4/kernel/doc"
 	"github.com/DE0CH/jarvis4/kernel/internal/serve"
 	"github.com/DE0CH/jarvis4/kernel/merger"
+	"github.com/DE0CH/jarvis4/kernel/minter"
 	"github.com/DE0CH/jarvis4/kernel/mover"
 	"github.com/DE0CH/jarvis4/kernel/notarizer"
 	"github.com/DE0CH/jarvis4/kernel/notary"
@@ -38,6 +39,7 @@ type Kernel struct {
 	PhoneAgree  *ecdh.PrivateKey
 	URL         map[string]string // role → base URL
 	Fly         *FakeFly
+	GitHub      *FakeGitHub // the minter's
 	Secrets     *secrets.Secrets
 	servers     []*httptest.Server
 	master      *sig.Signer
@@ -58,9 +60,9 @@ func Start(t testing.TB, machineEnv map[string]string) *Kernel {
 	phone, _ := sig.NewSigner()
 	root, _ := sig.NewSigner()
 	pa, _ := ecdh.P256().GenerateKey(rand.Reader)
-	k := &Kernel{Phone: phone, Root: root, PhoneAgree: pa, URL: map[string]string{}, Fly: NewFakeFly()}
+	k := &Kernel{Phone: phone, Root: root, PhoneAgree: pa, URL: map[string]string{}, Fly: NewFakeFly(), GitHub: &FakeGitHub{Keys: map[string][]minter.DeployKey{}}}
 	dir := t.TempDir()
-	for _, role := range []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible"} {
+	for _, role := range []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "minter"} {
 		c, err := sig.NewComponent(role)
 		if err != nil {
 			t.Fatal(err)
@@ -94,12 +96,14 @@ func Start(t testing.TB, machineEnv map[string]string) *Kernel {
 			signers.RegisterIdentity(s)
 		case "gullible":
 			signers.RegisterGullible(s)
+		case "minter":
+			minter.Register(s, minter.New(c, trust, k.GitHub))
 		}
 		srv := httptest.NewServer(s.Mux)
 		k.servers = append(k.servers, srv)
 		k.URL[role] = srv.URL
 	}
-	sc, err := secrets.New(root.PublicKey(), nil)
+	sc, err := secrets.New(root.PublicKey(), minter.NewClient(k.URL["minter"]))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +124,7 @@ func Start(t testing.TB, machineEnv map[string]string) *Kernel {
 // Roster: the root key's roster of the components as they answer now (secrets' claimed keys included)
 func (k *Kernel) Roster() (sig.Doc, error) {
 	ids := []sig.Identity{}
-	for _, role := range []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "secrets"} {
+	for _, role := range []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "minter", "secrets"} {
 		ids = append(ids, k.Identity(role))
 	}
 	p, err := sig.RosterPayload("blue", ids)
@@ -200,6 +204,38 @@ func (k *Kernel) RootTop() sig.Doc {
 	ik, _ := doc.IdealKeys(doc.Sink)
 	d, _ := k.Root.SignJSON(doc.Grant{Kind: "grant", Machine: doc.Sink, Keys: ik, Pair: perm.Top(), From: []string{}, At: doc.Now()})
 	return d
+}
+
+// ---- a fake GitHub (the minter's) ---------------------------------------------------------------------------------
+
+// FakeGitHub: deploy keys per repo; Tokens holds every token it was called with
+type FakeGitHub struct {
+	mu     sync.Mutex
+	n      int64
+	Keys   map[string][]minter.DeployKey
+	Tokens []string
+}
+
+func (g *FakeGitHub) AddDeployKey(token, repo, title, pub string) (minter.DeployKey, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.n++
+	k := minter.DeployKey{ID: g.n, Title: title, Key: pub}
+	g.Keys[repo], g.Tokens = append(g.Keys[repo], k), append(g.Tokens, token)
+	return k, nil
+}
+
+func (g *FakeGitHub) DeleteDeployKey(token, repo string, id int64) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	var out []minter.DeployKey
+	for _, k := range g.Keys[repo] {
+		if k.ID != id {
+			out = append(out, k)
+		}
+	}
+	g.Keys[repo], g.Tokens = out, append(g.Tokens, token)
+	return nil
 }
 
 // ---- a fake Fly -----------------------------------------------------------------------------------------------
@@ -355,7 +391,7 @@ func (f *FakeFly) Stop(id string) {
 
 // Secrets: one more secrets on its own server (the next colour, blue/green), and its URL
 func (k *Kernel) Secrets2(t testing.TB) (*secrets.Secrets, string) {
-	sc, err := secrets.New(k.Root.PublicKey(), nil)
+	sc, err := secrets.New(k.Root.PublicKey(), minter.NewClient(k.URL["minter"]))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,8 +431,8 @@ func (k *Kernel) ClaimSeeded(sc *secrets.Secrets, seed []byte, standby bool) err
 	return err
 }
 
-// Restart: a stateless component (mover, merger, identity, gullible) starts again as a restart does: fresh keys, no
-// roster, on a new server (URLFor names it from now on)
+// Restart: a stateless component (mover, merger, identity, gullible, minter) starts again as a restart does: fresh
+// keys, no roster, on a new server (URLFor names it from now on; secrets keeps calling the minter it was started with)
 func (k *Kernel) Restart(t testing.TB, role string) {
 	c, err := sig.NewComponent(role)
 	if err != nil {
@@ -413,8 +449,10 @@ func (k *Kernel) Restart(t testing.TB, role string) {
 		signers.RegisterIdentity(s)
 	case "gullible":
 		signers.RegisterGullible(s)
+	case "minter":
+		minter.Register(s, minter.New(c, trust, k.GitHub))
 	default:
-		t.Fatalf("Restart: %s keeps state; only mover, merger, identity and gullible", role)
+		t.Fatalf("Restart: %s keeps state; only mover, merger, identity, gullible and minter", role)
 	}
 	srv := httptest.NewServer(s.Mux)
 	k.servers = append(k.servers, srv)

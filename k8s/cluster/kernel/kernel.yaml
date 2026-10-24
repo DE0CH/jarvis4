@@ -1,16 +1,16 @@
-# The kernel on the one cluster (DESIGN "Target design", docs/PLAN-cluster.md "The roster"): eight components, one
+# The kernel on the one cluster (DESIGN "Target design", docs/PLAN-cluster.md "The roster"): nine components, one
 # binary each from ghcr.io/de0ch/jarvis4-kernel, each its own Deployment so a bug in one can't read another's memory.
 # No box key: each component makes fresh keys in RAM at start and answers them at GET /identity; the root key (the
 # Jarvis 4 app's) vouches for them in the roster the router posts (POST /roster), which every component checks against
 # KERNEL_ROOT (the ConfigMap kernel-root, made from root.pub here = keys/root.pub; infra/setup.py kernel-root-key).
 # A restart makes new keys: the router says the roster is stale until Deyao signs a new one (router/roster.go).
 # State: the notary's log, the notarizer's sources and the spawner's machines live on their own volumes (Recreate:
-# one writer; the router retries a kernel call through the seconds a restart takes). Mover, merger and the two signers
-# hold nothing. Secrets holds the stores in memory only, so it runs blue and green: one serves (the router's state,
+# one writer; the router retries a kernel call through the seconds a restart takes). Mover, merger, the two signers
+# and the minter hold nothing. Secrets holds the stores in memory only, so it runs blue and green: one serves (the router's state,
 # kernelSecrets), the other is next; a release goes only into the next (active-secrets.txt names the serving one for
 # the pin job in .github/workflows/images.yml), Deyao Recovers it alongside and the router flips (router/kernel.go).
-# Only the router (and kernel-id, GET /identity only) reaches them; only the spawner (Fly) and secrets (GitHub deploy
-# keys) reach the internet. The image is pinned by digest by the images workflow's pin job whenever kernel/ changed.
+# Only the router (and kernel-id, GET /identity only) reaches them, and secrets the minter; only the spawner (Fly) and
+# the minter (GitHub deploy keys: secrets hands it the token, DECISIONS 232) reach the internet. The image is pinned by digest by the images workflow's pin job whenever kernel/ changed.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -267,13 +267,45 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
+metadata: { name: minter, namespace: jarvis4-kernel }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: kernel, role: minter } }
+  template:
+    metadata: { labels: { app: kernel, role: minter, egress: "github" } }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      containers:
+        - name: minter
+          image: ghcr.io/de0ch/jarvis4-kernel:latest  # the images workflow pins it (a build with /kernel/minter)
+          command: ["/kernel/minter"]
+          ports: [{ containerPort: 8080 }]
+          env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
+          volumeMounts: []
+          readinessProbe: { httpGet: { path: /identity, port: 8080 }, periodSeconds: 5 }
+          resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 48Mi } }
+          securityContext: { runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] }, seccompProfile: { type: RuntimeDefault } }
+      securityContext: { fsGroup: 65532 }
+      volumes: []
+---
+apiVersion: v1
+kind: Service
+metadata: { name: minter, namespace: jarvis4-kernel }
+spec:
+  selector: { app: kernel, role: minter }
+  ports: [{ port: 8080, targetPort: 8080 }]
+---
+apiVersion: apps/v1
+kind: Deployment
 metadata: { name: secrets-blue, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: secrets, color: blue } }
   template:
-    metadata: { labels: { app: kernel, role: secrets, color: blue, egress: "github" } }
+    metadata: { labels: { app: kernel, role: secrets, color: blue, egress: "none" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -282,7 +314,7 @@ spec:
           image: ghcr.io/de0ch/jarvis4-kernel:latest
           command: ["/kernel/secrets"]
           ports: [{ containerPort: 8080 }]
-          env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
+          env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_MINTER_URL, value: "http://minter:8080" }]
           volumeMounts: []
           readinessProbe: { httpGet: { path: /identity, port: 8080 }, periodSeconds: 5 }
           resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 192Mi } }
@@ -305,7 +337,7 @@ spec:
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: secrets, color: green } }
   template:
-    metadata: { labels: { app: kernel, role: secrets, color: green, egress: "github" } }
+    metadata: { labels: { app: kernel, role: secrets, color: green, egress: "none" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -314,7 +346,7 @@ spec:
           image: ghcr.io/de0ch/jarvis4-kernel:sha-dcc425b899c7@sha256:5486ff2afdf1cbd084cf40d018a7ab1b79ad7725a0af51df3bce361616e9ab8c
           command: ["/kernel/secrets"]
           ports: [{ containerPort: 8080 }]
-          env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
+          env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_MINTER_URL, value: "http://minter:8080" }]
           volumeMounts: []
           readinessProbe: { httpGet: { path: /identity, port: 8080 }, periodSeconds: 5 }
           resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 192Mi } }
@@ -330,7 +362,7 @@ spec:
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 # ingress: the router (namespace jarvis4-router) on :8080, and kernel-id (jarvis2-edge), which nginx confines to GET
-# /<role>/identity; no egress unless one of the two policies below adds it
+# /<role>/identity; no egress unless one of the policies below adds it
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: kernel, namespace: jarvis4-kernel }
@@ -359,10 +391,10 @@ spec:
     - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10] } }, { ipBlock: { cidr: "::/0", except: ["fc00::/7", "fe80::/10"] } }]
       ports: [{ port: 443, protocol: TCP }]
 ---
-# secrets: GitHub's API (api.github.com, 443: the repos' deploy keys)
+# the minter: GitHub's API (api.github.com, 443: the repos' deploy keys), the kernel's only GitHub egress
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
-metadata: { name: kernel-secrets, namespace: jarvis4-kernel }
+metadata: { name: kernel-minter, namespace: jarvis4-kernel }
 spec:
   podSelector: { matchLabels: { egress: github } }
   policyTypes: [Egress]
@@ -371,3 +403,27 @@ spec:
       ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
     - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10] } }, { ipBlock: { cidr: "::/0", except: ["fc00::/7", "fe80::/10"] } }]
       ports: [{ port: 443, protocol: TCP }]
+---
+# secrets reaches the minter only (an approved deploy-key call), and nothing outside the cluster
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: kernel-secrets-minter, namespace: jarvis4-kernel }
+spec:
+  podSelector: { matchLabels: { role: secrets } }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }, podSelector: { matchLabels: { k8s-app: kube-dns } } }]
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+    - to: [{ podSelector: { matchLabels: { app: kernel, role: minter } } }]
+      ports: [{ port: 8080, protocol: TCP }]
+---
+# the minter takes calls from secrets too (besides the router's and kernel-id's, above)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: kernel-minter-ingress, namespace: jarvis4-kernel }
+spec:
+  podSelector: { matchLabels: { role: minter } }
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app: kernel, role: secrets } } }]
+      ports: [{ port: 8080 }]

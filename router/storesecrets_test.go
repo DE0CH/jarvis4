@@ -36,7 +36,7 @@ func kernelStoreRouter(t *testing.T) (*Router, *storeCore, *storeCore) {
 }
 
 // on a box with no core every store path reaches the kernel's serving secrets: the setup session's listing and
-// writes, the app's store pages and its relayed store calls, the store key a writer seals to
+// writes, the app's store pages and its relayed store calls, the identity a writer computes the store key from
 func TestStoresGoToSecretsWithNoCore(t *testing.T) {
 	r, blue, green := kernelStoreRouter(t)
 	code, out := appDo(t, r, "GET", "/setup/stores/keys", "")
@@ -54,7 +54,7 @@ func TestStoresGoToSecretsWithNoCore(t *testing.T) {
 	if code, out := appDo(t, r, "GET", "/setup/identity", ""); code != 200 || out["signingKey"] != blue.key.pub() {
 		t.Fatalf("setup identity: %d %v", code, out)
 	}
-	if code, out := appDo(t, r, "GET", "/setup/store-key", ""); code != 200 || out["storeKey"] == nil {
+	if code, out := appDo(t, r, "GET", "/setup/store-key", ""); code != 200 || out["identity"] == nil || out["storeKey"] != nil { // secrets signs no store key: each writer computes P + K
 		t.Fatalf("store key: %d %v", code, out)
 	}
 	body := strings.Replace(writeBody("a key"), `"sig"`, `"live":{"e":"LE","data":"LD"},"sig"`, 1)

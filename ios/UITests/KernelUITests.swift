@@ -41,7 +41,7 @@ final class KernelUITests: JarvisUITestCase {
   }
 
   /// A healthy kernel shows no warning on Sessions, and one component that stops answering does, by name.
-  /// ios.yml's simulator job runs it against the real router (NO_CORE=1) with ios/ci/fakekernel as the eight components,
+  /// ios.yml's simulator job runs it against the real router (NO_CORE=1) with ios/ci/fakekernel as the nine components,
   /// which signed and posted a roster every component holds (the router says healthy before the test starts).
   func testKernelHealthBanner() {
     continueAfterFailure = false

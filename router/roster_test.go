@@ -64,7 +64,7 @@ func rdo(t *testing.T, h http.Handler, method, path string, body any, setup *key
 // rosterOf: the components' identities as the setup session reads them, as sig.RosterPayload makes the payload
 func rosterOf(t *testing.T, k *kerneltest.Kernel) string {
 	ids := []sig.Identity{}
-	for _, role := range []string{"secrets", "spawner", "notary", "notarizer", "mover", "merger", "identity", "gullible"} {
+	for _, role := range []string{"secrets", "spawner", "notary", "notarizer", "mover", "merger", "identity", "gullible", "minter"} {
 		ids = append(ids, k.Identity(role))
 	}
 	p, err := sig.RosterPayload("blue", ids)
@@ -129,7 +129,7 @@ func TestRosterFlow(t *testing.T) {
 		t.Fatalf("roster: %d %v", c, out)
 	}
 	res := out["results"].(map[string]any)
-	for _, dep := range []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "secrets-blue"} {
+	for _, dep := range []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "minter", "secrets-blue"} {
 		if res[dep] != "taken" {
 			t.Fatalf("%s: %v", dep, res[dep])
 		}

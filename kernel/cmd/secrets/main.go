@@ -1,5 +1,6 @@
 // Secrets' process (kernel/secrets): empty until the app claims it (Reset or Recover); a wipe ends the process.
-// KERNEL_ROOT: the root key's public half (keys/root.pub), which its roster is checked against.
+// KERNEL_ROOT: the root key's public half (keys/root.pub), which its roster is checked against. KERNEL_MINTER_URL:
+// the minter (kernel/minter), where an approved deploy-key call goes; secrets itself reaches nothing outside the cluster.
 package main
 
 import (
@@ -8,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/DE0CH/jarvis4/kernel/minter"
 	"github.com/DE0CH/jarvis4/kernel/secrets"
 )
 
@@ -16,7 +18,7 @@ func main() {
 	if root == "" {
 		log.Fatal("KERNEL_ROOT (the root key's public half, keys/root.pub) isn't set")
 	}
-	c, err := secrets.New(root, secrets.NewGitHubAPI())
+	c, err := secrets.New(root, minter.NewClient(os.Getenv("KERNEL_MINTER_URL")))
 	if err != nil {
 		log.Fatal(err)
 	}

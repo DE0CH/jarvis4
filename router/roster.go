@@ -37,7 +37,7 @@ import (
 )
 
 // rosterTargets: every kernel Deployment the roster goes to (KERNEL_URL's %s)
-var rosterTargets = []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "secrets-blue", "secrets-green"}
+var rosterTargets = []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "minter", "secrets-blue", "secrets-green"}
 
 // RosterFiling: the setup session's roster, waiting for the root key
 type RosterFiling struct {
@@ -223,7 +223,7 @@ func checkFiledRoster(copy, payload string) error {
 		}
 		roles = append(roles, m.Role)
 	}
-	want := []string{"gullible", "identity", "merger", "mover", "notarizer", "notary", "secrets", "spawner"}
+	want := []string{"gullible", "identity", "merger", "minter", "mover", "notarizer", "notary", "secrets", "spawner"}
 	if !slices.Equal(roles, want) {
 		return errors.New("payload: the members must be exactly " + strings.Join(want, ", ") + ", sorted")
 	}

@@ -114,6 +114,11 @@ type keyAnswer struct {
 	Sensitive   bool   `json:"sensitive"`
 	Fingerprint string `json:"fingerprint"`
 	PublicKey   string `json:"publicKey"` // the core from R2 answers the key, not its fingerprint
+	// the kernel's secrets: the GitHub key's id; a re-add's earlier key (an orphan on GitHub until a remove by its id);
+	// a remove of only an orphan key (the repo stays)
+	KeyID         int64 `json:"keyId"`
+	ReplacedKeyID int64 `json:"replacedKeyId"`
+	Orphan        bool  `json:"orphan"`
 }
 
 // sshFingerprint: "SHA256:<base64>" of an "ssh-ed25519 <base64 wire>" line ("" when it isn't one)
@@ -135,6 +140,13 @@ func (r *Router) applyKeyAnswer(a keyAnswer, proof *Doc) error {
 	repo := parseGitHubRepo(a.Repo)
 	if repo == "" {
 		return fmt.Errorf("the core's answer names no GitHub repo")
+	}
+	if a.Orphan { // only an orphan key went: the repo stays as it is
+		log.Printf("repos: orphan deploy key %d of %s deleted on GitHub", a.KeyID, repo)
+		return nil
+	}
+	if a.ReplacedKeyID != 0 {
+		log.Printf("repos: %s's earlier deploy key %d stays on GitHub until it is removed by id (an orphan)", repo, a.ReplacedKeyID)
 	}
 	same := func(e RepoEntry) bool { return strings.EqualFold(e.Repo, repo) }
 	// a pending request for the same thing is answered too (inbox.go)
@@ -179,6 +191,8 @@ func (r *Router) registerDeployKeys(app appRoute) {
 			Title     string          `json:"title,omitempty"`
 			PublicKey string          `json:"publicKey,omitempty"`
 			Keys      json.RawMessage `json:"keys,omitempty"`
+			// a remove of one orphan key by GitHub's id (the kernel's secrets; the repo's store stays)
+			KeyID int64 `json:"keyId,omitempty"`
 		}
 		json.NewDecoder(io.LimitReader(req.Body, 1<<20)).Decode(&in)
 		repo := parseGitHubRepo(in.Repo)
@@ -186,8 +200,8 @@ func (r *Router) registerDeployKeys(app appRoute) {
 			writeJSON(w, 400, map[string]string{"error": "a GitHub repo (owner/name or its URL) and action add or remove"})
 			return
 		}
-		// the key's title on GitHub is Jarvis 4's own: the secrets deletes the repo's keys with the same title before it
-		// adds one, so Jarvis 2's title ("jarvis2 <store>") would take Jarvis 2's key away
+		// the key's title on GitHub is Jarvis 4's own: the core deletes the repo's keys with the same title before it adds
+		// one, so Jarvis 2's title ("jarvis2 <store>") would take Jarvis 2's key away (the kernel deletes only by id)
 		if in.Store != "" && in.Title != deployKeyTitle(in.Store) {
 			writeJSON(w, 400, map[string]string{"error": "the deploy key's title must be " + deployKeyTitle(in.Store) + " (an older app sends Jarvis 2's: update the Jarvis 4 app)"})
 			return
@@ -198,6 +212,9 @@ func (r *Router) registerDeployKeys(app appRoute) {
 			if len(in.Keys) > 0 {
 				body["keys"] = in.Keys
 			}
+		}
+		if in.KeyID != 0 {
+			body["keyId"] = in.KeyID
 		}
 		b, _ := json.Marshal(body)
 		r.relayDeployKey(w, "/deploy-keys/begin", b, false)
