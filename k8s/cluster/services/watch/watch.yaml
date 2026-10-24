@@ -23,7 +23,7 @@ spec:
       terminationGracePeriodSeconds: 130  # DRAIN_S + a 90 s check + margin
       containers:
         - name: watch
-          image: ghcr.io/de0ch/jarvis4-watch:sha-75ea7d71eba0@sha256:4d18a0be2c22688135e6a0e12c56b455a8979794935d58c66f18894b06f78b83
+          image: ghcr.io/de0ch/jarvis4-watch:sha-034e58887df9@sha256:4b03fc1419603a8d10e1b362880959c57abf209d42d207e6d04fda90de342342
           ports: [{ containerPort: 8095 }]
           env:
             - { name: PORT, value: "8095" }
