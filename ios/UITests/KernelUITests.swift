@@ -63,7 +63,7 @@ final class KernelUITests: JarvisUITestCase {
     XCTAssertEqual(fakeKernel("_down/notary"), 200)
     let banner = el("banner-kernel")
     XCTAssertTrue(arrives(banner, 60, "the kernel's warning after notary went down"), "an unhealthy kernel shows no warning")
-    XCTAssertTrue(said(banner).contains("notary not answering"), "the warning doesn't name notary: \(said(banner))")
+    XCTAssertTrue(said(banner).contains("notary-blue not answering"), "the warning doesn't name notary: \(said(banner))")
     shot("kernel-notary-down")
     // and back: the warning goes
     XCTAssertEqual(fakeKernel("_up/notary"), 200)
