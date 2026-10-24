@@ -33,3 +33,13 @@ test("a field the router leaves out gets its empty value", () => {
   assert.equal(s.budget, null);
   assert.equal(s.fly, null);
 });
+
+test("a box with no core warns about the kernel, never the core", async () => {
+  const { trustWarning } = await import("../src/lib/kernel.ts");
+  const noCore = { ...answer, core: { up: false, none: true } };
+  assert.equal(trustWarning(stateFrom({ ...noCore, kernel: { checked: true, healthy: true, problems: [] } })), null);
+  assert.equal(trustWarning(stateFrom({ ...noCore, kernel: { checked: false, healthy: false, problems: [] } })), null);
+  assert.equal(trustWarning(stateFrom({ ...noCore, kernel: { checked: true, healthy: false, problems: ["notary-blue not answering"] } })), "notary-blue not answering");
+  assert.equal(trustWarning(stateFrom(noCore)), null);
+  assert.match(trustWarning(stateFrom({ ...answer, core: { up: false } })), /Core not answering/);
+});

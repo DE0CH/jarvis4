@@ -11,6 +11,7 @@ import { BadgeList, Button, Callout, Heading, IconButton, P, Row, Rows, Spinner,
 import { TopBar, openPage } from "../ui/page";
 import { openNewSession } from "../lib/sessions";
 import { useWide } from "../ui/overlays";
+import { trustWarning } from "../lib/kernel";
 import { Boundary } from "../ui/boundary";
 import { Sessions } from "../views/Sessions";
 import { Inbox } from "../views/Inbox";
@@ -26,11 +27,11 @@ import { Devices } from "../views/Devices";
 
 function Banners() {
   const st = useStore((s) => s.state);
-  const b = st.budget, dead = st.sessions.filter((m) => m.authFailed);
+  const b = st.budget, trust = trustWarning(st), dead = st.sessions.filter((m) => m.authFailed);
   return (
     <View nativeID="banners">
       {!!st.loadError && <Callout color="red" mb={3}>{"Can't reach the router: " + st.loadError}</Callout>}
-      {st.loaded && !st.core.up && <Callout color="amber" mb={3} id="banner-core">Core not answering: no create, resume or approve.</Callout>}
+      {!!trust && <Callout color="amber" mb={3} id={st.kernel ? "banner-kernel" : "banner-core"}>{trust}</Callout>}
       {dead.length > 0 && <Callout color="red" mb={3} id="banner-creds">
         <P size={2} weight="bold" color="red">Claude login failed</P>
         <Rows><Row label="Sessions"><BadgeList color="red" items={dead.map(sessionTitle)} /></Row></Rows>

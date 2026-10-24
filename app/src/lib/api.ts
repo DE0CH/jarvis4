@@ -228,11 +228,13 @@ export type PendingMessage = {
 };
 // a phone-signed per-kind rule: messages of this kind go into this session without asking (revocable, Remove)
 export type MessageRule = { id: string; session: string; kind: string; kindLabel: string; text: string; until: string; created: string };
-export type CoreStatus = { up: boolean; signingKey?: string; agreementKey?: string };
+export type CoreStatus = { up: boolean; none?: boolean; signingKey?: string; agreementKey?: string }; // none: the box runs the kernel only
+/** the router's last check of the kernel (router/kernelhealth.go); only on a box that runs no core */
+export type KernelHealth = { checked: boolean; healthy?: boolean; problems?: string[] };
 export type State = {
   sessions: Session[]; approvals: Approval[]; core: CoreStatus; inbox?: InboxItem[]; inboxBatches?: InboxBatch[];
   budget?: Budget | null; fly?: FlyView | null; flyApp?: string; repos?: RepoEntry[]; leases?: Lease[];
-  messages?: PendingMessage[]; messageRules?: MessageRule[];
+  messages?: PendingMessage[]; messageRules?: MessageRule[]; kernel?: KernelHealth;
   loadError?: string | null; // client-side: the last api/state fetch failed
   loaded?: boolean; // client-side: api/state has answered at least once
 };
