@@ -4,7 +4,7 @@
 # key; git manages the whole cluster).
 #   HETZNER_JARVIS2_MOCK_API  the jarvis2 Hetzner project's token
 #   JARVIS2_FLY_TOKEN         to (re)make the box's WireGuard peer in Fly org jarvis2-370
-#   ~/.jarvis2/cloudflare.env from infra/cloudflare.py (run it first; ROTATE=1 on a rebuild if the file is gone)
+#   ~/.jarvis/cloudflare.env from infra/cloudflare.py (run it first; ROTATE=1 on a rebuild if the file is gone)
 # The box is IPv6-only (no primary IPv4: the Hetzner account is at its limit of 10 primary IPs; Deyao, 2026-10-13);
 # cloud-init.sh sends its outgoing IPv4 through Cloudflare WARP. The box has no SSH and no reachable k8s API: its firewall has no inbound rules, and everything after
 # this script comes from git (Flux). Prints no secret.
@@ -19,7 +19,7 @@
 # overrides (each named, so nothing of production is touched):
 #   HCLOUD_PROJECT_TOKEN  the Hetzner project's token (default HETZNER_JARVIS2_MOCK_API)
 #   WG_PEER               the box's WireGuard peer name (control: default none, see above)
-#   CF_ENV                the cloudflare.env file (default ~/.jarvis2/cloudflare.env)
+#   CF_ENV                the cloudflare.env file (default ~/.jarvis/cloudflare.env)
 #   KEYS_OUT              where box-next.pub / <kind>-age.pub go (default keys/ of this checkout)
 #   FIREWALL, LABELS      the Hetzner firewall's name (default jarvis2) and the server's labels (JSON, default role=jarvis2)
 #   DEBUG_SSH_PUB         a THROWAWAY box only (a rehearsal; refused for production's names): this public key gets root SSH,

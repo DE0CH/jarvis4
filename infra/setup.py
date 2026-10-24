@@ -3,8 +3,8 @@
 /setup/* (Access service token jarvis2-setup + a signature by the setup key on every call; the router checks
 both). Values never print.
 
-  JARVIS2_SETUP_KEY               the setup key (PEM, P-256); or ~/.jarvis2/setup-key.pem
-  JARVIS2_SETUP_ACCESS_ID/SECRET  the Access service token for /setup; or ~/.jarvis2/cloudflare.env
+  JARVIS2_SETUP_KEY               the setup key (PEM, P-256); or ~/.jarvis/setup-key.pem
+  JARVIS2_SETUP_ACCESS_ID/SECRET  the Access service token for /setup; or ~/.jarvis/cloudflare.env
   HETZNER_S3_*                    the backup buckets (writes jarvis4-backup-de0ch, reads jarvis2-backup-de0ch)
 
   infra/setup.py status                the router's health: secret names present, session image, core up
@@ -105,7 +105,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 BASE = os.environ.get("JARVIS2_URL", "https://jarvis4.deyaochen.com")
-D = os.path.expanduser("~/.jarvis2")
+D = os.path.expanduser("~/.jarvis")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # what this script writes (store backups, sensitivity markers, the pins) goes to Jarvis 4's own bucket; Jarvis 2's
 # (READ_BUCKET) is only read: the pins until Jarvis 4's bucket has its own (the router serves both to the Recover)

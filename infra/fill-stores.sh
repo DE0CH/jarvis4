@@ -41,7 +41,7 @@ trap 'shred -u "$D"/fly.tok "$D"/gh-*.token "$D"/j2tunnel.* 2>/dev/null || true'
 # the deploy-keys PAT: it lists a repo's deploy keys (Administration) and can't write refs (no Contents)
 python3 - <<'EOF'
 import json, os, urllib.request, urllib.error
-t = open(os.path.expanduser("~/.jarvis2/gh-deploy-keys.token")).read().strip()
+t = open(os.path.expanduser("~/.jarvis/gh-deploy-keys.token")).read().strip()
 def code(method, path, body=None):
     req = urllib.request.Request("https://api.github.com" + path, method=method, data=json.dumps(body).encode() if body else None,
                                  headers={"Authorization": "Bearer " + t, "User-Agent": "probe", "Accept": "application/vnd.github+json"})
@@ -62,7 +62,7 @@ H = {"Authorization": "Bearer " + os.environ["CLOUDFLARE_API"], "User-Agent": "c
 call = lambda m, u: json.load(urllib.request.urlopen(urllib.request.Request(u, method=m, headers=H)))
 toks = {t["name"]: t for t in call("GET", API + "?per_page=200")["result"]}
 os.umask(0o077)
-D = os.path.expanduser("~/.jarvis2")
+D = os.path.expanduser("~/.jarvis")
 for name, f in [("jarvis2-tunnel", "j2tunnel")]:
     t = toks[name]
     r = call("POST", f"{API}/{t['id']}/rotate")["result"]

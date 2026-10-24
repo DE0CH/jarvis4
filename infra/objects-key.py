@@ -7,7 +7,7 @@ S3 credentials exist only in the Hetzner Console (no API), so the Console steps 
 logged in as HETZNER_USER / HETZNER_PASSWORD (run it under `session-secret --keys
 HETZNER_USER,HETZNER_PASSWORD,HETZNER_S3_ENDPOINT,HETZNER_S3_REGION,HETZNER_S3_ACCESS_KEY,HETZNER_S3_SECRET_KEY --exec`).
 The admin key HETZNER_S3_* does the bucket policies and the cleanup. The new keys live in FILE
-(~/.jarvis2/jarvis4-objects.env, mode 600: ACCESS_KEY=… / SECRET_KEY=…) until `install`; then it is shredded.
+(~/.jarvis/jarvis4-objects.env, mode 600: ACCESS_KEY=… / SECRET_KEY=…) until `install`; then it is shredded.
 
 A Hetzner S3 credential can do everything in the project unless a bucket policy denies it, so the key is fenced in by
 statements of its own: every bucket but jarvis4-snapshots-de0ch gets Sid NoJarvis4ObjectsKey, a Deny of s3:* for it
@@ -26,8 +26,8 @@ statements of its own: every bucket but jarvis4-snapshots-de0ch gets Sid NoJarvi
 import json, os, re, secrets, subprocess, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FILE = os.path.expanduser("~/.jarvis2/jarvis4-objects.env")
-OLD = os.path.expanduser("~/.jarvis2/jarvis4-objects.old")
+FILE = os.path.expanduser("~/.jarvis/jarvis4-objects.env")
+OLD = os.path.expanduser("~/.jarvis/jarvis4-objects.old")
 CDP = os.environ.get("CDP", "http://127.0.0.1:9333")
 URL = "https://console.hetzner.com/projects/2827255/security/s3-credentials"
 NAME = "jarvis4-objects"

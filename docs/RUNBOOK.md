@@ -213,8 +213,8 @@ picked and write `--part github` (The router's secrets, below); then "refresh li
 
 If the core says the token can't manage a repo's deploy keys, the token in `github-deploy-keys` lacks Repository
 "Administration: read and write" on it: mint `jarvis2-deploy-keys` again (`github-web pat-create-all
-jarvis2-deploy-keys ~/.jarvis2/gh-deploy-keys.token Administration=write`) and write the store (`setup.py write
-github-deploy-keys GITHUB_DEPLOY_KEYS_TOKEN=file:~/.jarvis2/gh-deploy-keys.token`, then shred the file).
+jarvis2-deploy-keys ~/.jarvis/gh-deploy-keys.token Administration=write`) and write the store (`setup.py write
+github-deploy-keys GITHUB_DEPLOY_KEYS_TOKEN=file:~/.jarvis/gh-deploy-keys.token`, then shred the file).
 
 Against real GitHub: `JARVIS2_LIVE_GITHUB_TOKEN_FILE=… JARVIS2_LIVE_REPO=<a throwaway repo> JARVIS2_LIVE_OTHER_REPO=<a
 private repo> go test -run Live` in `core/` (the phone flow, then `git clone`/`push` over SSH with exactly that key,
@@ -278,8 +278,8 @@ change the `jarvis2/restart` annotation of the serving core's Deployment (`activ
 - `infra/setup.py versions NAME` — the store's earlier versions the core keeps (the last 50 each).
 - `infra/setup.py request restore NAME VERSION --why TEXT` — asks Deyao (Inbox) to put that version back (below).
 - `infra/setup.py mark-sensitive NAME` — the one-way upgrade, in the core and in the backup.
-- The Fly token: `infra/fly-token.sh ~/.jarvis2/fly.tok` (narrowed to the app and to `jarvis2-init`), then
-  `infra/setup.py backup-core ~/.jarvis2/fly.tok` — sent to the core sealed to its key, and backed up as the
+- The Fly token: `infra/fly-token.sh ~/.jarvis/fly.tok` (narrowed to the app and to `jarvis2-init`), then
+  `infra/setup.py backup-core ~/.jarvis/fly.tok` — sent to the core sealed to its key, and backed up as the
   `core` store (a Recover brings it back).
 
 All of them need a set-up core: they learn the master public key and the phone's keys from the core's signed
@@ -311,7 +311,7 @@ name every key of the one you write; the run bumps the part's annotation in the 
 The control box (`k8s/control/secrets/`, annotations in `k8s/control/apps/router/router.yaml`):
 
 - `infra/router-secrets.py --box control KEY[=SRC]…` → `router.enc.yaml`:
-  `LOBSTER_TOKEN STORAGEBOX_HOST STORAGEBOX_USER STORAGEBOX_PASSWORD FLY_READ_TOKEN=file:~/.jarvis2/fly-read.tok
+  `LOBSTER_TOKEN STORAGEBOX_HOST STORAGEBOX_USER STORAGEBOX_PASSWORD FLY_READ_TOKEN=file:~/.jarvis/fly-read.tok
   JARVIS2_TUNNEL_KEY=file:…` (`JARVIS2_TUNNEL_KEY`: the tunnel proof key, the same value as the cf-tunnel Worker's
   secret `JARVIS2_TUNNEL_KEY_NEXT` — without it no OpenCode/OpenClaw web UI) (the read-only Fly token:
   `infra/fly-read-token.sh`). Nobody can read the old `JARVIS2_TUNNEL_KEY` back: a rewrite mints a new one and sets it on
@@ -389,7 +389,7 @@ the Console logs in with password only) and `HETZNER_USER`/`HETZNER_PASSWORD` (`
 HETZNER_USER,HETZNER_PASSWORD --exec python3 infra/backup-read-key.py login` when they aren't in the env):
 
 1. `login`, then `generate` — Console only (no API): Security → S3 credentials → a new `jarvis2-backup-read`
-   (the Console accepts the same description twice), written straight to `~/.jarvis2/backup-read.env`
+   (the Console accepts the same description twice), written straight to `~/.jarvis/backup-read.env`
    (mode 600, never printed).
 2. `policies` — the new access key replaces the old one as the principal in both bucket policies (admin key).
    Wait a minute, then `test` (the checks above, throwaway names only, cleaned up): seconds after a policy write a
@@ -669,7 +669,7 @@ Storage Box copies. Nothing else waits on it; the router reports search unreacha
 **The control box** (`jarvis2-control`), when it is gone (otherwise replace it with a move, above, with no gap):
 
 1. Delete the server in the jarvis2 Hetzner project (API or console).
-2. `infra/cloudflare.py ~/.jarvis2/cloudflare.env` (with `ROTATE=1` if that file is gone: a new setup service
+2. `infra/cloudflare.py ~/.jarvis/cloudflare.env` (with `ROTATE=1` if that file is gone: a new setup service
    token; put it in the `infra` store as JARVIS2_SETUP_ACCESS_ID/SECRET).
 3. `BOX_KIND=control WG_PEER=jarvis2-box infra/create.sh` — a new box key (`keys/box-next.pub`: rename it to
    `keys/box.pub`) and age key (`keys/control-age.pub`), the WireGuard peer made again (the old router held the old

@@ -7,7 +7,7 @@ S3 credentials exist only in the Hetzner Console (no API), so the Console steps 
 logged in as HETZNER_USER / HETZNER_PASSWORD (when they aren't in the env, run it under `session-secret --keys
 HETZNER_USER,HETZNER_PASSWORD,HETZNER_S3_ENDPOINT,HETZNER_S3_REGION,HETZNER_S3_ACCESS_KEY,HETZNER_S3_SECRET_KEY --exec`).
 The admin key HETZNER_S3_* does the bucket policies and the cleanup. The new keys live in FILE
-(~/.jarvis2/jarvis4-backup-read.env, mode 600: ACCESS_KEY=… / SECRET_KEY=…) until `install` is done; then it is shredded.
+(~/.jarvis/jarvis4-backup-read.env, mode 600: ACCESS_KEY=… / SECRET_KEY=…) until `install` is done; then it is shredded.
 
 A Hetzner S3 credential can do everything in the project unless a bucket policy denies it, so the key is restricted by
 statements of its own, next to Jarvis 2's (whose statement and key stay as they are):
@@ -22,7 +22,7 @@ statements of its own, next to Jarvis 2's (whose statement and key stay as they 
   backup-read-key.py login       log the Console in (project "Cloud Code", 2827255)
   backup-read-key.py generate    a new credential "jarvis4-backup-read" → FILE (refuses if FILE exists)
   backup-read-key.py policies    the statements above name the new key (a rotated-out key is kept in
-                                 ~/.jarvis2/jarvis4-backup-read.old for delete-old)
+                                 ~/.jarvis/jarvis4-backup-read.old for delete-old)
   backup-read-key.py own-bucket  jarvis4-backup-de0ch made (versioned) if missing, with Jarvis4KeyOnlyAdds for the key
                                  the backup bucket's statement names now and NoJarvis4ObjectsKey for the objects key
   backup-read-key.py test        what the new key may do (wait ~1 min after `policies`); throwaway names only, cleaned
@@ -35,8 +35,8 @@ statements of its own, next to Jarvis 2's (whose statement and key stay as they 
 import json, os, re, secrets, subprocess, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FILE = os.path.expanduser("~/.jarvis2/jarvis4-backup-read.env")
-OLD = os.path.expanduser("~/.jarvis2/jarvis4-backup-read.old")
+FILE = os.path.expanduser("~/.jarvis/jarvis4-backup-read.env")
+OLD = os.path.expanduser("~/.jarvis/jarvis4-backup-read.old")
 CDP = os.environ.get("CDP", "http://127.0.0.1:9333")
 URL = "https://console.hetzner.com/projects/2827255/security/s3-credentials"
 NAME = "jarvis4-backup-read"
