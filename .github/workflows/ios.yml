@@ -58,7 +58,8 @@ jobs:
           # the root key the test plays: the components check the roster against its public half (KERNEL_ROOT)
           openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$K/root.pem"
           openssl pkey -in "$K/root.pem" -pubout -outform DER | tail -c 65 | base64 | tr -d '\n' > "$K/root.pub"
-          (cd "$GITHUB_WORKSPACE/kernel" && go build -o "$K/secrets" ./cmd/secrets && go build -o "$K/spawner" ./cmd/spawner && go run ./cmd/vectors > "$K/vectors.json")
+          (cd "$GITHUB_WORKSPACE/kernel" && go build -o "$K/secrets" ./cmd/secrets && go build -o "$K/spawner" ./cmd/spawner)
+          (cd vectors && go run . > "$K/vectors.json")
           (cd rostervec && go build -o "$K/rostervec" .)
           KERNEL_ROOT="$(cat "$K/root.pub")" KERNEL_ADDR=127.0.0.1:18300 "$K/secrets" > "$K/secrets.log" 2>&1 &
           mkdir -p "$K/spawner-data"

@@ -1,13 +1,13 @@
 // The app's kernel code (Security/KernelSetup.swift, with CoreCrypto and CoreSetup) against the REAL kernel secrets and
 // spawner binaries (kernel/cmd/secrets and spawner, started with KERNEL_ROOT = the public half of the root key this
-// test plays) and the documents as the Go side makes them (kernel/cmd/vectors, ios/interop/rostervec over kernel/sig):
+// test plays) and the documents as the Go side makes them (ios/interop/vectors, ios/interop/rostervec over kernel/sig):
 // the roster (the setup key's pending one checked, its payload byte for byte Go's RosterPayload, the root key's
 // signature taken by the real components, secrets' boot keys replaced by the kit-derived ones), secrets' identity
 // checked against it (and refused when only the setup key vouches for a claimed secrets), the claim with the
 // kit-derived keys and the root key, the split-key unlock, the keys statement; then the cert checks the approval
 // pages make before Face ID, and their refusals.
 // Configuration (env): KERNEL_SECRETS, KERNEL_SPAWNER (their URLs), KERNEL_ROOT_PEM (the root key the components were
-// started with, PEM), KERNEL_ROSTERVEC (the rostervec binary), KERNEL_VECTORS (kernel/cmd/vectors' output).
+// started with, PEM), KERNEL_ROSTERVEC (the rostervec binary), KERNEL_VECTORS (ios/interop/vectors' output).
 #if canImport(CryptoKit)
 import CryptoKit
 #else

@@ -568,8 +568,34 @@ Built and tested; not yet on the box. Each step in order:
    (the root key, its own warning). From then on new sessions start on the kernel; the old core's sessions go on there
    until destroyed, then the old core and `core/` go (DECISIONS 216).
 
-**A secrets release** (blue/green, as the cores): CI pins a new kernel image into every component but the serving
-secrets (k8s/control/apps/kernel/active-secrets.txt); Deyao Recovers the next one alongside (Settings → Kernel →
+### A kernel release (Deyao decides; DECISIONS 230)
+
+Every kernel component makes fresh RAM-only keys at start, so restarting any one stales the root-signed roster and
+Jarvis 4 is locked until Deyao signs a new one with Face ID. So a kernel component restarts only when Deyao asked for
+that release:
+
+1. **Deyao's OK, in the commit.** The release commit (or an empty commit after the change) carries the trailer
+   `Kernel-Release: <why> (Deyao, YYYY-MM-DD)`, written only when Deyao said so in that conversation. Never add it
+   for a change he hasn't OK'd, nor to unblock CI.
+2. **What CI moves** (the pin job, `infra/kernel-pin.py`): only the Deployments in k8s/cluster/kernel/kernel.yaml whose
+   binary's inputs changed since the build that Deployment pins (the module's packages `go list -deps ./cmd/<role>`
+   reaches, their non-test .go and embedded files; kernel/go.mod, go.sum; kernel/Dockerfile's build lines), and only
+   when a `Kernel-Release` commit lies after that pin with no input change after it. Never the serving secrets colour.
+   Tests, `kerneltest`, `internal/kt`, `flowtest`, comments in the Dockerfile and anything outside kernel/ never
+   count. Test and tool programs live outside kernel/ (`ios/interop/vectors`, `ios/interop/rostervec`).
+3. **Changed inputs with no release:** the pin job pins the router and session as usual, pins no kernel Deployment and
+   fails, naming each component and file and saying a kernel release needs Deyao's OK. It stays red on every push
+   until the change is reverted (back to the pinned inputs) or Deyao gives the trailer. Ask him in one line: what
+   changes, which components restart, that he re-signs the roster.
+4. **After the pin rolls out** (Flux, a minute): `infra/setup.py kernel-roster` (the restarted components' new
+   identities, filed for signing), Deyao signs it in the app (Settings → Kernel → Sign roster), then, when the spawner
+   restarted, `infra/setup.py kernel-fly-token <file from infra/fly-token.sh>` (its token was in its memory only).
+
+Testing the selection: `python3 infra/kernel_pin_test.py` (a made-up history), or `python3 infra/kernel-pin.py plan
+<kernel.yaml pinned at X^> blue X` for a real commit X.
+
+**A secrets release** (blue/green, as the cores; a kernel release as above): CI pins a new kernel image into the
+changed components but the serving secrets (k8s/cluster/kernel/active-secrets.txt); Deyao Recovers the next one alongside (Settings → Kernel →
 Recover alongside); then `infra/setup.py kernel-secrets-flip` (the open unlocks go with it); after the flip,
 active-secrets.txt is changed to the new serving colour. The other components restart with their releases (the router
 retries their calls; the spawner needs `kernel-fly-token` again).

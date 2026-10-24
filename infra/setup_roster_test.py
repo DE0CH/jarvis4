@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """infra/setup.py's roster: the payload it signs is sig.RosterPayload byte for byte (checked against the Go side,
-kernel/cmd/rostervec), and kernel-roster files what it read through kernel-id, signed by the setup key. Offline (the
+ios/interop/rostervec), and kernel-roster files what it read through kernel-id, signed by the setup key. Offline (the
 router and kernel-id stubbed); needs go: python3 infra/setup_roster_test.py"""
 import base64, importlib.util, json, os, random, subprocess, sys, tempfile
 
@@ -22,7 +22,7 @@ sign = lambda k, b: base64.b64encode(k.sign(b, ec.ECDSA(hashes.SHA256()))).decod
 
 
 def go_payload(copy, members):
-    out = subprocess.run(["go", "run", "./cmd/rostervec"], cwd=os.path.join(ROOT, "kernel"), check=True, capture_output=True,
+    out = subprocess.run(["go", "run", "."], cwd=os.path.join(ROOT, "ios", "interop", "rostervec"), check=True, capture_output=True,
                          input=json.dumps({"copy": copy, "members": members}).encode())
     return out.stdout.decode()
 

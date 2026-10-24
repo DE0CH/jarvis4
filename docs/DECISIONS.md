@@ -2562,3 +2562,21 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      `infra/setup.py sessions` prints a failed session's reason under it; the app's session list shows the reason
      under a failed row (and "Stopped outside Jarvis" for a lost machine), its session page the time it failed and a
      section for a lost machine with its Resume; the web page the same. Tested: `TestAFailedSessionSaysWhy`.
+
+230. **A kernel component restarts only for a kernel release Deyao asked for** (Deyao, 2026-10-24; `infra/kernel-pin.py`,
+     RUNBOOK "A kernel release"). Every kernel component makes fresh RAM-only keys at start, so a restart stales the
+     root-signed roster and Jarvis 4 is locked until Deyao re-signs it with Face ID. 2026-10-23: the pin job moved every
+     kernel Deployment but the serving secrets whenever `git diff -- kernel/` was non-empty, so two casual Claude pushes
+     (c347ec6, c899479: test tools under kernel/cmd and a kerneltest edit) restarted the kernel and locked Deyao out. Now the pin
+     job moves a Deployment only when (1) its binary's inputs changed since the build it pins: the module's packages
+     `go list -deps ./cmd/<role>` reaches (non-test .go files by directory, so a deletion counts; embedded files),
+     kernel/go.mod, go.sum and the Dockerfile's build lines (comments and `go test` steps dropped); and (2) a commit after
+     that pin carries `Kernel-Release: <why> (Deyao, YYYY-MM-DD)` with no input change after it. Changed inputs without
+     one: the router and session still pin, no kernel Deployment moves, and the job fails naming the components and
+     files. Each Deployment pins its own build, so components drift apart in image sha: the image is only the carrier,
+     and the roster names keys, not builds. Test and tool programs moved out of kernel/ (`kernel/cmd/vectors` →
+     `ios/interop/vectors`, `kernel/cmd/rostervec` dropped for `ios/interop/rostervec`), and the Dockerfile no longer
+     runs `go test` (the images test job does). Why not hash the built binaries: the file rule is decided before the
+     build and reads the same in a review; the golang base image's tag can still move a binary unseen, accepted.
+     Tested: `infra/kernel_pin_test.py`; on this repo's history c347ec6 and c899479 would move nothing, dcc425b only the
+     spawner and only with the trailer.
