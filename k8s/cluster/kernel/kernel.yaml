@@ -45,7 +45,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: notary
-          image: ghcr.io/de0ch/jarvis4-kernel:latest
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-d295bee65b13@sha256:b8b358e35e88fbb0f3ec0198eb4ac2370f9df4de9adcf6e27e1c246d14c9f0a9
           command: ["/kernel/notary"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_DATA, value: /data }]
@@ -85,7 +85,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: notarizer
-          image: ghcr.io/de0ch/jarvis4-kernel:latest
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-d295bee65b13@sha256:b8b358e35e88fbb0f3ec0198eb4ac2370f9df4de9adcf6e27e1c246d14c9f0a9
           command: ["/kernel/notarizer"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_DATA, value: /data }]
@@ -117,7 +117,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: mover
-          image: ghcr.io/de0ch/jarvis4-kernel:latest
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-d295bee65b13@sha256:b8b358e35e88fbb0f3ec0198eb4ac2370f9df4de9adcf6e27e1c246d14c9f0a9
           command: ["/kernel/mover"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -149,7 +149,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: merger
-          image: ghcr.io/de0ch/jarvis4-kernel:latest
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-d295bee65b13@sha256:b8b358e35e88fbb0f3ec0198eb4ac2370f9df4de9adcf6e27e1c246d14c9f0a9
           command: ["/kernel/merger"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -189,7 +189,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: spawner
-          image: ghcr.io/de0ch/jarvis4-kernel:latest
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-d295bee65b13@sha256:b8b358e35e88fbb0f3ec0198eb4ac2370f9df4de9adcf6e27e1c246d14c9f0a9
           command: ["/kernel/spawner"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_DATA, value: /data }, { name: KERNEL_MACHINE_URL, value: "http://jarvis4-box._peer.internal:8081,http://jarvis4-gw-b._peer.internal:8081" }]
@@ -221,7 +221,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: identity
-          image: ghcr.io/de0ch/jarvis4-kernel:latest
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-d295bee65b13@sha256:b8b358e35e88fbb0f3ec0198eb4ac2370f9df4de9adcf6e27e1c246d14c9f0a9
           command: ["/kernel/identity"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -253,7 +253,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: gullible
-          image: ghcr.io/de0ch/jarvis4-kernel:latest
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-d295bee65b13@sha256:b8b358e35e88fbb0f3ec0198eb4ac2370f9df4de9adcf6e27e1c246d14c9f0a9
           command: ["/kernel/gullible"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -285,7 +285,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: minter
-          image: ghcr.io/de0ch/jarvis4-kernel:latest
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-d295bee65b13@sha256:b8b358e35e88fbb0f3ec0198eb4ac2370f9df4de9adcf6e27e1c246d14c9f0a9
           command: ["/kernel/minter"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -317,7 +317,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: secrets
-          image: ghcr.io/de0ch/jarvis4-kernel:latest
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-d295bee65b13@sha256:b8b358e35e88fbb0f3ec0198eb4ac2370f9df4de9adcf6e27e1c246d14c9f0a9
           command: ["/kernel/secrets"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_MINTER_URL, value: "http://minter-blue:8080" }]
