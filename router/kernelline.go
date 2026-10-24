@@ -185,12 +185,12 @@ func (r *Router) kernelSpawn(sid string) {
 		op.endJoined("failed", msg)
 	}
 	l := s.Kernel
-	if l == nil || l.SourceCert == nil || l.Grant == nil {
+	if l == nil || l.SourceCert == nil || l.SourceNz == nil || l.Grant == nil {
 		fail("start: the line has no source")
 		return
 	}
 	r.setState(sid, "starting", "")
-	nzID, err := r.kernel.Identity("notarizer")
+	nzID, err := r.kernel.signerOf("notarizer", *l.SourceNz) // a source notarized before a flip: by a retired notarizer
 	if err != nil {
 		fail("start: " + err.Error())
 		return
@@ -515,6 +515,10 @@ func (r *Router) kernelBoot(machine string) (map[string]any, error) {
 		return nil, err
 	}
 	out["keys"], out["stores"] = ks, sl
+	// the serving copy's roster: the machine checks everything against it (its Fly config's may be an earlier one's)
+	if d := r.currentRoster(); d != nil {
+		out["roster"] = d
+	}
 	for _, role := range []string{"notary", "notarizer", "mover", "merger", "spawner", "secrets"} {
 		id, err := r.kernel.Identity(role)
 		if err != nil {
@@ -754,8 +758,8 @@ func (r *Router) registerKernel(app func(string, http.HandlerFunc)) {
 		}
 		path := "/" + req.PathValue("path")
 		role := "secrets"
-		if req.URL.Query().Get("secrets") == "next" { // the next secrets (blue/green, kernel.go): Recover alongside
-			role = "secrets-next"
+		if req.URL.Query().Get("secrets") == "next" { // the copy that doesn't serve: its secrets (empty until a flip)
+			role = "secrets-" + otherCopy(r.kernel.serving())
 		}
 		var body any
 		if req.Method == "POST" {

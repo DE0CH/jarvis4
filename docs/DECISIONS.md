@@ -2628,3 +2628,67 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      `TestTheMinterChecksThePhoneItself`, `TestDeployKeyReAddLeavesAnOrphanAndRemoveDeletesByID`,
      `TestAReplayPutsAnEarlierEntryBack`; `kernel/minter` `TestMintOverHTTP`; `router`
      `TestAKernelRestoreReplaysTheEarlierEntry` (against the real kernel); the interop Kernel test's P + K vectors.
+
+233. **A kernel release is a flip to the other kernel copy: it interrupts nothing and costs one Face ID** (Deyao,
+     2026-10-24; `kernel/internal/serve/flip.go`, `kernel/sig/identity.go`, `kernel/secrets/continuity.go`,
+     `router/kernelflip.go`, `infra/kernel-pin.py`, RUNBOOK "A kernel release"). Every component makes fresh RAM-only
+     keys at start (kept: Deyao's design), so a release restarted components in place, staled the root-signed roster and
+     locked Jarvis 4 until Deyao re-signed it; worse, live sessions' grants were signed by the old mover and merger keys
+     and stopped opening (pause, resume and pulls failed). Now: (1) **two copies**, blue and green, of all nine
+     components (Deployments `<role>-<copy>`, each copy its own volumes, its secrets reaching only its own minter);
+     `k8s/cluster/kernel/active-kernel.txt` names the serving one, and CI's pin (still gated on the `Kernel-Release`
+     trailer and each component's inputs, now compared with the serving copy's pins) pins only into the other copy:
+     the release's build for the changed components, the serving copy's images for the rest, replicas 1, and the hold
+     `jarvis2/kernel-release: pending`, which refuses a second release until the flip is committed (the pin job can't
+     see whether the held copy serves already). Secrets' own blue/green (Recover alongside, `standby` claims, `POST
+     /setup/kernel/secrets/flip`, active-secrets.txt) went into the copy flip: one colour, one flip, and no kit for a
+     release; the serving secrets hands its seed over sealed to the new copy's empty secrets, which the root-signed
+     roster names as `secretsBoot` — the same trust as a Recover, where the master key names the secrets the seed goes
+     to. (2) A roster names **retired** keys: the other copy's members in the roster of the copy that takes over, a
+     restarted component's old keys in its copy's re-signed roster. `sig.CheckIdentity` takes a member or a retired key
+     of the role (so gv.Open, the mover, the notarizer, the spawner and the machine's guard take what a retired member
+     signed); `Trust.Member` is the current member only (what is sealed to, the minter). Retired keys sign nothing new:
+     every component of the old copy froze at its handoff, and a crashed component's process is gone. The next roster
+     names a retired key again only while a line holds something it signed (the router's `retiredInUse`), so the list
+     doesn't grow without end; never secrets. The app's roster review shows the retired keys and the secrets that takes
+     over, and signs a roster of the other copy only when it names the pinned secrets, an empty one as `secretsBoot`,
+     and retires every serving member. (3) The **handoff**: once Deyao signs that roster, the router (with every
+     kernel call held by `KernelClient.gate`) asks each serving component `POST /handoff {roster}`; it checks the
+     root key signed it, that it is the other copy's and retires this component's keys, freezes (kept on its volume
+     before it answers) and signs `{kind: handoff, role, from, roster, to, sealed}`: the notarizer's defined and
+     succeeded sources, the spawner's machines with their certs and kill certs and its Fly token, secrets' seed, claim
+     keys and final line state, sealed to that roster's agreement key for the role. The new copy's notarizer, spawner and
+     secrets take only a handoff for exactly the roster they hold, sealed to their own keys, signed by the member of
+     their role the roster retires (secrets: the secrets it names), and replace their volume's state with it; the same
+     handoff again answers the same. Then every call goes to the new copy. A stateful component keeps its mode on its
+     volume (serving, standby, handed-off): a volume no roster decided yet serves when its first roster retires nobody
+     of its role (the first copy), else waits for a handoff. (4) **Durable**: each handoff and takeover is kept
+     (`persisted.KernelFlip`) before the next step, a failed step is retried every 30 s (one DM), a restarted router
+     carries the flip on. Before anything freezes the router checks every component of both copies is the one the
+     roster names, so a component that restarted since the roster was read stops the flip with nothing frozen. A
+     frozen notarizer or spawner hands the same state to a newer roster of the other copy (one of its components
+     restarted before taking over): a component that took a handoff serves and refuses any other, so a frozen state can
+     never come back over a newer one; secrets, with nothing on disk, hands over to one roster only (one that lost its
+     memory is Recovered with the kit, and the flip counts it taken). (5) **Live machines** learn the new copy from the
+     router: `/m/kernel/boot` carries the serving copy's root-signed roster, which the machine checks against the root
+     key in its Fly config and uses in place of the one in it; its documents from before the flip check as the retired
+     members'; an input whose notary challenge isn't its notary's makes it read the documents again (at most every
+     10 s). (6) After the flip a setup session runs `infra/setup.py kernel-flipped` and commits: active-kernel.txt, the
+     hold deleted, the old copy scaled to zero until the next release lands on it — the router has no push credential
+     and the cluster changes only through git (DECISIONS 224's reason). The kernel health shows both copies (`copies`).
+     Why the notary has no handoff: its log is a chain per copy, and a challenge only needs a notary the roster names.
+     Why a crash restart still costs a re-sign: the restarted component's fresh keys are vouched for only by a roster;
+     its old keys go into that roster as retired, so live sessions don't notice. The first rollout renames every
+     kernel Deployment and volume (`<role>-blue`, `<role>-blue-data`): the kernel starts empty on blue, which is right
+     only while no session runs on it (PLAN-cluster step 5 not done). Tested: `kernel/kerneltest`
+     `TestACopyFlipKeepsALiveLine` (two flips, blue → green → blue, a live line pulling, pausing on the new spawner,
+     resuming, a second machine from the paused source refused, a new line), `TestTheHandoffRefusals` (the same copy,
+     not retired, another role, another roster, a forged signer, a serving component), `TestACrashRestartKeepsTheGrants`;
+     `kernel/gv` `TestRetiredSignersGrantsOpen`; `kernel/sig` `TestRetired`; `kernel/secrets`
+     `TestAHandoffKeepsTheOpenUnlocks`, `TestATakeoverRefusesOtherHandoffs`; router
+     `TestAKernelReleaseFlipsWithoutInterruption` (a live session through a release onto green and back: boot documents,
+     pulls, pause, resume, a new session, a flip carried on after a failed takeover) and
+     `TestAFlipRefusesARosterThatCantTakeOver`; machine `TestAKernelMachineAfterACopyFlip`; `infra/kernel_pin_test.py`,
+     `infra/setup_roster_test.py`; the interop Kernel test (the payload with retired keys and `secretsBoot` byte for byte
+     Go's, the app's takeover checks).
+

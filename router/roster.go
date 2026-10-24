@@ -1,18 +1,24 @@
 package main
 
 // The kernel's roster (docs/PLAN-cluster.md "The roster"): the kernel's components make fresh keys at every start and
-// the root key (the Jarvis 4 app's) vouches for them in one signed document. The router only carries it:
+// the root key (the Jarvis 4 app's) vouches for them in one signed document per kernel copy. The router only carries
+// it:
 //
 //	POST /api/kernel/root-key      {rootKey}: the app registers its root key's public half (base64 X9.63); kept as
 //	                               pending until the setup session commits it (keys/root.pub, the kernel's ConfigMap)
 //	GET  /setup/kernel/root-key    {rootKey} (setup-signed): what infra/setup.py kernel-root-key commits
-//	GET  /setup/kernel/roster      {current, secretsServing, status, health} (setup-signed): the current roster, the secrets colour
-//	                               that serves (whose identity the roster names), and the kernel's health (kernelhealth.go)
+//	GET  /setup/kernel/roster      {current, serving, next, retiredInUse, flip, status, health} (setup-signed): the
+//	                               serving copy's roster, which copy serves, the other copy's while it takes over, the
+//	                               retired keys of the current roster that something a line holds is signed by (the
+//	                               next roster names them again), the copy flip under way, and the kernel's health
 //	POST /setup/kernel/roster      {copy, payload, setupSig} (setup-signed): the components' identities as the setup
 //	                               session read them through kernel-id.deyaochen.com, signed by the setup key; pending
 //	GET  /api/kernel/roster/pending {copy, payload, setupSig}: what the app shows and the root key signs
-//	POST /api/kernel/roster        {payload, rootSig}: the root key's roster: posted to every component's POST /roster
-//	                               and kept; the answer names what each component said
+//	POST /api/kernel/roster        {payload, rootSig}: the root key's roster, posted to every component of its copy and
+//	                               kept; the answer names what each component said. A roster of the serving copy (a
+//	                               component restarted: it names the old keys as retired) replaces the current one; a
+//	                               roster of the other copy (a release landed there) starts the copy flip
+//	                               (kernelflip.go)
 //	GET  /api/kernel/roster        the current roster, what each component said, and what is stale
 //
 // A component that restarts has new keys and no roster: the router posts the current roster again when it says so
@@ -24,6 +30,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -33,11 +40,21 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DE0CH/jarvis4/kernel/doc"
 	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
-// rosterTargets: every kernel Deployment the roster goes to (KERNEL_URL's %s)
-var rosterTargets = []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "minter", "secrets-blue", "secrets-green"}
+// kernelRoles: every component of a copy (a roster names exactly these, sorted)
+var kernelRoles = []string{"gullible", "identity", "merger", "minter", "mover", "notarizer", "notary", "secrets", "spawner"}
+
+// rosterTargets: a copy's Deployments, which its roster goes to (KERNEL_URL's %s)
+func rosterTargets(copy string) []string {
+	out := []string{}
+	for _, r := range kernelRoles {
+		out = append(out, r+"-"+copy)
+	}
+	return out
+}
 
 // RosterFiling: the setup session's roster, waiting for the root key
 type RosterFiling struct {
@@ -57,42 +74,58 @@ type RosterCurrent struct {
 	Stale   map[string]string `json:"stale,omitempty"` // Deployment → "roster stale: component X restarted (…)"
 }
 
+func (c *RosterCurrent) doc() sig.Doc { return sig.Doc{Payload: c.Payload, Sig: c.Sig} }
+
+// roster: the payload read (the router checked the root key's signature when it took it)
+func (c *RosterCurrent) roster() sig.Roster {
+	var ro sig.Roster
+	json.Unmarshal([]byte(c.Payload), &ro)
+	return ro
+}
+
 // rosterDMed: the stale roster was DMed (once per roster)
 var rosterDMed atomic.Bool
 
-// currentRoster: the root key's roster the components hold (nil: none yet)
+// currentRoster: the root key's roster the serving copy holds (nil: none yet)
 func (r *Router) currentRoster() *sig.Doc {
 	var d *sig.Doc
 	r.st.Do(func(p *persisted) {
 		if c := p.KernelRoster; c != nil {
-			d = &sig.Doc{Payload: c.Payload, Sig: c.Sig}
+			x := c.doc()
+			d = &x
 		}
 	})
 	return d
 }
 
-// nextSecrets: the secrets Deployment that doesn't serve (it may refuse a roster: empty, or Recovered with other keys)
-func (r *Router) nextSecrets() string {
-	if r.kernel == nil {
-		return ""
-	}
-	return r.kernel.secretsRole("secrets-next")
+// rosterOfCopy: the roster a copy's components should hold: the serving copy's, or the other copy's while it takes
+// over (nil: none)
+func (r *Router) rosterOfCopy(copy string) *RosterCurrent {
+	var c *RosterCurrent
+	r.st.Do(func(p *persisted) {
+		switch {
+		case p.KernelRoster != nil && p.KernelRoster.Copy == copy:
+			c = p.KernelRoster
+		case p.KernelRosterNext != nil && p.KernelRosterNext.Copy == copy:
+			c = p.KernelRosterNext
+		}
+		if c != nil {
+			x := *c
+			c = &x
+		}
+	})
+	return c
 }
 
-// rosterStale: a component refused the current roster (kernel.go postRoster)
+// rosterStale: a component refused its copy's roster (kernel.go postRoster)
 func (r *Router) rosterStale(dep, msg string) {
-	if dep == r.nextSecrets() {
-		r.st.Do(func(p *persisted) {
-			if c := p.KernelRoster; c != nil {
-				c.Results[dep] = "standby, not named: " + msg
-			}
-		})
-		return
-	}
 	first := false
 	r.st.Do(func(p *persisted) {
 		c := p.KernelRoster
-		if c == nil {
+		if n := p.KernelRosterNext; n != nil && n.Copy == copyOf(dep) {
+			c = n
+		}
+		if c == nil || c.Copy != copyOf(dep) {
 			return
 		}
 		if c.Stale == nil {
@@ -112,17 +145,15 @@ func (r *Router) rosterStale(dep, msg string) {
 	}
 }
 
-// distributeRoster: d to every component; what each said
-func (r *Router) distributeRoster(d sig.Doc) map[string]string {
+// distributeRoster: d to every component of its copy; what each said
+func (r *Router) distributeRoster(d sig.Doc, copy string) map[string]string {
 	res := map[string]string{}
-	for _, dep := range rosterTargets {
+	for _, dep := range rosterTargets(copy) {
 		_, _, err := r.kernel.do(dep, dep, "POST", "/roster", map[string]sig.Doc{"roster": d})
 		var ke *KernelError
 		switch {
 		case err == nil:
 			res[dep] = "taken"
-		case errors.As(err, &ke) && dep == r.nextSecrets():
-			res[dep] = "standby, not named: " + ke.Msg // the next secrets: empty, or Recovered with other keys
 		case errors.As(err, &ke):
 			res[dep] = "refused: " + ke.Msg
 		default:
@@ -134,18 +165,21 @@ func (r *Router) distributeRoster(d sig.Doc) map[string]string {
 
 // rosterStatus: GET /api/kernel's roster part
 func (r *Router) rosterStatus() map[string]any {
-	out := map[string]any{"state": "none"}
+	out := map[string]any{"state": "none", "serving": r.servingCopy()}
 	r.st.Do(func(p *persisted) {
 		out["rootKey"] = p.KernelRootKey != ""
 		out["pending"] = p.KernelRosterPending != nil
 		if p.KernelRosterPending != nil {
 			out["state"] = "pending"
 		}
+		if n := p.KernelRosterNext; n != nil {
+			out["next"] = map[string]any{"copy": n.Copy, "id": n.doc().ID(), "at": n.At, "results": n.Results}
+		}
 		c := p.KernelRoster
 		if c == nil {
 			return
 		}
-		out["copy"], out["id"], out["at"], out["results"] = c.Copy, sig.Doc{Payload: c.Payload}.ID(), c.At, c.Results
+		out["copy"], out["id"], out["at"], out["results"] = c.Copy, c.doc().ID(), c.At, c.Results
 		stale := []string{}
 		for _, m := range c.Stale {
 			stale = append(stale, m)
@@ -162,7 +196,7 @@ func (r *Router) rosterStatus() map[string]any {
 	return out
 }
 
-// rosterLoop: every component holds the current roster; one that lost it (a restart) gets it again, or the roster is
+// rosterLoop: every component holds its copy's roster; one that lost it (a restart) gets it again, or the roster is
 // stale (postRoster says so)
 func (r *Router) rosterLoop(every time.Duration) {
 	for {
@@ -173,25 +207,79 @@ func (r *Router) rosterLoop(every time.Duration) {
 }
 
 func (r *Router) rosterCheck() {
-	d := r.currentRoster()
-	if r.kernel == nil || d == nil {
+	if r.kernel == nil {
 		return
 	}
-	for _, dep := range rosterTargets {
-		b, _, err := r.kernel.do(dep, dep, "GET", "/roster", nil)
-		if err == nil {
-			var held sig.Doc
-			if json.Unmarshal(b, &held) == nil && held.Payload == d.Payload {
-				continue
-			}
-		} else if !isNoRoster(err) {
-			continue // unreachable (not deployed, restarting): the next round
+	for _, copy := range kernelCopies {
+		c := r.rosterOfCopy(copy)
+		if c == nil {
+			continue // the copy that doesn't serve, idle: it holds whatever it held
 		}
-		if err := r.kernel.postRoster(dep, *d); err == nil {
-			log.Printf("kernel: %s had no roster (a restart?); it took the current one again", dep)
-			r.kernel.forget(strings.TrimPrefix(dep, "secrets-"))
+		d := c.doc()
+		for _, dep := range rosterTargets(copy) {
+			b, _, err := r.kernel.do(dep, dep, "GET", "/roster", nil)
+			if err == nil {
+				var held sig.Doc
+				if json.Unmarshal(b, &held) == nil && held.Payload == d.Payload {
+					continue
+				}
+			} else if !isNoRoster(err) {
+				continue // unreachable (scaled down, restarting): the next round
+			}
+			if err := r.kernel.postRoster(dep, d); err == nil {
+				log.Printf("kernel: %s had no roster (a restart?); it took its copy's again", dep)
+				r.kernel.forget(dep)
+			}
 		}
 	}
+}
+
+// retiredInUse: the current roster's retired keys that something a line holds is signed by (its grant, its certs and
+// their notarizations): the next roster names them as retired again; the others can go
+func (r *Router) retiredInUse() []sig.Identity {
+	type held struct {
+		role string
+		d    sig.Doc
+	}
+	var ro sig.Roster
+	var docs []held
+	r.st.Do(func(p *persisted) {
+		if p.KernelRoster == nil {
+			return
+		}
+		ro = p.KernelRoster.roster()
+		for _, s := range p.Sessions {
+			l := s.Kernel
+			if l == nil {
+				continue
+			}
+			if g := l.Grant; g != nil && (g.By == "mover" || g.By == "merger") {
+				docs = append(docs, held{g.By, g.Grant})
+			}
+			for _, c := range []*sig.Doc{l.SourceCert, l.MachineCert} {
+				if c != nil {
+					if cc, err := doc.PeekCert(*c); err == nil {
+						docs = append(docs, held{cc.Signer, *c})
+					}
+				}
+			}
+			for _, nz := range []*sig.Doc{l.SourceNz, l.MachineNz} {
+				if nz != nil {
+					docs = append(docs, held{"notarizer", *nz})
+				}
+			}
+		}
+	})
+	out := []sig.Identity{}
+	for _, m := range ro.Retired {
+		for _, h := range docs {
+			if h.role == m.Role && sig.Verify(m.SigningKey, []byte(h.d.Payload), h.d.Sig) {
+				out = append(out, m)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // validRootKey: a P-256 public key, base64 X9.63 (65 bytes, uncompressed)
@@ -204,7 +292,8 @@ func validRootKey(k string) bool {
 	return err == nil
 }
 
-// checkFiledRoster: payload is a roster for copy, in the exact form sig.RosterPayload makes (what both keys sign)
+// checkFiledRoster: payload is a roster for copy, in the exact form sig.Roster.Payload makes (what both keys sign):
+// one member per role, retired keys of any role but secrets, secretsBoot a secrets identity
 func checkFiledRoster(copy, payload string) error {
 	if copy != "blue" && copy != "green" {
 		return errors.New("copy: blue or green")
@@ -223,13 +312,39 @@ func checkFiledRoster(copy, payload string) error {
 		}
 		roles = append(roles, m.Role)
 	}
-	want := []string{"gullible", "identity", "merger", "minter", "mover", "notarizer", "notary", "secrets", "spawner"}
-	if !slices.Equal(roles, want) {
-		return errors.New("payload: the members must be exactly " + strings.Join(want, ", ") + ", sorted")
+	if !slices.Equal(roles, kernelRoles) {
+		return errors.New("payload: the members must be exactly " + strings.Join(kernelRoles, ", ") + ", sorted")
 	}
-	canon, err := sig.RosterPayload(copy, ro.Members)
+	for _, m := range ro.Retired {
+		if !slices.Contains(kernelRoles, m.Role) || m.Role == "secrets" || m.SigningKey == "" || m.AgreementKey == "" {
+			return errors.New("payload: a retired member that isn't a kernel component's keys (never secrets)")
+		}
+	}
+	if b := ro.SecretsBoot; b != nil && (b.Role != "secrets" || b.SigningKey == "" || b.AgreementKey == "") {
+		return errors.New("payload: secretsBoot: a secrets identity")
+	}
+	canon, err := ro.Payload()
 	if err != nil || canon != payload {
-		return errors.New("payload: not in sig.RosterPayload's exact form")
+		return errors.New("payload: not in sig.Roster.Payload's exact form")
+	}
+	return nil
+}
+
+// checkTakeover: ro, a roster of the copy that doesn't serve, can take over from cur: it names the same secrets, an
+// empty one to take over (secretsBoot), and retires every other member of cur
+func checkTakeover(ro sig.Roster, cur sig.Roster) error {
+	if ro.SecretsBoot == nil {
+		return errors.New("a roster of the copy that doesn't serve names its empty secrets (secretsBoot): it takes over from the serving one")
+	}
+	a, _ := ro.Member("secrets")
+	b, _ := cur.Member("secrets")
+	if a != b {
+		return errors.New("a roster of the copy that doesn't serve names the serving copy's secrets (the keys the kit derives)")
+	}
+	for _, m := range cur.Members {
+		if m.Role != "secrets" && !slices.Contains(ro.Retired, m) {
+			return fmt.Errorf("a roster of the copy that doesn't serve retires every serving member: not the %s", m.Role)
+		}
 	}
 	return nil
 }
@@ -267,11 +382,8 @@ func (r *Router) registerRoster(app func(string, http.HandlerFunc), mux *http.Se
 		writeJSON(w, 200, map[string]string{"rootKey": k})
 	}))
 	mux.Handle("GET /setup/kernel/roster", setupSigned(func(w http.ResponseWriter, req *http.Request, _ []byte) {
-		serving := "blue"
-		if r.kernel != nil {
-			serving = strings.TrimPrefix(r.kernel.secretsRole("secrets"), "secrets-")
-		}
-		out := map[string]any{"current": nil, "secretsServing": serving, "status": r.rosterStatus(), "health": r.kernelHealthView()}
+		out := map[string]any{"current": nil, "serving": r.servingCopy(), "retiredInUse": r.retiredInUse(), "status": r.rosterStatus(),
+			"health": r.kernelHealthView(), "flip": r.flipStatus()}
 		if d := r.currentRoster(); d != nil {
 			out["current"] = d
 		}
@@ -343,37 +455,77 @@ func (r *Router) registerRoster(app func(string, http.HandlerFunc), mux *http.Se
 			writeJSON(w, 503, map[string]string{"error": "this box runs no kernel yet"})
 			return
 		}
-		var root string
-		r.st.Do(func(p *persisted) { root = p.KernelRootKey })
-		if root == "" {
-			writeJSON(w, 409, map[string]string{"error": "no root key registered (POST /api/kernel/root-key first)"})
-			return
-		}
-		d := sig.Doc{Payload: in.Payload, Sig: in.RootSig}
-		ro, err := sig.OpenRoster(d, root)
-		if err == nil {
-			err = checkFiledRoster(ro.Copy, in.Payload)
-		}
+		out, code, err := r.takeRoster(in.Payload, in.RootSig)
 		if err != nil {
-			writeJSON(w, 403, map[string]string{"error": err.Error()})
+			writeJSON(w, code, map[string]string{"error": err.Error()})
 			return
 		}
-		res := r.distributeRoster(d)
-		r.st.Do(func(p *persisted) {
-			p.KernelRoster = &RosterCurrent{Copy: ro.Copy, Payload: in.Payload, Sig: in.RootSig, At: time.Now().UTC(), Results: res}
-			p.KernelRosterPending = nil
-		})
-		rosterDMed.Store(false)
-		for dep, msg := range res { // one that restarted after the setup session read its identity
-			if m, ok := strings.CutPrefix(msg, "refused: "); ok {
-				r.rosterStale(dep, "roster stale: component "+dep+" restarted ("+m+")")
-			}
-		}
-		for _, role := range append(slices.Clone(rosterTargets), "secrets", "secrets-next") {
-			r.kernel.forget(role) // identities are read again (the roster may name new keys)
-		}
-		log.Printf("kernel: the root key's roster %s posted: %v", d.ID()[:12], res)
-		r.kernelHealthCheck() // kernelhealth.go: the app's warning follows the new roster at once
-		writeJSON(w, 200, map[string]any{"ok": true, "id": d.ID(), "results": res})
+		writeJSON(w, 200, out)
 	})
+}
+
+// takeRoster: the root key's roster: the serving copy's (or the very first) replaces the current one; the other
+// copy's starts the copy flip once every one of its components took it
+func (r *Router) takeRoster(payload, rootSig string) (map[string]any, int, error) {
+	var root string
+	var cur *RosterCurrent
+	var flipping bool
+	r.st.Do(func(p *persisted) {
+		root, cur = p.KernelRootKey, p.KernelRoster
+		flipping = p.KernelFlip != nil && len(p.KernelFlip.Handoffs) > 0
+	})
+	if root == "" {
+		return nil, 409, errors.New("no root key registered (POST /api/kernel/root-key first)")
+	}
+	d := sig.Doc{Payload: payload, Sig: rootSig}
+	ro, err := sig.OpenRoster(d, root)
+	if err == nil {
+		err = checkFiledRoster(ro.Copy, payload)
+	}
+	if err != nil {
+		return nil, 403, err
+	}
+	serving := r.servingCopy()
+	next := cur != nil && ro.Copy != serving
+	if next {
+		if flipping {
+			// a component of the copy taking over restarted mid-flip: the frozen components hand their state to the
+			// newer roster too (one that took a handoff already serves and takes no other)
+			log.Printf("kernel: a newer %s roster during the flip: the handoffs are made again for it", ro.Copy)
+		}
+		if err := checkTakeover(ro, cur.roster()); err != nil {
+			return nil, 403, err
+		}
+	} else if ro.SecretsBoot != nil {
+		return nil, 403, errors.New("the serving copy's roster names its own secrets, no secretsBoot")
+	}
+	res := r.distributeRoster(d, ro.Copy)
+	rc := &RosterCurrent{Copy: ro.Copy, Payload: payload, Sig: rootSig, At: time.Now().UTC(), Results: res}
+	r.st.Do(func(p *persisted) {
+		if next {
+			p.KernelRosterNext = rc
+		} else {
+			if p.KernelRoster == nil {
+				p.KernelCopy = ro.Copy // the first roster names the copy that serves
+			}
+			p.KernelRoster = rc
+		}
+		p.KernelRosterPending = nil
+	})
+	rosterDMed.Store(false)
+	for dep, msg := range res { // one that restarted after the setup session read its identity
+		if m, ok := strings.CutPrefix(msg, "refused: "); ok {
+			r.rosterStale(dep, "roster stale: component "+dep+" restarted ("+m+")")
+		}
+	}
+	r.kernel.forgetAll() // identities are read again (the roster may name new keys)
+	log.Printf("kernel: the root key's roster %s for %s posted: %v", d.ID()[:12], ro.Copy, res)
+	out := map[string]any{"ok": true, "id": d.ID(), "results": res}
+	if next { // kernelflip.go: it starts once every component of both copies is where the flip needs it
+
+		r.startFlip(ro.Copy, d.ID())
+		out["flip"] = ro.Copy
+	}
+	r.kernelHealthCheck() // kernelhealth.go: the app's warning follows the new roster at once
+	return out, 200, nil
 }

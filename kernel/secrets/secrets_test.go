@@ -48,7 +48,7 @@ func rosterFor(t *testing.T, w *kt.World, c *Secrets) {
 			ids = append(ids, w.C[r].Identity)
 		}
 	}
-	d := kt.SignRoster(t, w.Root, "blue", ids)
+	d := kt.SignRoster(t, w.Root, sig.Roster{Copy: "blue", Members: ids})
 	if _, err := c.SetRoster(d); err != nil {
 		t.Fatal(err)
 	}
@@ -228,8 +228,8 @@ func TestTheRootKey(t *testing.T) {
 	}
 }
 
-// seededClaim: a claim with secrets' seed (the same kit derives the same secrets), standby or not
-func seededClaim(t *testing.T, c *Secrets, master, p, root *phone, seed []byte, standby bool, line *LineStateDoc) {
+// seededClaim: a claim with secrets' seed (the same kit derives the same secrets)
+func seededClaim(t *testing.T, c *Secrets, master, p, root *phone, seed []byte, line *LineStateDoc) {
 	t.Helper()
 	dk, err := DeriveCoreKeys(seed)
 	if err != nil {
@@ -247,7 +247,7 @@ func seededClaim(t *testing.T, c *Secrets, master, p, root *phone, seed []byte, 
 	plain, _ := json.Marshal(rb)
 	sum := sha256Hex(string(plain))
 	var st claimStatement
-	st.Kind, st.Master, st.Root, st.Standby = "kernel-claim", master.signingKey(), root.signingKey(), standby
+	st.Kind, st.Master, st.Root = "kernel-claim", master.signingKey(), root.signingKey()
 	k := c.Key()
 	st.Secrets.SigningKey, st.Secrets.AgreementKey = k["signingKey"], k["agreementKey"]
 	st.Phone.SigningKey, st.Phone.AgreementKey = p.signingKey(), p.agreementKey()
@@ -261,36 +261,108 @@ func seededClaim(t *testing.T, c *Secrets, master, p, root *phone, seed []byte, 
 	pl(t)(c.Claim(string(sb), master.sign(string(sb)), bundle))
 }
 
-// blue/green: a secrets Recovered on standby takes the serving one's final state, open unlocks included (they never
-// end by themselves, so a flip mustn't drop them); the old one serves nothing after its handoff
+// otherCopy: the world's components as the other copy's roster names them: secrets as the kit derives it (a's keys)
+// and, taking over, b's boot keys
+func otherCopy(t *testing.T, w *kt.World, a, b *Secrets) sig.Doc {
+	ids := []sig.Identity{a.componentIdentity()}
+	for _, r := range kt.Roles {
+		if r != "secrets" {
+			ids = append(ids, w.C[r].Identity)
+		}
+	}
+	boot := b.componentIdentity()
+	return kt.SignRoster(t, w.Root, sig.Roster{Copy: "green", Members: ids, SecretsBoot: &boot})
+}
+
+// the copy flip: the serving secrets hands its seed and final state (the open unlocks included: they never end by
+// themselves, so a flip mustn't drop them) to the other copy's empty secrets, which derives the same keys and serves;
+// the old one serves nothing after its handoff
 func TestAHandoffKeepsTheOpenUnlocks(t *testing.T) {
 	w := kt.New(t)
 	master, p, root := newPhone(), newPhone(), newPhone()
 	seed := make([]byte, 32)
 	rand.Read(seed)
 	a, _ := New(w.Root.PublicKey(), nil)
-	seededClaim(t, a, master, p, root, seed, false, nil)
+	seededClaim(t, a, master, p, root, seed, nil)
 	rosterFor(t, w, a)
 	unlock(t, a, p, "default")
 	b, _ := New(w.Root.PublicKey(), nil)
-	seededClaim(t, b, master, p, root, seed, true, nil)
-	rosterFor(t, w, b)
-	if b.Mode() != modeStandby || a.Key()["signingKey"] != b.Key()["signingKey"] {
-		t.Fatal("the same kit didn't derive the same secrets, or b serves")
+	green := otherCopy(t, w, a, b)
+	if _, err := b.SetRoster(green); err != nil {
+		t.Fatal(err)
 	}
-	final, err := a.Handoff()
+	d, err := a.Handoff(green)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if a.Mode() != modeHandedOff {
 		t.Fatal("a still serves")
 	}
-	pl(t)(b.Takeover(final))
+	if again, err := a.Handoff(green); err != nil || again != d {
+		t.Fatal("a second handoff for the same roster isn't the same", err)
+	}
+	pl(t)(b.Takeover(d))
+	if a.Key()["signingKey"] != b.Key()["signingKey"] || b.MasterKey != a.MasterKey {
+		t.Fatal("b doesn't serve with the keys the seed derives")
+	}
 	k := &kernel{t: t, w: w, c: b, p: p, root: root}
 	k.enc, _ = ecdh.P256().GenerateKey(rand.Reader)
 	k.msig, _ = sig.NewSigner()
 	vals, _, err := k.pull(k.grant(perm.Only("store:default")))
 	if err != nil || vals["A"] != "1" {
 		t.Fatal(err, vals)
+	}
+	if out := pl(t)(b.Takeover(d)); out["again"] != true {
+		t.Fatal("the same handoff again isn't answered the same", out)
+	}
+	// a frozen source serves nothing (its HTTP surface refuses every call but these) and hands over to no other roster
+	if a.Mode() != modeHandedOff || allowedIn(a.Mode(), "POST /keys") || allowedIn(a.Mode(), "POST /pull") {
+		t.Fatal("a handed-off secrets still answers")
+	}
+	c2, _ := New(w.Root.PublicKey(), nil)
+	if _, err := a.Handoff(otherCopy(t, w, a, c2)); err == nil {
+		t.Fatal("a frozen secrets handed over to a second roster")
+	}
+}
+
+// ✱ a takeover is refused when the handoff is for another roster (a replay of an earlier flip's), is signed by
+// another key than the roster's secrets, when the roster doesn't name this secrets to take over, or once it is set up
+func TestATakeoverRefusesOtherHandoffs(t *testing.T) {
+	w := kt.New(t)
+	master, p, root := newPhone(), newPhone(), newPhone()
+	seed := make([]byte, 32)
+	rand.Read(seed)
+	a, _ := New(w.Root.PublicKey(), nil)
+	seededClaim(t, a, master, p, root, seed, nil)
+	rosterFor(t, w, a)
+	b, _ := New(w.Root.PublicKey(), nil)
+	c, _ := New(w.Root.PublicKey(), nil)
+	forB, forC := otherCopy(t, w, a, b), otherCopy(t, w, a, c)
+	if _, err := c.SetRoster(forC); err != nil {
+		t.Fatal(err)
+	}
+	d, err := a.Handoff(forB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Takeover(d); err == nil || !strings.Contains(err.Error(), "another roster") {
+		t.Fatal("a handoff to another roster (another secrets' boot keys) was taken:", err)
+	}
+	if _, err := b.SetRoster(forB); err != nil {
+		t.Fatal(err)
+	}
+	forged := d
+	other, _ := sig.NewSigner()
+	forged.Sig, _ = other.Sign([]byte(d.Payload))
+	if _, err := b.Takeover(forged); err == nil || !strings.Contains(err.Error(), "isn't signed by the secrets") {
+		t.Fatal("a handoff not signed by the roster's secrets was taken:", err)
+	}
+	pl(t)(b.Takeover(d))
+	if _, err := b.Takeover(sig.Doc{Payload: d.Payload + " ", Sig: d.Sig}); err == nil {
+		t.Fatal("a set-up secrets took a second handoff")
+	}
+	// a roster that names no secretsBoot: nobody empty takes over
+	if _, err := a.Handoff(kt.SignRoster(t, w.Root, sig.Roster{Copy: "green", Members: []sig.Identity{a.componentIdentity()}})); err == nil {
+		t.Fatal("a handoff to a roster with no secrets to take over")
 	}
 }

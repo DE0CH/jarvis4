@@ -192,14 +192,6 @@ func (r *Router) buildHandlers() {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(b)
 	}))
-	mux.Handle("POST /setup/kernel/secrets/flip", r.requireSetup(func(w http.ResponseWriter, req *http.Request) {
-		c, err := r.FlipSecrets() // kernel.go: the standby secrets serves from now on
-		if err != nil {
-			writeErr(w, err)
-			return
-		}
-		writeJSON(w, 200, map[string]string{"serving": "secrets-" + c})
-	}))
 	mux.Handle("POST /setup/kernel/spawner/fly-token", r.requireSetup(func(w http.ResponseWriter, req *http.Request) {
 		var in json.RawMessage
 		if r.kernel == nil || json.NewDecoder(io.LimitReader(req.Body, 1<<16)).Decode(&in) != nil {

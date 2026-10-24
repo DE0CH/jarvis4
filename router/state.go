@@ -145,13 +145,16 @@ type persisted struct {
 	Outcomes    map[string][]*Outcome    `json:"outcomes,omitempty"`    // outcomes.go: session id → decisions on its Inbox filings, until delivered
 	ActiveCore  string                   `json:"activeCore,omitempty"`  // nextcore.go: the core URL that serves after a flip
 	KernelRoot  *gv.Signed               `json:"kernelRoot,omitempty"`  // kernelline.go: the root key's ⊤ on the sink
-	// kernel.go: the colour of the kernel's secrets that serves ("" = blue)
-	KernelSecrets string `json:"kernelSecrets,omitempty"`
-	// roster.go: the app's root key (registered, for keys/root.pub), the setup session's roster waiting for it, and
-	// the root key's roster the components hold
+	// kernel.go: the kernel copy that serves ("" = blue)
+	KernelCopy string `json:"kernelCopy,omitempty"`
+	// roster.go: the app's root key (registered, for keys/root.pub), the setup session's roster waiting for it, the
+	// root key's roster the serving copy holds, and the other copy's while it takes over (kernelflip.go)
 	KernelRootKey       string         `json:"kernelRootKey,omitempty"`
 	KernelRosterPending *RosterFiling  `json:"kernelRosterPending,omitempty"`
 	KernelRoster        *RosterCurrent `json:"kernelRoster,omitempty"`
+	KernelRosterNext    *RosterCurrent `json:"kernelRosterNext,omitempty"`
+	// kernelflip.go: the copy flip under way (nil: none)
+	KernelFlip *KernelFlip `json:"kernelFlip,omitempty"`
 	// messages.go: messages held for Deyao to deliver or deny, and his per-kind rules
 	Messages     map[string]*PendingMessage `json:"messages,omitempty"`
 	MessageRules map[string]*MessageRule    `json:"messageRules,omitempty"`

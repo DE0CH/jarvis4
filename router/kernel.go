@@ -1,8 +1,10 @@
 package main
 
-// The kernel's HTTP API (kernel/, DESIGN "Target design", docs/PLAN-grants.md): nine components, each at
-// KERNEL_URL with %s = its role (e.g. http://%s.jarvis4-kernel.svc:8080). The router carries documents between them
-// and keeps them; it can't make one (each is signed by a component or the phone), only withhold or delay it.
+// The kernel's HTTP API (kernel/, DESIGN "Target design", docs/PLAN-grants.md): nine components in each of two
+// copies, blue and green (docs/PLAN-cluster.md "Releases: the copy flip"), each at KERNEL_URL with %s = its
+// Deployment, "<role>-<copy>" (e.g. http://%s.jarvis4-kernel.svc:8080). Every call goes to the copy that serves
+// (persisted.KernelCopy); kernelflip.go moves the kernel to the other copy. The router carries documents between the
+// components and keeps them; it can't make one (each is signed by a component or the phone), only withhold or delay it.
 
 import (
 	"bytes"
@@ -10,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,19 +24,59 @@ import (
 )
 
 type KernelClient struct {
-	url  func(role string) string
+	url  func(deployment string) string
 	http *http.Client
 	mu   sync.Mutex
-	ids  map[string]sig.Identity
+	ids  map[string]sig.Identity // by Deployment
 	// onSecretsSeq: every secrets answer's X-Line-Seq (linestate.go keeps secrets' newest line state), before the
 	// answer goes back
 	onSecretsSeq func(int)
-	// activeSecrets: the colour of the secrets that serves (blue or green)
-	activeSecrets func() string
+	// active: the copy that serves (blue or green)
+	active func() string
 	// roster: the root key's current roster (roster.go), re-posted to a component that answers it has none (a
 	// restart); onStale: a component refused it (it restarted with new keys: Deyao signs a new one)
 	roster  func() *sig.Doc
 	onStale func(deployment, msg string)
+	// gate: every call holds it shared; the copy flip holds it alone while the serving copy hands over, so no call
+	// reaches a component that froze, and every call after it goes to the new copy
+	gate sync.RWMutex
+}
+
+// kernelCopies: the two copies
+var kernelCopies = []string{"blue", "green"}
+
+// otherCopy: the copy that isn't c
+func otherCopy(c string) string {
+	if c == "green" {
+		return "blue"
+	}
+	return "green"
+}
+
+// copyOf: the copy a Deployment name ("<role>-<copy>") is in ("" = a bare role)
+func copyOf(dep string) string {
+	for _, c := range kernelCopies {
+		if strings.HasSuffix(dep, "-"+c) {
+			return c
+		}
+	}
+	return ""
+}
+
+// serving: the copy that serves
+func (k *KernelClient) serving() string {
+	if k.active != nil {
+		return k.active()
+	}
+	return "blue"
+}
+
+// dep: the Deployment a name means: a role is the serving copy's ("notary" → "notary-blue"); a Deployment name stays
+func (k *KernelClient) dep(name string) string {
+	if copyOf(name) != "" {
+		return name
+	}
+	return name + "-" + k.serving()
 }
 
 // newKernelClient: nil when KERNEL_URL isn't set (no kernel on this box yet)
@@ -75,7 +116,9 @@ func (k *KernelClient) callNoHook(role, method, path string, body any) ([]byte, 
 }
 
 func (k *KernelClient) callSeq(role, method, path string, body any) ([]byte, int, error) {
-	dep := k.secretsRole(role)
+	k.gate.RLock()
+	defer k.gate.RUnlock()
+	dep := k.dep(role)
 	b, seq, err := k.do(role, dep, method, path, body)
 	if err == nil || path == "/roster" || !isNoRoster(err) || k.roster == nil {
 		return b, seq, err
@@ -89,7 +132,7 @@ func (k *KernelClient) callSeq(role, method, path string, body any) ([]byte, int
 	if perr := k.postRoster(dep, *d); perr != nil {
 		return b, seq, perr
 	}
-	k.forget(role)
+	k.forget(dep)
 	return k.do(role, dep, method, path, body)
 }
 
@@ -166,19 +209,21 @@ func (k *KernelClient) Doc(role, path string, body any) (sig.Doc, error) {
 	return d, nil
 }
 
-// Identity: a component's identity (the root key's roster vouches for it) (cached; refetched when a call says it changed: forget)
+// Identity: a component's identity (the root key's roster vouches for it): a role is the serving copy's, a Deployment
+// name its own (cached; refetched when a call says it changed: forget)
 func (k *KernelClient) Identity(role string) (sig.Identity, error) {
+	dep := k.dep(role)
 	k.mu.Lock()
-	id, ok := k.ids[role]
+	id, ok := k.ids[dep]
 	k.mu.Unlock()
 	if ok {
 		return id, nil
 	}
-	b, err := k.callNoHook(role, "GET", "/identity", nil) // no line-state hook: the keeper itself reads identities
+	b, err := k.callNoHook(dep, "GET", "/identity", nil) // no line-state hook: the keeper itself reads identities
 	if err != nil {
 		return sig.Identity{}, err
 	}
-	if role == "secrets" || role == "secrets-next" {
+	if strings.HasPrefix(dep, "secrets-") {
 		var m struct {
 			SigningKey, AgreementKey string
 		}
@@ -193,16 +238,44 @@ func (k *KernelClient) Identity(role string) (sig.Identity, error) {
 		}
 	}
 	k.mu.Lock()
-	k.ids[role] = id
+	k.ids[dep] = id
 	k.mu.Unlock()
 	return id, nil
 }
 
-// forget: a component restarted (new keys): its identity is read again
+// forget: a component restarted (new keys): its identity is read again (a role: the serving copy's)
 func (k *KernelClient) forget(role string) {
 	k.mu.Lock()
-	delete(k.ids, role)
+	delete(k.ids, k.dep(role))
 	k.mu.Unlock()
+}
+
+// forgetAll: every identity is read again (a new roster, a flip)
+func (k *KernelClient) forgetAll() {
+	k.mu.Lock()
+	k.ids = map[string]sig.Identity{}
+	k.mu.Unlock()
+}
+
+// signerOf: the identity whose key signed d as role, as the current roster names it: the serving member, else a
+// retired one (a document from before a flip or a restart, which the components still take); the serving member when
+// none does (the component's refusal then says why)
+func (k *KernelClient) signerOf(role string, d sig.Doc) (sig.Identity, error) {
+	id, err := k.Identity(role)
+	if err != nil || sig.Verify(id.SigningKey, []byte(d.Payload), d.Sig) || k.roster == nil {
+		return id, err
+	}
+	if rd := k.roster(); rd != nil {
+		var ro sig.Roster
+		if json.Unmarshal([]byte(rd.Payload), &ro) == nil {
+			for _, m := range ro.RetiredOf(role) {
+				if sig.Verify(m.SigningKey, []byte(d.Payload), d.Sig) {
+					return m, nil
+				}
+			}
+		}
+	}
+	return id, nil
 }
 
 // Keys: secrets' signed statement of the phone's and the root key
@@ -238,7 +311,7 @@ func (k *KernelClient) Notarize(cert sig.Doc) (sig.Doc, error) {
 		}
 		in["keys"], in["secrets"] = ks, sid
 	default:
-		id, err := k.Identity(c.Signer)
+		id, err := k.signerOf(c.Signer, cert) // a cert signed before a flip or a restart: by a retired member
 		if err != nil {
 			return sig.Doc{}, err
 		}
@@ -249,7 +322,7 @@ func (k *KernelClient) Notarize(cert sig.Doc) (sig.Doc, error) {
 
 // Move: grant g along a notarized cert → the mover's grant on the cert's successor
 func (k *KernelClient) Move(g gv.Signed, cert, notarized sig.Doc) (gv.Signed, error) {
-	nzID, err := k.Identity("notarizer")
+	nzID, err := k.signerOf("notarizer", notarized)
 	if err != nil {
 		return gv.Signed{}, err
 	}
@@ -279,81 +352,33 @@ func (k *KernelClient) Move(g gv.Signed, cert, notarized sig.Doc) (gv.Signed, er
 	return gv.Signed{Grant: d, By: "mover", Signer: &mid}, nil
 }
 
-// ---- secrets, blue and green (as the cores: nextcore.go) ----------------------------------------------------------
-// Two secrets Deployments, secrets-blue and secrets-green: one serves (persisted.KernelSecrets names it, default blue),
-// the other is the next: empty, or Recovered alongside with the same kit as a standby. A secrets release goes only into
-// the next (images.yml), so a release never locks every kernel session's stores; Deyao Recovers the next alongside,
-// then the router flips: POST /handoff to the serving one (its final state, the open unlocks included), POST /takeover
-// with it to the standby, and every later secrets call goes there. Secrets itself guarantees that at most one serves.
-
-// secretsRole: the Deployment a role name means ("secrets" = the serving colour, "secrets-next" = the other)
-func (k *KernelClient) secretsRole(role string) string {
-	if role != "secrets" && role != "secrets-next" {
-		return role
-	}
-	active := "blue"
-	if k.activeSecrets != nil {
-		active = k.activeSecrets()
-	}
-	if role == "secrets-next" {
-		if active == "blue" {
-			return "secrets-green"
-		}
-		return "secrets-blue"
-	}
-	return "secrets-" + active
-}
-
-// FlipSecrets: the standby secrets serves from now on; the colour that serves now
-func (r *Router) FlipSecrets() (string, error) {
-	if r.kernel == nil {
-		return "", errors.New("this box runs no kernel")
-	}
-	final, err := r.kernel.callNoHook("secrets", "POST", "/handoff", map[string]any{})
-	if err != nil {
-		return "", fmt.Errorf("the serving secrets' handoff: %w", err)
-	}
-	if _, err := r.kernel.callNoHook("secrets-next", "POST", "/takeover", map[string]json.RawMessage{"lineState": final}); err != nil {
-		return "", fmt.Errorf("THE NEXT SECRETS REFUSED THE TAKEOVER (the serving one handed off: no secrets serves until a retry): %w", err)
-	}
-	var now string
-	r.st.Do(func(d *persisted) {
-		if d.KernelSecrets == "green" {
-			d.KernelSecrets = "blue"
-		} else {
-			d.KernelSecrets = "green"
-		}
-		now = d.KernelSecrets
-	})
-	r.kernel.forget("secrets")
-	r.kernel.forget("secrets-next")
-	log.Printf("kernel: secrets-%s serves from now on", now)
-	return now, nil
-}
-
-// wireKernel: the router's kernel client, the colour of secrets that serves, and the keeper of secrets' line state
+// wireKernel: the router's kernel client, the copy that serves, and the keeper of secrets' line state
 func (r *Router) wireKernel(k *KernelClient) {
 	r.kernel = k
 	if k == nil {
 		return
 	}
-	k.activeSecrets = func() string {
-		c := "blue"
-		r.st.Do(func(d *persisted) {
-			if d.KernelSecrets == "green" {
-				c = "green"
-			}
-		})
-		return c
-	}
+	k.active = r.servingCopy
 	r.kernelLines = newKernelLineKeeper(r.st, k)
 	k.onSecretsSeq = r.kernelLines.seen
 	k.roster = r.currentRoster // roster.go
 	k.onStale = r.rosterStale
 	if r.cfg.NoCore {
 		r.secretsStores = &CoreClient{name: "secrets", http: &http.Client{}, onLineSeq: r.kernelLines.seen,
-			baseFn: func() string { return k.url(k.secretsRole("secrets")) }}
+			baseFn: func() string { return k.url(k.dep("secrets")) },
+			gate:   func() func() { k.gate.RLock(); return k.gate.RUnlock }}
 	}
+}
+
+// servingCopy: the kernel copy that serves (persisted.KernelCopy; "" = blue)
+func (r *Router) servingCopy() string {
+	c := "blue"
+	r.st.Do(func(d *persisted) {
+		if d.KernelCopy == "green" {
+			c = "green"
+		}
+	})
+	return c
 }
 
 // storeCore: where the store calls go — the kernel's serving secrets on a box with no core, else the core

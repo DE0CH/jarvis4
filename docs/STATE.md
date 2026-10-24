@@ -35,7 +35,7 @@ every change. Fields of `persisted`:
 | `Leases` | `*LeaseState` (leases.go:104) | shared-device leases: holder and queue per device |
 | `Messages`, `MessageRules` | messages.go:54, :74 | peer messages held for Deyao, his per-kind rules |
 | `CoreKey`, `ActiveCore` | corechange.go, nextcore.go | the old core's identity and the blue/green core URL |
-| `KernelRoot`, `KernelSecrets` | kernelline.go, kernel.go | the root key's ⊤ on the sink; which secrets colour serves |
+| `KernelRoot`, `KernelCopy`, `KernelRosterNext`, `KernelFlip` | kernelline.go, kernel.go, roster.go, kernelflip.go | the root key's ⊤ on the sink; which kernel copy serves; the other copy's roster while it takes over; the copy flip under way (its handoffs and takeovers, kept step by step) |
 
 ### 1.2 Other files on the router's volume (`DATA_DIR`, main.go:20)
 
@@ -123,7 +123,7 @@ Every piece above lands in one of four places:
 | `Started`, `Machines`, `Certs`, `SessCerts` | `machines` (keys, volume, kernel cert, session, state); old-core certs as columns there while old-core lines exist |
 | `Grants` | `grants` |
 | `Schedules` | `wakeups`, `crons`, `watches` (one row each, `due_at` indexed) and `sessions.resume_prompt` |
-| `Budget`, `BBBudget`, `KernelRoot`, `KernelSecrets`, `CoreKey`, `ActiveCore`, line-state docs | `settings` (key → jsonb) |
+| `Budget`, `BBBudget`, `KernelRoot`, `KernelCopy`, `KernelRosterNext`, `KernelFlip`, `CoreKey`, `ActiveCore`, line-state docs | `settings` (key → jsonb) |
 | `Devices` | `devices` |
 | `Uploads` | `uploads` (metadata) + objects `uploads/<id>/<name>` |
 | `Tasks` | `task_instances`, `task_runs`; run logs/outputs as objects `task-runs/<run>.{log,output}` |
@@ -498,7 +498,7 @@ kube-system 43 MiB) uses about 1,290 MiB. Planned requests on top (MiB; limits i
 |---|---|---|
 | cloudflared ×2 + kernel-id | 136 | 272 |
 | router ×2 (peak seen on the control box: 680 MiB with standby + leader) | 1,024 | 2,048 |
-| kernel: notary, notarizer, mover, merger, spawner, identity, gullible, minter, secrets-blue, secrets-green | 320 | 848 |
+| kernel: one copy of notary, notarizer, mover, merger, spawner, identity, gullible, minter, secrets (the other copy runs only from a release's pin to its flip: twice this then) | 288 | 656 |
 | cert-manager ×3 (no upstream requests; measured elsewhere about 100) | ~100 | none |
 | CloudNativePG operator + Barman plugin | 148 | 328 |
 | Postgres ×2 (512 each) + Barman sidecars ×2 | 1,152 | 1,536 |

@@ -8,7 +8,9 @@
 //      secrets. Before the claim, secrets' boot keys are checked against the setup session's pending roster; after it,
 //      the root key signs that roster with secrets' derived keys in place of its boot keys (its own Face ID).
 //   2. Sign the kernel's components: whenever the setup session files a new roster (a component restarted, a release),
-//      the root key signs it after this page checked the setup key's signature and shows the members.
+//      the root key signs it after this page checked the setup key's signature and shows the members, the retired keys
+//      (earlier keys whose signatures still count) and, for the copy a release landed on, the empty secrets that takes
+//      over; that signature is the release's one Face ID (the router then flips the kernel to that copy).
 //   3. Sign the root grant (⊤ on the sink) with the root key, behind its own warning: every kernel session's
 //      permissions narrow from it. From then on new sessions start on the kernel.
 import SwiftUI
@@ -23,9 +25,6 @@ struct KernelSetupView: View {
   @State private var failure: String?
   @State private var warnRoot = false
   @State private var warnRoster = false
-  /// the next secrets (blue/green): its state, when it answers
-  @State private var nextState: KernelSetup.State?
-  @State private var nextKeys: PublicKeys?
   /// the root key's public half; whether keys/root.pub in git is it
   @State private var rootKey: String?
   @State private var rootInGit: Bool?
@@ -49,6 +48,10 @@ struct KernelSetupView: View {
                      color: roster != nil ? .green : pending != nil ? .orange : .secondary)
         }
         .accessibilityElement(children: .combine).accessibilityIdentifier("kernel-roster")
+        if let serving = status?.roster?.serving {
+          LabeledContent("Serving copy") { Text(status?.roster?.next.map { "\(serving), \($0.copy) taking over" } ?? serving) }
+            .accessibilityElement(children: .combine).accessibilityIdentifier("kernel-copy")
+        }
         if let state {
           LabeledContent("Secrets") { StatusPill(text: state.master.isEmpty ? "Empty" : mine ? "Set up" : "Set up elsewhere", color: mine ? .green : .orange) }
             .accessibilityElement(children: .combine).accessibilityIdentifier("kernel-secrets")
@@ -94,16 +97,6 @@ struct KernelSetupView: View {
       // an empty secrets is signed into the roster by its Recover (with the keys the kit derives), not before
       if let p = pendingNew, KernelTrust.pinned != nil || state?.master.isEmpty == false { rosterSection(p) }
 
-      if mine, let ns = nextState, ns.master.isEmpty {
-        Section {
-          SecureField("Recovery kit", text: $kitText).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("kernel-next-kit")
-          Button(busy ?? "Recover alongside") { Task { await recover(next: true) } }.disabled(kitText.isEmpty || busy != nil || pending == nil).accessibilityIdentifier("kernel-recover-next")
-        } header: { Text("Next secrets") } footer: {
-          Text("A release of the kernel's secrets runs next to the serving one. Recovered alongside with the same kit, it takes over when the router flips, with the stores' unlocks as they are.")
-        }
-      } else if mine, let ns = nextState, ns.serving == "standby" {
-        Section("Next secrets") { LabeledContent("State") { StatusPill(text: "Standby", color: .green) } }
-      }
       if mine, roster != nil, status?.root == false {
         Section {
           Button(busy ?? "Sign the root grant…", systemImage: "exclamationmark.octagon") { warnRoot = true }.disabled(busy != nil).accessibilityIdentifier("kernel-root-sign")
@@ -141,11 +134,29 @@ struct KernelSetupView: View {
         }
         .accessibilityElement(children: .combine).accessibilityIdentifier("kernel-member-\(m.role)")
       }
+      if let b = p.secretsBoot {
+        LabeledContent {
+          Text(Self.fingerprint(b.signingKey)).font(.footnote.monospaced())
+        } label: {
+          VStack(alignment: .leading) { Text("secrets (empty)"); Text("takes over from the serving copy").font(.caption).foregroundStyle(.secondary) }
+        }
+        .accessibilityElement(children: .combine).accessibilityIdentifier("kernel-secrets-boot")
+      }
+      ForEach(p.retired, id: \.signingKey) { m in
+        LabeledContent {
+          Text(Self.fingerprint(m.signingKey)).font(.footnote.monospaced())
+        } label: {
+          VStack(alignment: .leading) { Text(m.role); Text("retired: what it signed still counts").font(.caption).foregroundStyle(.secondary) }
+        }
+        .accessibilityElement(children: .combine).accessibilityIdentifier("kernel-retired-\(m.role)")
+      }
       Button(busy ?? "Sign the kernel's components…") { warnRoster = true }
-        .disabled(busy != nil || rootInGit != true || (p.member("secrets") != KernelTrust.pinned && !unclaimed.contains(p.member("secrets") ?? PublicKeys(signingKey: "", agreementKey: ""))))
+        .disabled(busy != nil || rootInGit != true || (try? KernelSetup.signable(p, pinned: KernelTrust.pinned, unclaimed: unclaimed, current: roster)) == nil)
         .accessibilityIdentifier("kernel-roster-sign")
     } header: { Text("Kernel components (\(p.copy))") } footer: {
-      Text("Checked against the setup key in git. The root key signs exactly this list, with its own Face ID.")
+      Text(roster.map { $0.copy != p.copy } == true ?
+           "A release landed on the \(p.copy) copy. Once signed, the \(roster?.copy ?? "") copy hands everything over to it and the router switches to it; nothing stops. Checked against the setup key in git; the root key signs exactly this list, with its own Face ID." :
+           "Checked against the setup key in git. The root key signs exactly this list, with its own Face ID.")
     }
   }
 
@@ -170,8 +181,7 @@ struct KernelSetupView: View {
       if anchors.pinned != nil || anchors.roster != nil || anchors.pending != nil {
         let r = try await RouterClient.shared.kernelIdentity(anchors)
         keys = r.keys; state = r.state
-        if let n = try? await RouterClient.shared.kernelIdentity(anchors, next: true) { nextKeys = n.keys; nextState = n.state } else { nextKeys = nil; nextState = nil }
-      } else { keys = nil; state = nil; nextKeys = nil; nextState = nil }
+      } else { keys = nil; state = nil }
       var u: [PublicKeys] = []
       for next in [false, true] {
         if let id = try? await RouterClient.shared.json("GET", "api/kernel/secrets/identity" + (next ? "?secrets=next" : ""), as: KernelSetup.Identity.self),
@@ -194,7 +204,7 @@ struct KernelSetupView: View {
 
   /// the root key signs exactly r's payload (its own Face ID) and the router hands it to every component
   private func sign(_ r: KernelRoster.Roster) async throws {
-    try KernelSetup.signable(r, pinned: KernelTrust.pinned, unclaimed: unclaimed)
+    try KernelSetup.signable(r, pinned: KernelTrust.pinned, unclaimed: unclaimed, current: roster)
     let payload = r.payload
     busy = "Signing the kernel's components…"
     let sig = try await offMain { try RootKey.shared.sign(payload, reason: "Sign the kernel's components") }
@@ -212,10 +222,10 @@ struct KernelSetupView: View {
     } catch { busy = nil; failure = errText(error) }
   }
 
-  private func recover(next: Bool = false) async {
+  private func recover() async {
     failure = nil
     do {
-      guard let k = next ? nextKeys : keys else { return }
+      guard let k = keys else { return }
       guard let p = pending, p.member("secrets") == k else {
         throw TrustError.mismatch("the setup session's roster doesn't name this secrets: ask a setup session to read the kernel's components again")
       }
@@ -240,9 +250,9 @@ struct KernelSetupView: View {
       let sk = try RouterClient.shared.kernelStoreKey(secrets: derived.agreementKey)
       let bundle = try KernelSetup.bundle(stores, storeKey: sk, seed: seed, lineState: line)
       let body = try KernelSetup.claim(secrets: k, phone: try PhoneKeys.shared.publicKeys(), root: try RootKey.shared.publicKey(), master: m, bundle: bundle,
-                                       identity: derived, standby: next)
-      try await RouterClient.shared.kernelClaim(body, derived: derived, next: next)
-      KernelTrust.pin(derived) // the same kit derives the same keys: the serving and the next secrets are one identity
+                                       identity: derived)
+      try await RouterClient.shared.kernelClaim(body, derived: derived)
+      KernelTrust.pin(derived) // the same kit derives the same keys: both kernel copies' secrets are one identity
       if CoreTrust.master == nil { CoreTrust.setMaster(m.publicKey) }
       // the root key signs the setup session's roster with the keys secrets serves with now
       let r = try KernelRoster.replacing(p, role: "secrets", with: derived)

@@ -9,7 +9,8 @@ package secrets
 //  2. The state: the stores as secrets holds them (each key wrapped to P + K), the deploy-key stores' repos and GitHub
 //     key ids (they have no backup) and the stores that aren't sensitive, sealed under the state key and signed with a head {seq,
 //     sha256}; every answer carries X-Line-Seq and the router keeps the newest. A Recover takes back the deploy-key
-//     stores from it; a takeover (blue/green: at most one secrets with these keys serves) takes it whole.
+//     stores from it; the other kernel copy's secrets takes it whole in the copy flip (below: at most one secrets with
+//     these keys serves).
 
 import (
 	"crypto/aes"
@@ -28,6 +29,7 @@ import (
 	"time"
 
 	"github.com/DE0CH/jarvis4/kernel/minter"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 const (
@@ -196,9 +198,6 @@ func (c *Secrets) LineState() (*LineStateDoc, error) {
 	c.syncLine()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.mode == modeStandby {
-		return nil, fail(409, "this core is standing by: it keeps no line state of its own yet")
-	}
 	if c.lineDoc == nil {
 		return nil, fail(404, "this core keeps no line state (it wasn't set up with a seed)")
 	}
@@ -313,84 +312,172 @@ func (c *Secrets) restoreLine(st lineState, all bool) []string {
 	return back
 }
 
-// ---- handoff: at most one core with these keys serves (blue/green; Deyao, 2026-10-15) ---------------------------
+// ---- the copy flip: at most one secrets with these keys serves (docs/PLAN-cluster.md "Releases: the copy flip") ---
 //
-// The router may run a second core and have Deyao Recover it with the same kit while the first still serves. Two
-// cores with one identity must never both serve, or an untrusted router could fork a line or answer one approval
-// twice. So the cores themselves hand over:
-//   - handoff (the serving core, on the router's call): seals a FINAL line state, signs its head, and from then on
-//     refuses every call but identity, line-state and handoff again (which answers the same final state);
-//   - a Recover whose statement says standby (the master key signed it) serves nothing after its claim until takeover
-//     gives it a final state, sealed by these keys, whose seq is at least the one it was Recovered with; it takes that
-//     state whole (the lines and every store) and serves;
-//   - a Recover whose bundle already carries a final state takes it whole and serves at once (the old core handed off
-//     first). A Recover that is neither (a crash: the old core is gone and sealed nothing final) serves at once, from the
-//     newest state the router kept: there the guarantee is the old core being gone (docs/DESIGN.md "Core continuity").
+// Both kernel copies' rosters name the same secrets (the keys the kit derives). A release lands on the copy that
+// doesn't serve, whose secrets starts empty with boot keys of its own; that copy's roster names them as secretsBoot.
+// Once the root key signed it, the router asks the serving secrets to hand over:
+//   - handoff (the serving secrets): the other copy's root-signed roster, naming this secrets as its secrets and
+//     an empty one as secretsBoot → the seed, the claim's keys (master, phone, root) and a FINAL line state (the open
+//     unlocks included), sealed to secretsBoot's agreement key and signed with the derived key; from then on it
+//     refuses every call but identity, roster, line-state and the same handoff again;
+//   - takeover (the empty secrets of the other copy): a handoff for exactly the roster it holds, sealed to its boot
+//     key and signed by the secrets that roster names → it derives the keys from the seed (they must be the ones the
+//     roster names), takes the final state whole and serves. The same handoff again answers the same; any other, or
+//     a secrets already set up, is refused.
+// A crash (the serving secrets restarted, its memory gone) is a Recover with the kit, from the newest state the router
+// kept: there the guarantee is the old secrets being gone (docs/DESIGN.md "Core continuity").
 
 const (
 	modeServing   = ""
-	modeStandby   = "standby"
 	modeHandedOff = "handed-off"
+	infoHandoff   = "jarvis2/kernel-handoff/secrets" // internal/serve HandoffInfo + "secrets"
 )
 
-// Handoff: the final line state; this core serves nothing after it (idempotent: a second call answers the same)
-func (c *Secrets) Handoff() (*LineStateDoc, error) {
+// handoffDoc: the signed handoff (internal/serve Handoff's shape, role "secrets")
+type handoffDoc struct {
+	Kind   string  `json:"kind"`
+	Role   string  `json:"role"`
+	From   string  `json:"from"`
+	Roster string  `json:"roster"`
+	To     string  `json:"to"`
+	Sealed *Sealed `json:"sealed,omitempty"`
+}
+
+// handedSecrets: what is sealed to the successor
+type handedSecrets struct {
+	Seed      string        `json:"seed"`
+	Master    string        `json:"master"`
+	Root      string        `json:"root"`
+	Phone     PublicKeys    `json:"phone"`
+	LineState *LineStateDoc `json:"lineState"`
+}
+
+// PublicKeys: a signing and an agreement key
+type PublicKeys struct {
+	SigningKey   string `json:"signingKey"`
+	AgreementKey string `json:"agreementKey"`
+}
+
+// Handoff: to the other copy's secrets, as its root-signed roster names it; this secrets serves nothing after it
+// (again for the same roster: the same handoff)
+func (c *Secrets) Handoff(roster SignedDoc) (SignedDoc, error) {
+	self := c.componentIdentity()
+	own := c.trust.Roster()
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	id := roster.ID()
 	switch {
+	case c.mode == modeHandedOff && c.handedTo == id:
+		return *c.handoff, nil
 	case c.mode == modeHandedOff:
-		return c.lineDoc, nil
-	case c.lineKey == nil || c.MasterKey == "":
-		return nil, fail(409, "only a secrets set up from the master key's seed hands off")
-	case c.mode != modeServing:
-		return nil, fail(409, "this core is standing by: it has nothing to hand off")
+		return SignedDoc{}, fail(409, "this secrets already handed over to another roster: a final state goes to one roster only")
+	case c.lineKey == nil || c.MasterKey == "" || c.seed == nil:
+		return SignedDoc{}, fail(409, "only a secrets set up from the kit's seed hands over")
+	case own == nil:
+		return SignedDoc{}, fail(503, "%v", sig.ErrNoRoster)
 	}
-	d, err := c.sealLine(true)
+	r, err := sig.OpenRoster(roster, c.trust.Root())
 	if err != nil {
-		return nil, err
+		return SignedDoc{}, fail(403, "%v", err)
 	}
-	c.mode, c.lineDoc, c.lineHash = modeHandedOff, d, ""
+	if r.Copy == own.Copy {
+		return SignedDoc{}, fail(409, "a handoff goes to the other kernel copy (this is %s's secrets)", own.Copy)
+	}
+	if m, ok := r.Member("secrets"); !ok || m != self || r.SecretsBoot == nil {
+		return SignedDoc{}, fail(403, "the %s roster doesn't name this secrets as its secrets and an empty one to take over", r.Copy)
+	}
+	final, err := c.sealLine(true)
+	if err != nil {
+		return SignedDoc{}, err
+	}
+	plain, _ := json.Marshal(handedSecrets{Seed: b64.EncodeToString(c.seed), Master: c.MasterKey, Root: c.root,
+		Phone: PublicKeys{c.phoneSigning, c.phoneAgreement}, LineState: final})
+	sealed, err := SealTo(r.SecretsBoot.AgreementKey, plain, infoHandoff)
+	if err != nil {
+		return SignedDoc{}, err
+	}
+	d, err := c.sign(handoffDoc{Kind: "handoff", Role: "secrets", From: own.Copy, Roster: id, To: r.SecretsBoot.AgreementKey, Sealed: &sealed})
+	if err != nil {
+		return SignedDoc{}, err
+	}
+	c.mode, c.handedTo, c.handoff, c.lineDoc, c.lineHash = modeHandedOff, id, &d, final, ""
 	c.unlocked, c.pending, c.pendingKeys = map[string]*unlocked{}, map[string]pendingUnlock{}, map[string]pendingDeployKey{}
-	c.logf("handed off: final line state %d; serving nothing from now on", c.lineSeq)
+	c.logf("handed over to the %s copy: final line state %d; serving nothing from now on", r.Copy, c.lineSeq)
 	return d, nil
 }
 
-// Takeover: a standing-by core takes the final state its predecessor sealed (same keys, seq at least the one it was
-// Recovered with) and serves
-func (c *Secrets) Takeover(d *LineStateDoc) (SignedDoc, error) {
+// Takeover: an empty secrets takes its predecessor's handoff (for the roster it holds, sealed to its boot key, signed
+// by the secrets that roster names) and serves with the keys the seed derives
+func (c *Secrets) Takeover(d SignedDoc) (SignedDoc, error) {
+	held := c.trust.Doc()
+	r := c.trust.Roster()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.mode != modeStandby {
-		return SignedDoc{}, fail(409, "this core isn't standing by")
+	if c.MasterKey != "" {
+		if c.took == d.ID() {
+			return c.sign(map[string]any{"kind": "took-over", "role": "secrets", "handoff": d.ID(), "lineSeq": c.lineSeq, "again": true})
+		}
+		return SignedDoc{}, fail(409, "this secrets is set up: it takes no handoff")
 	}
-	if d == nil {
-		return SignedDoc{}, fail(400, "takeover takes the final line state")
+	if held == nil || r == nil {
+		return SignedDoc{}, fail(503, "%v", sig.ErrNoRoster)
 	}
-	st, err := openLineState(d, &coreKeys{signer: c.signer, state: c.lineKey})
+	var h handoffDoc
+	if err := sig.StrictJSON([]byte(d.Payload), &h); err != nil || h.Kind != "handoff" || h.Role != "secrets" || h.Sealed == nil {
+		return SignedDoc{}, fail(400, "not a secrets handoff")
+	}
+	boot := PublicKeys{c.signer.PublicKey(), b64.EncodeToString(c.agreement.PublicKey().Bytes())}
+	m, _ := r.Member("secrets")
+	switch {
+	case r.SecretsBoot == nil || r.SecretsBoot.SigningKey != boot.SigningKey || r.SecretsBoot.AgreementKey != boot.AgreementKey:
+		return SignedDoc{}, fail(403, "the roster this secrets holds doesn't name it to take over")
+	case h.Roster != held.ID():
+		return SignedDoc{}, fail(403, "a handoff to another roster than the one this secrets holds")
+	case h.To != boot.AgreementKey:
+		return SignedDoc{}, fail(403, "a handoff sealed to other keys than this secrets' boot keys")
+	case !VerifyWith(m.SigningKey, []byte(d.Payload), d.Sig):
+		return SignedDoc{}, fail(403, "the handoff isn't signed by the secrets the roster names")
+	}
+	plain, err := OpenSealed(c.agreement, *h.Sealed, infoHandoff)
+	if err != nil {
+		return SignedDoc{}, fail(403, "the handoff doesn't open with this secrets' boot key")
+	}
+	var hs handedSecrets
+	if err := sig.StrictJSON(plain, &hs); err != nil || hs.LineState == nil {
+		return SignedDoc{}, fail(400, "the handed state: %v", err)
+	}
+	seed, err := b64.DecodeString(hs.Seed)
+	if err != nil || len(seed) != 32 {
+		return SignedDoc{}, fail(400, "the handed seed")
+	}
+	dk, err := DeriveCoreKeys(seed)
+	if err != nil {
+		return SignedDoc{}, fail(400, "the handed seed: %v", err)
+	}
+	if dk.signer.PublicKey() != m.SigningKey || b64.EncodeToString(dk.agreement.PublicKey().Bytes()) != m.AgreementKey {
+		return SignedDoc{}, fail(403, "the handed seed derives other keys than the roster's secrets")
+	}
+	st, err := openLineState(hs.LineState, dk)
 	if err != nil {
 		return SignedDoc{}, err
 	}
 	if !st.Final {
-		return SignedDoc{}, fail(403, "not a final line state: the serving core hands off first")
+		return SignedDoc{}, fail(403, "not a final line state")
 	}
-	if st.Seq < c.standbyFrom {
-		return SignedDoc{}, fail(403, "the final line state %d is older than the one this core was Recovered with (%d)", st.Seq, c.standbyFrom)
-	}
+	c.MasterKey, c.root, c.phoneSigning, c.phoneAgreement = hs.Master, hs.Root, hs.Phone.SigningKey, hs.Phone.AgreementKey
+	c.signer, c.agreement, c.lineKey, c.seed = dk.signer, dk.agreement, dk.state, seed
 	stores := c.restoreLine(st, true)
-	c.mode, c.lineHash, c.lineDoc = modeServing, "", nil
-	c.logf("took over at line state %d (%d stores); serving", st.Seq, len(stores))
-	return c.sign(map[string]any{"kind": "took-over", "lineSeq": st.Seq, "stores": len(stores)})
+	c.mode, c.lineHash, c.lineDoc, c.took = modeServing, "", nil, d.ID()
+	c.logf("took over from the %s copy at line state %d (%d stores); serving", h.From, st.Seq, len(stores))
+	return c.sign(map[string]any{"kind": "took-over", "role": "secrets", "handoff": d.ID(), "lineSeq": st.Seq, "stores": len(stores)})
 }
 
-// allowedIn: what a core that doesn't serve still answers
+// allowedIn: what a secrets that handed over still answers
 func allowedIn(mode, pattern string) bool {
 	switch pattern {
-	case "GET /identity", "GET /line-state", "POST /wipe", "GET /roster", "POST /roster":
+	case "GET /identity", "GET /line-state", "POST /wipe", "GET /roster", "POST /roster", "POST /handoff":
 		return true
-	case "POST /handoff":
-		return mode == modeHandedOff
-	case "POST /takeover":
-		return mode == modeStandby
 	}
 	return false
 }
@@ -428,7 +515,7 @@ func gcmOpenRandom(key, sealed, aad []byte) ([]byte, error) {
 	return g.Open(nil, sealed[:g.NonceSize()], sealed[g.NonceSize():], aad)
 }
 
-// Mode: serving, standby or handed-off
+// Mode: serving ("") or handed-off
 func (c *Secrets) Mode() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -1,5 +1,7 @@
 // Package gv: checking a grant as everyone who takes one does (the mover, the merger, secrets, the guard). A grant is
-// signed by the mover or the merger (their identities, checked against the root key's roster), or is the root key's ⊤ on the sink.
+// signed by the mover or the merger (their identities, checked against the root key's roster: its member, or a retired
+// one — the other copy's after a copy flip, or one from before a restart — whose grants still open though it signs
+// nothing new), or is the root key's ⊤ on the sink.
 package gv
 
 import (

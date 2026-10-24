@@ -1,6 +1,9 @@
 // Package kerneltest: the whole kernel for other modules' tests (the router's, the machine's). Every component
 // runs in-process on its own httptest server, on a fake Fly whose machines have real key pairs and a fake GitHub
-// (the minter's), with a phone key and a root key the test holds, and secrets already claimed (Reset: no stores).
+// (the minter's), with a phone key and a root key the test holds, and secrets already claimed (Reset with a seed: no
+// stores). Two copies, blue and green (docs/PLAN-cluster.md "Releases: the copy flip"): Start runs blue, which
+// serves; Release starts green's components fresh, RosterFor/SignRoster sign a copy's roster (green's retires blue's
+// members), Flip hands blue over to green as the router does.
 package kerneltest
 
 import (
@@ -33,20 +36,48 @@ import (
 	"github.com/DE0CH/jarvis4/kernel/spawner"
 )
 
-// Kernel: the running components and the keys a test signs with
+// Roles: every kernel component (a copy has one of each)
+var Roles = []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "minter", "secrets"}
+
+// Copy: one kernel copy's running components
+type Copy struct {
+	Name    string
+	URL     map[string]string // role → base URL
+	Secrets *secrets.Secrets
+	dir     string
+	// retired: the keys this copy's next roster names as retired (a component of it that restarted, or the other
+	// copy's members once this copy takes over)
+	retired []sig.Identity
+}
+
+// Kernel: the running copies and the keys a test signs with
 type Kernel struct {
 	Phone, Root *sig.Signer
 	PhoneAgree  *ecdh.PrivateKey
-	URL         map[string]string // role → base URL
-	Fly         *FakeFly
-	GitHub      *FakeGitHub // the minter's
-	Secrets     *secrets.Secrets
-	servers     []*httptest.Server
-	master      *sig.Signer
+	// URL: the serving copy's components (role → base URL); URLFor names a copy's own
+	URL     map[string]string
+	Copies  map[string]*Copy
+	Active  string // the copy that serves
+	Fly     *FakeFly
+	GitHub  *FakeGitHub // the minter's
+	Secrets *secrets.Secrets
+	servers []*httptest.Server
+	master  *sig.Signer
+	seed    []byte
+	env     map[string]string
+	t       testing.TB
 }
 
-// URLFor: the base URL of a role (what the router's KERNEL_URL template gives)
-func (k *Kernel) URLFor(role string) string { return k.URL[role] }
+// URLFor: the base URL of a role in the serving copy, or of a Deployment "<role>-<copy>" (what the router's
+// KERNEL_URL template gives)
+func (k *Kernel) URLFor(name string) string {
+	for c, cp := range k.Copies {
+		if r, ok := strings.CutSuffix(name, "-"+c); ok {
+			return cp.URL[r]
+		}
+	}
+	return k.URL[name]
+}
 
 // Close: every server
 func (k *Kernel) Close() {
@@ -55,29 +86,51 @@ func (k *Kernel) Close() {
 	}
 }
 
-// Start: every component; machineEnv is what spawned machines' Fly config env gets
+// Start: copy blue, serving; machineEnv is what spawned machines' Fly config env gets
 func Start(t testing.TB, machineEnv map[string]string) *Kernel {
 	phone, _ := sig.NewSigner()
 	root, _ := sig.NewSigner()
 	pa, _ := ecdh.P256().GenerateKey(rand.Reader)
-	k := &Kernel{Phone: phone, Root: root, PhoneAgree: pa, URL: map[string]string{}, Fly: NewFakeFly(), GitHub: &FakeGitHub{Keys: map[string][]minter.DeployKey{}}}
-	dir := t.TempDir()
-	for _, role := range []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "minter"} {
+	k := &Kernel{Phone: phone, Root: root, PhoneAgree: pa, Copies: map[string]*Copy{}, Fly: NewFakeFly(),
+		GitHub: &FakeGitHub{Keys: map[string][]minter.DeployKey{}}, env: machineEnv, t: t, Active: "blue"}
+	k.seed = make([]byte, 32)
+	rand.Read(k.seed)
+	blue := k.startCopy(t, "blue")
+	k.URL, k.Secrets = blue.URL, blue.Secrets
+	if err := k.ClaimSeeded(blue.Secrets, k.seed); err != nil {
+		t.Fatal(err)
+	}
+	if err := k.SignRoster("blue"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(k.Close)
+	return k
+}
+
+// startCopy: fresh components for a copy (its volumes kept from an earlier run of it), none holding a roster
+func (k *Kernel) startCopy(t testing.TB, name string) *Copy {
+	cp := k.Copies[name]
+	if cp == nil {
+		cp = &Copy{Name: name, dir: t.TempDir()}
+		k.Copies[name] = cp
+	}
+	cp.URL = map[string]string{}
+	for _, role := range Roles[:8] {
 		c, err := sig.NewComponent(role)
 		if err != nil {
 			t.Fatal(err)
 		}
-		trust := sig.NewTrust(root.PublicKey())
+		trust := sig.NewTrust(k.Root.PublicKey())
 		s := serve.New(c, trust)
 		switch role {
 		case "notary":
-			n, err := notary.Open(filepath.Join(dir, "notary"), c.Signer)
+			n, err := notary.Open(filepath.Join(cp.dir, "notary"), c.Signer)
 			if err != nil {
 				t.Fatal(err)
 			}
 			notary.Register(s, n)
 		case "notarizer":
-			n, err := notarizer.Open(filepath.Join(dir, "notarizer"), c.Signer, trust)
+			n, err := notarizer.Open(filepath.Join(cp.dir, "notarizer"), c.Signer, trust)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -87,7 +140,7 @@ func Start(t testing.TB, machineEnv map[string]string) *Kernel {
 		case "merger":
 			merger.Register(s, merger.New(c.Signer, trust))
 		case "spawner":
-			sp, err := spawner.Open(filepath.Join(dir, "spawner"), c, trust, k.Fly, machineEnv)
+			sp, err := spawner.Open(filepath.Join(cp.dir, "spawner"), c, trust, k.Fly, k.env)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -101,33 +154,64 @@ func Start(t testing.TB, machineEnv map[string]string) *Kernel {
 		}
 		srv := httptest.NewServer(s.Mux)
 		k.servers = append(k.servers, srv)
-		k.URL[role] = srv.URL
+		cp.URL[role] = srv.URL
 	}
-	sc, err := secrets.New(root.PublicKey(), minter.NewClient(k.URL["minter"]))
+	sc, err := secrets.New(k.Root.PublicKey(), minter.NewClient(cp.URL["minter"]))
 	if err != nil {
 		t.Fatal(err)
 	}
-	k.Secrets = sc
+	cp.Secrets = sc
 	srv := httptest.NewServer(secrets.Handler(sc))
 	k.servers = append(k.servers, srv)
-	k.URL["secrets"] = srv.URL
-	if err := k.claim(); err != nil {
-		t.Fatal(err)
-	}
-	if err := k.PostRoster(""); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(k.Close)
-	return k
+	cp.URL["secrets"] = srv.URL
+	return cp
 }
 
-// Roster: the root key's roster of the components as they answer now (secrets' claimed keys included)
-func (k *Kernel) Roster() (sig.Doc, error) {
-	ids := []sig.Identity{}
-	for _, role := range []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "minter", "secrets"} {
-		ids = append(ids, k.Identity(role))
+// Retired, SetRetired: the keys the copy's next roster names as retired
+func (c *Copy) Retired() []sig.Identity     { return append([]sig.Identity{}, c.retired...) }
+func (c *Copy) SetRetired(r []sig.Identity) { c.retired = r }
+
+// Serve: the copy serves from now on (a router's flip, as the test's helpers see it)
+func (k *Kernel) Serve(copy string) {
+	k.Active, k.URL, k.Secrets = copy, k.Copies[copy].URL, k.Copies[copy].Secrets
+}
+
+// Other: the copy that doesn't serve
+func (k *Kernel) Other() string {
+	if k.Active == "blue" {
+		return "green"
 	}
-	p, err := sig.RosterPayload("blue", ids)
+	return "blue"
+}
+
+// Release: a kernel release lands on the copy that doesn't serve: every one of its components starts again fresh (its
+// volumes kept), its secrets empty; its roster (RosterFor) retires the serving copy's members
+func (k *Kernel) Release(t testing.TB) *Copy {
+	cp := k.startCopy(t, k.Other())
+	cp.retired = nil
+	for _, role := range Roles[:8] {
+		cp.retired = append(cp.retired, k.identityAt(k.Active, role))
+	}
+	cp.retired = append(cp.retired, k.Copies[k.Active].retired...)
+	return cp
+}
+
+// RosterFor: the root key's roster of a copy as its components answer now. The serving copy's names its retired keys
+// (components that restarted); the other copy's names the secrets the kit derives (the serving one's keys), its own
+// empty secrets as secretsBoot, and the serving copy's members as retired.
+func (k *Kernel) RosterFor(copy string) (sig.Doc, error) {
+	cp := k.Copies[copy]
+	ids := []sig.Identity{}
+	for _, role := range Roles {
+		ids = append(ids, k.identityAt(copy, role))
+	}
+	r := sig.Roster{Copy: copy, Members: ids, Retired: cp.retired}
+	if copy != k.Active {
+		boot := ids[len(ids)-1]
+		ids[len(ids)-1] = k.identityAt(k.Active, "secrets")
+		r.SecretsBoot = &boot
+	}
+	p, err := r.Payload()
 	if err != nil {
 		return sig.Doc{}, err
 	}
@@ -135,7 +219,10 @@ func (k *Kernel) Roster() (sig.Doc, error) {
 	return sig.Doc{Payload: p, Sig: s}, err
 }
 
-// Trust: the root key's roster as a machine (or a test) holds it
+// Roster: the serving copy's roster
+func (k *Kernel) Roster() (sig.Doc, error) { return k.RosterFor(k.Active) }
+
+// Trust: the serving copy's roster as a machine (or a test) holds it
 func (k *Kernel) Trust() *sig.Trust {
 	d, err := k.Roster()
 	if err != nil {
@@ -148,55 +235,95 @@ func (k *Kernel) Trust() *sig.Trust {
 	return t
 }
 
-// PostRoster: the roster to every component (and to extra, another secrets' URL, if not "")
-func (k *Kernel) PostRoster(extra string) error {
-	d, err := k.Roster()
+// SignRoster: the copy's roster to each of its components
+func (k *Kernel) SignRoster(copy string) error {
+	d, err := k.RosterFor(copy)
 	if err != nil {
 		return err
 	}
-	b, _ := json.Marshal(map[string]sig.Doc{"roster": d})
-	urls := []string{}
-	for _, u := range k.URL {
-		urls = append(urls, u)
-	}
-	if extra != "" {
-		urls = append(urls, extra)
-	}
-	for _, u := range urls {
-		resp, err := http.Post(u+"/roster", "application/json", bytes.NewReader(b))
-		if err != nil {
+	for _, u := range k.Copies[copy].URL {
+		if err := postRoster(u, d); err != nil {
 			return err
-		}
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if resp.StatusCode != 200 {
-			return fmt.Errorf("%s/roster: %d %s", u, resp.StatusCode, body)
 		}
 	}
 	return nil
 }
 
-// claim: secrets Reset by a fresh master key, naming the test's phone and root keys
-func (k *Kernel) claim() error {
-	master, _ := sig.NewSigner()
-	id, err := k.Secrets.Identity()
+func postRoster(u string, d sig.Doc) error {
+	b, _ := json.Marshal(map[string]sig.Doc{"roster": d})
+	resp, err := http.Post(u+"/roster", "application/json", bytes.NewReader(b))
 	if err != nil {
 		return err
 	}
-	plain := []byte(`{"format":"keys"}`)
-	sum := sha256.Sum256(plain)
-	st := map[string]any{"kind": "kernel-claim", "master": master.PublicKey(),
-		"secrets": map[string]string{"signingKey": id["signingKey"].(string), "agreementKey": id["agreementKey"].(string)},
-		"phone":   map[string]string{"signingKey": k.Phone.PublicKey(), "agreementKey": sig.B64.EncodeToString(k.PhoneAgree.PublicKey().Bytes())},
-		"root":    k.Root.PublicKey(), "bundleSha256": hex.EncodeToString(sum[:])}
-	sb, _ := json.Marshal(st)
-	ms, _ := master.Sign(sb)
-	bundle, err := secrets.SealTo(id["agreementKey"].(string), plain, "jarvis2/kernel-claim")
-	if err != nil {
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("%s/roster: %d %s", u, resp.StatusCode, body)
+	}
+	return nil
+}
+
+// PostRoster: the serving copy's roster to its components (and to extra, another secrets' URL, if not "")
+func (k *Kernel) PostRoster(extra string) error {
+	if err := k.SignRoster(k.Active); err != nil {
 		return err
 	}
-	_, err = k.Secrets.Claim(string(sb), ms, bundle)
-	return err
+	if extra != "" {
+		d, err := k.Roster()
+		if err != nil {
+			return err
+		}
+		return postRoster(extra, d)
+	}
+	return nil
+}
+
+// Flip: what the router does once the other copy's roster is signed: every serving component hands over (the
+// stateful ones' state sealed to the other copy), the other copy's notarizer, spawner and secrets take it, and the
+// other copy serves
+func (k *Kernel) Flip(t testing.TB) {
+	to := k.Other()
+	d, err := k.RosterFor(to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	from := k.Copies[k.Active]
+	handoffs := map[string]sig.Doc{}
+	for _, role := range Roles {
+		h, err := postTo(from.URL[role], "/handoff", map[string]any{"roster": d})
+		if err != nil {
+			t.Fatalf("%s's handoff: %v", role, err)
+		}
+		handoffs[role] = h
+	}
+	for _, role := range []string{"notarizer", "spawner", "secrets"} {
+		if _, err := postTo(k.Copies[to].URL[role], "/takeover", map[string]any{"handoff": handoffs[role]}); err != nil {
+			t.Fatalf("%s's takeover: %v", role, err)
+		}
+	}
+	k.Serve(to)
+}
+
+// postTo: one component's signed answer, or its error
+func postTo(u, path string, body any) (sig.Doc, error) {
+	b, _ := json.Marshal(body)
+	resp, err := http.Post(u+path, "application/json", bytes.NewReader(b))
+	if err != nil {
+		return sig.Doc{}, err
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(resp.Body)
+	var d sig.Doc
+	json.Unmarshal(out, &d)
+	if resp.StatusCode != 200 {
+		return d, fmt.Errorf("%s%s: HTTP %d %s", u, path, resp.StatusCode, d.Payload)
+	}
+	return d, nil
+}
+
+// identityAt: a component's identity in a copy (secrets: the keys it serves with now)
+func (k *Kernel) identityAt(copy, role string) sig.Identity {
+	return identityOf(k.Copies[copy].URL[role], role)
 }
 
 // RootTop: ⊤ on the sink, signed by the root key (what the app signs once after the claim)
@@ -389,20 +516,9 @@ func (f *FakeFly) Stop(id string) {
 	}
 }
 
-// Secrets: one more secrets on its own server (the next colour, blue/green), and its URL
-func (k *Kernel) Secrets2(t testing.TB) (*secrets.Secrets, string) {
-	sc, err := secrets.New(k.Root.PublicKey(), minter.NewClient(k.URL["minter"]))
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv := httptest.NewServer(secrets.Handler(sc))
-	k.servers = append(k.servers, srv)
-	return sc, srv.URL
-}
-
-// ClaimSeeded: a claim of sc with keys derived from seed (the same kit derives the same secrets), standby or not, by
-// the test's master key (one per Kernel)
-func (k *Kernel) ClaimSeeded(sc *secrets.Secrets, seed []byte, standby bool) error {
+// ClaimSeeded: a claim of sc with keys derived from seed (the same kit derives the same secrets), by the test's master
+// key (one per Kernel)
+func (k *Kernel) ClaimSeeded(sc *secrets.Secrets, seed []byte) error {
 	if k.master == nil {
 		k.master, _ = sig.NewSigner()
 	}
@@ -420,7 +536,7 @@ func (k *Kernel) ClaimSeeded(sc *secrets.Secrets, seed []byte, standby bool) err
 		"secrets": map[string]string{"signingKey": id["signingKey"].(string), "agreementKey": id["agreementKey"].(string)},
 		"phone":   map[string]string{"signingKey": k.Phone.PublicKey(), "agreementKey": sig.B64.EncodeToString(k.PhoneAgree.PublicKey().Bytes())},
 		"root":    k.Root.PublicKey(), "bundleSha256": hex.EncodeToString(sum[:]),
-		"identity": map[string]string{"signingKey": ds, "agreementKey": da}, "standby": standby}
+		"identity": map[string]string{"signingKey": ds, "agreementKey": da}}
 	sb, _ := json.Marshal(st)
 	ms, _ := k.master.Sign(sb)
 	sealed, err := secrets.SealTo(id["agreementKey"].(string), b, "jarvis2/kernel-claim")
@@ -431,9 +547,12 @@ func (k *Kernel) ClaimSeeded(sc *secrets.Secrets, seed []byte, standby bool) err
 	return err
 }
 
-// Restart: a stateless component (mover, merger, identity, gullible, minter) starts again as a restart does: fresh
-// keys, no roster, on a new server (URLFor names it from now on; secrets keeps calling the minter it was started with)
+// Restart: a stateless component (mover, merger, identity, gullible, minter) of the serving copy starts again as a
+// crash restart does: fresh keys, no roster, on a new server (URLFor names it from now on; secrets keeps calling the
+// minter it was started with). Its old keys go into the copy's next roster as retired.
 func (k *Kernel) Restart(t testing.TB, role string) {
+	cp := k.Copies[k.Active]
+	cp.retired = append(cp.retired, k.identityAt(k.Active, role))
 	c, err := sig.NewComponent(role)
 	if err != nil {
 		t.Fatal(err)
@@ -456,5 +575,5 @@ func (k *Kernel) Restart(t testing.TB, role string) {
 	}
 	srv := httptest.NewServer(s.Mux)
 	k.servers = append(k.servers, srv)
-	k.URL[role] = srv.URL
+	cp.URL[role] = srv.URL
 }

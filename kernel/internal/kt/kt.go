@@ -37,7 +37,7 @@ func New(t *testing.T) *World {
 	}
 	w.Phone, _ = sig.NewSigner()
 	w.Root, _ = sig.NewSigner()
-	w.Roster = SignRoster(t, w.Root, "blue", ids)
+	w.Roster = SignRoster(t, w.Root, sig.Roster{Copy: "blue", Members: ids})
 	w.Trust = sig.NewTrust(w.Root.PublicKey())
 	if err := w.Trust.Set(w.Roster, nil); err != nil {
 		t.Fatal(err)
@@ -50,9 +50,9 @@ func New(t *testing.T) *World {
 	return w
 }
 
-// SignRoster: the root key's roster of members for copy
-func SignRoster(t testing.TB, root *sig.Signer, copy string, members []sig.Identity) sig.Doc {
-	p, err := sig.RosterPayload(copy, members)
+// SignRoster: the root key's roster r
+func SignRoster(t testing.TB, root *sig.Signer, r sig.Roster) sig.Doc {
+	p, err := r.Payload()
 	if err != nil {
 		t.Fatal(err)
 	}

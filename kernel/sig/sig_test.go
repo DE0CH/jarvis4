@@ -3,6 +3,7 @@ package sig
 import (
 	"crypto/ecdh"
 	"crypto/rand"
+	"encoding/json"
 	"testing"
 )
 
@@ -54,7 +55,7 @@ func TestRoster(t *testing.T) {
 	}
 	sp, _ := NewComponent("spawner")
 	signed := func(by *Signer, copy string, m ...Identity) Doc {
-		p, err := RosterPayload(copy, m)
+		p, err := Roster{Copy: copy, Members: m}.Payload()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -88,4 +89,73 @@ func TestRoster(t *testing.T) {
 	if CheckIdentity(c2.Identity, "notary", tr) == nil {
 		t.Fatal("keys the roster doesn't name")
 	}
+}
+
+// a roster's retired keys: still the roster's for what they signed (CheckIdentity), never the member (Member, what is
+// sealed to); never secrets, never also a member, sorted; secretsBoot lets an empty secrets take the roster
+func TestRetired(t *testing.T) {
+	root, _ := NewSigner()
+	old, _ := NewComponent("mover")
+	now, _ := NewComponent("mover")
+	old2, _ := NewComponent("merger")
+	sec, _ := NewComponent("secrets")
+	boot, _ := NewComponent("secrets")
+	sign := func(r Roster) Doc {
+		p, err := r.Payload()
+		if err != nil {
+			t.Fatal(err)
+		}
+		s, _ := root.Sign([]byte(p))
+		return Doc{Payload: p, Sig: s}
+	}
+	r := Roster{Copy: "green", Members: []Identity{sec.Identity, now.Identity}, Retired: []Identity{old2.Identity, old.Identity}}
+	tr := NewTrust(root.PublicKey())
+	if err := tr.Set(sign(r), &now.Identity); err != nil {
+		t.Fatal(err)
+	}
+	if CheckIdentity(old.Identity, "mover", tr) != nil || CheckIdentity(now.Identity, "mover", tr) != nil {
+		t.Fatal("the member and the retired mover both count")
+	}
+	if CheckIdentity(old.Identity, "merger", tr) == nil {
+		t.Fatal("a retired mover passed as a merger")
+	}
+	if m, _ := tr.Member("mover"); m != now.Identity {
+		t.Fatal("Member is the current one only", m)
+	}
+	if k := tr.SigningKeys("mover"); len(k) != 2 || k[0] != now.Identity.SigningKey || k[1] != old.Identity.SigningKey {
+		t.Fatal(k)
+	}
+	if tr.Set(sign(r), &old.Identity) == nil {
+		t.Fatal("a retired component took the roster as its own")
+	}
+	bad := func(what string, x Roster) {
+		t.Helper()
+		p, _ := x.Payload()
+		s, _ := root.Sign([]byte(p))
+		if _, err := OpenRoster(Doc{Payload: p, Sig: s}, root.PublicKey()); err == nil {
+			t.Fatal(what)
+		}
+	}
+	bad("secrets retired", Roster{Copy: "blue", Members: []Identity{now.Identity}, Retired: []Identity{sec.Identity}})
+	bad("a member also retired", Roster{Copy: "blue", Members: []Identity{now.Identity}, Retired: []Identity{now.Identity}})
+	bad("secretsBoot not a secrets", Roster{Copy: "blue", Members: []Identity{now.Identity}, SecretsBoot: &old.Identity})
+	// unsorted: written by hand (Payload sorts)
+	p := `{"kind":"kernel-roster","copy":"blue","members":[` + js(now.Identity) + `],"retired":[` + js(old.Identity) + `,` + js(old2.Identity) + `]}`
+	ps, _ := root.Sign([]byte(p))
+	if _, err := OpenRoster(Doc{Payload: p, Sig: ps}, root.PublicKey()); err == nil {
+		t.Fatal("unsorted retired")
+	}
+	// an empty secrets takes a roster naming it as secretsBoot (the derived secrets is the member)
+	rb := Roster{Copy: "green", Members: []Identity{sec.Identity, now.Identity}, SecretsBoot: &boot.Identity}
+	if err := NewTrust(root.PublicKey()).Set(sign(rb), &boot.Identity); err != nil {
+		t.Fatal(err)
+	}
+	if NewTrust(root.PublicKey()).Set(sign(rb), &old.Identity) == nil {
+		t.Fatal("secretsBoot let a mover in")
+	}
+}
+
+func js(i Identity) string {
+	b, _ := json.Marshal(i)
+	return string(b)
 }

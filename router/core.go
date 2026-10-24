@@ -34,6 +34,8 @@ type CoreClient struct {
 	// onLineSeq: every answer's X-Line-Seq (linestate.go keeps the core's line state when it moved), called before
 	// the answer goes back to the caller
 	onLineSeq func(int)
+	// gate: held around every call, its answer the release (the kernel's copy flip, kernel.go)
+	gate func() func()
 }
 
 // URL: the core this client talks to now
@@ -95,6 +97,9 @@ func (c *CoreClient) rawNoHook(method, path string, body []byte) (int, []byte, e
 }
 
 func (c *CoreClient) raw(method, path string, body []byte) (int, []byte, int, error) {
+	if c.gate != nil {
+		defer c.gate()()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), coreCallTimeout(path))
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, method, strings.TrimSuffix(c.URL(), "/")+path, bytes.NewReader(body))

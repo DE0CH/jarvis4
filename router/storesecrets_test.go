@@ -10,8 +10,8 @@ import (
 	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
-// kernelStoreRouter: a box with no core (NO_CORE=1, the core's URL unreachable) whose kernel serves secrets-blue
-// and secrets-green with the core's store routes (kernel/secrets/http.go); returns both colours' fakes
+// kernelStoreRouter: a box with no core (NO_CORE=1, the core's URL unreachable) whose kernel copies' secrets
+// (secrets-blue, secrets-green) answer the core's store routes (kernel/secrets/http.go); returns both copies' fakes
 func kernelStoreRouter(t *testing.T) (*Router, *storeCore, *storeCore) {
 	t.Helper()
 	r, _, _ := storeRouter(t)
@@ -65,7 +65,7 @@ func TestStoresGoToSecretsWithNoCore(t *testing.T) {
 		t.Fatalf("secrets got %v", blue.writes)
 	}
 	// a flip: every later store call goes to the other colour
-	r.st.Do(func(d *persisted) { d.KernelSecrets = "green" })
+	r.st.Do(func(d *persisted) { d.KernelCopy = "green" })
 	if code, _ := appDo(t, r, "POST", "/setup/stores/infra/keys/K2", writeBody("another")); code != 200 || len(green.writes) != 1 || len(blue.writes) != 1 {
 		t.Fatalf("after the flip: %d blue %d green %d", code, len(blue.writes), len(green.writes))
 	}

@@ -1182,6 +1182,24 @@ and end are lifecycles the router manages, each certified by succession certs:
 **The iPhone app** shows what Deyao signs: known strings readably, unknown JSON pretty-printed, anything else raw; a
 separate warning screen for the root key.
 
+**Two kernel copies, and a release without an interruption** (Deyao, 2026-10-24; DECISIONS 233, docs/PLAN-cluster.md
+"Releases: the copy flip"). Every component makes fresh RAM-only keys at start, which the root key's roster vouches
+for. So the kernel runs as two copies, blue and green, each with all nine components, its own volumes and its own
+roster; one serves, and a release lands only on the other. That copy's roster names its fresh keys, the serving secrets
+(the keys the kit derives, the same in both copies), its own empty secrets as `secretsBoot`, and every serving member
+as **retired**: retired keys sign nothing new, but what they signed while they served still counts — a grant by a
+retired mover or merger opens (gv.Open), a cert, a notarization or a handoff by a retired member is that member's. Once
+Deyao signs that roster (the release's one Face ID), every serving component hands over and **freezes** in the same
+step: the notarizer's defined and succeeded sources, the spawner's machine records, kill certs and Fly token, and
+secrets' seed, claim keys and final line state (the open unlocks included) are sealed to the agreement key the new
+roster names for their role and signed by the component; the new copy's component takes a handoff only for exactly
+the roster it holds, sealed to its own key and signed by the member of its role that roster retires. Then every call
+goes to the new copy; live sessions keep their grants and documents (the machine checks them against the new copy's
+roster, which the router serves root-signed). A frozen component serves nothing until a later flip hands state back
+to it, and a component that took a handoff (kept on its volume) takes no other, so no state goes on in two places. A
+crash restart (not a release) needs a re-signed roster, which names the restarted component's old keys as retired, so
+live grants keep opening there too.
+
 **Out of scope:** messages between sessions (the kernel guards only the entry point).
 
 ## Open

@@ -66,7 +66,18 @@ let members = [KernelRoster.Member(role: "spawner", signingKey: sp.signingKey, a
 let bootPayload = KernelRoster.payload(copy: "blue", members: members)
 struct In: Encodable { let copy: String; let members: [KernelRoster.Member] }
 let goPayload = goSide([], json(In(copy: "blue", members: members)))
-check(goPayload.0 == 0 && goPayload.1 == bootPayload, "the roster's payload is byte for byte Go's RosterPayload (members sorted by role)")
+check(goPayload.0 == 0 && goPayload.1 == bootPayload, "the roster's payload is byte for byte Go's Roster.Payload (members sorted by role)")
+// retired keys and secretsBoot (the copy a release landed on: docs/PLAN-cluster.md "Releases: the copy flip")
+let retiredM = [KernelRoster.Member(role: "mover", signingKey: sp.agreementKey, agreementKey: sp.signingKey),
+                KernelRoster.Member(role: "merger", signingKey: id0.agreementKey, agreementKey: id0.signingKey)]
+let bootM = KernelRoster.Member(role: "secrets", signingKey: sp.agreementKey, agreementKey: id0.agreementKey)
+struct InFull: Encodable { let copy: String; let members: [KernelRoster.Member]; let retired: [KernelRoster.Member]; let secretsBoot: KernelRoster.Member }
+let fullPayload = KernelRoster.payload(copy: "green", members: members, retired: retiredM, secretsBoot: bootM)
+let goFull = goSide([], json(InFull(copy: "green", members: members, retired: retiredM, secretsBoot: bootM)))
+check(goFull.0 == 0 && goFull.1 == fullPayload, "…and with retired keys (sorted by role, then key) and secretsBoot")
+check((try? KernelRoster.parse(fullPayload)).map { $0.retired.count == 2 && $0.secretsBoot == bootM } == true, "…which read back as such")
+check(throwsErr { _ = try KernelRoster.parse(KernelRoster.payload(copy: "green", members: members, retired: [KernelRoster.Member(role: "secrets", signingKey: sp.agreementKey, agreementKey: sp.signingKey)])) },
+      "…but secrets is never retired")
 let setup = P256.Signing.PrivateKey()
 let setupPub = setup.publicKey.x963Representation.base64EncodedString()
 let filed = KernelRoster.Pending(copy: "blue", payload: bootPayload, setupSig: try! setup.signature(for: Data(bootPayload.utf8)).derRepresentation.base64EncodedString())
@@ -129,6 +140,20 @@ check(signedR.member("spawner") == pending!.member("spawner") && signedR.member(
 check(throwsErr { try KernelSetup.signable(pending!, pinned: derived, unclaimed: []) }, "the root key won't sign a roster naming secrets' old boot keys")
 check(!throwsErr { try KernelSetup.signable(signedR, pinned: derived, unclaimed: []) }, "…and signs the one with the keys it pinned")
 check(!throwsErr { try KernelSetup.signable(pending!, pinned: nil, unclaimed: [c0!.keys]) }, "…or one naming an empty secrets")
+// the other copy's roster, which takes over from signedR: the pinned secrets, an empty one as secretsBoot, every other
+// serving member retired
+let freshS = P256.Signing.PrivateKey(), freshA = P256.KeyAgreement.PrivateKey()
+let newSp = KernelRoster.Member(role: "spawner", signingKey: freshS.publicKey.x963Representation.base64EncodedString(), agreementKey: freshA.publicKey.x963Representation.base64EncodedString())
+let oldSp = signedR.members.first { $0.role == "spawner" }!
+let derivedM = KernelRoster.Member(role: "secrets", signingKey: derived.signingKey, agreementKey: derived.agreementKey)
+let bootK = KernelRoster.Member(role: "secrets", signingKey: c0!.keys.signingKey, agreementKey: c0!.keys.agreementKey)
+let takeover = KernelRoster.Roster(copy: "green", members: [derivedM, newSp], retired: [oldSp], secretsBoot: bootK)
+check(!throwsErr { try KernelSetup.signable(takeover, pinned: derived, unclaimed: [c0!.keys], current: signedR) }, "the root key signs the other copy's roster that takes over")
+check(throwsErr { try KernelSetup.signable(KernelRoster.Roster(copy: "green", members: [derivedM, newSp], secretsBoot: bootK), pinned: derived, unclaimed: [c0!.keys], current: signedR) },
+      "…not one that doesn't retire the serving spawner")
+check(throwsErr { try KernelSetup.signable(KernelRoster.Roster(copy: "green", members: [derivedM, newSp], retired: [oldSp]), pinned: derived, unclaimed: [c0!.keys], current: signedR) },
+      "…nor one naming no empty secrets to take over")
+check(throwsErr { try KernelSetup.signable(takeover, pinned: derived, unclaimed: [], current: signedR) }, "…nor one whose secretsBoot isn't an empty secrets")
 let rDoc = rootSigned(signedR.payload)
 let goOpen = goSide(["-open", rootPub], json(rDoc))
 check(goOpen.0 == 0, "Go's OpenRoster takes the app's payload and the root key's DER signature")

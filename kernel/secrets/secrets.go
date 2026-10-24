@@ -65,13 +65,17 @@ type Secrets struct {
 	repoOwner    map[string]string
 	repoKeyID    map[string]int64 // a deploy-key store → the id GitHub gave its key (what a remove deletes)
 
-	// continuity.go: the state key, the newest state's seq and hash and the sealed document; the mode (blue/green)
-	lineKey     []byte
-	lineSeq     int
-	lineHash    string
-	lineDoc     *LineStateDoc
-	mode        string
-	standbyFrom int
+	// continuity.go: the state key, the newest state's seq and hash and the sealed document; the copy flip: the kit's
+	// seed (what the other copy's secrets derives these keys from), the mode, the handoff made and the one taken
+	lineKey  []byte
+	lineSeq  int
+	lineHash string
+	lineDoc  *LineStateDoc
+	seed     []byte
+	mode     string
+	handedTo string
+	handoff  *SignedDoc
+	took     string
 
 	minter Minter
 	now    func() time.Time
@@ -145,7 +149,7 @@ func (c *Secrets) Identity() (map[string]any, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	st := map[string]any{"kind": "secrets-state", "master": c.MasterKey, "phone": nil, "root": c.root, "lineSeq": c.lineSeq,
-		"derived": c.lineKey != nil, "serving": map[string]string{modeServing: "serving", modeStandby: "standby", modeHandedOff: "handed-off"}[c.mode]}
+		"derived": c.lineKey != nil, "serving": map[string]string{modeServing: "serving", modeHandedOff: "handed-off"}[c.mode]}
 	if c.phoneSigning != "" {
 		st["phone"] = map[string]string{"signingKey": c.phoneSigning, "agreementKey": c.phoneAgreement}
 	}
@@ -192,7 +196,6 @@ type claimStatement struct {
 		SigningKey   string `json:"signingKey"`
 		AgreementKey string `json:"agreementKey"`
 	} `json:"identity,omitempty"`
-	Standby bool `json:"standby,omitempty"`
 }
 
 // FlyStore: the old core's own Fly token store, a name secrets never holds (storeName refuses it; the spawner gets
@@ -296,7 +299,7 @@ func (c *Secrets) Claim(statement, masterSig string, bundle Sealed) (SignedDoc, 
 			}
 			line = &ls
 		}
-	} else if st.Identity != nil || b.LineState != nil || st.Standby {
+	} else if st.Identity != nil || b.LineState != nil {
 		return SignedDoc{}, fail(400, "an identity or a state comes with a secretsSeed")
 	}
 	c.MasterKey, c.root = st.Master, st.Root
@@ -312,20 +315,15 @@ func (c *Secrets) Claim(statement, masterSig string, bundle Sealed) (SignedDoc, 
 	restored := []string{}
 	if dk != nil {
 		c.signer, c.agreement, c.lineKey = dk.signer, dk.agreement, dk.state
+		c.seed, _ = b64.DecodeString(b.SecretsSeed)
 		if line != nil {
 			restored = c.restoreLine(*line, line.Final)
-		}
-		if st.Standby && (line == nil || !line.Final) {
-			c.mode = modeStandby
-			if line != nil {
-				c.standbyFrom = line.Seq
-			}
 		}
 		c.lineHash, c.lineDoc = "", nil
 	}
 	c.logf("claimed: master key, phone and root keys, %d stores, derived keys %v, state %v (deploy-key stores back: %v)",
 		len(c.stores), dk != nil, line != nil, restored)
-	out := map[string]any{"kind": "claimed", "stores": len(c.stores), "derived": dk != nil, "standby": c.mode == modeStandby}
+	out := map[string]any{"kind": "claimed", "stores": len(c.stores), "derived": dk != nil}
 	if line != nil {
 		out["lineSeq"], out["repoStores"] = line.Seq, restored
 	}

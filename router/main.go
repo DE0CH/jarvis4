@@ -19,7 +19,7 @@ import (
 type Config struct {
 	CoreURL         string            // the core, inside the cluster
 	NoCore          bool              // NO_CORE=1: this box runs no core, only the kernel (Jarvis 4); GET /api/kernel says so
-	KernelURL       string            // the kernel's components, %s = the role (KERNEL_URL; "" = no kernel on this box)
+	KernelURL       string            // the kernel's components, %s = the Deployment "<role>-<copy>" (KERNEL_URL; "" = no kernel on this box)
 	DataDir         string            // snapshots and the other files (a volume); the records are in Postgres (statedb.go)
 	WebDir          string            // the web page (expo export), served at /
 	SessionImage    string            // the image new sessions get (a tag; resume pins what Fly reported)
@@ -118,6 +118,7 @@ func main() {
 	go r.jobsLoop(5 * time.Second)           // jobs.go: a job whose holder died is carried on here
 	go r.rosterLoop(time.Minute)             // roster.go: a restarted component gets the roster again, or it is stale
 	go r.kernelHealthLoop(kernelHealthEvery) // kernelhealth.go: what the app warns about on a box with no core
+	go r.kernelFlipLoop()                    // kernelflip.go: a copy flip that didn't finish (a restart mid-flip) goes on
 	drainMax, _ := strconv.Atoi(env("DRAIN_SECONDS", "1740"))
 	go r.nextCoreLoop(30*time.Second, time.Duration(drainMax)*time.Second)
 	// two listeners, both in the pod network: the public one (cloudflared → app, web, setup; GET /readyz for the

@@ -1,7 +1,7 @@
 #!/bin/bash
 # e2e-kernel.sh — a kernel line's life on real Fly machines, from a session (docs/PLAN-grants.md stage 9): builds the
 # eight kernel components and the router, runs them here with a throwaway box key (each component on its own loopback
-# address, named <role>.kernel.e2e in the router's /etc/hosts, KERNEL_URL=http://%s.kernel.e2e:8080), a throwaway
+# address, named <role>-blue.kernel.e2e in the router's /etc/hosts, KERNEL_URL=http://%s.kernel.e2e:8080), a throwaway
 # WireGuard peer of the Fly org (jarvis2-e2e-kernel) and the session image, so the machines the spawner makes reach
 # this router over Fly's private network as they reach the box's. e2e/kernel plays the iPhone (e2e/kernel/main.go).
 # Leaves nothing behind but the logs (in $E2E_LOGS, default /tmp/jarvis2-e2e-kernel-logs): every machine naming this
@@ -62,7 +62,7 @@ for r in notary notarizer mover merger spawner identity gullible minter secrets;
   mkdir -p "$W/k-$r"
   extra=""; [ "$r" = spawner ] && extra="KERNEL_MACHINE_URL=$MURL"; [ "$r" = secrets ] && extra="KERNEL_MINTER_URL=http://127.0.1.8:8080"  # the minter is the 8th
   env KERNEL_BOX_KEY="$W/box-key.pem" KERNEL_DATA="$W/k-$r" KERNEL_ADDR="127.0.1.$n:8080" $extra "$W/$r" > "$W/kernel-$r.log" 2>&1 & PIDS+=($!)
-  echo "127.0.1.$n $r.kernel.e2e" >> "$W/hosts"
+  echo "127.0.1.$n $r-blue.kernel.e2e" >> "$W/hosts"  # the router calls a Deployment "<role>-<copy>": this run is copy blue
   n=$((n+1))
 done
 # the old core beside it (the router still needs one)

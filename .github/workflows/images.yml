@@ -188,17 +188,20 @@ jobs:
             f=k8s/cluster/router/session-image-sigs.txt
             grep -q "^$S " "$f" || echo "$S $SIG" >> "$f"
           fi
-          # the kernel: a component restart stales the root-signed roster (fresh RAM-only keys) and locks Jarvis 4 until
-          # Deyao re-signs it, so a component moves only when the files its binary is built from changed since the build
-          # it pins AND a commit after that carries Deyao's `Kernel-Release: <why> (Deyao, YYYY-MM-DD)` trailer; never the
-          # secrets that serves (active-secrets.txt). Changed inputs with no release: this job fails after the router and
-          # session pins are pushed, and no kernel Deployment moves (infra/kernel-pin.py; docs/RUNBOOK.md "A kernel release")
+          # the kernel: a release lands only on the copy that doesn't serve (active-kernel.txt names the one that does),
+          # and only when the files a component's binary is built from changed since the build the serving copy pins AND
+          # a commit after that carries Deyao's `Kernel-Release: <why> (Deyao, YYYY-MM-DD)` trailer: the changed
+          # components get this build, the rest the serving copy's images, the whole copy replicas 1 and the hold
+          # `jarvis2/kernel-release: pending`, which also stops the next release until the flip is committed. Changed
+          # inputs with no release, or a release while one is in flight: this job fails after the router and session pins
+          # are pushed, and no kernel Deployment moves (infra/kernel-pin.py; docs/RUNBOOK.md "A kernel release")
           krc=0
           if [ -f "$KF" ]; then
-            kmove="$(python3 infra/kernel-pin.py plan "$KF" "$(tr -d '[:space:]' < k8s/cluster/kernel/active-secrets.txt)" "$GITHUB_SHA")" || krc=1
+            KA="$(tr -d '[:space:]' < k8s/cluster/kernel/active-kernel.txt)"
+            kmove="$(python3 infra/kernel-pin.py plan "$KF" "$KA" "$GITHUB_SHA")" || krc=1
             if [ "$krc" = 0 ] && [ -n "$kmove" ]; then
               K="$(infra/image-digest.sh "ghcr.io/de0ch/jarvis4-kernel:$T")"
-              python3 infra/kernel-pin.py apply "$KF" "$K" $kmove
+              python3 infra/kernel-pin.py apply "$KF" "$KA" "$K" $kmove
             fi
           fi
           # the base this run built: the session image above stands on it, so session-image/Dockerfile's BASE moves to it

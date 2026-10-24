@@ -16,6 +16,6 @@ jobs:
           # every image by tag@digest, except the kernel and router before their first pin (":latest")
           bad="$(grep -E '^\s+image: ' /tmp/cluster.yaml | grep -vE '@sha256:[0-9a-f]{64}' | grep -vE 'jarvis4-(kernel|router):latest' || true)"
           [ -z "$bad" ] || { echo "not pinned by digest:"; echo "$bad"; exit 1; }
-          if [ -f k8s/cluster/kernel/active-secrets.txt ]; then
-            grep -Eqx 'blue|green' k8s/cluster/kernel/active-secrets.txt || { echo "active-secrets.txt names no colour"; exit 1; }
+          if [ -f k8s/cluster/kernel/active-kernel.txt ]; then
+            grep -Eqx 'blue|green' k8s/cluster/kernel/active-kernel.txt || { echo "active-kernel.txt names no kernel copy"; exit 1; }
           fi

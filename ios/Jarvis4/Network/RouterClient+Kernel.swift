@@ -6,7 +6,11 @@ import Foundation
 
 extension RouterClient {
   struct KernelStatus: Decodable {
-    struct Roster: Decodable { var state: String? = nil; var rootKey: Bool? = nil; var pending: Bool? = nil; var stale: [String]? = nil }
+    /// serving: the kernel copy that serves; next: the other copy's roster while it takes over (a release)
+    struct Roster: Decodable {
+      struct Next: Decodable { let copy: String }
+      var state: String? = nil; var rootKey: Bool? = nil; var pending: Bool? = nil; var stale: [String]? = nil; var serving: String? = nil; var next: Next? = nil
+    }
     let configured: Bool; let serves: Bool; let root: Bool; var roster: Roster? = nil
     /// whether this box also runs the old core (Jarvis 2's routers report it; Jarvis 4's has none)
     var core: Bool { coreField ?? true }
@@ -15,11 +19,9 @@ extension RouterClient {
   }
   func kernelStatus() async throws -> KernelStatus { try await json("GET", "api/kernel") }
 
-  /// `next`: the next secrets (blue/green, router/kernel.go): Recover alongside
-  private static func q(_ next: Bool) -> String { next ? "?secrets=next" : "" }
   /// secrets' identity, checked against the anchors (KernelSetup.check)
-  func kernelIdentity(_ anchors: KernelSetup.Anchors, next: Bool = false) async throws -> (keys: PublicKeys, state: KernelSetup.State) {
-    try KernelSetup.check(try await json("GET", "api/kernel/secrets/identity" + Self.q(next), as: KernelSetup.Identity.self), anchors)
+  func kernelIdentity(_ anchors: KernelSetup.Anchors) async throws -> (keys: PublicKeys, state: KernelSetup.State) {
+    try KernelSetup.check(try await json("GET", "api/kernel/secrets/identity", as: KernelSetup.Identity.self), anchors)
   }
 
   // ---- the roster ----
@@ -61,9 +63,9 @@ extension RouterClient {
     return try? JSONDecoder().decode(CoreSetup.LineStateDoc.self, from: data)
   }
   /// the claim (KernelSetup.claim's body); its answer is checked against the keys the kit derives
-  func kernelClaim(_ body: [String: Any], derived: PublicKeys, next: Bool = false) async throws {
+  func kernelClaim(_ body: [String: Any], derived: PublicKeys) async throws {
     struct C: Decodable { let kind: String }
-    let d = try await json("POST", "api/kernel/secrets/claim" + Self.q(next), body, as: SignedDoc.self)
+    let d = try await json("POST", "api/kernel/secrets/claim", body, as: SignedDoc.self)
     guard (try CoreCrypto.decode(d, by: derived.signingKey, as: C.self, what: "secrets' claim answer")).kind == "claimed" else { throw TrustError.stale("claim") }
   }
 

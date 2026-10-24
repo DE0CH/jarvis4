@@ -18,12 +18,7 @@ func kernelVersionsRouter(t *testing.T) (*Router, *kerneltest.Kernel, *fakeBucke
 	k := kerneltest.Start(t, nil)
 	r.core = &CoreClient{base: "http://core.invalid:8090", http: http.DefaultClient}
 	r.cfg.NoCore = true
-	r.wireKernel(&KernelClient{url: func(role string) string {
-		if role == "secrets-blue" {
-			return k.URLFor("secrets")
-		}
-		return k.URLFor(role)
-	}, http: http.DefaultClient, ids: map[string]sig.Identity{}})
+	r.wireKernel(&KernelClient{url: k.URLFor, http: http.DefaultClient, ids: map[string]sig.Identity{}})
 	return r, k, fb
 }
 

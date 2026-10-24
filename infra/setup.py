@@ -36,16 +36,23 @@ both). Values never print.
   infra/setup.py kernel-root-key       the root key the Jarvis 4 app registered with the router (Settings → Kernel):
                                        written to keys/root.pub and k8s/cluster/kernel/root.pub (the ConfigMap the
                                        kernel's components check their roster with, KERNEL_ROOT); commit both
-  infra/setup.py kernel-roster [--copy blue|green] [--secrets blue|green]
-                                       the kernel's roster (docs/PLAN-cluster.md "The roster"): every component's
-                                       GET /identity read through kernel-id.deyaochen.com (KERNEL_ID_ACCESS_ID/SECRET),
-                                       the members printed, sig.RosterPayload made byte for byte, signed with the setup
-                                       key and filed with the router; Deyao signs it with the root key in the app.
-                                       --secrets: the secrets colour the roster names (default: the one that serves)
+  infra/setup.py kernel-roster [--copy blue|green]
+                                       a kernel copy's roster (docs/PLAN-cluster.md "The roster", "Releases: the copy
+                                       flip"; default: the copy that serves): every component's GET /identity read
+                                       through kernel-id.deyaochen.com (KERNEL_ID_ACCESS_ID/SECRET), the serving roster's
+                                       keys it no longer names as retired (all of them for the other copy; a restarted
+                                       component's old keys for the serving one), with the retired keys a line still
+                                       needs (the router's retiredInUse), and for the other copy the serving secrets as
+                                       its secrets and its own empty secrets as secretsBoot; printed, sig.Roster.Payload
+                                       made byte for byte, signed with the setup key and filed with the router; Deyao
+                                       signs it with the root key in the app. The other copy's roster, once signed,
+                                       starts the copy flip (router/kernelflip.go)
+  infra/setup.py kernel-flipped        after a copy flip: k8s/cluster/kernel/active-kernel.txt names the copy that
+                                       serves now, its Deployments' release hold goes, the other copy goes to replicas 0
+                                       (infra/kernel-pin.py flipped); commit and push
   infra/setup.py kernel-fly-token FILE the kernel's spawner's Fly token (FILE: infra/fly-token.sh's), sealed to the
                                        spawner's key as the root key's current roster names it (checked against
                                        keys/root.pub); again after every spawner restart (and its new roster)
-  infra/setup.py kernel-secrets-flip   the next kernel secrets (Recovered alongside in the app) serves from now on
   infra/setup.py backup-core FILE      the core's Fly token, FLY_API_TOKEN from FILE (infra/fly-token.sh):
                                        sent to the core sealed to its key, and backed up as the `core` store
   infra/setup.py claude-accounts       the router's Claude accounts (no secrets): per account its email, expiry,
@@ -92,7 +99,7 @@ works only once the core is set up. A store the core never created (no `create` 
 On a box with no core (the cluster: NO_CORE=1) the router sends every store call to the kernel's serving secrets,
 which has the core's store routes; its keys are checked against the root key's roster (keys/root.pub) instead.
 """
-import base64, hashlib, json, os, sys, time, urllib.error, urllib.parse, urllib.request
+import base64, hashlib, json, os, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -533,10 +540,9 @@ def main():
         write_root_key(k)
         print(f"ok: root key {k[:16]}… written to keys/root.pub and k8s/cluster/kernel/root.pub: commit and push both")
     elif cmd == "kernel-roster":
-        kernel_roster(opt(args, "--copy", "blue"), opt(args, "--secrets"))
-    elif cmd == "kernel-secrets-flip":
-        # blue/green (router/kernel.go): the next secrets, Recovered alongside, serves from now on
-        print(json.dumps(call("POST", "/setup/kernel/secrets/flip", {})))
+        kernel_roster(opt(args, "--copy"))
+    elif cmd == "kernel-flipped":
+        kernel_flipped()
     elif cmd == "claude-login":
         print(json.dumps(call("GET", "/setup/claude-login"), indent=1))
     elif cmd == "claude-accounts":
@@ -606,21 +612,34 @@ def go_json(s):
     return out
 
 
-def roster_payload(copy, members):
-    """sig.RosterPayload byte for byte: json.Marshal(Roster{Kind, Copy, Members sorted by role}), the struct's field
-    order, no spaces"""
+def roster_payload(copy, members, retired=(), boot=None):
+    """sig.Roster.Payload byte for byte: json.Marshal(Roster{Kind, Copy, Members sorted by role, Retired sorted by role
+    and signing key (omitted when none), SecretsBoot (omitted when none)}), the struct's field order, no spaces"""
+    one = lambda m: "{" + ",".join(f'"{k}":{go_json(m[k])}' for k in ("role", "signingKey", "agreementKey")) + "}"
     ms = sorted(members, key=lambda m: m["role"].encode())
-    mem = ",".join("{" + ",".join(f'"{k}":{go_json(m[k])}' for k in ("role", "signingKey", "agreementKey")) + "}" for m in ms)
-    return '{"kind":"kernel-roster","copy":' + go_json(copy) + ',"members":[' + mem + "]}"
+    out = '{"kind":"kernel-roster","copy":' + go_json(copy) + ',"members":[' + ",".join(one(m) for m in ms) + "]"
+    rs = sorted(retired, key=lambda m: (m["role"].encode(), m["signingKey"].encode()))
+    if rs:
+        out += ',"retired":[' + ",".join(one(m) for m in rs) + "]"
+    if boot:
+        out += ',"secretsBoot":' + one(boot)
+    return out + "}"
 
 
 def roster_members(doc):
     """role → member of a roster the root key (keys/root.pub) signed ({} when there is none)"""
+    return roster_open(doc).get("members", {})
+
+
+def roster_open(doc):
+    """a roster the root key (keys/root.pub) signed: {"copy", "members": role → member, "retired": [member…]} ({} when
+    there is none)"""
     if not doc:
         return {}
     if not _verify(keyfile("root.pub"), doc["payload"].encode(), doc["sig"]):
         raise SystemExit("the router's current roster isn't signed by the root key (keys/root.pub)")
-    return {m["role"]: m for m in json.loads(doc["payload"])["members"]}
+    r = json.loads(doc["payload"])
+    return {"copy": r["copy"], "members": {m["role"]: m for m in r["members"]}, "retired": r.get("retired") or []}
 
 
 def kernel_id(path):
@@ -644,28 +663,64 @@ def component_identity(dep):
             raise SystemExit(f"{dep}: not a secrets identity signed with its own key")
         return m, json.loads(st["payload"])
     m = json.loads(d["payload"])
-    if m.get("role") != dep or not _verify(m.get("signingKey") or "", d["payload"].encode(), d.get("sig") or ""):
-        raise SystemExit(f"{dep}: not a {dep} identity signed with its own key")
+    role = dep.rsplit("-", 1)[0]
+    if m.get("role") != role or not _verify(m.get("signingKey") or "", d["payload"].encode(), d.get("sig") or ""):
+        raise SystemExit(f"{dep}: not a {role} identity signed with its own key")
     return {k: m[k] for k in ("role", "signingKey", "agreementKey")}, None
 
 
-def kernel_roster(copy, colour=None):
+def kernel_roster(copy=None):
+    cur = call("GET", "/setup/kernel/roster")
+    serving = cur["serving"]
+    copy = copy or serving
     if copy not in ("blue", "green"):
         raise SystemExit("--copy: blue or green")
-    cur = call("GET", "/setup/kernel/roster")
-    colour = colour or cur["secretsServing"]
-    if colour not in ("blue", "green"):
-        raise SystemExit("--secrets: blue or green")
-    members = []
-    for dep in KERNEL_ROLES + ["secrets-" + colour]:
+    now = roster_open(cur.get("current"))
+    takeover = bool(now) and copy != serving  # the other copy: it takes over from the serving one
+    members, boot = [], None
+    for role in KERNEL_ROLES + ["secrets"]:
+        dep = f"{role}-{copy}"
         m, state = component_identity(dep)
+        if role == "secrets" and takeover:
+            if state.get("master"):
+                raise SystemExit(f"{dep} is set up: the copy that takes over starts with an empty secrets (its release restarts it)")
+            boot, m = m, now["members"]["secrets"]  # it serves with the keys the kit derives: the serving secrets'
         members.append(m)
-        extra = f" (secrets-{colour}: {state.get('serving')}, master {'set' if state.get('master') else 'none'})" if state else ""
+        extra = f" ({dep}: {state.get('serving')}, master {'set' if state.get('master') else 'none'})" if state else ""
         print(f"  {m['role']:10} signing {m['signingKey'][:24]}…  agreement {m['agreementKey'][:24]}…{extra}")
-    payload = roster_payload(copy, members)
+    keys = {m["signingKey"] for m in members}
+    # the serving roster's keys this one no longer names (every one for the other copy; a restarted component's old
+    # keys for the serving one), and its retired keys a line still holds something signed by
+    retired = [m for r, m in now.get("members", {}).items() if r != "secrets" and m["signingKey"] not in keys]
+    still = [m for m in (cur.get("retiredInUse") or []) if m in now.get("retired", [])]  # only keys the root key named
+    for m in still:
+        if m not in retired and m["signingKey"] not in keys:
+            retired.append(m)
+    for m in retired:
+        print(f"  {m['role']:10} signing {m['signingKey'][:24]}…  (retired)")
+    if boot:
+        print(f"  {'secrets':10} signing {boot['signingKey'][:24]}…  (empty, takes over: secretsBoot)")
+    payload = roster_payload(copy, members, retired, boot)
     setup_sig = base64.b64encode(setup_key().sign(payload.encode(), ec.ECDSA(hashes.SHA256()))).decode()
     out = call("POST", "/setup/kernel/roster", {"copy": copy, "payload": payload, "setupSig": setup_sig})
-    print(f"ok: roster {out['id'][:16]}… (copy {copy}, secrets-{colour}) filed; Deyao signs it in the app: Settings → Kernel → Sign roster")
+    then = " (signed, the router flips to it by itself; then infra/setup.py kernel-flipped)" if takeover else ""
+    print(f"ok: roster {out['id'][:16]}… (copy {copy}, {len(retired)} retired) filed; Deyao signs it in the app: Settings → Kernel → Sign roster{then}")
+
+
+def kernel_flipped():
+    """after a copy flip: active-kernel.txt names the serving copy, its hold goes, the other copy goes to replicas 0"""
+    cur = call("GET", "/setup/kernel/roster")
+    if cur.get("flip"):
+        raise SystemExit(f"the flip to {cur['flip']['to']} isn't done ({cur['flip'].get('waiting') or 'under way'}): nothing changed")
+    serving = cur["serving"]
+    if roster_open(cur.get("current")).get("copy") != serving:
+        raise SystemExit("the router's current roster isn't the serving copy's: nothing changed")
+    kd = os.path.join(ROOT, "k8s", "cluster", "kernel")
+    subprocess.run([sys.executable, os.path.join(ROOT, "infra", "kernel-pin.py"), "flipped", os.path.join(kd, "kernel.yaml"), serving], check=True)
+    with open(os.path.join(kd, "active-kernel.txt"), "w") as f:
+        f.write(serving + "\n")
+    print(f"ok: {serving} serves: active-kernel.txt, its holds deleted and {'green' if serving == 'blue' else 'blue'} at replicas 0 in "
+          "k8s/cluster/kernel/: commit and push")
 
 
 def parse_item(spec):

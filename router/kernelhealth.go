@@ -2,13 +2,16 @@ package main
 
 // The kernel's health, for a router that runs no core (NO_CORE=1, Jarvis 4): what the app's Sessions page warns about
 // in place of the old "Core not answering". Every replica checks it on its own (read-only: GET /roster on each
-// component), every kernelHealthEvery, and GET /api/state carries the last answer:
+// component of both copies), every kernelHealthEvery, and GET /api/state carries the last answer:
 //
-//	"kernel": {"checked": true, "healthy": false, "problems": ["notary not answering", …], "at": …}
+//	"kernel": {"checked": true, "healthy": false, "problems": ["notary-blue not answering", …], "at": …,
+//	           "copies": {"blue": {"serving": true, "components": {"notary-blue": "ok", …}}, "green": {…}}}
 //
-// Healthy means: this box has a kernel, the root key has signed a roster, it isn't stale, and every component (the
-// serving secrets among them; the next secrets is a standby and may hold another roster or none) answers and holds
-// exactly that roster. GET /api/kernel carries the same under "health".
+// Healthy means: this box has a kernel, the root key has signed a roster, it isn't stale, every component of the
+// serving copy answers and holds exactly that roster, and no copy flip is waiting (kernelflip.go). The other copy is
+// shown as it is: idle between releases (its Deployments scaled to zero: "down"), or, once a release landed on it,
+// holding its own roster ("ok" against the other copy's roster while it takes over). GET /api/kernel carries the same
+// under "health".
 
 import (
 	"context"
@@ -25,9 +28,18 @@ import (
 
 // KernelHealth: the last check
 type KernelHealth struct {
-	Healthy  bool      `json:"healthy"`
-	Problems []string  `json:"problems"`
-	At       time.Time `json:"at"`
+	Healthy  bool                  `json:"healthy"`
+	Problems []string              `json:"problems"`
+	At       time.Time             `json:"at"`
+	Copies   map[string]copyHealth `json:"copies"`
+}
+
+// copyHealth: one copy as the check found it: each Deployment "ok" (holds the copy's roster), "down", "none" (no
+// roster) or "other" (another roster)
+type copyHealth struct {
+	Serving    bool              `json:"serving"`
+	Roster     string            `json:"roster,omitempty"` // the ID of the roster it should hold ("" = none: idle)
+	Components map[string]string `json:"components"`
 }
 
 var kernelHealthEvery = 15 * time.Second
@@ -42,27 +54,34 @@ func (r *Router) kernelHealthLoop(every time.Duration) {
 
 // kernelHealthCheck: checks the kernel once and keeps the answer
 func (r *Router) kernelHealthCheck() *KernelHealth {
-	h := &KernelHealth{Problems: r.kernelProblems(), At: time.Now().UTC()}
+	probs, copies := r.kernelProblems()
+	h := &KernelHealth{Problems: probs, At: time.Now().UTC(), Copies: copies}
 	h.Healthy = len(h.Problems) == 0
 	r.kernelHealthNow.Store(h)
 	return h
 }
 
-// kernelProblems: what is wrong with the kernel right now, each a short plain sentence (none: healthy)
-func (r *Router) kernelProblems() []string {
+// kernelProblems: what is wrong with the kernel right now, each a short plain sentence (none: healthy), and both
+// copies as the check found them
+func (r *Router) kernelProblems() ([]string, map[string]copyHealth) {
 	if r.kernel == nil {
-		return []string{"No kernel on this box"}
+		return []string{"No kernel on this box"}, nil
 	}
 	probs := []string{}
 	cur := r.currentRoster()
+	serving := r.servingCopy()
 	var stale []string
 	pending := false
+	waiting := ""
 	r.st.Do(func(p *persisted) {
 		pending = p.KernelRosterPending != nil
 		if c := p.KernelRoster; c != nil {
 			for dep := range c.Stale {
 				stale = append(stale, dep)
 			}
+		}
+		if f := p.KernelFlip; f != nil && f.Waiting != "" {
+			waiting = "Kernel flip to " + f.To + " waiting: " + f.Waiting
 		}
 	})
 	sort.Strings(stale)
@@ -74,30 +93,41 @@ func (r *Router) kernelProblems() []string {
 	case len(stale) > 0:
 		probs = append(probs, "Kernel roster stale: "+strings.Join(stale, ", ")+" restarted")
 	}
+	if waiting != "" {
+		probs = append(probs, waiting)
+	}
 
-	next := r.nextSecrets()
-	type answer struct{ dep, state string } // state: "", "down", "none", "other"
+	copies := map[string]copyHealth{}
 	var mu sync.Mutex
-	var answers []answer
 	var wg sync.WaitGroup
-	for _, dep := range rosterTargets {
-		if dep == next {
-			continue
+	for _, c := range kernelCopies {
+		rc := r.rosterOfCopy(c)
+		var want *sig.Doc
+		ch := copyHealth{Serving: c == serving, Components: map[string]string{}}
+		if rc != nil {
+			d := rc.doc()
+			want, ch.Roster = &d, d.ID()
 		}
-		wg.Add(1)
-		go func(dep string) {
-			defer wg.Done()
-			s := r.kernelRosterHeld(dep, cur)
-			mu.Lock()
-			answers = append(answers, answer{dep, s})
-			mu.Unlock()
-		}(dep)
+		copies[c] = ch
+		for _, dep := range rosterTargets(c) {
+			wg.Add(1)
+			go func(c, dep string, want *sig.Doc) {
+				defer wg.Done()
+				st := r.kernelRosterHeld(dep, want)
+				if st == "" {
+					st = "ok"
+				}
+				mu.Lock()
+				copies[c].Components[dep] = st
+				mu.Unlock()
+			}(c, dep, want)
+		}
 	}
 	wg.Wait()
 	by := map[string][]string{}
-	for _, a := range answers {
-		if a.state != "" {
-			by[a.state] = append(by[a.state], a.dep)
+	for dep, st := range copies[serving].Components {
+		if st != "ok" {
+			by[st] = append(by[st], dep)
 		}
 	}
 	for _, s := range []string{"down", "none", "other"} {
@@ -109,7 +139,7 @@ func (r *Router) kernelProblems() []string {
 		names := strings.Join(deps, ", ")
 		switch s {
 		case "down":
-			if len(deps) == len(answers) {
+			if len(deps) == len(kernelRoles) {
 				probs = append(probs, "No kernel component answering")
 			} else {
 				probs = append(probs, names+" not answering")
@@ -122,7 +152,7 @@ func (r *Router) kernelProblems() []string {
 			probs = append(probs, names+" not holding the current roster")
 		}
 	}
-	return probs
+	return probs, copies
 }
 
 // kernelRosterHeld: one component's GET /roster against cur: "" (answers and holds cur, or holds a roster while none
@@ -162,7 +192,7 @@ func (r *Router) kernelHealthView() map[string]any {
 	if h == nil {
 		return map[string]any{"checked": false, "healthy": false, "problems": []string{}}
 	}
-	return map[string]any{"checked": true, "healthy": h.Healthy, "problems": h.Problems, "at": h.At}
+	return map[string]any{"checked": true, "healthy": h.Healthy, "problems": h.Problems, "at": h.At, "copies": h.Copies}
 }
 
 // GET /api/state's "kernel": only on a router that runs no core, where it replaces core.up as what the app warns about

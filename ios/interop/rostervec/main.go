@@ -1,6 +1,7 @@
-// rostervec: kernel/sig's roster on the Go side, for the app's interop test (ios/interop Kernel): reads
-// {"copy", "members": [{role, signingKey, agreementKey}…]} on stdin and prints sig.RosterPayload; with a payload and
-// a signature (-open ROOTPUB, stdin {"payload","sig"}) prints the roster sig.OpenRoster reads, or fails.
+// rostervec: kernel/sig's roster on the Go side, for the app's interop test (ios/interop Kernel) and
+// infra/setup_roster_test.py: reads {"copy", "members": [{role, signingKey, agreementKey}…], "retired": […],
+// "secretsBoot": {…}} on stdin and prints sig.Roster.Payload; with a payload and a signature (-open ROOTPUB, stdin
+// {"payload","sig"}) prints the roster sig.OpenRoster reads, or fails.
 package main
 
 import (
@@ -29,15 +30,12 @@ func main() {
 		json.NewEncoder(os.Stdout).Encode(r)
 		return
 	}
-	var in struct {
-		Copy    string         `json:"copy"`
-		Members []sig.Identity `json:"members"`
-	}
+	var in sig.Roster
 	if err := json.NewDecoder(os.Stdin).Decode(&in); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	p, err := sig.RosterPayload(in.Copy, in.Members)
+	p, err := in.Payload()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

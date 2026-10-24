@@ -15,6 +15,13 @@ package main
 // From them it builds the Cert the rest of boot reads (settings, stores, the snapshot to restore), and keeps the roster
 // and secrets' keys for its pulls. The snapshot is restored by its hash alone: the spawner checked the predecessor's
 // signature over it before it named it.
+//
+// The roster it checks with is the one the router serves with the documents (the serving kernel copy's, root-signed:
+// checked against JARVIS2_KERNEL_ROOT), else the one in its Fly config: a copy flip or a re-signed roster (docs/
+// PLAN-cluster.md "Releases: the copy flip") changes the kernel's keys under a live machine. A document a retired
+// member signed (the other copy's, or one from before a restart) still checks: the roster names those keys as retired.
+// A delivered input whose challenge isn't the notary's this machine knows makes it read the documents again (at most
+// every kernelTrustEvery), so the new copy's notary is learnt at its first input.
 
 import (
 	"crypto/sha256"
@@ -26,6 +33,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DE0CH/jarvis4/kernel/doc"
@@ -68,8 +76,9 @@ type kernelBootDocs struct {
 	Merger           sig.Identity `json:"merger"`
 	Spawner          sig.Identity `json:"spawner"`
 	Secrets          sig.Identity `json:"secrets"`
-	Keys             sig.Doc      `json:"keys"`   // secrets' {kind: keys, phone, root}
-	Stores           sig.Doc      `json:"stores"` // secrets' signed store list (each store's sensitivity)
+	Keys             sig.Doc      `json:"keys"`             // secrets' {kind: keys, phone, root}
+	Stores           sig.Doc      `json:"stores"`           // secrets' signed store list (each store's sensitivity)
+	Roster           *sig.Doc     `json:"roster,omitempty"` // the root key's roster of the serving kernel copy
 }
 
 // kernelSettings: a source's settings (router/kernelline.go kernelSettings)
@@ -80,16 +89,35 @@ type kernelSettings struct {
 	Config         json.RawMessage `json:"config"`
 }
 
-// checkKernelBoot: the documents → the Cert boot reads, and what later pulls are checked with
-// kernelTrustFromEnv: the root key and its roster from the machine's Fly config, the roster checked
-func kernelTrustFromEnv() (*sig.Trust, error) {
+// kernelTrustFor: the roster the documents come with (checked against the root key in the Fly config), else the one
+// in the Fly config
+func kernelTrustFor(b kernelBootDocs) (*sig.Trust, error) {
 	t := sig.NewTrust(strings.TrimSpace(os.Getenv(kernelRootEnv)))
+	if b.Roster != nil {
+		if err := t.Set(*b.Roster, nil); err != nil {
+			return nil, fmt.Errorf("the kernel's roster from the router: %v", err)
+		}
+		return t, nil
+	}
 	var d sig.Doc
 	if err := json.Unmarshal([]byte(os.Getenv(kernelRosterEnv)), &d); err != nil {
 		return nil, fmt.Errorf("the kernel's roster (%s): %v", kernelRosterEnv, err)
 	}
 	return t, t.Set(d, nil)
 }
+
+// openBy: d opened into v by one of the keys the roster takes for role (its member's, then the retired ones)
+func openBy(t *sig.Trust, role string, d sig.Doc, v any) error {
+	err := errors.New("no " + role + " in the roster")
+	for _, k := range t.SigningKeys(role) {
+		if err = d.Open(k, v); err == nil {
+			return nil
+		}
+	}
+	return err
+}
+
+// checkKernelBoot: the documents → the Cert boot reads, and what later pulls are checked with
 
 func checkKernelBoot(b kernelBootDocs, box *sig.Trust, source, me string, keys map[string]string) (Cert, kernelTrust, error) {
 	var cert Cert
@@ -101,13 +129,19 @@ func checkKernelBoot(b kernelBootDocs, box *sig.Trust, source, me string, keys m
 	}
 	notarized := func(c sig.Doc, nz sig.Doc) error {
 		var n doc.Notarized
-		if err := nz.Open(b.Notarizer.SigningKey, &n); err != nil || n.Kind != "notarized" || n.Cert != c.ID() {
+		if err := openBy(box, "notarizer", nz, &n); err != nil || n.Kind != "notarized" || n.Cert != c.ID() {
 			return fmt.Errorf("not notarized (%v)", err)
 		}
 		return nil
 	}
 	self := doc.Object("fly-" + me)
-	mc, err := doc.OpenCert(b.MachineCert, b.Spawner.SigningKey)
+	var mc doc.Cert
+	err := errors.New("no spawner in the roster")
+	for _, k := range box.SigningKeys("spawner") {
+		if mc, err = doc.OpenCert(b.MachineCert, k); err == nil {
+			break
+		}
+	}
 	if err != nil {
 		return cert, kernelTrust{}, fmt.Errorf("the spawner's cert: %w", err)
 	}
@@ -209,11 +243,8 @@ func reportedDigestOf(ref string) string {
 // kernelBootCert: boot's step 1 for a kernel machine (prepare)
 func kernelBootCert(c *client, me string, keys map[string]string) (Cert, error) {
 	source := strings.TrimSpace(os.Getenv(kernelSourceEnv))
-	box, err := kernelTrustFromEnv()
-	if err != nil {
-		return Cert{}, err
-	}
 	var b kernelBootDocs
+	var err error
 	for i := 0; ; i++ {
 		if err = c.json("GET", "/m/kernel/boot", nil, &b); err == nil {
 			break
@@ -222,6 +253,10 @@ func kernelBootCert(c *client, me string, keys map[string]string) (Cert, error) 
 			return Cert{}, fmt.Errorf("no boot documents: %v", err)
 		}
 		time.Sleep(2 * time.Second)
+	}
+	box, err := kernelTrustFor(b)
+	if err != nil {
+		return Cert{}, err
 	}
 	cert, trust, err := checkKernelBoot(b, box, source, me, keys)
 	if err != nil {
@@ -233,7 +268,40 @@ func kernelBootCert(c *client, me string, keys map[string]string) (Cert, error) 
 	}
 	raw, _ := json.Marshal(cert)
 	os.WriteFile(certPath, raw, 0o644) // the settings as boot read them (the supervisor reads the stores from it)
+	kernelTrustRefresh = func() (kernelTrust, error) { return refreshKernelTrust(c, me, keys) }
 	return cert, nil
+}
+
+// kernelTrustEvery: how often a delivered input that doesn't check makes the machine read its documents again
+var kernelTrustEvery = 10 * time.Second
+
+var (
+	kernelTrustRefresh func() (kernelTrust, error) // set at boot
+	kernelTrustMu      sync.Mutex
+	kernelTrustAt      time.Time
+)
+
+// refreshKernelTrust: the documents again, checked as at boot; the trust they give replaces kernel.json (the
+// serving copy's notary and roster after a copy flip)
+func refreshKernelTrust(c *client, me string, keys map[string]string) (kernelTrust, error) {
+	var b kernelBootDocs
+	if err := c.json("GET", "/m/kernel/boot", nil, &b); err != nil {
+		return kernelTrust{}, err
+	}
+	box, err := kernelTrustFor(b)
+	if err != nil {
+		return kernelTrust{}, err
+	}
+	_, trust, err := checkKernelBoot(b, box, strings.TrimSpace(os.Getenv(kernelSourceEnv)), me, keys)
+	if err != nil {
+		return kernelTrust{}, err
+	}
+	tb, _ := json.Marshal(trust)
+	if err := os.WriteFile(kernelTrustPath, tb, 0o644); err != nil {
+		return kernelTrust{}, err
+	}
+	log.Printf("the kernel's roster read again (notary %.16s…)", trust.Notary)
+	return trust, nil
 }
 
 // kernelRestore: the predecessor's snapshot, the one whose hash the source names
@@ -271,20 +339,45 @@ func KernelInputSubject(machine, kind, sum string) string {
 	return hex.EncodeToString(h[:])
 }
 
-// checkKernelAttest: the notary logged this input for this machine (a challenge about "input" over its subject)
+// checkKernelAttest: the notary logged this input for this machine (a challenge about "input" over its subject). One
+// that isn't this notary's: the documents are read again (a copy flip brings another notary), at most every
+// kernelTrustEvery, and the challenge checked against the notary they name
 func checkKernelAttest(t kernelTrust, me, kind string, attested []byte, d *SignedDoc) error {
 	if d == nil {
 		return errors.New("no notary challenge (the input isn't in the kernel's log)")
 	}
 	var ch doc.Challenge
-	if err := (sig.Doc{Payload: d.Payload, Sig: d.Sig}).Open(t.Notary, &ch); err != nil || ch.Kind != "challenge" || ch.About != "input" {
-		return errors.New("no notary challenge (the input isn't in the kernel's log)")
+	open := func(notary string) bool {
+		err := (sig.Doc{Payload: d.Payload, Sig: d.Sig}).Open(notary, &ch)
+		return err == nil && ch.Kind == "challenge" && ch.About == "input"
+	}
+	if !open(t.Notary) {
+		t2, ok := refreshedTrust()
+		if !ok || t2.Notary == t.Notary || t2.Machine != t.Machine || !open(t2.Notary) {
+			return errors.New("no notary challenge (the input isn't in the kernel's log)")
+		}
 	}
 	sum := sha256.Sum256(attested)
 	if ch.Subject != KernelInputSubject("fly-"+me, kind, hex.EncodeToString(sum[:])) {
 		return errors.New("the notary's challenge is for another input or machine")
 	}
 	return nil
+}
+
+// refreshedTrust: the trust read again now, unless that was done less than kernelTrustEvery ago
+func refreshedTrust() (kernelTrust, bool) {
+	kernelTrustMu.Lock()
+	defer kernelTrustMu.Unlock()
+	if kernelTrustRefresh == nil || time.Since(kernelTrustAt) < kernelTrustEvery {
+		return kernelTrust{}, false
+	}
+	kernelTrustAt = time.Now()
+	t, err := kernelTrustRefresh()
+	if err != nil {
+		log.Printf("reading the kernel's documents again: %v", err)
+		return kernelTrust{}, false
+	}
+	return t, true
 }
 
 // reloadKernel: a kernel machine's reload (refresh-secrets: its grant changed, an add-store or a downgrade): its boot
@@ -303,7 +396,7 @@ func (h *heldSecrets) reloadKernel(c *client, drop, lockHeld bool) (int, error) 
 		if err := c.json("GET", "/m/kernel/boot", nil, &b); err != nil {
 			return err
 		}
-		box, err := kernelTrustFromEnv()
+		box, err := kernelTrustFor(b)
 		if err != nil {
 			return err
 		}

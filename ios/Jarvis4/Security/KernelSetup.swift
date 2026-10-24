@@ -66,9 +66,21 @@ enum KernelSetup {
           st.kind == "secrets-state", st.master.isEmpty else { return nil }
     return k
   }
-  /// whether the root key may sign this roster as it stands: its secrets is the one this iPhone pinned, or (none pinned,
-  /// or another kernel copy) a secrets that answers unclaimed with those keys
-  static func signable(_ r: KernelRoster.Roster, pinned: PublicKeys?, unclaimed: [PublicKeys]) throws {
+  /// whether the root key may sign this roster as it stands: its secrets is the one this iPhone pinned, or (none pinned)
+  /// a secrets that answers unclaimed with those keys. A roster of the copy that doesn't serve (`current`: the roster
+  /// the components hold) takes over from it (docs/PLAN-cluster.md "Releases: the copy flip"): it names the pinned
+  /// secrets, an empty one as secretsBoot, and retires every other member of the serving copy
+  static func signable(_ r: KernelRoster.Roster, pinned: PublicKeys?, unclaimed: [PublicKeys], current: KernelRoster.Roster? = nil) throws {
+    if let cur = current, cur.copy != r.copy {
+      guard let boot = r.secretsBoot, unclaimed.contains(boot.keys), r.member("secrets") == pinned else {
+        throw TrustError.mismatch("the \(r.copy) roster doesn't name this iPhone's secrets and an empty one to take over")
+      }
+      for m in cur.members where m.role != "secrets" && !r.retired.contains(m) {
+        throw TrustError.mismatch("the \(r.copy) roster doesn't retire the serving \(m.role)")
+      }
+      return
+    }
+    guard r.secretsBoot == nil else { throw TrustError.mismatch("only the copy that takes over names an empty secrets") }
     guard let s = r.member("secrets") else { return }
     guard s == pinned || unclaimed.contains(s) else {
       throw TrustError.mismatch("the roster names a secrets that is neither this iPhone's nor an empty one")
@@ -92,18 +104,18 @@ enum KernelSetup {
                           secretsSeed: seed?.base64EncodedString(), stores: rest.map(\.name)))
   }
   /// the statement the master key signs: these secrets, this iPhone, this root key, this bundle
-  static func statement(master: String, secrets: PublicKeys, phone: PublicKeys, root: String, bundle: Data, identity: PublicKeys?, standby: Bool = false) throws -> String {
+  static func statement(master: String, secrets: PublicKeys, phone: PublicKeys, root: String, bundle: Data, identity: PublicKeys?) throws -> String {
     struct St: Encodable {
       let kind = "kernel-claim"; let master: String; let secrets: PublicKeys; let phone: PublicKeys; let root: String; let bundleSha256: String
-      let identity: PublicKeys?; let standby: Bool?
+      let identity: PublicKeys?
     }
     let e = JSONEncoder(); e.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
     return String(decoding: try e.encode(St(master: master, secrets: secrets, phone: phone, root: root, bundleSha256: CoreCrypto.sha256hex(bundle),
-                                            identity: identity, standby: standby ? true : nil)), as: UTF8.self)
+                                            identity: identity)), as: UTF8.self)
   }
   /// the body of POST /api/kernel/secrets/claim
-  static func claim(secrets: PublicKeys, phone: PublicKeys, root: String, master: MasterKey, bundle: Data, identity: PublicKeys?, standby: Bool = false) throws -> [String: Any] {
-    let st = try statement(master: master.publicKey, secrets: secrets, phone: phone, root: root, bundle: bundle, identity: identity, standby: standby)
+  static func claim(secrets: PublicKeys, phone: PublicKeys, root: String, master: MasterKey, bundle: Data, identity: PublicKeys?) throws -> [String: Any] {
+    let st = try statement(master: master.publicKey, secrets: secrets, phone: phone, root: root, bundle: bundle, identity: identity)
     return ["statement": st, "masterSig": try master.sign(st), "bundle": try CoreCrypto.seal(bundle, to: secrets.agreementKey, info: claimInfo)]
   }
   /// a component's identity document (kernel/internal/serve: GET /identity, signed by the component), checked: signed by
@@ -136,26 +148,35 @@ enum KernelRoster {
   struct Member: Codable, Equatable { let role: String; let signingKey: String; let agreementKey: String
     var keys: PublicKeys { PublicKeys(signingKey: signingKey, agreementKey: agreementKey) }
   }
+  /// retired: keys that served before and sign nothing new, whose earlier signatures still count (the other copy's
+  /// members, or a component's keys from before a restart); secretsBoot: the empty secrets of the copy that takes over
   struct Roster: Equatable {
-    let copy: String; let members: [Member]
+    let copy: String; let members: [Member]; var retired: [Member] = []; var secretsBoot: Member? = nil
     func member(_ role: String) -> PublicKeys? { members.first { $0.role == role }?.keys }
     /// the exact payload the setup key and the root key sign
-    var payload: String { KernelRoster.payload(copy: copy, members: members) }
+    var payload: String { KernelRoster.payload(copy: copy, members: members, retired: retired, secretsBoot: secretsBoot) }
   }
   /// what the setup session filed (GET /api/kernel/roster/pending)
   struct Pending: Codable, Equatable { let copy: String; let payload: String; let setupSig: String }
 
   static func validRole(_ r: String) -> Bool { !r.isEmpty && r.allSatisfy { ("a"..."z").contains($0) || ("0"..."9").contains($0) || $0 == "-" } }
-  /// kernel/sig RosterPayload, byte for byte: Go's json.Marshal of {kind, copy, members[{role, signingKey,
-  /// agreementKey}]}, members sorted by role. Roles are [a-z0-9-] and keys base64, so nothing needs escaping.
-  static func payload(copy: String, members: [Member]) -> String {
-    let ms = members.sorted { $0.role < $1.role }.map { "{\"role\":\"\($0.role)\",\"signingKey\":\"\($0.signingKey)\",\"agreementKey\":\"\($0.agreementKey)\"}" }
-    return "{\"kind\":\"kernel-roster\",\"copy\":\"\(copy)\",\"members\":[\(ms.joined(separator: ","))]}"
+  /// kernel/sig Roster.Payload, byte for byte: Go's json.Marshal of {kind, copy, members[{role, signingKey,
+  /// agreementKey}], retired[…] (omitted when none), secretsBoot (omitted when none)}, members sorted by role, retired by
+  /// role then signing key. Roles are [a-z0-9-] and keys base64, so nothing needs escaping.
+  static func payload(copy: String, members: [Member], retired: [Member] = [], secretsBoot: Member? = nil) -> String {
+    func one(_ m: Member) -> String { "{\"role\":\"\(m.role)\",\"signingKey\":\"\(m.signingKey)\",\"agreementKey\":\"\(m.agreementKey)\"}" }
+    let ms = members.sorted { $0.role < $1.role }.map(one)
+    var out = "{\"kind\":\"kernel-roster\",\"copy\":\"\(copy)\",\"members\":[\(ms.joined(separator: ","))]"
+    let rs = retired.sorted { ($0.role, $0.signingKey) < ($1.role, $1.signingKey) }.map(one)
+    if !rs.isEmpty { out += ",\"retired\":[\(rs.joined(separator: ","))]" }
+    if let b = secretsBoot { out += ",\"secretsBoot\":" + one(b) }
+    return out + "}"
   }
-  /// a roster read strictly: kind, copy blue or green, one member per role sorted, every key a P-256 key, and the
-  /// payload exactly the one this app would sign (so what is shown is what is signed)
+  /// a roster read strictly: kind, copy blue or green, one member per role sorted, retired keys sorted and never
+  /// secrets', every key a P-256 key, and the payload exactly the one this app would sign (so what is shown is what is
+  /// signed)
   static func parse(_ payload: String) throws -> Roster {
-    struct R: Decodable { let kind: String; let copy: String; let members: [Member] }
+    struct R: Decodable { let kind: String; let copy: String; let members: [Member]; var retired: [Member]? = nil; var secretsBoot: Member? = nil }
     guard let r = try? JSONDecoder().decode(R.self, from: Data(payload.utf8)), r.kind == "kernel-roster", r.copy == "blue" || r.copy == "green", !r.members.isEmpty else {
       throw TrustError.mismatch("not a kernel roster")
     }
@@ -163,7 +184,13 @@ enum KernelRoster {
       guard validRole(m.role), PublicKeys.valid(m.keys) else { throw TrustError.mismatch("a roster member without valid keys") }
       if i > 0, r.members[i - 1].role >= m.role { throw TrustError.mismatch("the roster's members aren't sorted by role, one each") }
     }
-    let out = Roster(copy: r.copy, members: r.members)
+    for m in r.retired ?? [] {
+      guard validRole(m.role), m.role != "secrets", PublicKeys.valid(m.keys), !r.members.contains(where: { $0.signingKey == m.signingKey }) else {
+        throw TrustError.mismatch("a retired roster member that isn't a component's earlier keys")
+      }
+    }
+    if let b = r.secretsBoot, b.role != "secrets" || !PublicKeys.valid(b.keys) { throw TrustError.mismatch("the roster's secretsBoot isn't a secrets") }
+    let out = Roster(copy: r.copy, members: r.members, retired: r.retired ?? [], secretsBoot: r.secretsBoot)
     guard out.payload == payload else { throw TrustError.mismatch("the roster isn't in its canonical form") }
     return out
   }
@@ -182,7 +209,8 @@ enum KernelRoster {
   /// the same roster with secrets' keys replaced (a claim with a seed: secrets serves with the keys the kit derives)
   static func replacing(_ r: Roster, role: String, with k: PublicKeys) throws -> Roster {
     guard r.members.contains(where: { $0.role == role }) else { throw TrustError.mismatch("the roster has no \(role)") }
-    return Roster(copy: r.copy, members: r.members.map { $0.role == role ? Member(role: role, signingKey: k.signingKey, agreementKey: k.agreementKey) : $0 })
+    return Roster(copy: r.copy, members: r.members.map { $0.role == role ? Member(role: role, signingKey: k.signingKey, agreementKey: k.agreementKey) : $0 },
+                  retired: r.retired, secretsBoot: r.secretsBoot)
   }
 }
 

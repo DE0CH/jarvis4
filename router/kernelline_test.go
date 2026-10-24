@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -26,12 +25,16 @@ const kernelImage = "ghcr.io/de0ch/jarvis4-session:sha-aaaaaaaaaaaa@sha256:11111
 func kernelRig(t *testing.T) (*rig, *kerneltest.Kernel) {
 	rg := newRig(t)
 	k := kerneltest.Start(t, map[string]string{"JARVIS2_URL": "http://router"})
-	rg.r.wireKernel(&KernelClient{url: func(role string) string {
-		if role == "secrets-blue" {
-			return k.URLFor("secrets")
-		}
-		return k.URLFor(role)
-	}, http: http.DefaultClient, ids: map[string]sig.Identity{}})
+	rg.r.wireKernel(&KernelClient{url: k.URLFor, http: http.DefaultClient, ids: map[string]sig.Identity{}})
+	// the roster Deyao signed for blue, as the router keeps it
+	d, err := k.Roster()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rg.r.st.Do(func(p *persisted) {
+		p.KernelRootKey = k.Root.PublicKey()
+		p.KernelRoster = &RosterCurrent{Copy: "blue", Payload: d.Payload, Sig: d.Sig, At: time.Now(), Results: map[string]string{}}
+	})
 	rg.r.cfg.SessionImage, rg.r.cfg.Region = kernelImage, "lhr"
 	rg.r.policy.Harnesses["claude"] = HarnessPolicy{}
 	rg.r.st.Do(func(d *persisted) { d.KernelRoot = &gv.Signed{Grant: k.RootTop(), By: "root"} })
@@ -267,52 +270,8 @@ func TestNoKernelRootNoKernelSessions(t *testing.T) {
 	}
 }
 
-// blue/green for the kernel's secrets: the standby (Recovered alongside with the same kit) takes the serving one's final
-// state and serves; the old one answers nothing more; the router's secrets calls go to the new colour
-func TestKernelSecretsFlip(t *testing.T) {
-	rg, k := kernelRig(t)
-	blue, ub := k.Secrets2(t)
-	green, ug := k.Secrets2(t)
-	seed := make([]byte, 32)
-	rand.Read(seed)
-	if err := k.ClaimSeeded(blue, seed, false); err != nil {
-		t.Fatal(err)
-	}
-	if err := k.ClaimSeeded(green, seed, true); err != nil {
-		t.Fatal(err)
-	}
-	rg.r.kernel.url = func(role string) string {
-		switch role {
-		case "secrets-blue":
-			return ub
-		case "secrets-green":
-			return ug
-		}
-		return k.URLFor(role)
-	}
-	if _, err := rg.r.kernel.Doc("secrets", "/keys", map[string]any{}); err != nil {
-		t.Fatal("blue doesn't serve:", err)
-	}
-	if _, err := rg.r.kernel.Doc("secrets-next", "/keys", map[string]any{}); err == nil {
-		t.Fatal("the standby served before the flip")
-	}
-	c, err := rg.r.FlipSecrets()
-	if err != nil || c != "green" {
-		t.Fatal(c, err)
-	}
-	if _, err := rg.r.kernel.Doc("secrets", "/keys", map[string]any{}); err != nil {
-		t.Fatal("green doesn't serve after the flip:", err)
-	}
-	if _, err := rg.r.kernel.Doc("secrets-next", "/keys", map[string]any{}); err == nil {
-		t.Fatal("blue still serves after its handoff")
-	}
-	if blue.Mode() != "handed-off" || green.Mode() != "" {
-		t.Fatal(blue.Mode(), green.Mode())
-	}
-}
-
-// A kernel release restarts the mover (new keys, a new roster signed): a running line's grant, signed by the old
-// mover, no longer opens. Its destroy still goes through: the line ends, so its grant isn't moved
+// A crash restart of the mover (new keys; its copy's re-signed roster names the old ones as retired): a running
+// line's grant, signed by the old mover, still opens, and its destroy goes through
 func TestDestroyAfterTheMoverRestarted(t *testing.T) {
 	rg, k := kernelRig(t)
 	sid, err := rg.r.CreateSession(NewSession{Label: "on the kernel", Harness: "claude"})
@@ -340,8 +299,8 @@ func TestDestroyAfterTheMoverRestarted(t *testing.T) {
 	if err := k.PostRoster(""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := gv.Open(*kernelSession(rg, sid).Kernel.Grant, k.Trust()); err == nil {
-		t.Fatal("the old mover's grant still opens")
+	if _, err := gv.Open(*kernelSession(rg, sid).Kernel.Grant, k.Trust()); err != nil {
+		t.Fatal("the old mover's grant no longer opens:", err)
 	}
 	pulledMachines.Delete(m1.ID) // the fake Fly's ids repeat across tests: an earlier test's pull would make this wait bootGrace
 	if err := rg.r.Destroy(sid); err != nil {

@@ -109,7 +109,7 @@ func main() {
 	ln := make(chan error, 1)
 	go func() { ln <- http.Serve(l, nil) }()
 	if *router != "" {
-		payload, err := sig.RosterPayload("blue", ids)
+		payload, err := sig.Roster{Copy: "blue", Members: ids}.Payload()
 		if err != nil {
 			log.Fatal(err)
 		}

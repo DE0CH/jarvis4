@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/DE0CH/jarvis4/kernel/sig"
 )
@@ -41,6 +42,11 @@ type Server struct {
 	C     *sig.Component
 	Trust *sig.Trust // the root key's roster (to check the other components' identities)
 	Mux   *http.ServeMux
+	// State: a stateful component's handoff and takeover (flip.go), nil for the stateless ones
+	State Stateful
+
+	mu       sync.Mutex
+	frozenTo string // the roster this component handed over to ("" = it serves)
 }
 
 // RosterIn: the root key's roster, as the router posts it
@@ -62,15 +68,26 @@ func New(c *sig.Component, t *sig.Trust) *Server {
 		if err := t.Set(in.Roster, &c.Identity); err != nil {
 			return nil, Fail(403, "%v", err)
 		}
+		if s.State != nil {
+			if err := s.State.Decide(*t.Roster()); err != nil {
+				return nil, err
+			}
+		}
 		log.Printf("%s: the root key's roster taken", c.Role)
 		return map[string]string{"kind": "roster-taken", "roster": in.Roster.ID()}, nil
 	})
+	s.registerFlip()
 	return s
 }
 
 // Handle: POST pattern with a strict JSON body into In; fn's answer is signed
 func Handle[In any](s *Server, pattern string, fn func(In) (any, error)) {
 	s.Mux.HandleFunc(pattern, func(w http.ResponseWriter, req *http.Request) {
+		if s.frozen() != "" && !frozenAllowed(pattern) {
+			s.reply(w, 409, map[string]string{"kind": "error", "reason": ReasonHandedOff,
+				"error": "this " + s.C.Role + " handed over to the other kernel copy: it serves nothing"})
+			return
+		}
 		var in In
 		body, err := io.ReadAll(io.LimitReader(req.Body, 8<<20))
 		if err == nil {

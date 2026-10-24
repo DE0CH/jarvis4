@@ -15,7 +15,9 @@
 // notarizer refuses a second successor of a source.
 //
 // The machines it made, and each kill's cert, are kept on its own volume (state.json), so a restart neither forgets a
-// machine nor signs a second kill of one. The Fly token is not kept: the setup session sends it again.
+// machine nor signs a second kill of one. The Fly token is kept in memory only: after a restart the setup session (or
+// the app's Recover) sends it again. In the copy flip (internal/serve flip.go) the machines and the token move to the
+// other copy's spawner, sealed to it, and this one freezes: it makes no Fly call after its handoff.
 package spawner
 
 import (
@@ -90,7 +92,12 @@ type Machine struct {
 }
 
 type Spawner struct {
-	mu        sync.Mutex
+	mu sync.Mutex
+	// op: every call holds it shared; the handoff and the takeover hold it alone, so no call is halfway through
+	// when the state moves
+	op        sync.RWMutex
+	cont      *serve.Continuity // its mode in the copy flip (path + ".mode")
+	token     string            // the Fly token (memory only), handed over with the machines
 	s         *sig.Signer
 	agreement *ecdh.PrivateKey
 	trust     *sig.Trust
@@ -104,9 +111,18 @@ type state struct {
 	Machines map[string]*Machine `json:"machines"`
 }
 
-// Open: the state at path (made if missing). env: the machines' Fly config env.
+// Open: the state at path (made if missing), its mode beside it. env: the machines' Fly config env.
 func Open(path string, c *sig.Component, t *sig.Trust, fly Fly, env map[string]string) (*Spawner, error) {
-	sp := &Spawner{s: c.Signer, agreement: c.Agreement, trust: t, fly: fly, env: env, path: path, machines: map[string]*Machine{}}
+	cont, err := serve.OpenContinuity(path + ".mode")
+	if err != nil {
+		return nil, err
+	}
+	if r := t.Roster(); r != nil { // a roster already held decides a new volume's mode now (else POST /roster does)
+		if err := cont.Decide(*r, "spawner"); err != nil {
+			return nil, err
+		}
+	}
+	sp := &Spawner{cont: cont, s: c.Signer, agreement: c.Agreement, trust: t, fly: fly, env: env, path: path, machines: map[string]*Machine{}}
 	b, err := os.ReadFile(path)
 	if err == nil {
 		var st state
@@ -150,8 +166,16 @@ func flyFail(what string, err error) error {
 	return serve.FailBecause(502, ReasonFly, "fly %s: %v", what, err)
 }
 
+// serving: a call may go on (callers hold op shared)
+func (sp *Spawner) serving() error { return sp.cont.Serving() }
+
 // SetFlyToken: {"FLY_API_TOKEN": …} sealed to the spawner's agreement key
 func (sp *Spawner) SetFlyToken(sealed sig.Sealed) (any, error) {
+	sp.op.RLock()
+	defer sp.op.RUnlock()
+	if err := sp.serving(); err != nil {
+		return nil, err
+	}
 	plain, err := sig.OpenSealed(sp.agreement, sealed, infoFlyToken)
 	if err != nil {
 		return nil, serve.Fail(400, "can't open the Fly token")
@@ -163,6 +187,9 @@ func (sp *Spawner) SetFlyToken(sealed sig.Sealed) (any, error) {
 		return nil, serve.Fail(400, "no FLY_API_TOKEN")
 	}
 	sp.fly.Configure(v.Token)
+	sp.mu.Lock()
+	sp.token = v.Token
+	sp.mu.Unlock()
 	log.Printf("Fly token set")
 	return map[string]string{"kind": "fly-token-set"}, nil
 }
@@ -180,6 +207,11 @@ type SpawnInput struct {
 // Spawn: a new empty volume and one Fly create on it, from a notarized source → {kind: "created", id, source, volume}.
 // A create that fails deletes the volume (one try; a volume left is the router's sweep's).
 func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
+	sp.op.RLock()
+	defer sp.op.RUnlock()
+	if err := sp.serving(); err != nil {
+		return nil, err
+	}
 	if err := sig.CheckIdentity(in.Notarizer, "notarizer", sp.trust); err != nil {
 		return nil, serve.Fail(403, "%v", err)
 	}
@@ -249,6 +281,11 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 
 // Init: one try at reading a created machine's keys (409 while it isn't up yet: the router retries) → its cert
 func (sp *Spawner) Init(id string) (sig.Doc, error) {
+	sp.op.RLock()
+	defer sp.op.RUnlock()
+	if err := sp.serving(); err != nil {
+		return sig.Doc{}, err
+	}
 	sp.mu.Lock()
 	m := sp.machines[id]
 	sp.mu.Unlock()
@@ -350,6 +387,11 @@ func (sp *Spawner) dropVolume(m *Machine) string {
 // The cert is signed once per machine and answered again to every later kill; each kill makes one try at deleting the
 // machine's volume, and volumeLeft names it while it is still there (the router kills again).
 func (sp *Spawner) Kill(id string, snap *Snapshot) (any, error) {
+	sp.op.RLock()
+	defer sp.op.RUnlock()
+	if err := sp.serving(); err != nil {
+		return nil, err
+	}
 	sp.mu.Lock()
 	m := sp.machines[id]
 	sp.mu.Unlock()
@@ -415,6 +457,11 @@ func (sp *Spawner) Kill(id string, snap *Snapshot) (any, error) {
 // restart that the state never recorded: Fly's metadata names its source) destroyed → {kind: "destroyed", id,
 // volumeLeft}, no cert. A machine with a cert is killed instead (409 came-up).
 func (sp *Spawner) Destroy(id string) (any, error) {
+	sp.op.RLock()
+	defer sp.op.RUnlock()
+	if err := sp.serving(); err != nil {
+		return nil, err
+	}
 	sp.mu.Lock()
 	m := sp.machines[id]
 	sp.mu.Unlock()
@@ -456,7 +503,70 @@ func (sp *Spawner) Destroy(id string) (any, error) {
 	return map[string]any{"kind": "destroyed", "id": id, "volumeLeft": sp.dropVolume(m)}, nil
 }
 
+// ---- the copy flip (serve.Stateful) --------------------------------------------------------------------------
+
+// handed: the state as it moves to the other copy
+type handed struct {
+	Machines map[string]*Machine `json:"machines"`
+	FlyToken string              `json:"flyToken,omitempty"`
+}
+
+func (sp *Spawner) Decide(r sig.Roster) error {
+	sp.op.Lock()
+	defer sp.op.Unlock()
+	return sp.cont.Decide(r, "spawner")
+}
+
+// Mode: serving, standby or handed-off ("" before the first roster)
+func (sp *Spawner) Mode() string { return sp.cont.Mode() }
+
+// Handoff: frozen once no call is under way (no Fly call after it), then the machines and the Fly token
+func (sp *Spawner) Handoff(roster string) ([]byte, error) {
+	sp.op.Lock()
+	defer sp.op.Unlock()
+	if err := sp.cont.Freeze(roster); err != nil {
+		return nil, err
+	}
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	return json.Marshal(handed{Machines: sp.machines, FlyToken: sp.token})
+}
+
+// Takeover: the predecessor's machines replace this volume's (saved before it serves), and its Fly token
+func (sp *Spawner) Takeover(id string, state []byte) error {
+	sp.op.Lock()
+	defer sp.op.Unlock()
+	again, err := sp.cont.CanTake(id)
+	if err != nil || again {
+		return err
+	}
+	var h handed
+	if err := sig.StrictJSON(state, &h); err != nil {
+		return serve.Fail(400, "the handed state: %v", err)
+	}
+	if h.Machines == nil {
+		h.Machines = map[string]*Machine{}
+	}
+	sp.mu.Lock()
+	sp.machines = h.Machines
+	err = sp.save()
+	if err == nil && h.FlyToken != "" {
+		sp.fly.Configure(h.FlyToken)
+		sp.token = h.FlyToken
+	}
+	sp.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if err := sp.cont.Took(id); err != nil {
+		return err
+	}
+	log.Printf("took over %d machines (Fly token: %v); serving", len(h.Machines), h.FlyToken != "")
+	return nil
+}
+
 func Register(s *serve.Server, sp *Spawner) {
+	s.State = sp
 	serve.Handle(s, "POST /fly-token", func(in struct {
 		Sealed sig.Sealed `json:"sealed"`
 	}) (any, error) {

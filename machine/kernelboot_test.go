@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DE0CH/jarvis4/kernel/gv"
 	"github.com/DE0CH/jarvis4/kernel/kerneltest"
@@ -71,7 +72,7 @@ func TestAKernelMachineRefusesOtherDocuments(t *testing.T) {
 		c, _ := sig.NewComponent(r)
 		strangers = append(strangers, c.Identity)
 	}
-	p, _ := sig.RosterPayload("blue", strangers)
+	p, _ := sig.Roster{Copy: "blue", Members: strangers}.Payload()
 	ps, _ := other.Sign([]byte(p))
 	otherTrust := sig.NewTrust(other.PublicKey())
 	if err := otherTrust.Set(sig.Doc{Payload: p, Sig: ps}, nil); err != nil {
@@ -147,5 +148,63 @@ func TestAKernelMachineChecksTheNotarysLog(t *testing.T) {
 		if x() == nil {
 			t.Fatalf("%s: accepted", name)
 		}
+	}
+}
+
+// a copy flip under a live machine: its documents from before the flip (the grant, the spawner's cert and the
+// notarizations, all signed by the blue copy) check against the green copy's roster the router now serves (it retires
+// blue's members), with green's identities; an input green's notary logged makes the machine read its documents again
+// and then checks; ✱ a roster the root key didn't sign is refused
+func TestAKernelMachineAfterACopyFlip(t *testing.T) {
+	k := kerneltest.Start(t, map[string]string{"JARVIS2_URL": "http://router"})
+	b, fm := bootDocs(t, k)
+	src, keys := fm.Env["JARVIS2_SOURCE"], fmKeys(fm)
+	_, before, err := checkKernelBoot(b, k.Trust(), src, fm.ID, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k.Release(t)
+	if err := k.SignRoster("green"); err != nil {
+		t.Fatal(err)
+	}
+	k.Flip(t)
+	green, _ := k.Roster()
+	b.Roster = &green
+	b.Notary, b.Notarizer, b.Mover, b.Merger, b.Spawner = k.Identity("notary"), k.Identity("notarizer"), k.Identity("mover"), k.Identity("merger"), k.Identity("spawner")
+	t.Setenv(kernelRootEnv, k.Root.PublicKey())
+	box, err := kernelTrustFor(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, after, err := checkKernelBoot(b, box, src, fm.ID, keys)
+	if err != nil {
+		t.Fatal("the blue documents under the green roster:", err)
+	}
+	if after.Notary == before.Notary || after.Secrets != before.Secrets {
+		t.Fatal("the notary is green's, secrets the same keys")
+	}
+	body := []byte("wake up")
+	ch := k.Challenge(t, KernelInputSubject("fly-"+fm.ID, "wakeup", hexSum256(body)), "input")
+	d := &SignedDoc{Payload: ch.Payload, Sig: ch.Sig}
+	old := kernelTrustRefresh
+	t.Cleanup(func() { kernelTrustRefresh, kernelTrustAt = old, time.Time{} })
+	kernelTrustRefresh, kernelTrustAt = nil, time.Time{}
+	if checkKernelAttest(before, fm.ID, "wakeup", body, d) == nil {
+		t.Fatal("green's notary passed with blue's trust and no way to read the documents again")
+	}
+	reads := 0
+	kernelTrustRefresh = func() (kernelTrust, error) { reads++; return after, nil }
+	if err := checkKernelAttest(before, fm.ID, "wakeup", body, d); err != nil || reads != 1 {
+		t.Fatal(err, reads)
+	}
+	if checkKernelAttest(before, fm.ID, "wakeup", body, d); reads != 1 {
+		t.Fatal("read again within kernelTrustEvery")
+	}
+	other, _ := sig.NewSigner()
+	forged := sig.Doc{Payload: green.Payload}
+	forged.Sig, _ = other.Sign([]byte(green.Payload))
+	b.Roster = &forged
+	if _, err := kernelTrustFor(b); err == nil {
+		t.Fatal("a roster the root key didn't sign")
 	}
 }

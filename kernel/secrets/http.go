@@ -94,13 +94,19 @@ func Handler(c *Secrets) http.Handler {
 		return c.Claim(str(b, "statement"), str(b, "masterSig"), s)
 	})
 	h("GET /line-state", func(b body) (any, error) { return c.LineState() })
-	h("POST /handoff", func(b body) (any, error) { return c.Handoff() })
-	h("POST /takeover", func(b body) (any, error) {
-		var d LineStateDoc
-		if err := json.Unmarshal(b["lineState"], &d); err != nil {
-			return nil, fail(400, "lineState: {head, sealed}")
+	h("POST /handoff", func(b body) (any, error) {
+		var d SignedDoc
+		if err := json.Unmarshal(b["roster"], &d); err != nil || d.Payload == "" {
+			return nil, fail(400, "roster: the other copy's root-signed roster")
 		}
-		return c.Takeover(&d)
+		return c.Handoff(d)
+	})
+	h("POST /takeover", func(b body) (any, error) {
+		var d SignedDoc
+		if err := json.Unmarshal(b["handoff"], &d); err != nil || d.Payload == "" {
+			return nil, fail(400, "handoff: the serving secrets' signed handoff")
+		}
+		return c.Takeover(d)
 	})
 	h("POST /wipe", func(b body) (any, error) { return c.Wipe(str(b, "statement"), str(b, "masterSig")) })
 

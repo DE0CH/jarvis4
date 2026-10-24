@@ -567,7 +567,8 @@ Built and tested; not yet on the box. Each step in order:
    (k8s/bootstrap-control, infra/cloud-init.sh's `kernel-box-key`, k8s/flux/control.yaml's `control-kernel`): a rebuild or
    a move ("Rebuilding a box"). Deyao's call when.
 2. **Pin the kernel image** in k8s/control/apps/kernel/kernel.yaml (it names `:latest` until the pin job moves it) and set
-   the router's `KERNEL_URL=http://%s.jarvis4-kernel.svc.cluster.local:8080` (router.yaml).
+   the router's `KERNEL_URL=http://%s.jarvis4-kernel.svc.cluster.local:8080` (router.yaml; `%s` = the Deployment
+   `<role>-<copy>`).
 3. **The spawner's Fly token** comes with Deyao's Recover of the kernel (step 4: the core store's backup, sealed to the
    spawner), or from the setup session: `infra/setup.py kernel-fly-token <file from infra/fly-token.sh>`. A spawner
    restart loses it; the router DMs when a spawn is refused for want of it.
@@ -575,43 +576,66 @@ Built and tested; not yet on the box. Each step in order:
    (the root key, its own warning). From then on new sessions start on the kernel; the old core's sessions go on there
    until destroyed, then the old core and `core/` go (DECISIONS 216).
 
-### A kernel release (Deyao decides; DECISIONS 230)
+### A kernel release (Deyao decides; DECISIONS 230, 233)
 
-Every kernel component makes fresh RAM-only keys at start, so restarting any one stales the root-signed roster and
-Jarvis 4 is locked until Deyao signs a new one with Face ID. So a kernel component restarts only when Deyao asked for
-that release:
+The kernel runs as two copies, blue and green (Deployments `<role>-<copy>`; docs/PLAN-cluster.md "Releases: the copy
+flip"). `k8s/cluster/kernel/active-kernel.txt` names the one that serves; a release lands only on the other, which
+takes over from it without stopping anything. Every component still makes fresh RAM-only keys at start, so the copy a
+release lands on works only once Deyao signs its roster (one Face ID, whenever he likes: the serving copy goes on
+meanwhile), and a release still needs his OK:
 
 1. **Deyao's OK, in the commit.** The release commit (or an empty commit after the change) carries the trailer
    `Kernel-Release: <why> (Deyao, YYYY-MM-DD)`, written only when Deyao said so in that conversation. Never add it
    for a change he hasn't OK'd, nor to unblock CI.
-2. **What CI moves** (the pin job, `infra/kernel-pin.py`): only the Deployments in k8s/cluster/kernel/kernel.yaml whose
-   binary's inputs changed since the build that Deployment pins (the module's packages `go list -deps ./cmd/<role>`
-   reaches, their non-test .go and embedded files; kernel/go.mod, go.sum; kernel/Dockerfile's build lines), and only
-   when a `Kernel-Release` commit lies after that pin with no input change after it. Never the serving secrets colour.
-   Tests, `kerneltest`, `internal/kt`, `flowtest`, comments in the Dockerfile and anything outside kernel/ never
-   count. Test and tool programs live outside kernel/ (`ios/interop/vectors`, `ios/interop/rostervec`).
-3. **Changed inputs with no release:** the pin job pins the router and session as usual, pins no kernel Deployment and
-   fails, naming each component and file and saying a kernel release needs Deyao's OK. It stays red on every push
-   until the change is reverted (back to the pinned inputs) or Deyao gives the trailer. Ask him in one line: what
-   changes, which components restart, that he re-signs the roster.
-4. **After the pin rolls out** (Flux, a minute): `infra/setup.py kernel-roster` (the restarted components' new
-   identities, filed for signing), Deyao signs it in the app (Settings → Kernel → Sign roster), then, when the spawner
-   restarted, `infra/setup.py kernel-fly-token <file from infra/fly-token.sh>` (its token was in its memory only).
+2. **What CI moves** (the pin job, `infra/kernel-pin.py`): only the other copy, and only when a component's binary's
+   inputs changed since the build the serving copy's Deployment of it pins (the module's packages `go list -deps
+   ./cmd/<role>` reaches, their non-test .go and embedded files; kernel/go.mod, go.sum; kernel/Dockerfile's build
+   lines) and a `Kernel-Release` commit lies after that pin with no input change after it. Then the other copy gets
+   the release's build for those components, the serving copy's images for the rest, replicas 1 and the hold
+   `jarvis2/kernel-release: pending` on each Deployment. Tests, `kerneltest`, `internal/kt`, `flowtest`, comments in
+   the Dockerfile and anything outside kernel/ never count. Test and tool programs live outside kernel/
+   (`ios/interop/vectors`, `ios/interop/rostervec`).
+3. **Changed inputs with no release, or a release while one is in flight** (the other copy still holds the hold: it
+   may serve already): the pin job pins the router and session as usual, pins no kernel Deployment and fails, naming
+   why. Ask Deyao in one line for a missing OK (what changes, which components; he signs one roster). A release in
+   flight: finish it (steps 4-6), then the next push pins. A hold on a copy that is known never to have taken over (the
+   router's `GET /setup/kernel/roster` shows the other copy serving and no flip) may be deleted to let a newer release
+   land.
+4. **After the pin rolls out** (Flux, a minute): `infra/setup.py kernel-roster --copy <the other copy>` (its fresh
+   identities through kernel-id; the serving secrets as its secrets and its own empty secrets as `secretsBoot`; every
+   serving member as retired, with the retired keys a line still needs), and Discord Deyao "waiting on you: sign the
+   kernel's <copy> roster in Settings → Kernel". He signs it at his leisure.
+5. **The flip is the router's**, at once after the signature (router/kernelflip.go): every serving component hands
+   over and freezes, the new copy's notarizer, spawner and secrets take their state (the Fly token and the open unlocks
+   included), and every call goes to the new copy. Nothing restarts and no session notices (calls wait out the flip's
+   seconds). `GET /setup/kernel/roster`'s `flip` shows it under way; a step that fails is retried every 30 s and DMs
+   once (`waiting` says why: a component of either copy restarted since the roster was read → file and sign a new
+   roster; one not answering → bring it back).
+6. **Then commit the flip:** `infra/setup.py kernel-flipped` (refuses while a flip is under way) writes active-kernel.txt
+   (the new serving copy), deletes its hold and scales the old copy to zero; commit and push (never a force push). The
+   next release lands on the old copy.
+
+A crash restart of a serving component (not a release: the node, an OOM) makes the roster stale as before: run
+`infra/setup.py kernel-roster` (the serving copy; it names the restarted component's old keys as retired, so live
+sessions' grants and documents keep checking) and Deyao signs it. A restarted spawner needs `infra/setup.py
+kernel-fly-token <file from infra/fly-token.sh>` again (its token was in its memory only); a restarted secrets is a
+Recover with the kit (Settings → Kernel).
+
+If a component of the copy taking over restarts during the flip (its new keys aren't the signed roster's), the flip
+waits: file and sign a new roster for that copy (`infra/setup.py kernel-roster --copy <it>`); the frozen components
+hand the same state to it and the flip goes on (a component that already took a handoff serves and takes no other). A
+secrets of that copy that restarted after its takeover, or before it, has lost what it held (memory only): Recover it
+with the kit (Settings → Kernel), as after any secrets crash; the flip then counts its takeover done.
 
 Testing the selection: `python3 infra/kernel_pin_test.py` (a made-up history), or `python3 infra/kernel-pin.py plan
 <kernel.yaml pinned at X^> blue X` for a real commit X.
 
-The kernel's members (`infra/setup.py kernel-roster` reads each through kernel-id): notary, notarizer, mover, merger,
-spawner, identity, gullible, minter and the serving secrets. Only the spawner (Fly) and the minter (GitHub deploy keys)
-reach the internet; secrets reaches only the minter (`KERNEL_MINTER_URL`, NetworkPolicy `kernel-secrets-minter`).
-Store versions on a box with no core are the router's (Postgres `store_versions`, DECISIONS 232): a store's Versions
-page and its restore work as before, with no phone signature (each key put back carries secrets' receipt).
-
-**A secrets release** (blue/green, as the cores; a kernel release as above): CI pins a new kernel image into the
-changed components but the serving secrets (k8s/cluster/kernel/active-secrets.txt); Deyao Recovers the next one alongside (Settings → Kernel →
-Recover alongside); then `infra/setup.py kernel-secrets-flip` (the open unlocks go with it); after the flip,
-active-secrets.txt is changed to the new serving colour. The other components restart with their releases (the router
-retries their calls; the spawner needs `kernel-fly-token` again).
+The kernel's members (`infra/setup.py kernel-roster` reads each through kernel-id as `<role>-<copy>`): notary,
+notarizer, mover, merger, spawner, identity, gullible, minter and secrets. Only the spawner (Fly) and the minter (GitHub
+deploy keys) reach the internet; each copy's secrets reaches only its own minter (`KERNEL_MINTER_URL`, NetworkPolicies
+`kernel-secrets-minter-<copy>`). Store versions on a box with no core are the router's (Postgres `store_versions`,
+DECISIONS 232): a store's Versions page and its restore work as before, with no phone signature (each key put back
+carries secrets' receipt).
 
 Testing it on real Fly from a session: `session-secret --keys JARVIS2_FLY_TOKEN --exec infra/e2e-kernel.sh` (a new
 session on the kernel, its boot from its documents, pause into a source with its snapshot, resume, destroy).

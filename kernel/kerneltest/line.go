@@ -1,7 +1,6 @@
 package kerneltest
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -15,26 +14,25 @@ import (
 	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
-// post: a component's answer (a signed document), or the error it gave
+// post: a serving component's answer (a signed document), or the error it gave
 func (k *Kernel) post(role, path string, body any) (sig.Doc, error) {
-	b, _ := json.Marshal(body)
-	resp, err := http.Post(k.URL[role]+path, "application/json", bytes.NewReader(b))
+	d, err := postTo(k.URL[role], path, body)
 	if err != nil {
-		return sig.Doc{}, err
+		err = fmt.Errorf("%s: %w", role, err)
 	}
-	defer resp.Body.Close()
-	out, _ := io.ReadAll(resp.Body)
-	var d sig.Doc
-	json.Unmarshal(out, &d)
-	if resp.StatusCode != 200 {
-		return d, fmt.Errorf("%s%s: HTTP %d %s", role, path, resp.StatusCode, d.Payload)
-	}
-	return d, nil
+	return d, err
 }
 
-// Identity: a component's identity
-func (k *Kernel) Identity(role string) sig.Identity {
-	resp, err := http.Get(k.URL[role] + "/identity")
+// Post: a component's answer by its Deployment name ("<role>-<copy>") or serving role, or the error it gave
+func (k *Kernel) Post(name, path string, body any) (sig.Doc, error) {
+	return postTo(k.URLFor(name), path, body)
+}
+
+// Identity: a serving component's identity
+func (k *Kernel) Identity(role string) sig.Identity { return identityOf(k.URL[role], role) }
+
+func identityOf(u, role string) sig.Identity {
+	resp, err := http.Get(u + "/identity")
 	if err != nil {
 		panic(err)
 	}

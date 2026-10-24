@@ -2,14 +2,17 @@
 // policy table — the shape (kinds of predecessor and successor), the signer's key, and "first successor of a source" —
 // and answers the log notary's challenge over the cert's ID. A shape not in the table is refused. It remembers, on its
 // own volume, every source that has been defined (a source is defined once, by the first cert into it) and every
-// source that has a successor; both are written and synced before the answer.
+// source that has a successor; both are written and synced before the answer. That state moves to the other kernel
+// copy in the copy flip (internal/serve flip.go): the notarizer hands it over and freezes, the other copy's takes it.
 package notarizer
 
 import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -54,20 +57,27 @@ type Notarizer struct {
 	mu        sync.Mutex
 	s         *sig.Signer
 	trust     *sig.Trust
+	path      string
 	f         *os.File
+	cont      *serve.Continuity // its mode in the copy flip (path + ".mode")
 	defined   map[doc.Object]bool
 	succeeded map[doc.Object]bool
 	now       func() time.Time
 }
 
-// Open: the state at path (made if missing)
+// Open: the state at path (made if missing), its mode beside it
 func Open(path string, s *sig.Signer, t *sig.Trust) (*Notarizer, error) {
+	cont, err := serve.OpenContinuity(path + ".mode")
+	if err != nil {
+		return nil, err
+	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, err
 	}
-	n := &Notarizer{s: s, trust: t, f: f, defined: map[doc.Object]bool{}, succeeded: map[doc.Object]bool{}, now: time.Now}
+	n := &Notarizer{s: s, trust: t, path: path, f: f, cont: cont, defined: map[doc.Object]bool{}, succeeded: map[doc.Object]bool{}, now: time.Now}
 	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1<<16), 1<<20)
 	for sc.Scan() {
 		var e entry
 		if err := json.Unmarshal(sc.Bytes(), &e); err != nil {
@@ -80,7 +90,15 @@ func Open(path string, s *sig.Signer, t *sig.Trust) (*Notarizer, error) {
 			n.succeeded[e.Succeeded] = true
 		}
 	}
-	return n, sc.Err()
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	if r := t.Roster(); r != nil { // a roster already held decides a new volume's mode now (else POST /roster does)
+		if err := cont.Decide(*r, "notarizer"); err != nil {
+			return nil, err
+		}
+	}
+	return n, nil
 }
 
 // rule: the table row for a shape and signer, or why there is none
@@ -167,6 +185,9 @@ func (n *Notarizer) Notarize(in Input) (sig.Doc, error) {
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	if err := n.cont.Serving(); err != nil {
+		return sig.Doc{}, err
+	}
 	var rec []entry
 	if c.Succ.Kind() == "source" {
 		if n.defined[c.Succ] {
@@ -204,6 +225,97 @@ func (n *Notarizer) Notarize(in Input) (sig.Doc, error) {
 	return n.s.SignJSON(doc.Notarized{Kind: "notarized", Cert: in.Cert.ID(), Challenge: in.Challenge})
 }
 
+// ---- the copy flip (serve.Stateful) --------------------------------------------------------------------------
+
+// handed: the state as it moves to the other copy
+type handed struct {
+	Defined   []doc.Object `json:"defined"`
+	Succeeded []doc.Object `json:"succeeded"`
+}
+
+func sortedSet(m map[doc.Object]bool) []doc.Object {
+	out := make([]doc.Object, 0, len(m))
+	for o := range m {
+		out = append(out, o)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+func (n *Notarizer) Decide(r sig.Roster) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.cont.Decide(r, "notarizer")
+}
+
+// Mode: serving, standby or handed-off ("" before the first roster)
+func (n *Notarizer) Mode() string { return n.cont.Mode() }
+
+// Handoff: frozen (no notarization after it), then every defined and succeeded source
+func (n *Notarizer) Handoff(roster string) ([]byte, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if err := n.cont.Freeze(roster); err != nil {
+		return nil, err
+	}
+	return json.Marshal(handed{Defined: sortedSet(n.defined), Succeeded: sortedSet(n.succeeded)})
+}
+
+// Takeover: the predecessor's sources replace this volume's (written and synced before it serves)
+func (n *Notarizer) Takeover(id string, state []byte) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	again, err := n.cont.CanTake(id)
+	if err != nil || again {
+		return err
+	}
+	var h handed
+	if err := sig.StrictJSON(state, &h); err != nil {
+		return serve.Fail(400, "the handed state: %v", err)
+	}
+	tmp := n.path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	w := bufio.NewWriter(f)
+	defined, succeeded := map[doc.Object]bool{}, map[doc.Object]bool{}
+	for _, o := range h.Defined {
+		b, _ := json.Marshal(entry{Defined: o})
+		w.Write(append(b, '\n'))
+		defined[o] = true
+	}
+	for _, o := range h.Succeeded {
+		b, _ := json.Marshal(entry{Succeeded: o})
+		w.Write(append(b, '\n'))
+		succeeded[o] = true
+	}
+	if err = w.Flush(); err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, n.path); err != nil {
+		return err
+	}
+	nf, err := os.OpenFile(n.path, os.O_RDWR|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	n.f.Close()
+	n.f, n.defined, n.succeeded = nf, defined, succeeded
+	if err := n.cont.Took(id); err != nil {
+		return err
+	}
+	log.Printf("notarizer: took over %d defined and %d succeeded sources; serving", len(defined), len(succeeded))
+	return nil
+}
+
 func Register(s *serve.Server, n *Notarizer) {
+	s.State = n
 	serve.Handle(s, "POST /notarize", func(in Input) (any, error) { return n.Notarize(in) })
 }
