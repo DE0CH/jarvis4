@@ -500,22 +500,66 @@ func (r *Router) CancelCron(sid, name string) error {
 // resumeWithPrompt: the prompt is queued BEFORE the resume starts, so the resume sees it (a vouching core carries it
 // in the successor's cert, which the phone approves); queued after, the resume's goroutine could miss it and the
 // prompt would reach the machine unsigned. A refused resume puts the earlier queued prompt back.
+//
+// A kernel line's resume carries no one-time inputs (it spawns from the line's source), so its prompt is filed at
+// once as a pending message (messages.go): the app that sent it opens it for Face ID straight away, and the approved
+// message goes in as soon as the session is up (Deyao, 2026-10-24: "The resume with message is broken").
 func (r *Router) resumeWithPrompt(sid string, upgrade bool, prompt string) error {
 	if prompt == "" {
 		return r.Resume(sid, upgrade)
 	}
 	var before string
+	kernel := false
 	r.st.Do(func(d *persisted) {
 		if sc := d.Schedules[sid]; sc != nil {
 			before = sc.ResumePrompt
 		}
+		if s := d.Sessions[sid]; s != nil {
+			kernel = s.Kernel != nil
+		}
 	})
+	if kernel {
+		var earlier *PendingMessage // one this prompt replaces: back if the resume is refused
+		r.st.Do(func(d *persisted) {
+			for _, x := range d.Messages {
+				if x.Session == sid && x.Kind == "resume-prompt" && x.State == "pending" {
+					c := *x
+					earlier = &c
+				}
+			}
+		})
+		dl := Delivery{Kind: "resume-prompt", Text: prompt}
+		text, from, note, _ := messageText(dl)
+		pm, err := r.holdMessage(sid, dl, text, from, note, nil)
+		if err != nil {
+			return err
+		}
+		if err := r.Resume(sid, upgrade); err != nil {
+			r.st.Do(func(d *persisted) {
+				if x := d.Messages[pm.ID]; x != nil && x.State == "pending" && x.ID != earlier.idOrEmpty() {
+					delete(d.Messages, pm.ID)
+				}
+				if earlier != nil && d.Messages[earlier.ID] == nil {
+					d.Messages[earlier.ID] = earlier
+				}
+			})
+			return err
+		}
+		return nil
+	}
 	r.SetResumePrompt(sid, prompt)
 	if err := r.Resume(sid, upgrade); err != nil {
 		r.SetResumePrompt(sid, before)
 		return err
 	}
 	return nil
+}
+
+func (pm *PendingMessage) idOrEmpty() string {
+	if pm == nil {
+		return ""
+	}
+	return pm.ID
 }
 
 // SetResumePrompt: delivered once the session is started again (resumePromptTick)

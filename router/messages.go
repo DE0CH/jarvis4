@@ -332,7 +332,7 @@ func (r *Router) holdMessage(sid string, d Delivery, text, from, note string, o 
 	for _, x := range replaced {
 		log.Printf("[message] %s: %s %s replaced by %s", sid, x.Kind, x.ID, pm.ID)
 	}
-	if first {
+	if first && pm.Kind != "resume-prompt" { // a resume prompt: the app that sent it opens it for Face ID at once
 		r.DM(fmt.Sprintf("🟡 Session “%s”: a message waits for you to deliver or deny it in the Inbox (%s, from %s).", title, kindLabel(pm.Kind), from))
 	}
 	log.Printf("[message] %s: %s %s waits for Deyao", sid, pm.Kind, pm.ID)
@@ -449,6 +449,42 @@ func (r *Router) previewText(sid string, d Delivery) (string, error) {
 
 // ---- Deyao's answers ------------------------------------------------------------------------------------------
 
+// linePhone: the line a message approval names and the phone key that signs it. An old-core line: its core-signed
+// cert. A kernel line: the session's id, and the phone secrets' signed key statement names (the machine reads the
+// same statement, machine/kernelboot.go); "" when the kernel can't be asked.
+func (r *Router) linePhone(sid string) (line, phone string) {
+	kernel := false
+	r.st.Do(func(d *persisted) {
+		if s := d.Sessions[sid]; s != nil {
+			line, kernel = sessionLine(s), s.Kernel != nil
+			if !kernel {
+				phone = certField(s.Cert, "phone")
+			}
+		}
+	})
+	if kernel {
+		phone = kernelPhoneHook(r)
+	}
+	return line, phone
+}
+
+// kernelPhoneHook: the phone key in secrets' key statement ("" when there is no kernel or it can't be asked); a seam
+// for tests
+var kernelPhoneHook = func(r *Router) string {
+	if r.kernel == nil {
+		return ""
+	}
+	ks, _, err := r.kernel.Keys()
+	if err != nil {
+		return ""
+	}
+	var k struct {
+		Phone string `json:"phone"`
+	}
+	json.Unmarshal([]byte(ks.Payload), &k)
+	return k.Phone
+}
+
 // DraftMessages: the exact text the phone signs to deliver these pending messages (one session's)
 func (r *Router) DraftMessages(ids []string) (text, sid, line string, err error) {
 	if len(ids) == 0 || len(ids) > 50 {
@@ -476,13 +512,11 @@ func (r *Router) DraftMessages(ids []string) (text, sid, line string, err error)
 			}
 			items = append(items, messageItem{ID: pm.ID, Delivery: pm.Kind, Sha256: pm.Sha256, From: pm.From, Text: pm.Text})
 		}
-		if s := d.Sessions[sid]; s != nil {
-			line = certField(s.Cert, "line")
-		}
 	})
 	if err != nil {
 		return "", "", "", err
 	}
+	line, _ = r.linePhone(sid)
 	if line == "" {
 		return "", "", "", errors.New("the session has no certified machine yet")
 	}
@@ -503,6 +537,13 @@ func (r *Router) ApproveMessages(doc *Doc) ([]string, error) {
 		return nil, &badRequest{"the approval has expired: deliver again"}
 	}
 	ids := []string{}
+	var sid string
+	r.st.Do(func(d *persisted) {
+		if pm := d.Messages[a.Items[0].ID]; pm != nil {
+			sid = pm.Session
+		}
+	})
+	line, phone := r.linePhone(sid)
 	r.st.Do(func(d *persisted) {
 		for _, it := range a.Items {
 			pm := d.Messages[it.ID]
@@ -517,11 +558,11 @@ func (r *Router) ApproveMessages(doc *Doc) ([]string, error) {
 			ids = append(ids, it.ID)
 		}
 		s := d.Sessions[d.Messages[ids[0]].Session]
-		if s == nil || certField(s.Cert, "line") != a.Session {
+		if s == nil || s.ID != sid || line == "" || line != a.Session {
 			err = &badRequest{"the approval is for another session"}
 			return
 		}
-		if phone := certField(s.Cert, "phone"); phone == "" || !verifyP256(phone, []byte(doc.Payload), doc.Sig) {
+		if phone == "" || !verifyP256(phone, []byte(doc.Payload), doc.Sig) {
 			err = &forbidden{"not signed by the phone this session's cert names"}
 			return
 		}
@@ -569,12 +610,7 @@ func (r *Router) DraftMessageRule(sid, kind string) (string, error) {
 	if ruleText(kind) == "" {
 		return "", &badRequest{fmt.Sprintf("no rule for %q: a rule covers one of %s", kind, strings.Join(ruleKinds(), ", "))}
 	}
-	var line string
-	r.st.Do(func(d *persisted) {
-		if s := d.Sessions[sid]; s != nil {
-			line = certField(s.Cert, "line")
-		}
-	})
+	line, _ := r.linePhone(sid)
 	if line == "" {
 		return "", errors.New("the session has no certified machine yet")
 	}
@@ -606,13 +642,14 @@ func (r *Router) AddMessageRule(sid string, doc *Doc) (*MessageRule, error) {
 	}
 	var rule *MessageRule
 	kick := []string{}
+	line, phone := r.linePhone(sid)
 	r.st.Do(func(d *persisted) {
 		s := d.Sessions[sid]
-		if s == nil || certField(s.Cert, "line") != a.Session {
+		if s == nil || line == "" || line != a.Session {
 			err = &badRequest{"the rule is for another session"}
 			return
 		}
-		if phone := certField(s.Cert, "phone"); phone == "" || !verifyP256(phone, []byte(doc.Payload), doc.Sig) {
+		if phone == "" || !verifyP256(phone, []byte(doc.Payload), doc.Sig) {
 			err = &forbidden{"not signed by the phone this session's cert names"}
 			return
 		}

@@ -17,7 +17,7 @@ struct ReviewSheet: View {
       case .batch(let id): BatchReviewView(batchId: id)
       case .restore(let st, let q, let inbox): RestoreReviewView(store: st, seq: q, inbox: inbox, request: request)
       case .apiCall(let id): APICallReviewView(callId: id)
-      case .messages(let s): MessageReviewView(sessionId: s)
+      case .messages(let s, let deliver): MessageReviewView(sessionId: s, deliverPrompt: deliver)
       }
     }
     .interactiveDismissDisabled(false)

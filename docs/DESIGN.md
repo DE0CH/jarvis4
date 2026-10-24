@@ -939,6 +939,11 @@ core's attestation as "Inputs to a machine" says (the machine checks a peer mess
   kind, those bytes and that text, the phone key from its core-signed cert signed it for its line, the hour hasn't run
   out and the item id is unused (recorded in the snapshot's `.jarvis2-delivered.json`). A machine that renders another
   text refuses with its own, and the router holds that one for Deyao instead.
+- **A kernel line** has no core-signed cert: the line it signs for is the session's id, and the phone key is the one
+  in secrets' signed key statement (the machine reads the same statement at boot; the router checks the signature with
+  it too). Its resume carries no one-time inputs, so Resume with a prompt files the prompt at once as a pending
+  message, no DM; the app that sent it opens that message's page and signs it under one Face ID, and the router
+  delivers it as soon as the session is up (DECISIONS 238).
 - **Deny** signs nothing: the message is dropped, and whoever asked is told as an Inbox outcome: a peer message's
   sender, or the session for its own wakeup, cron or watch (the outcome of the request that armed it). The same for a
   lapse (24 h without an answer) and for a failure after approval. A newer message of the same thing (the next

@@ -29,8 +29,9 @@ enum SecureRequest: Identifiable, Equatable, Hashable {
   /// requests the call brings about (APICallReviewView)
   case apiCall(id: String)
   /// a session's pending messages (router: per-message delivery approval): every one listed, delivered under one
-  /// Face ID (or one by one), or denied (MessageReviewView)
-  case messages(session: String)
+  /// Face ID (or one by one), or denied (MessageReviewView). `deliver`: the resume prompt Deyao just typed into Resume,
+  /// signed at once when the page shows exactly that text pending
+  case messages(session: String, deliver: String? = nil)
 
   var id: String {
     switch self {
@@ -42,7 +43,7 @@ enum SecureRequest: Identifiable, Equatable, Hashable {
     case .batch(let b): "batch-\(b)"
     case .restore(let st, let q, _): "restore-\(st)-\(q)"
     case .apiCall(let c): "api-call-\(c)"
-    case .messages(let s): "messages-\(s)"
+    case .messages(let s, _): "messages-\(s)"
     }
   }
   var inboxId: String? {

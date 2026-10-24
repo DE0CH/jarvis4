@@ -2747,3 +2747,15 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      the stack's notification policy is reset, `infra/grafana.py` is gone, and Discord #jarvis2-alerts is deleted.
      `/healthz` and its Access app stay as a check anyone with the service token can call. Supersedes the alert parts
      of 187 and 211.
+
+238. **On a kernel line, Resume with a prompt is one Face ID, and its messages can be delivered at all** (Deyao,
+     2026-10-24: "The resume with message is broken"; chose "One Face ID at Resume"). A kernel line's resume spawns
+     from its source, so the prompt never rode in a cert's `Options.Once`; it reached the Inbox later as a lone pending
+     message, and Deliver there couldn't work either: the router drafted and checked message approvals against the
+     core cert's line and phone, which a kernel line doesn't have. Now `resumeWithPrompt` files a kernel line's
+     prompt as a pending message before the resume (no DM; a refused resume puts back the one it replaced), the app
+     opens it right after Resume and signs it with the usual checks (`MessageReviewView` `deliverPrompt`), and the
+     approved message goes in once the session is up. Message drafts, approvals and rules on a kernel line use the
+     session's id as the line and the phone key from secrets' key statement (`linePhone`), which is what the machine
+     checks against; the app's message page names a kernel line by its id and this phone's own key. *Not chosen*:
+     no signature for a resume prompt (anyone past the app login could type into a session); keeping the Inbox step.

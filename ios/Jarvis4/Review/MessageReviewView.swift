@@ -5,6 +5,10 @@
 // Deliver all: the router drafts one batch text with every listed message; it is checked item for item against what
 // the page shows (Checks.reviewMessages: the ids, each kind, sender and text, the cert's line, issued now, at most an
 // hour) and signed under ONE Face ID. A message can be delivered or denied on its own. Deny signs nothing.
+// A kernel line (router/kernelline.go) has no core-signed cert: its line is the session's id and the phone key is this
+// phone's own (the machine reads it from secrets' signed key statement); the page names it as such.
+// Opened right after Resume with a prompt (`deliverPrompt`), the pending resume prompt with exactly that text is
+// delivered at once: the same checks, one Face ID, no second tap.
 // A ruleable kind offers its rule ("Always deliver Jarvis's login “continue” to this session"): one kind, this
 // session, phone-signed (Checks.reviewMessageRule), revocable on the session's page.
 import SwiftUI
@@ -12,6 +16,9 @@ import SwiftUI
 struct MessageReviewView: View {
   @Environment(AppModel.self) private var model
   let sessionId: String
+  /// the prompt Deyao just typed into Resume: delivered at once when it is pending here
+  var deliverPrompt: String? = nil
+  @State private var autoDelivered = false
   @State private var cert: SessionCert?
   /// the session as its core-signed cert names it (never the router's or the message's label)
   @State private var ident: LineIdentity?
@@ -111,6 +118,7 @@ struct MessageReviewView: View {
   }
 
   private func load() async {
+    if model.session(sessionId)?.j["kernel"].bool == true { return await loadKernel() }
     do {
       let c = try await RouterClient.shared.sessionCert(sessionId)
       try LinePins.check(session: sessionId, line: c.line)
@@ -119,7 +127,29 @@ struct MessageReviewView: View {
       ident = id
       cert = c
       try await reload()
+      await deliverTyped()
     } catch { loadError = errText(error) }
+  }
+  /// a kernel line: its line is the session's id, the phone that signs is this one (what the machine checks it against
+  /// comes from secrets' signed key statement, not from the router)
+  private func loadKernel() async {
+    do {
+      try LinePins.check(session: sessionId, line: sessionId)
+      let phone = try PhoneKeys.shared.publicKeys().signingKey
+      let c = SessionCert(kind: "kernel-line", stores: nil, options: nil, phone: phone, sensitive: nil, line: sessionId, issuedAt: nil, nonce: nil)
+      ident = LineIdentity(cert: c)
+      cert = c
+      try await reload()
+      await deliverTyped()
+    } catch { loadError = errText(error) }
+  }
+  /// opened from Resume with a prompt: that prompt, pending here with exactly the typed text, is delivered at once
+  private func deliverTyped() async {
+    guard let p = deliverPrompt, !autoDelivered else { return }
+    autoDelivered = true
+    let want = p.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let m = list?.first(where: { $0.kind == "resume-prompt" && $0.text == want }) else { return }
+    await deliver([m])
   }
   private func reload() async throws {
     let all = try await RouterClient.shared.messages()

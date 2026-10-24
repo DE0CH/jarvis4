@@ -11,7 +11,8 @@ extension AppModel {
   }
 
   /// Resume with an optional prompt (typed into the conversation once it is up; the iPhone approves it as a one-time
-  /// input). A resume that needs the phone (another permission mode, a prompt) opens its approval by itself.
+  /// input). A resume that needs the phone (another permission mode, a prompt) opens its approval by itself. On a kernel
+  /// line the prompt is a pending message the router files at once: its page opens and signs it under one Face ID.
   func resume(_ id: String) async {
     await exclusive("s:" + id) {
       let t = session(id)?.title ?? id
@@ -21,16 +22,20 @@ extension AppModel {
       defer { pend("s:" + id, nil) }
       do {
         var body: [String: Any] = ["upgrade": false]
-        if !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { body["prompt"] = prompt.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let typed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !typed.isEmpty { body["prompt"] = typed }
         try await RouterClient.shared.call("POST", "api/sessions/\(id)/resume", body)
         var found: Approval?
+        var message = false
         await refreshUntil(120) { m in
           // a resume the phone approves (another mode, a prompt, one the core won't answer by itself), or a failed new
           // line's start asked again (new-session)
           found = m.approvals.first { ($0.kind == "resume-upgrade" || $0.kind == "new-session") && $0.session == id }
-          return found != nil || ["started", "initialising", "failed", "paused"].contains(m.session(id)?.state ?? "")
+          message = !typed.isEmpty && m.messagesWaiting(for: id).contains { $0.kind == "resume-prompt" }
+          return found != nil || message || ["started", "initialising", "failed", "paused"].contains(m.session(id)?.state ?? "")
         }
         if let a = found { present(.approval(id: a.id)) }
+        else if message { present(.messages(session: id, deliver: typed)) { [weak self] ok in if ok { self?.settle(60) } } }
         settle(30)
       } catch { fail(error); await refresh() }
     }

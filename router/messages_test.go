@@ -598,3 +598,86 @@ func TestAMessageIntoAnOldImageMachineIsHeldWithJarvisText(t *testing.T) {
 		t.Fatalf("continue %+v, pending %+v", ds[n:], m.pending())
 	}
 }
+
+// kernelMsgRig: newMsgRig's session s1 as a kernel line: no core cert; its line is its id and the phone key comes from
+// secrets' key statement (kernelPhoneHook)
+func kernelMsgRig(t *testing.T, machine string) *msgRig {
+	m := newMsgRig(t, machine, false, previewOK)
+	m.r.st.Do(func(d *persisted) {
+		d.Sessions["s1"].Cert = nil
+		d.Sessions["s1"].Kernel = &KernelLine{}
+	})
+	old := kernelPhoneHook
+	pub := base64.StdEncoding.EncodeToString(m.phone.PublicKey().Bytes())
+	kernelPhoneHook = func(*Router) string { return pub }
+	t.Cleanup(func() { kernelPhoneHook = old })
+	return m
+}
+
+// A kernel line's pending message is drafted for its line (the session's id) and taken only under the phone key
+// secrets names (Deyao, 2026-10-24: Deliver on a kernel session's message had no core cert to read either from)
+func TestAKernelLinesMessageIsDraftedAndApprovedWithoutACoreCert(t *testing.T) {
+	m := kernelMsgRig(t, "mmsgk1")
+	if err := m.r.deliverVouched("s1", Delivery{Kind: "resume-prompt", Text: "carry on"}); err != nil {
+		t.Fatal(err)
+	}
+	ps := m.waitPending(t, 1)
+	text, sid, line, err := m.r.DraftMessages([]string{ps[0].ID})
+	if err != nil || sid != "s1" || line != "s1" {
+		t.Fatalf("%v %s %s", err, sid, line)
+	}
+	stranger, _ := ecdh.P256().GenerateKey(rand.Reader)
+	ssig, _ := signP256(stranger, []byte(text))
+	if _, err := m.r.ApproveMessages(&Doc{Payload: text, Sig: ssig}); err == nil {
+		t.Fatal("took another key's signature")
+	}
+	// the delivery itself (the log notary's challenge, then the machine) is the kernel path's own: what it is handed
+	var got []Delivery
+	var mu sync.Mutex
+	old := deliverApprovedHook
+	deliverApprovedHook = func(_ *Router, _ PendingMessage, d Delivery) error {
+		mu.Lock()
+		got = append(got, d)
+		mu.Unlock()
+		return nil
+	}
+	t.Cleanup(func() { deliverApprovedHook = old })
+	if ids, err := m.r.ApproveMessages(m.sign(t, text)); err != nil || len(ids) != 1 {
+		t.Fatal(err)
+	}
+	messageWG.Wait()
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 1 || got[0].Kind != "resume-prompt" || got[0].Approval == nil || got[0].Approval.Payload != text {
+		t.Fatalf("delivered %+v", got)
+	}
+	if len(m.pending()) != 0 {
+		t.Fatalf("left %+v", m.pending())
+	}
+}
+
+// Resume with a prompt on a kernel line: its resume carries no one-time inputs, so the prompt is filed at once as a
+// pending message for the app to sign (no DM: the app that sent it opens it), not queued for a cert that never
+// carries it; a refused resume takes the filed message back
+func TestAKernelLinesResumePromptIsFiledForTheAppAtOnce(t *testing.T) {
+	m := kernelMsgRig(t, "mmsgk2")
+	if err := m.r.resumeWithPrompt("s1", false, "  Im back\r\n"); err != nil { // started: Resume has nothing to do
+		t.Fatal(err)
+	}
+	ps := m.pending()
+	if len(ps) != 1 || ps[0].Kind != "resume-prompt" || ps[0].Text != "Im back" || ps[0].State != "pending" || len(m.dms()) != 0 {
+		t.Fatalf("pending %+v dms %q", ps, m.dms())
+	}
+	m.r.st.Do(func(d *persisted) {
+		if sc := d.Schedules["s1"]; sc != nil && sc.ResumePrompt != "" {
+			t.Fatalf("queued for a cert: %q", sc.ResumePrompt)
+		}
+		d.Sessions["s1"].State = "approval" // a resume that is refused now
+	})
+	if err := m.r.resumeWithPrompt("s1", false, "again"); err == nil {
+		t.Fatal("resumed a session waiting for approval")
+	}
+	if ps := m.pending(); len(ps) != 1 || ps[0].Text != "Im back" {
+		t.Fatalf("pending after a refused resume %+v", ps)
+	}
+}
