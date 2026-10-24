@@ -1,21 +1,21 @@
 // Package secrets: the kernel's secrets (DESIGN "Target design"), carried over from the old core's store half
-// (core/keys.go, history.go, deploykeys.go, github.go, continuity.go; same formats, so the app's store code serves
-// both). It holds the stores, the unlocks and a signed list of open unlocks. Given a grant (signed by the mover or the
-// merger), it returns the stores the grant's allowed set names (store:x), sealed to the grant's machine and signed.
-// An unlock is per store and never locks by itself (D2): it ends with a lock call, and the phone sees open ones. Any
-// written key reaches the next pull, whoever wrote it (D1): a write carries its value sealed to secrets as well
-// ("live"), which secrets uses only to update an open unlock of that store. It checks nothing about who may write:
-// writing is protected only by the router.
+// (core/keys.go, deploykeys.go, continuity.go; same formats, so the app's store code serves both). It holds the
+// stores, the unlocks and a signed list of open unlocks, and keeps nothing it doesn't need. It hands secrets out and
+// never uses one (DECISIONS 230): a deploy key's GitHub call is the minter's (kernel/minter), and a store's earlier
+// versions are the router's (a restore writes back an earlier key with its key-written receipt, keys.go). Given a
+// grant (signed by the mover or the merger), it returns the stores the grant's allowed set names (store:x), sealed to
+// the grant's machine and signed. An unlock is per store and never locks by itself (D2): it ends with a lock call, and
+// the phone sees open ones. Any written key reaches the next pull, whoever wrote it (D1): a write carries its value
+// sealed to secrets as well ("live"), which secrets uses only to update an open unlock of that store. It checks
+// nothing about who may write: writing is protected only by the router.
 package secrets
 
 import (
 	"crypto/ecdh"
-	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -24,8 +24,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DE0CH/jarvis4/kernel/doc"
 	"github.com/DE0CH/jarvis4/kernel/gv"
+	"github.com/DE0CH/jarvis4/kernel/minter"
 	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
@@ -50,9 +50,8 @@ type Secrets struct {
 	mu        sync.Mutex
 	signer    *Signer
 	agreement *ecdh.PrivateKey // secrets' share K of every store's key
-	nonceKey  []byte
-	MasterKey string     // the master public key it was claimed with ("" = empty)
-	trust     *sig.Trust // the root key's roster: the other components' identities (and its own) are checked with it
+	MasterKey string           // the master public key it was claimed with ("" = empty)
+	trust     *sig.Trust       // the root key's roster: the other components' identities (and its own) are checked with it
 	exit      func()
 
 	phoneSigning, phoneAgreement string
@@ -64,10 +63,7 @@ type Secrets struct {
 	unlocked     map[string]*unlocked
 	pendingKeys  map[string]pendingDeployKey
 	repoOwner    map[string]string
-
-	history    map[string][]*storeVersionRec
-	historySeq map[string]int
-	restores   map[string]*pendingRestore
+	repoKeyID    map[string]int64 // a deploy-key store → the id GitHub gave its key (what a remove deletes)
 
 	// continuity.go: the state key, the newest state's seq and hash and the sealed document; the mode (blue/green)
 	lineKey     []byte
@@ -77,7 +73,7 @@ type Secrets struct {
 	mode        string
 	standbyFrom int
 
-	github GitHub
+	minter Minter
 	now    func() time.Time
 }
 
@@ -89,8 +85,8 @@ type pendingUnlock struct {
 }
 
 // New: an empty secrets with fresh keys; rootPub is the root key's public half (keys/root.pub), which the roster is
-// checked against
-func New(rootPub string, github GitHub) (*Secrets, error) {
+// checked against; m is where an approved deploy-key call goes (the minter)
+func New(rootPub string, m Minter) (*Secrets, error) {
 	s, err := NewSigner()
 	if err != nil {
 		return nil, err
@@ -99,12 +95,10 @@ func New(rootPub string, github GitHub) (*Secrets, error) {
 	if err != nil {
 		return nil, err
 	}
-	nk := make([]byte, 32)
-	rand.Read(nk)
-	c := &Secrets{signer: s, agreement: a, nonceKey: nk, trust: sig.NewTrust(rootPub),
+	c := &Secrets{signer: s, agreement: a, trust: sig.NewTrust(rootPub),
 		stores: map[string]map[string]*KeyEntry{}, notSensitive: map[string]bool{}, pending: map[string]pendingUnlock{},
 		unlocked: map[string]*unlocked{}, pendingKeys: map[string]pendingDeployKey{}, repoOwner: map[string]string{},
-		github: github, now: time.Now}
+		repoKeyID: map[string]int64{}, minter: m, now: time.Now}
 	return c, nil
 }
 
@@ -137,15 +131,6 @@ func (c *Secrets) sign(v any) (SignedDoc, error) {
 		return SignedDoc{}, err
 	}
 	return SignedDoc{Payload: string(b), Sig: s}, nil
-}
-
-func (c *Secrets) mac(parts ...string) string {
-	m := hmac.New(sha256.New, c.nonceKey)
-	for _, p := range parts {
-		m.Write([]byte(p))
-		m.Write([]byte{0})
-	}
-	return hex.EncodeToString(m.Sum(nil))
 }
 
 // ---- identity ---------------------------------------------------------------------------------------------------
@@ -210,7 +195,8 @@ type claimStatement struct {
 	Standby bool `json:"standby,omitempty"`
 }
 
-// FlyStore: the old core's own Fly token store; never a session's (the spawner gets its token sealed by setup)
+// FlyStore: the old core's own Fly token store, a name secrets never holds (storeName refuses it; the spawner gets
+// its token sealed by setup)
 const FlyStore = "core"
 
 type claimBundle struct {
@@ -270,7 +256,7 @@ func (c *Secrets) Claim(statement, masterSig string, bundle Sealed) (SignedDoc, 
 	stores := map[string]map[string]*KeyEntry{}
 	owners := map[string]string{}
 	for _, n := range b.Stores {
-		if _, seen := stores[n]; !storeName(n) || n == FlyStore || seen {
+		if _, seen := stores[n]; !storeName(n) || seen {
 			return SignedDoc{}, fail(400, "bad or repeated store %q in the bundle", n)
 		}
 		stores[n] = map[string]*KeyEntry{}
@@ -286,7 +272,7 @@ func (c *Secrets) Claim(statement, masterSig string, bundle Sealed) (SignedDoc, 
 		keys[x.Key] = &x
 	}
 	for s, repo := range b.Owners {
-		if _, ok := stores[s]; ok && repoRE.MatchString(repo) {
+		if _, ok := stores[s]; ok && minter.RepoOK(repo) {
 			owners[s] = repo
 		}
 	}
@@ -314,7 +300,7 @@ func (c *Secrets) Claim(statement, masterSig string, bundle Sealed) (SignedDoc, 
 		return SignedDoc{}, fail(400, "an identity or a state comes with a secretsSeed")
 	}
 	c.MasterKey, c.root = st.Master, st.Root
-	c.repoOwner = owners
+	c.repoOwner, c.repoKeyID = owners, map[string]int64{}
 	c.phoneSigning, c.phoneAgreement = st.Phone.SigningKey, st.Phone.AgreementKey
 	c.stores = stores
 	c.notSensitive = map[string]bool{}
@@ -323,13 +309,9 @@ func (c *Secrets) Claim(statement, masterSig string, bundle Sealed) (SignedDoc, 
 			c.notSensitive[n] = true
 		}
 	}
-	c.history, c.historySeq = nil, nil
-	for _, n := range sortedKeys(c.stores) {
-		c.record(n, VersionCause{Kind: "recover"})
-	}
 	restored := []string{}
 	if dk != nil {
-		c.signer, c.agreement, c.nonceKey, c.lineKey = dk.signer, dk.agreement, dk.nonce, dk.state
+		c.signer, c.agreement, c.lineKey = dk.signer, dk.agreement, dk.state
 		if line != nil {
 			restored = c.restoreLine(*line, line.Final)
 		}
@@ -374,33 +356,12 @@ func (c *Secrets) Wipe(statement, masterSig string) (SignedDoc, error) {
 	return d, err
 }
 
-// StoreKey: the store key C = P + K for the phone agreement key P (core.go StoreKey)
-func (c *Secrets) StoreKey(phone, other string) (SignedDoc, error) {
-	pb, err := b64.DecodeString(phone)
-	if err != nil || len(pb) != 65 {
-		return SignedDoc{}, fail(400, "phone: a P-256 public key (X9.63, base64)")
-	}
-	kb := c.agreement.PublicKey().Bytes()
-	if other != "" {
-		if kb, err = b64.DecodeString(other); err != nil || len(kb) != 65 {
-			return SignedDoc{}, fail(400, "secrets: a P-256 public key (X9.63, base64)")
-		}
-	}
-	sum, err := AddPoints(pb, kb)
-	if err != nil {
-		return SignedDoc{}, fail(400, "phone or secrets: %v", err)
-	}
-	out := map[string]any{"kind": "store-key", "phone": phone, "storeKey": b64.EncodeToString(sum)}
-	if other != "" {
-		out["secrets"] = other
-	}
-	return c.sign(out)
-}
-
 // ---- stores --------------------------------------------------------------------------------------------------
 
+// storeName: a store's name — lower case, digits and "-", never the old core's own store (the one reservation: every
+// store secrets holds came through here)
 func storeName(n string) bool {
-	if n == "" || len(n) > 64 {
+	if n == "" || len(n) > 64 || n == FlyStore {
 		return false
 	}
 	for _, r := range n {
@@ -418,14 +379,13 @@ func (c *Secrets) CreateStore(name string) (SignedDoc, error) {
 	if c.MasterKey == "" {
 		return SignedDoc{}, fail(409, "secrets isn't set up yet: Reset or Recover it in the app first")
 	}
-	if !storeName(name) || name == FlyStore || name == DeployKeyTokenStore {
+	if !storeName(name) || name == DeployKeyTokenStore {
 		return SignedDoc{}, fail(400, "bad store name (%s is always sensitive)", DeployKeyTokenStore)
 	}
 	if _, ok := c.stores[name]; ok {
 		return SignedDoc{}, fail(409, "store %s exists", name)
 	}
 	c.stores[name], c.notSensitive[name] = map[string]*KeyEntry{}, true
-	c.record(name, VersionCause{Kind: "created"})
 	return c.sign(map[string]any{"kind": "store-created", "name": name})
 }
 
@@ -469,7 +429,7 @@ func (c *Secrets) UnlockBegin(name string) (SignedDoc, error) {
 		return SignedDoc{}, fail(403, "%s is opened only by a deploy-key call, never unlocked", DeployKeyTokenStore)
 	}
 	keys := c.stores[name]
-	if len(keys) == 0 || name == FlyStore {
+	if len(keys) == 0 {
 		return SignedDoc{}, fail(404, "no store %s with contents: write a key into it first (jarvis2 put-key)", name)
 	}
 	t, err := ecdh.P256().GenerateKey(rand.Reader)
@@ -622,7 +582,7 @@ func (c *Secrets) liveUpdate(store, key string, deleted bool, live *Sealed, befo
 
 // Pull: the stores the grant's allowed set names (store:x), each from its open unlock, sealed to the grant's machine.
 // A finite set: every store it names must be open (else 423 naming it). A cofinite set: the open stores it doesn't
-// exclude. The deploy-key token store and the old core's store are never served.
+// exclude. The deploy-key token store is never served.
 func (c *Secrets) Pull(in gv.Signed) (SignedDoc, error) {
 	if in.By == "root" {
 		k, err := c.KeysStatement()
@@ -638,7 +598,7 @@ func (c *Secrets) Pull(in gv.Signed) (SignedDoc, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	served := func(n string) bool { return n != DeployKeyTokenStore && n != FlyStore }
+	served := func(n string) bool { return n != DeployKeyTokenStore }
 	var names []string
 	if g.Pair.Allowed.Only != nil {
 		for _, s := range g.Pair.Allowed.Only {
@@ -702,9 +662,6 @@ func sha256Hex(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(h[:])
 }
-
-var _ = errors.New
-var _ = doc.Sink
 
 // verifyOwn: the payload of a document only if secrets signed it
 func (c *Secrets) verifyOwn(d *SignedDoc, out any) error {

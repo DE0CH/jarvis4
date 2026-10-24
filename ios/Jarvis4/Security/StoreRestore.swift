@@ -2,7 +2,10 @@
 // store's last versions; putting one back is this phone's signature over the core's signed begin document — exactly
 // which keys come back (each with who wrote it), which go and which stay — plus its share of every key put back, under
 // one Face ID. No recovery kit and no plaintext outside the core: the core opens the keys put back and seals their
-// backups to the master public key itself. Foundation only (the interop test runs it against the real core).
+// backups to the master public key itself. Once the kernel serves, its secrets keeps no history (DECISIONS 230): the
+// router keeps the versions and the plan is the router's ("replay"), but every key it puts back carries secrets' own
+// signed key-written receipt, which this phone checks (Checks.replayReceipts) before Allow; secrets checks it again.
+// Foundation only (the interop test runs it against the real core).
 #if canImport(CryptoKit)
 import CryptoKit
 #else
@@ -24,11 +27,17 @@ struct StoreVersionsDoc: Decodable {
 /// restore_begin: what putting a version back changes, signed by the core
 struct RestoreBegin: Decodable {
   struct Side: Decodable { let seq: Int; let version: String; var at: String? = nil }
-  struct Put: Decodable { let key: String; let e: String; let dataSha256: String; var backupSha256: String = ""; var at: String? = nil; let writer: StoreWriter }
+  struct Put: Decodable {
+    let key: String; let e: String; let dataSha256: String; var backupSha256: String = ""; var at: String? = nil; let writer: StoreWriter
+    /// the kernel: secrets' signed key-written receipt of this very entry
+    var receipt: SignedDoc? = nil
+  }
   let kind: String; let pending: String; let store: String; let sensitive: Bool
   let from: Side; let to: Side
   let put: [Put]; let remove: [String]; let keep: [String]
   let t: String
+  /// the kernel: the router's plan, applied by writing each entry back with its receipt (no signature, no shares)
+  var replay: Bool? = nil
   /// the E of every share this restore needs, in order
   var es: [String] { put.map(\.e) }
 }
@@ -46,6 +55,20 @@ extension Checks {
     guard Set(names).count == names.count else { throw TrustError.mismatch("a key of \(store) named twice") }
     for p in b.put {
       try keyWriter(p.writer, store: store, key: p.key, e: p.e, dataSha256: p.dataSha256, backupSha256: p.backupSha256, setupKey: setupKey)
+    }
+  }
+  /// the kernel's plan: every key put back carries secrets' receipt (signed by `secretsKey`, the pinned one) of exactly
+  /// that entry — this store, this key, its E, data and backup, and the writer the page shows
+  static func replayReceipts(_ b: RestoreBegin, secretsKey: String) throws {
+    struct Written: Decodable {
+      let kind: String; let store: String; let key: String; let deleted: Bool; let e: String; let dataSha256: String
+      let backupSha256: String; let writer: StoreWriter
+    }
+    for p in b.put {
+      guard let r = p.receipt else { throw TrustError.mismatch("key \(p.key) of \(b.store) comes back without secrets' receipt") }
+      let w = try CoreCrypto.decode(r, by: secretsKey, as: Written.self, what: "the receipt of \(p.key)")
+      guard w.kind == "key-written", !w.deleted, w.store == b.store, w.key == p.key, w.e == p.e, w.dataSha256 == p.dataSha256,
+            w.backupSha256 == p.backupSha256, w.writer == p.writer else { throw TrustError.mismatch("the receipt of \(p.key) is for another entry") }
     }
   }
   /// the committed answer is this restore's
@@ -74,7 +97,7 @@ extension SignedAction {
     }
     f.append(.init(id: "remove", label: "Keys removed", value: list(b.remove), style: b.remove.isEmpty ? .code : .warning))
     f.append(.init(id: "keep", label: "Keys unchanged", value: "\(b.keep.count)"))
-    f.append(.init(id: "backup", label: "Backups", value: "Sealed by the core to the master key"))
+    f.append(.init(id: "backup", label: "Backups", value: b.replay == true ? "Each key's own, written back first" : "Sealed by the core to the master key"))
     return f
   }
 }

@@ -121,7 +121,7 @@ func TestKernelHealth(t *testing.T) {
 	}
 }
 
-// every component down: one line, not eight names
+// every component down: one line, not nine names
 func TestKernelHealthAllDown(t *testing.T) {
 	r, _, _, _ := rosterRig(t)
 	down := httptest.NewServer(nil)

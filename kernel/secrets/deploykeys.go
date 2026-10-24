@@ -3,59 +3,44 @@ package secrets
 // Deploy keys (Deyao, 2026-10-10): adding a repo in the app's Settings adds an SSH public key to that one repo on
 // GitHub as a read/write deploy key, and keeps the private half in a store of its own (`github-<repo>`), which
 // sessions include to clone, pull and push that repo — and no other. The app makes the key pair and wraps the
-// private half's store to the store key (store_key), so the core never sees it (R2). Removing the repo deletes
-// the deploy key on GitHub and the store.
+// private half's store to the store key P + K, so secrets never sees it. Removing the repo deletes the deploy key on
+// GitHub (by the id GitHub gave it at the add) and the store.
 //
-// Both are phone-approved, and the box alone can never make a key: the GitHub token that may manage deploy
-// keys lives only in the sensitive store `github-deploy-keys` (a fine-grained PAT with Repository
-// "Administration: read and write" and nothing else). DeployKeyBegin answers, signed, exactly what will happen
-// (the repo, the store, its sensitivity, add or remove) with the token store's E and a one-off T, as an unlock
+// Both are phone-approved, and the box alone can never make a key: the GitHub token that may manage deploy keys lives
+// only in the sensitive store `github-deploy-keys` (a fine-grained PAT with Repository "Administration: read and
+// write" and nothing else). DeployKeyBegin answers, signed, exactly what will happen (the repo, the store, its
+// sensitivity, add or remove, the key id a remove deletes) with the token store's E and a one-off T, as an unlock
 // does. The phone shows it, and under one Face ID signs that text and computes its share of the token store;
-// DeployKeyFinish checks the signature, opens the token store with the share for this call only (it never
-// joins the unlocked set, and the plaintext is dropped when the call returns), talks to GitHub, and writes or
-// deletes the repo's store. No other store is touched.
+// DeployKeyFinish checks the signature and opens the token store with the share for this call only (it never joins the
+// unlocked set). Secrets never uses the token (DECISIONS 230): it seals it to the minter's agreement key (the root
+// key's roster names it) and hands the minter the phone-signed request, drops the plaintext, and takes back the
+// minter's signed answer; then it writes or deletes the repo's store. No other store is touched.
 
 import (
 	"crypto/ecdh"
 	"crypto/rand"
-	"encoding/binary"
-	"regexp"
+	"encoding/json"
 	"strings"
 	"time"
+
+	"github.com/DE0CH/jarvis4/kernel/minter"
+	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 const (
 	// DeployKeyTokenStore: the store whose GitHub token may manage deploy keys; the only store this flow opens
 	DeployKeyTokenStore = "github-deploy-keys"
 	DeployKeyTokenKey   = "GITHUB_DEPLOY_KEYS_TOKEN"
-	// a repo's store holds these two keys, each suffixed with the repo's env slug (EnvSlug)
-	DeployRepoPrefix = "GITHUB_DEPLOY_REPO_" // "owner/name"
-	DeployKeyPrefix  = "GITHUB_DEPLOY_KEY_"  // base64 of the OpenSSH private key file
 )
 
-var repoRE = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$`)
-
-// RepoStore: the store a repo's deploy key lives in — github-<name> for Deyao's own repos (DE0CH), else
-// github-<owner>-<name>; lower case, anything outside [a-z0-9-] becomes "-"
-func RepoStore(repo string) string {
-	owner, name, _ := strings.Cut(strings.ToLower(repo), "/")
-	slug := name
-	if owner != "de0ch" {
-		slug = owner + "-" + name
-	}
-	b := []byte(slug)
-	for i, ch := range b {
-		if !(ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9') {
-			b[i] = '-'
-		}
-	}
-	return "github-" + strings.Trim(string(b), "-")
+// Minter: where an approved deploy-key call goes (kernel/minter: over HTTP in the cluster, in-process in tests)
+type Minter interface {
+	Mint(minter.Request) (SignedDoc, error)
 }
 
-// Store names can collide (DE0CH/foo-bar and foo/bar both make github-foo-bar; my.repo, my_repo and My-Repo all
-// make github-my-repo). The core knows which repo owns a deploy-key store (Core.repoOwner) and refuses an add or a
-// remove for another repo with 409, so a second repo never silently replaces the first one's key and leaves that
-// key orphaned on the first repo's GitHub. Re-adding the owning repo (a rotation) still works.
+// Store names can collide (DE0CH/foo-bar and foo/bar both make github-foo-bar). Secrets knows which repo owns a
+// deploy-key store (repoOwner) and refuses an add or a remove for another repo with 409, so a second repo never
+// silently replaces the first one's key. Re-adding the owning repo (a rotation) still works.
 
 // ownerClash: another repo owns the store (callers hold c.mu)
 func (c *Secrets) ownerClash(store, repo string) error {
@@ -65,25 +50,14 @@ func (c *Secrets) ownerClash(store, repo string) error {
 	return nil
 }
 
-// EnvSlug: the suffix of a repo's two env keys — OWNER_NAME, upper case, anything outside [A-Z0-9] as "_"
-func EnvSlug(repo string) string {
-	b := []byte(strings.ToUpper(repo))
-	for i, ch := range b {
-		if !(ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9') {
-			b[i] = '_'
-		}
-	}
-	return string(b)
-}
-
 type pendingDeployKey struct {
-	payload   string // the signed begin document: what the phone signs
-	action    string // "add" | "remove"
+	begin     SignedDoc // the signed begin document: what the phone signs, and what the minter checks
+	action    string    // "add" | "remove"
 	repo      string
 	store     string
-	title     string
-	publicKey string               // the app's key pair: the public half GitHub gets…
-	keys      map[string]*KeyEntry // …and the store's keys holding the private half, wrapped by the app to the store key
+	keyID     int64                // remove: the GitHub key it deletes (0: none known, GitHub isn't called)
+	orphan    bool                 // remove: only that key goes; the store stays
+	keys      map[string]*KeyEntry // add: the store's keys holding the private half, wrapped by the app to the store key
 	sensitive bool
 	token     KeyEntry // the token key as it was at begin (its E is what the phone answers)
 	t         *ecdh.PrivateKey
@@ -99,10 +73,14 @@ type deployKeyBegin struct {
 	Replaces  bool   `json:"replaces"` // add: the store exists and its contents are replaced
 	Title     string `json:"title"`    // the deploy key's title on GitHub
 	// add: the app's key pair — the public key GitHub gets, and the store's keys holding the private half (each one's
-	// name, E and the sha256 of its data), so the phone's signature covers exactly what the core adds and stores
-	PublicKey  string          `json:"publicKey,omitempty"`
-	Keys       []deployKeyItem `json:"keys,omitempty"`
-	TokenStore string          `json:"tokenStore"`
+	// name, E and the sha256 of its data), so the phone's signature covers exactly what secrets adds and stores
+	PublicKey string          `json:"publicKey,omitempty"`
+	Keys      []deployKeyItem `json:"keys,omitempty"`
+	// remove: the GitHub key it deletes (the id recorded at the add, or an orphan the router found: Orphan, the store
+	// stays); 0 = none known, only the store goes
+	KeyID      int64  `json:"keyId,omitempty"`
+	Orphan     bool   `json:"orphan,omitempty"`
+	TokenStore string `json:"tokenStore"`
 	// TokenWriter / TokenDataSha256 / TokenBackupSha256: who wrote the token key, as in unlock_begin (the phone checks it)
 	TokenWriter       *EntryWriter `json:"tokenWriter"`
 	TokenDataSha256   string       `json:"tokenDataSha256"`
@@ -120,8 +98,10 @@ type deployKeyItem struct {
 
 // DeployKeyRequest: deploy_key_begin's input. The app names the store and the key's title, and for an add brings
 // the key pair: PublicKey ("ssh-ed25519 <base64>") and Keys, the store's keys (the private half and the repo) each
-// wrapped to the store key (store_key). Sensitivity is what the app asks for (the app itself insists on it for DE0CH/jarvis2); the core only
-// keeps an existing sensitive store sensitive.
+// wrapped to the store key; the phone checks the begin document echoes exactly these, and the title, before it signs.
+// Sensitivity is what the app asks for (the app itself insists on it for Jarvis's own repos); secrets only keeps an
+// existing sensitive store sensitive. KeyID (a remove only): an orphan key the router found on the repo, deleted by
+// id; the store stays.
 type DeployKeyRequest struct {
 	Action    string     `json:"action"`
 	Repo      string     `json:"repo"`
@@ -130,16 +110,7 @@ type DeployKeyRequest struct {
 	Title     string     `json:"title"`
 	PublicKey string     `json:"publicKey"`
 	Keys      []KeyEntry `json:"keys"`
-}
-
-var titleRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._/:@-]{0,99}$`)
-
-// sshEd25519 checks "ssh-ed25519 <base64 wire>" (RFC 8709: string "ssh-ed25519", string 32-byte key)
-func sshEd25519(pub string) bool {
-	alg, b, ok := strings.Cut(pub, " ")
-	w, err := b64.DecodeString(b)
-	return ok && alg == "ssh-ed25519" && err == nil && len(w) == 51 &&
-		string(w[:15]) == "\x00\x00\x00\x0bssh-ed25519" && binary.BigEndian.Uint32(w[15:19]) == 32
+	KeyID     int64      `json:"keyId"`
 }
 
 // DeployKeyBegin: a pending add or remove for one repo, signed, with the token store's E and a one-off T
@@ -148,17 +119,17 @@ func (c *Secrets) DeployKeyBegin(in DeployKeyRequest) (SignedDoc, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.phoneSigning == "" {
-		return SignedDoc{}, fail(409, "this core isn't set up yet: Reset or Recover it in the app first")
+		return SignedDoc{}, fail(409, "secrets isn't set up yet: Reset or Recover it in the app first")
 	}
 	if action != "add" && action != "remove" {
 		return SignedDoc{}, fail(400, "action: add or remove")
 	}
-	if !repoRE.MatchString(repo) || strings.Contains(repo, "..") || strings.HasSuffix(repo, "/.") {
+	if !minter.RepoOK(repo) {
 		return SignedDoc{}, fail(400, "repo: owner/name")
 	}
-	store, title := in.Store, in.Title
-	if !titleRE.MatchString(title) {
-		return SignedDoc{}, fail(400, "title: a short line")
+	store := in.Store
+	if !storeName(store) || store == DeployKeyTokenStore {
+		return SignedDoc{}, fail(400, "store: %q isn't allowed", store)
 	}
 	keys := map[string]*KeyEntry{}
 	for i := range in.Keys {
@@ -168,11 +139,8 @@ func (c *Secrets) DeployKeyBegin(in DeployKeyRequest) (SignedDoc, error) {
 		}
 		keys[x.Key] = &x
 	}
-	if action == "add" && (!sshEd25519(in.PublicKey) || len(keys) == 0) {
-		return SignedDoc{}, fail(400, "an add brings the key pair: publicKey (ssh-ed25519) and the store's keys for %s", store)
-	}
-	if !storeName(store) || store == DeployKeyTokenStore || store == FlyStore {
-		return SignedDoc{}, fail(400, "store: %q isn't allowed", store)
+	if action == "add" && (in.PublicKey == "" || len(keys) == 0 || in.KeyID != 0) {
+		return SignedDoc{}, fail(400, "an add brings the key pair: publicKey and the store's keys for %s", store)
 	}
 	tok := c.stores[DeployKeyTokenStore][DeployKeyTokenKey]
 	if tok == nil {
@@ -182,8 +150,16 @@ func (c *Secrets) DeployKeyBegin(in DeployKeyRequest) (SignedDoc, error) {
 		return SignedDoc{}, err
 	}
 	old, exists := c.stores[store]
+	keyID, orphan := int64(0), false
 	if action == "remove" {
 		sensitive = exists && !c.notSensitive[store]
+		keyID = c.repoKeyID[store]
+		if in.KeyID < 0 {
+			return SignedDoc{}, fail(400, "keyId: GitHub's id of the key")
+		}
+		if in.KeyID != 0 && in.KeyID != keyID {
+			keyID, orphan = in.KeyID, true
+		}
 	} else {
 		sensitive = sensitive || (exists && !c.notSensitive[store]) // an existing sensitive store stays sensitive
 	}
@@ -193,7 +169,7 @@ func (c *Secrets) DeployKeyBegin(in DeployKeyRequest) (SignedDoc, error) {
 	}
 	id := randID()
 	b := deployKeyBegin{Kind: "deploy-key-begin", Pending: id, Action: action, Repo: repo, Store: store, Sensitive: sensitive,
-		Replaces: action == "add" && exists && len(old) != 0, Title: title, TokenStore: DeployKeyTokenStore,
+		Replaces: action == "add" && exists && len(old) != 0, Title: in.Title, KeyID: keyID, Orphan: orphan, TokenStore: DeployKeyTokenStore,
 		E: tok.Wrapped.E, T: b64.EncodeToString(t.PublicKey().Bytes()), TokenWriter: entryWriter(tok), TokenDataSha256: sha256Hex(tok.Data),
 		TokenBackupSha256: tok.BackupSha256, TokenKey: DeployKeyTokenKey}
 	if action == "add" {
@@ -208,121 +184,150 @@ func (c *Secrets) DeployKeyBegin(in DeployKeyRequest) (SignedDoc, error) {
 	if err != nil {
 		return SignedDoc{}, err
 	}
-	if c.pendingKeys == nil {
-		c.pendingKeys = map[string]pendingDeployKey{}
-	}
-	c.pendingKeys[id] = pendingDeployKey{payload: d.Payload, action: action, repo: repo, store: store, title: title,
-		publicKey: b.PublicKey, keys: keys, sensitive: sensitive, token: *tok, t: t}
+	c.pendingKeys[id] = pendingDeployKey{begin: d, action: action, repo: repo, store: store, keyID: keyID, orphan: orphan,
+		keys: keys, sensitive: sensitive, token: *tok, t: t}
 	return d, nil
 }
 
 // DeployKeyFinish: the phone's signature over the begin document and its share of the token store, sealed to
 // T. One try: the pending and its one-off key are gone either way.
-func (c *Secrets) DeployKeyFinish(pending string, share Sealed, sig string) (SignedDoc, error) {
-	p, token, err := c.openDeployKeyToken(pending, share, sig)
+func (c *Secrets) DeployKeyFinish(pending string, share Sealed, phoneSig string) (SignedDoc, error) {
+	p, sealed, err := c.openDeployKeyToken(pending, share, phoneSig)
 	if err != nil {
 		return SignedDoc{}, err
 	}
-	// GitHub is called without the core's lock (it may take seconds); the token lives in this frame only
-	title := p.title
-	keys, err := c.github.ListDeployKeys(token, p.repo)
-	if err != nil {
-		return SignedDoc{}, c.githubFailure(p, err)
-	}
-	removed := 0
-	for _, k := range keys {
-		if k.Title == title { // this store's earlier key (a re-add rotates it)
-			if err := c.github.DeleteDeployKey(token, p.repo, k.ID); err != nil {
-				return SignedDoc{}, c.githubFailure(p, err)
-			}
-			removed++
+	keyID := p.keyID
+	if p.action == "add" || keyID != 0 {
+		// the minter is called without secrets' lock (GitHub may take seconds); it gets the token sealed to it alone
+		m, err := c.mint(p, phoneSig, sealed)
+		if err != nil {
+			return SignedDoc{}, err
 		}
+		keyID = m.KeyID
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if p.action == "remove" {
-		token = ""
-		c.mu.Lock()
-		defer c.mu.Unlock()
+		if p.orphan {
+			c.logf("deploy key: orphan key %d of %s deleted on GitHub; store %s kept", keyID, p.repo, p.store)
+			return c.sign(map[string]any{"kind": "deploy-key-removed", "pending": pending, "repo": p.repo, "store": p.store, "deleted": 1, "keyId": keyID, "orphan": true})
+		}
 		delete(c.stores, p.store)
 		delete(c.notSensitive, p.store)
 		delete(c.unlocked, p.store)
 		delete(c.repoOwner, p.store)
-		c.forget(p.store)
-		c.logf("deploy key: %s removed (%d key(s) deleted on GitHub), store %s deleted", p.repo, removed, p.store)
-		return c.sign(map[string]any{"kind": "deploy-key-removed", "pending": pending, "repo": p.repo, "store": p.store, "deleted": removed})
+		delete(c.repoKeyID, p.store)
+		deleted := 0
+		if keyID != 0 {
+			deleted = 1
+		}
+		c.logf("deploy key: %s removed (GitHub key %d), store %s deleted", p.repo, keyID, p.store)
+		return c.sign(map[string]any{"kind": "deploy-key-removed", "pending": pending, "repo": p.repo, "store": p.store, "deleted": deleted, "keyId": keyID})
 	}
-	k, err := c.github.AddDeployKey(token, p.repo, title, p.publicKey)
-	if err != nil {
-		return SignedDoc{}, c.githubFailure(p, err)
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if err := c.ownerClash(p.store, p.repo); err != nil {
-		// another repo's add finished first while GitHub was called: take back the key just added
-		c.mu.Unlock()
-		derr := c.github.DeleteDeployKey(token, p.repo, k.ID)
-		c.mu.Lock()
-		c.logf("deploy key: %s lost %s to %s (key %d taken back: %v)", p.repo, p.store, c.repoOwner[p.store], k.ID, derr)
-		return SignedDoc{}, err
+		// another repo's add finished first while the minter called GitHub: the key just added is an orphan
+		c.logf("deploy key: %s lost %s to %s; GitHub key %d is an orphan", p.repo, p.store, c.repoOwner[p.store], keyID)
+		return SignedDoc{}, fail(409, "%v: GitHub key %d on %s is an orphan now (remove it by id)", err, keyID, p.repo)
 	}
-	token = ""
 	_, existed := c.stores[p.store]
+	replaced := c.repoKeyID[p.store]
 	now := c.now().UTC().Format(time.RFC3339)
 	for _, x := range p.keys {
-		x.Writer, x.At, x.BackupSha256 = &EntryWriter{By: "core"}, now, "" // stored only after GitHub took the phone-signed key: the core vouches (no backup)
+		x.Writer, x.At, x.BackupSha256 = &EntryWriter{By: "core"}, now, "" // stored only after GitHub took the phone-signed key: secrets vouches (no backup)
 	}
 	c.stores[p.store] = p.keys
-	c.repoOwner[p.store] = p.repo
-	delete(c.unlocked, p.store) // an earlier key's plaintext: that key is gone on GitHub
+	c.repoOwner[p.store], c.repoKeyID[p.store] = p.repo, keyID
+	delete(c.unlocked, p.store) // an earlier key's plaintext
 	if p.sensitive {
 		delete(c.notSensitive, p.store)
 	} else if !existed {
 		c.notSensitive[p.store] = true
 	}
-	c.record(p.store, VersionCause{Kind: "deploy-key"})
-	c.logf("deploy key: %s added (GitHub key %d, %d earlier deleted), store %s (sensitive=%v)", p.repo, k.ID, removed, p.store, !c.notSensitive[p.store])
-	return c.sign(map[string]any{"kind": "deploy-key-added", "pending": pending, "repo": p.repo, "store": p.store,
-		"sensitive": !c.notSensitive[p.store], "title": title, "publicKey": p.publicKey, "keyId": k.ID})
+	c.logf("deploy key: %s added (GitHub key %d), store %s (sensitive=%v)", p.repo, keyID, p.store, !c.notSensitive[p.store])
+	out := map[string]any{"kind": "deploy-key-added", "pending": pending, "repo": p.repo, "store": p.store,
+		"sensitive": !c.notSensitive[p.store], "title": p.title(), "publicKey": p.publicKey(), "keyId": keyID}
+	if replaced != 0 && replaced != keyID {
+		out["replacedKeyId"] = replaced // the earlier key stays on GitHub until a remove by its id (an orphan)
+	}
+	return c.sign(out)
 }
 
-// openDeployKeyToken: the pending's checks (the phone signed exactly the begin document) and the token store
-// opened with the phone's share — its plaintext only as the returned token
-func (c *Secrets) openDeployKeyToken(pending string, share Sealed, sig string) (pendingDeployKey, string, error) {
+func (p pendingDeployKey) beginDoc() deployKeyBegin {
+	var b deployKeyBegin
+	json.Unmarshal([]byte(p.begin.Payload), &b)
+	return b
+}
+func (p pendingDeployKey) title() string     { return p.beginDoc().Title }
+func (p pendingDeployKey) publicKey() string { return p.beginDoc().PublicKey }
+
+// mint: the minter's one GitHub call for this approval, its signed answer checked against the roster's minter
+func (c *Secrets) mint(p pendingDeployKey, phoneSig string, token Sealed) (minter.Minted, error) {
+	var m minter.Minted
+	keys, err := c.KeysStatement()
+	if err != nil {
+		return m, err
+	}
+	mid, err := c.trust.Member("minter")
+	if err != nil {
+		return m, fail(503, "the minter: %v", err)
+	}
+	if c.minter == nil {
+		return m, fail(503, "no minter configured (KERNEL_MINTER_URL)")
+	}
+	d, err := c.minter.Mint(minter.Request{Begin: p.begin, PhoneSig: phoneSig, Keys: keys, Token: sig.Sealed(token)})
+	if err != nil {
+		c.logf("deploy key: %s %s failed at the minter: %v", p.action, p.repo, err)
+		if e, ok := err.(*minter.Error); ok {
+			return m, fail(e.Status, "%s", e.Msg)
+		}
+		return m, fail(502, "the minter: %v", err)
+	}
+	if !VerifyWith(mid.SigningKey, []byte(d.Payload), d.Sig) || json.Unmarshal([]byte(d.Payload), &m) != nil ||
+		m.Kind != "deploy-key-minted" || m.Pending != p.beginDoc().Pending || m.Action != p.action || m.Repo != p.repo || (p.action == "remove" && m.KeyID != p.keyID) || m.KeyID <= 0 {
+		return m, fail(502, "the minter's answer isn't the roster's minter's for this request")
+	}
+	return m, nil
+}
+
+// openDeployKeyToken: the pending's checks (the phone signed exactly the begin document) and the token store opened
+// with the phone's share — its plaintext only sealed to the minter, for this request
+func (c *Secrets) openDeployKeyToken(pending string, share Sealed, phoneSig string) (pendingDeployKey, Sealed, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	p, ok := c.pendingKeys[pending]
 	if !ok {
-		return p, "", fail(404, "no such pending deploy-key request")
+		return p, Sealed{}, fail(404, "no such pending deploy-key request")
 	}
 	delete(c.pendingKeys, pending)
 	if err := c.ownerClash(p.store, p.repo); err != nil {
-		return p, "", err
+		return p, Sealed{}, err
 	}
-	if c.phoneSigning == "" || !VerifyWith(c.phoneSigning, []byte(p.payload), sig) {
-		return p, "", fail(403, "the iPhone's signature doesn't cover this request")
+	if c.phoneSigning == "" || !VerifyWith(c.phoneSigning, []byte(p.begin.Payload), phoneSig) {
+		return p, Sealed{}, fail(403, "the iPhone's signature doesn't cover this request")
 	}
 	x, err := OpenSealed(p.t, share, infoShare)
 	if err != nil {
-		return p, "", fail(400, "the share isn't sealed to this request")
+		return p, Sealed{}, fail(400, "the share isn't sealed to this request")
 	}
 	tok, err := c.openEntry(&p.token, x)
 	if err != nil {
-		return p, "", fail(403, "the token key doesn't decrypt: %v", err)
+		return p, Sealed{}, fail(403, "the token key doesn't decrypt: %v", err)
 	}
 	if tok == "" {
-		return p, "", fail(400, "the store %s holds no %s", DeployKeyTokenStore, DeployKeyTokenKey)
+		return p, Sealed{}, fail(400, "the store %s holds no %s", DeployKeyTokenStore, DeployKeyTokenKey)
 	}
-	c.logf("deploy key: %s %s approved by the phone; %s opened for this call", p.action, p.repo, DeployKeyTokenStore)
-	return p, tok, nil
-}
-
-// githubFailure: GitHub refused or couldn't be reached: "github: HTTP <status>: <GitHub's words>" (the router adds
-// what a 403/404 means for the token)
-func (c *Secrets) githubFailure(p pendingDeployKey, err error) error {
-	c.mu.Lock()
-	c.logf("deploy key: %s %s failed: %v", p.action, p.repo, err)
-	c.mu.Unlock()
-	if ge, ok := err.(*GitHubError); ok {
-		return fail(502, "github: HTTP %d: %s", ge.Status, ge.Msg)
+	if p.action == "remove" && p.keyID == 0 {
+		return p, Sealed{}, nil // no GitHub key known: nothing for the minter
 	}
-	return fail(502, "github: %v", err)
+	mid, err := c.trust.Member("minter")
+	if err != nil {
+		return p, Sealed{}, fail(503, "the minter: %v", err)
+	}
+	sealed, err := SealTo(mid.AgreementKey, []byte(tok), minter.TokenInfo+pending)
+	tok = ""
+	if err != nil {
+		return p, Sealed{}, fail(500, "sealing the token to the minter: %v", err)
+	}
+	c.logf("deploy key: %s %s approved by the phone; %s opened and sealed to the minter", p.action, p.repo, DeployKeyTokenStore)
+	return p, sealed, nil
 }

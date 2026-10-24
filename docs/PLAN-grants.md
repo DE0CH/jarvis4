@@ -54,13 +54,16 @@ component can be read alone.
 | spawner | the machines it made and their volumes | the Fly token | `POST /spawn`, `/kill`, `/extend`, `/fly-token` |
 | identity | none | its key | `POST /sign` (M, M, P) |
 | gullible | none | its key | `POST /sign` any (X, Y, P) |
-| secrets | stores, unlocks, phone and root keys (claimed) | the stores | today's core store API, `POST /pull` with a grant |
+| secrets | stores, unlocks, phone and root keys (claimed) | the stores (it hands them out, never uses one) | today's core store API without versions or `store-key`, `POST /pull` with a grant |
+| minter | the approvals it served | its key | `POST /mint`: one phone-approved deploy-key call, the token sealed to it (DECISIONS 230) |
 
 Every component signs its identity `"jarvis2-kernel-<role>-identity <signing key> <agreement key>"` with the box key
-at start; anyone checks it against `keys/box.pub`. All ingress only from the router pod (NetworkPolicy); egress only
-the spawner (api.machines.dev) and secrets (api.github.com, deploy keys).
+at start; anyone checks it against `keys/box.pub`. All ingress only from the router pod (NetworkPolicy), and the
+minter's from secrets too; egress only the spawner (api.machines.dev) and the minter (api.github.com, deploy keys);
+secrets reaches only the minter.
 
-What carries over from `core/`: secrets takes keys.go, history.go, deploykeys.go, github.go and the claim/Recover; the
+What carries over from `core/`: secrets takes keys.go, deploykeys.go and the claim/Recover (the minter takes github.go;
+store history is the router's, DECISIONS 230); the
 spawner takes fly.go, realfly.go, fakefly.go, volumes.go and the start/init/kill checks. They are copied into the
 kernel, not shared: `core/` is deleted whole once the last session of the old core is gone (D7).
 

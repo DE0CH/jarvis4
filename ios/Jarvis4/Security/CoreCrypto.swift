@@ -755,6 +755,116 @@ extension CoreCrypto {
   static func wrapKeys(store: String, values: [String: String], storeKey: String) throws -> [KeyEntry] {
     try values.keys.sorted().map { try wrapKey(store: store, key: $0, value: Data(values[$0]!.utf8), storeKey: storeKey) }
   }
+  /// the kernel's store key C = P + K for this phone's agreement key P and secrets' agreement key K (the pinned one, or a
+  /// Recover's derived one): computed here, as every writer does (kernel/sig StoreKey); secrets signs no store key
+  static func storeKey(phone: String, secrets: String) throws -> String { try StorePoint.sum(phone, secrets) }
+}
+
+/// P-256 point addition for the store key (CryptoKit has no point arithmetic): affine, over 4×64-bit limbs, plain and
+/// slow, for a handful of public points; both inputs and the sum are checked as points by CryptoKit. Base64 X9.63.
+enum StorePoint {
+  typealias U = [UInt64] // least significant limb first
+  static let p: U = [0xffff_ffff_ffff_ffff, 0x0000_0000_ffff_ffff, 0, 0xffff_ffff_0000_0001]
+  static let pMinus2: U = [0xffff_ffff_ffff_fffd, 0x0000_0000_ffff_ffff, 0, 0xffff_ffff_0000_0001]
+
+  static func sum(_ a: String, _ b: String) throws -> String {
+    guard let ad = Data(base64Encoded: a), let bd = Data(base64Encoded: b),
+          (try? P256.KeyAgreement.PublicKey(x963Representation: ad)) != nil,
+          (try? P256.KeyAgreement.PublicKey(x963Representation: bd)) != nil else { throw TrustError.badSignature("a store key's point") }
+    let x1 = num(ad, 1), y1 = num(ad, 33), x2 = num(bd, 1), y2 = num(bd, 33)
+    let l: U
+    if x1 == x2 {
+      guard y1 == y2, y1 != [0, 0, 0, 0] else { throw TrustError.mismatch("P + K is no point") }
+      let sq = mul(x1, x1)
+      l = mul(sub(add(add(sq, sq), sq), [3, 0, 0, 0]), inv(add(y1, y1))) // (3x² + a) / 2y, a = −3
+    } else {
+      l = mul(sub(y2, y1), inv(sub(x2, x1)))
+    }
+    let x3 = sub(sub(mul(l, l), x1), x2)
+    let y3 = sub(mul(l, sub(x1, x3)), y1)
+    var out = Data([4])
+    out.append(bytes(x3)); out.append(bytes(y3))
+    guard (try? P256.KeyAgreement.PublicKey(x963Representation: out)) != nil else { throw TrustError.mismatch("P + K is no point") }
+    return out.base64EncodedString()
+  }
+
+  /// 32 big-endian bytes at `at`
+  static func num(_ d: Data, _ at: Int) -> U {
+    let b = [UInt8](d)
+    var u: U = [0, 0, 0, 0]
+    for i in 0..<32 { u[3 - i / 8] = u[3 - i / 8] << 8 | UInt64(b[at + i]) }
+    return u
+  }
+  static func bytes(_ u: U) -> Data {
+    var d = Data()
+    for l in (0..<4).reversed() { for s in stride(from: 56, through: 0, by: -8) { d.append(UInt8(truncatingIfNeeded: u[l] >> UInt64(s))) } }
+    return d
+  }
+  static func geq(_ a: U, _ b: U) -> Bool {
+    for i in (0..<4).reversed() where a[i] != b[i] { return a[i] > b[i] }
+    return true
+  }
+  static func rawAdd(_ a: U, _ b: U) -> (U, Bool) {
+    var r: U = [0, 0, 0, 0]
+    var c: UInt64 = 0
+    for i in 0..<4 {
+      let (s1, o1) = a[i].addingReportingOverflow(b[i])
+      let (s2, o2) = s1.addingReportingOverflow(c)
+      r[i] = s2
+      c = (o1 ? 1 : 0) + (o2 ? 1 : 0)
+    }
+    return (r, c != 0)
+  }
+  static func rawSub(_ a: U, _ b: U) -> (U, Bool) {
+    var r: U = [0, 0, 0, 0]
+    var c: UInt64 = 0
+    for i in 0..<4 {
+      let (d1, o1) = a[i].subtractingReportingOverflow(b[i])
+      let (d2, o2) = d1.subtractingReportingOverflow(c)
+      r[i] = d2
+      c = (o1 ? 1 : 0) + (o2 ? 1 : 0)
+    }
+    return (r, c != 0)
+  }
+  static func add(_ a: U, _ b: U) -> U {
+    let (s, c) = rawAdd(a, b)
+    return c || geq(s, p) ? rawSub(s, p).0 : s
+  }
+  static func sub(_ a: U, _ b: U) -> U {
+    let (d, borrow) = rawSub(a, b)
+    return borrow ? rawAdd(d, p).0 : d
+  }
+  static func mul(_ a: U, _ b: U) -> U {
+    var w = [UInt64](repeating: 0, count: 8)
+    for i in 0..<4 {
+      var carry: UInt64 = 0
+      for j in 0..<4 {
+        let (hi, lo) = a[i].multipliedFullWidth(by: b[j])
+        let (s1, o1) = w[i + j].addingReportingOverflow(lo)
+        let (s2, o2) = s1.addingReportingOverflow(carry)
+        w[i + j] = s2
+        carry = hi &+ (o1 ? 1 : 0) &+ (o2 ? 1 : 0) // a·b + w + carry < 2^128: no overflow
+      }
+      w[i + 4] = carry
+    }
+    // the 512-bit product mod p, a bit at a time (r < p throughout)
+    var r: U = [0, 0, 0, 0]
+    for bit in (0..<512).reversed() {
+      let top = r[3] >> 63
+      r = [r[0] << 1 | (w[bit / 64] >> UInt64(bit % 64)) & 1, r[1] << 1 | r[0] >> 63, r[2] << 1 | r[1] >> 63, r[3] << 1 | r[2] >> 63]
+      if top == 1 || geq(r, p) { r = rawSub(r, p).0 }
+    }
+    return r
+  }
+  /// a^(p−2) = a⁻¹ (Fermat)
+  static func inv(_ a: U) -> U {
+    var r: U = [1, 0, 0, 0]
+    for bit in (0..<256).reversed() {
+      r = mul(r, r)
+      if (pMinus2[bit / 64] >> UInt64(bit % 64)) & 1 == 1 { r = mul(r, a) }
+    }
+    return r
+  }
 }
 
 /// A repo's deploy key, made by the app (R2): an ed25519 pair in OpenSSH's formats, as core/deploykeys.go wrote them.

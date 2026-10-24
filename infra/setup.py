@@ -585,7 +585,7 @@ def main():
 
 # ---- the kernel's roster (docs/PLAN-cluster.md "The roster") ----------------------------------------------------
 
-KERNEL_ROLES = ["notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible"]
+KERNEL_ROLES = ["notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "minter"]
 
 
 def write_root_key(k):

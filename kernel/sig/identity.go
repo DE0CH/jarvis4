@@ -135,6 +135,21 @@ func (r Roster) Member(role string) (Identity, bool) {
 	return Identity{}, false
 }
 
+// Member: the keys the held roster names for role
+func (t *Trust) Member(role string) (Identity, error) {
+	t.mu.Lock()
+	r := t.r
+	t.mu.Unlock()
+	if r == nil {
+		return Identity{}, ErrNoRoster
+	}
+	m, ok := r.Member(role)
+	if !ok {
+		return Identity{}, fmt.Errorf("the roster names no %s", role)
+	}
+	return m, nil
+}
+
 // CheckIdentity: id is the roster's for that role
 func CheckIdentity(id Identity, role string, t *Trust) error {
 	if id.Role != role || strings.ContainsAny(id.SigningKey+id.AgreementKey, " \n") {

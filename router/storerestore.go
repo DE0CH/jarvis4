@@ -2,7 +2,8 @@ package main
 
 // Restoring a store to an earlier version (docs/DESIGN.md "Restoring a store"; core/history.go). The core keeps each
 // store's last versions; putting one back is the phone's signature over the core's exact begin document plus its
-// shares of the keys put back, under one Face ID — no kit, no plaintext outside the core. The router's part:
+// shares of the keys put back, under one Face ID — no kit, no plaintext outside the core. On a box with no core the
+// kernel's secrets keeps no history: the same routes are the router's own (storeversions.go). The router's part:
 //
 //	POST /api/core/stores/versions {store, nonce}     the core's signed list, relayed (app, web)
 //	POST /api/core/stores/restore/begin {store, seq}  the core's signed begin document, relayed (the app's review page)
@@ -123,12 +124,26 @@ func (r *Router) registerRestore(app appRoute, mux *http.ServeMux) {
 		path := "/" + p
 		app("POST /api/core"+path, func(w http.ResponseWriter, req *http.Request) {
 			b, _ := io.ReadAll(io.LimitReader(req.Body, 1<<20))
+			if r.secretsStores != nil {
+				r.kernelVersionsRoute(w, path, b)
+				return
+			}
 			r.relayStores(w, req, "POST", path, b)
 		})
 	}
 	app("POST /api/stores/restore/finish", func(w http.ResponseWriter, req *http.Request) {
 		b, _ := io.ReadAll(io.LimitReader(req.Body, 1<<20))
-		out, err := r.FinishRestore(b)
+		var out map[string]any
+		var err error
+		if r.secretsStores != nil {
+			var in struct {
+				Pending string `json:"pending"`
+			}
+			json.Unmarshal(b, &in)
+			out, err = r.KernelRestoreFinish(in.Pending)
+		} else {
+			out, err = r.FinishRestore(b)
+		}
 		if err != nil {
 			writeWriteErr(w, err)
 			return
@@ -146,6 +161,35 @@ func (r *Router) registerRestore(app appRoute, mux *http.ServeMux) {
 		}))
 	}
 	setup("POST /setup/stores/versions", func(w http.ResponseWriter, req *http.Request, b []byte) {
+		if r.secretsStores != nil {
+			r.kernelVersionsRoute(w, "/stores/versions", b)
+			return
+		}
 		r.relayTo(w, r.storeCore(), "POST", "/stores/versions", b)
 	})
+}
+
+// kernelVersionsRoute: versions and restore/begin on a box with no core (storeversions.go)
+func (r *Router) kernelVersionsRoute(w http.ResponseWriter, path string, body []byte) {
+	var in struct {
+		Store string `json:"store"`
+		Nonce string `json:"nonce"`
+		Seq   int    `json:"seq"`
+	}
+	if json.Unmarshal(body, &in) != nil || in.Store == "" {
+		writeJSON(w, 400, map[string]string{"error": "store (and seq for a restore)"})
+		return
+	}
+	var out map[string]any
+	var err error
+	if path == "/stores/versions" {
+		out, err = r.KernelStoreVersions(in.Store, in.Nonce)
+	} else {
+		out, err = r.KernelRestoreBegin(in.Store, in.Seq)
+	}
+	if err != nil {
+		writeWriteErr(w, err)
+		return
+	}
+	writeJSON(w, 200, out)
 }

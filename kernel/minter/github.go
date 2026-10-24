@@ -1,8 +1,8 @@
-package secrets
+package minter
 
-// GitHub's deploy-key API, used only by the deploy-key primitives (deploykeys.go). The token comes from the
-// store github-deploy-keys, unlocked by the phone for that one call, and is never kept: each call takes it as an
-// argument. The host is fixed here, in git, like the Fly app: the token can only ever go to api.github.com.
+// GitHub's deploy-key API: one add, or one delete by the id GitHub gave at the add. The token comes in each call,
+// sealed to the minter by secrets, and is never kept. The host is fixed here, in git, like the Fly app: the token can
+// only ever go to api.github.com.
 
 import (
 	"bytes"
@@ -15,19 +15,17 @@ import (
 )
 
 type DeployKey struct {
-	ID       int64  `json:"id"`
-	Title    string `json:"title"`
-	Key      string `json:"key"`
-	ReadOnly bool   `json:"read_only"`
+	ID    int64  `json:"id"`
+	Title string `json:"title"`
+	Key   string `json:"key"`
 }
 
 type GitHub interface {
-	ListDeployKeys(token, repo string) ([]DeployKey, error)
 	AddDeployKey(token, repo, title, publicKey string) (DeployKey, error)
 	DeleteDeployKey(token, repo string, id int64) error
 }
 
-// GitHubAPIBase: the one GitHub host the core talks to
+// GitHubAPIBase: the one GitHub host the minter talks to
 const GitHubAPIBase = "https://api.github.com"
 
 type GitHubAPI struct{ http *http.Client }
@@ -53,7 +51,7 @@ func (g *GitHubAPI) call(token, method, path string, body any, out any) error {
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("User-Agent", "jarvis2-core/1")
+	req.Header.Set("User-Agent", "jarvis4-minter/1")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -74,21 +72,6 @@ func (g *GitHubAPI) call(token, method, path string, body any, out any) error {
 		return json.Unmarshal(b, out)
 	}
 	return nil
-}
-
-func (g *GitHubAPI) ListDeployKeys(token, repo string) ([]DeployKey, error) {
-	out := []DeployKey{}
-	for page := 1; page <= 10; page++ {
-		var keys []DeployKey
-		if err := g.call(token, "GET", fmt.Sprintf("/repos/%s/keys?per_page=100&page=%d", repo, page), nil, &keys); err != nil {
-			return nil, err
-		}
-		out = append(out, keys...)
-		if len(keys) < 100 {
-			break
-		}
-	}
-	return out, nil
 }
 
 func (g *GitHubAPI) AddDeployKey(token, repo, title, publicKey string) (DeployKey, error) {

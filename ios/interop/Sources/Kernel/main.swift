@@ -99,11 +99,14 @@ let phoneSig = P256.Signing.PrivateKey(), phoneAgree = P256.KeyAgreement.Private
 let phone = PublicKeys(signingKey: phoneSig.publicKey.x963Representation.base64EncodedString(), agreementKey: phoneAgree.publicKey.x963Representation.base64EncodedString())
 let seed = KernelContinuity.seed(master)
 let derived = try! KernelContinuity.keys(seed: seed)
-let skDoc = doc(call("/store-key", ["phone": phone.agreementKey, "secrets": derived.agreementKey]).1)
-struct SK: Decodable { let storeKey: String }
-let sk = try! CoreCrypto.decode(skDoc, by: c0!.keys.signingKey, as: SK.self, what: "store key")
+// the store key P + K: the app computes it (secrets signs none), the same sum as Go's sig.StoreKey
+check((try? CoreCrypto.storeKey(phone: vectors["storeKeyPhone"]!, secrets: vectors["storeKeySecrets"]!)) == vectors["storeKey"], "P + K is Go's sum")
+check((try? CoreCrypto.storeKey(phone: vectors["storeKeyTwice"]!, secrets: vectors["storeKeyTwice"]!)) == vectors["storeKeyDouble"], "…and P + P its doubling")
+check(throwsErr { _ = try CoreCrypto.storeKey(phone: "AAAA", secrets: vectors["storeKeySecrets"]!) }, "…not for a key that isn't a point")
+check(call("/store-key", ["phone": phone.agreementKey]).0 == 404, "secrets answers no store key")
+let sk = try! CoreCrypto.storeKey(phone: phone.agreementKey, secrets: derived.agreementKey)
 let stores = [RecoveredStore(name: "default", values: ["A": "1", "B": "2"], sensitive: false)]
-let bundle = try! KernelSetup.bundle(stores, storeKey: sk.storeKey, seed: seed)
+let bundle = try! KernelSetup.bundle(stores, storeKey: sk, seed: seed)
 let k0 = c0!.keys
 // refused: signed by another key, for another secrets, a phone key as the root key
 var bad = try! KernelSetup.claim(secrets: k0, phone: phone, root: rootPub, master: master, bundle: bundle, identity: derived)

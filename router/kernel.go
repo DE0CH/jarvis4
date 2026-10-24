@@ -1,6 +1,6 @@
 package main
 
-// The kernel's HTTP API (kernel/, DESIGN "Target design", docs/PLAN-grants.md): eight components, each at
+// The kernel's HTTP API (kernel/, DESIGN "Target design", docs/PLAN-grants.md): nine components, each at
 // KERNEL_URL with %s = its role (e.g. http://%s.jarvis4-kernel.svc:8080). The router carries documents between them
 // and keeps them; it can't make one (each is signed by a component or the phone), only withhold or delay it.
 

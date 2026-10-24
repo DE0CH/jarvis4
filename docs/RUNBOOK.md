@@ -200,6 +200,13 @@ core's line state when it is done on the same phone (DESIGN "Core continuity"); 
 deletes the old key on GitHub. Sessions that include a repo's store clone, pull and push it over SSH
 (`machine/deploykeys.go`).
 
+Once the kernel serves, the same flow runs through the kernel's secrets and its **minter** (DECISIONS 230): secrets
+opens the token store and hands the token, sealed, to the minter, the only kernel component that reaches GitHub; it
+adds the key, or deletes it by the id GitHub gave at the add. A re-add leaves the earlier key on GitHub (the router
+logs its id as an orphan), and so does a store recovered from before ids were kept: remove such a key by id
+(`POST /api/repos/key/begin {action: remove, repo, keyId}`, one Face ID; the repo's store stays). A minter restart
+makes the roster stale like any component's: `infra/setup.py kernel-roster`, then Sign roster in the app.
+
 If the picker says "No match." for a repo that exists (a private one), the router's `GITHUB_READ_TOKEN` sees public
 repos only: `infra/setup.py status` shows `githubRepos.private: 0`. Mint `jarvis2-repo-list` again with Metadata read
 picked and write `--part github` (The router's secrets, below); then "refresh list" in the app.
@@ -567,6 +574,12 @@ Built and tested; not yet on the box. Each step in order:
 4. **Deyao, in the app**: Settings → Kernel → Recover the kernel's secrets (the recovery kit), then Sign the root grant
    (the root key, its own warning). From then on new sessions start on the kernel; the old core's sessions go on there
    until destroyed, then the old core and `core/` go (DECISIONS 216).
+
+The kernel's members (`infra/setup.py kernel-roster` reads each through kernel-id): notary, notarizer, mover, merger,
+spawner, identity, gullible, minter and the serving secrets. Only the spawner (Fly) and the minter (GitHub deploy keys)
+reach the internet; secrets reaches only the minter (`KERNEL_MINTER_URL`, NetworkPolicy `kernel-secrets-minter`).
+Store versions on a box with no core are the router's (Postgres `store_versions`, DECISIONS 230): a store's Versions
+page and its restore work as before, with no phone signature (each key put back carries secrets' receipt).
 
 **A secrets release** (blue/green, as the cores): CI pins a new kernel image into every component but the serving
 secrets (k8s/control/apps/kernel/active-secrets.txt); Deyao Recovers the next one alongside (Settings → Kernel →

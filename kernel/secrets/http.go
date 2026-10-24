@@ -93,7 +93,6 @@ func Handler(c *Secrets) http.Handler {
 		}
 		return c.Claim(str(b, "statement"), str(b, "masterSig"), s)
 	})
-	h("POST /store-key", func(b body) (any, error) { return c.StoreKey(str(b, "phone"), str(b, "secrets")) })
 	h("GET /line-state", func(b body) (any, error) { return c.LineState() })
 	h("POST /handoff", func(b body) (any, error) { return c.Handoff() })
 	h("POST /takeover", func(b body) (any, error) {
@@ -115,22 +114,6 @@ func Handler(c *Secrets) http.Handler {
 		}
 		return c.WriteKey(in)
 	})
-	h("POST /stores/versions", func(b body) (any, error) { return c.Versions(str(b, "store"), str(b, "nonce")) })
-	h("POST /stores/restore/begin", func(b body) (any, error) {
-		var seq int
-		if json.Unmarshal(b["seq"], &seq) != nil {
-			return nil, fail(400, "seq: the version to put back")
-		}
-		return c.RestoreBegin(str(b, "store"), seq)
-	})
-	h("POST /stores/restore/finish", func(b body) (any, error) {
-		shares := map[string]Sealed{}
-		if len(b["shares"]) != 0 && json.Unmarshal(b["shares"], &shares) != nil {
-			return nil, fail(400, "shares: {key: sealed share}")
-		}
-		return c.RestoreFinish(str(b, "pending"), str(b, "signature"), shares)
-	})
-	h("POST /stores/restore/commit", func(b body) (any, error) { return c.RestoreCommit(str(b, "pending")) })
 
 	h("POST /unlock/begin", func(b body) (any, error) { return c.UnlockBegin(str(b, "store")) })
 	h("POST /unlock/finish", func(b body) (any, error) {

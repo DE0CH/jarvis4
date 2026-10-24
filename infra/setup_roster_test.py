@@ -59,6 +59,7 @@ S.call = call
 S.kernel_roster("blue")
 f = filed[0]
 assert f["copy"] == "blue" and f["payload"] == go_payload("blue", members)
+assert sorted(m["role"] for m in json.loads(f["payload"])["members"]) == ["gullible", "identity", "merger", "minter", "mover", "notarizer", "notary", "secrets", "spawner"]
 setup_k.public_key().verify(base64.b64decode(f["setupSig"]), f["payload"].encode(), ec.ECDSA(hashes.SHA256()))
 
 # an identity not signed by its own key is refused

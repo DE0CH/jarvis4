@@ -14,19 +14,24 @@ package secrets
 //   - machine: a session machine, named by the grant it holds now and its signature over WriterText with that
 //     grant's machine key (checked here);
 //   - router: the router (unsigned, named for what it is: the Claude login stores);
-//   - core: secrets' own wrapping (a Recover's bundle, a deploy key).
+//   - core: secrets' own wrapping (a Recover's bundle, a deploy key);
+//   - replay: a restore (DECISIONS 230). Secrets keeps no history: the router keeps each store's versions — the
+//     entries and secrets' signed key-written receipts for them — and puts an earlier key back by writing that very
+//     entry with its receipt. Secrets checks the receipt is its own (verifyOwn) for exactly this store, key, E, data
+//     and backup, and the entry keeps the writer and time the receipt names, so an unlock shows the phone who wrote
+//     the value, as before. A replayed delete needs no receipt (a delete names no writer).
 // A write may carry the value sealed to secrets as well (live): secrets uses it only to keep an open unlock of the
 // store current, so the key reaches the next pull (D1), and never stores it.
 
 import (
 	"crypto/sha256"
-
 	"encoding/hex"
-	"github.com/DE0CH/jarvis4/kernel/gv"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/DE0CH/jarvis4/kernel/gv"
 )
 
 // routerStoreRE: the stores the router writes (the Claude accounts, router/claudeaccounts.go)
@@ -52,7 +57,7 @@ type KeyEntry struct {
 
 // EntryWriter: who wrote a key (see the file comment)
 type EntryWriter struct {
-	By      string `json:"by"`                // "setup" | "machine" | "core"
+	By      string `json:"by"`                // "setup" | "machine" | "router" | "core"
 	Sig     string `json:"sig,omitempty"`     // setup: its signature over WriterText (the phone checks it)
 	Machine string `json:"machine,omitempty"` // machine: the session machine (the core checked its signature)
 }
@@ -93,7 +98,7 @@ func validEntry(x *KeyEntry, store string) bool {
 }
 
 // WriteKeyInput: write_key's input. Delete: the key goes (no wrapped/data). Writer "setup" brings Sig; writer
-// "machine" brings Sig and Cert, the machine's newest cert.
+// "machine" brings Sig and Grant, the grant the machine holds now; writer "replay" brings Receipt (a put).
 type WriteKeyInput struct {
 	Store        string     `json:"store"`
 	Key          string     `json:"key"`
@@ -103,16 +108,30 @@ type WriteKeyInput struct {
 	BackupSha256 string     `json:"backupSha256"`
 	Writer       string     `json:"writer"`
 	Sig          string     `json:"sig"`
-	Grant        *gv.Signed `json:"grant"` // writer "machine": the grant the machine holds now
-	Live         *Sealed    `json:"live"`  // the value sealed to secrets (infoLive + "\n" + store + "\n" + key)
+	Grant        *gv.Signed `json:"grant"`   // writer "machine": the grant the machine holds now
+	Live         *Sealed    `json:"live"`    // the value sealed to secrets (infoLive + "\n" + store + "\n" + key)
+	Receipt      *SignedDoc `json:"receipt"` // writer "replay": secrets' key-written receipt of this very entry
+}
+
+// receipt: what a key-written answer says (keys.go WriteKey's answer)
+type receipt struct {
+	Kind         string       `json:"kind"`
+	Store        string       `json:"store"`
+	Key          string       `json:"key"`
+	Deleted      bool         `json:"deleted"`
+	E            string       `json:"e"`
+	DataSha256   string       `json:"dataSha256"`
+	BackupSha256 string       `json:"backupSha256"`
+	Writer       *EntryWriter `json:"writer"`
+	At           string       `json:"at"`
 }
 
 // WriteKey: one key written (or deleted). A writer's first key of a name the core doesn't have makes that store
 // (sensitive, as every store create_store didn't make; a new store reaches no session without the phone); a machine
 // never writes the deploy-key token store or a repo's deploy-key store (their keys come only from a phone-approved
-// deploy-key call), nor makes a github-* store; the router writes only claude-* stores.
-// The core's own store is never written. Unlocked plaintext of the store stays as it was until locked (the store's
-// version tells it is behind).
+// deploy-key call), nor makes a github-* store; the router writes only claude-* stores; a replay only puts an
+// existing store's key back (never a repo's deploy-key store). Unlocked plaintext of the store stays as it was until
+// locked (the store's version tells it is behind).
 func (c *Secrets) WriteKey(in WriteKeyInput) (SignedDoc, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -120,7 +139,7 @@ func (c *Secrets) WriteKey(in WriteKeyInput) (SignedDoc, error) {
 		return SignedDoc{}, fail(409, "this core isn't set up yet: Reset or Recover it in the app first")
 	}
 	keys, exists := c.stores[in.Store]
-	if !storeName(in.Store) || in.Store == FlyStore {
+	if !storeName(in.Store) {
 		return SignedDoc{}, fail(400, "store: %q isn't one a key is written to", in.Store)
 	}
 	if !keyNameRE.MatchString(in.Key) {
@@ -144,6 +163,8 @@ func (c *Secrets) WriteKey(in WriteKeyInput) (SignedDoc, error) {
 	}
 	text := WriterText(in.Store, in.Key, e, in.Data, in.BackupSha256)
 	var w EntryWriter
+	now := c.now().UTC().Format(time.RFC3339)
+	at := now
 	switch in.Writer {
 	case "setup":
 		if in.Sig == "" {
@@ -176,10 +197,26 @@ func (c *Secrets) WriteKey(in WriteKeyInput) (SignedDoc, error) {
 			return SignedDoc{}, fail(403, "the router writes only the Claude login stores (claude, claude-<name>), not %s", in.Store)
 		}
 		w = EntryWriter{By: "router"}
+	case "replay":
+		if !exists || c.repoOwner[in.Store] != "" {
+			return SignedDoc{}, fail(403, "a replay puts a key of an existing store back, never a repo's deploy-key store (%s)", in.Store)
+		}
+		if in.Delete {
+			w = EntryWriter{By: "replay"}
+			break
+		}
+		var r receipt
+		if err := c.verifyOwn(in.Receipt, &r); err != nil {
+			return SignedDoc{}, fail(403, "a replay carries secrets' own receipt of the entry: %v", err)
+		}
+		if r.Kind != "key-written" || r.Deleted || r.Store != in.Store || r.Key != in.Key || r.E != e || r.DataSha256 != sha256Hex(in.Data) ||
+			r.BackupSha256 != in.BackupSha256 || r.Writer == nil {
+			return SignedDoc{}, fail(403, "the receipt isn't of this entry (store, key, E, data and backup)")
+		}
+		w, at = *r.Writer, r.At
 	default:
-		return SignedDoc{}, fail(400, "writer: setup, machine or router")
+		return SignedDoc{}, fail(400, "writer: setup, machine, router or replay")
 	}
-	now := c.now().UTC().Format(time.RFC3339)
 	before := storeVersion(keys)
 	if !exists { // a writer's first key makes the store, sensitive (create_store is the only way to a non-sensitive one)
 		keys = map[string]*KeyEntry{}
@@ -188,18 +225,21 @@ func (c *Secrets) WriteKey(in WriteKeyInput) (SignedDoc, error) {
 	if in.Delete {
 		delete(keys, in.Key)
 	} else {
-		keys[in.Key] = &KeyEntry{Store: in.Store, Key: in.Key, Wrapped: in.Wrapped, Data: in.Data, Writer: &w, At: now, BackupSha256: in.BackupSha256}
+		keys[in.Key] = &KeyEntry{Store: in.Store, Key: in.Key, Wrapped: in.Wrapped, Data: in.Data, Writer: &w, At: at, BackupSha256: in.BackupSha256}
 	}
-	c.record(in.Store, VersionCause{Kind: map[bool]string{true: "delete", false: "write"}[in.Delete], Key: in.Key, Writer: &w})
 	c.liveUpdate(in.Store, in.Key, in.Delete, in.Live, before)
-	c.logf("store %s: key %s %s by %s %s", in.Store, in.Key, map[bool]string{true: "deleted", false: "written"}[in.Delete], w.By, w.Machine)
+	c.logf("store %s: key %s %s by %s %s (%s)", in.Store, in.Key, map[bool]string{true: "deleted", false: "written"}[in.Delete], w.By, w.Machine, in.Writer)
 	sum := ""
 	if in.Data != "" {
 		sum = sha256Hex(in.Data)
 	}
-	return c.sign(map[string]any{"kind": "key-written", "store": in.Store, "key": in.Key, "deleted": in.Delete, "e": e,
-		"dataSha256": sum, "backupSha256": in.BackupSha256, "writer": w, "at": now,
-		"sensitive": !c.notSensitive[in.Store], "version": storeVersion(keys)})
+	out := map[string]any{"kind": "key-written", "store": in.Store, "key": in.Key, "deleted": in.Delete, "e": e,
+		"dataSha256": sum, "backupSha256": in.BackupSha256, "writer": w, "at": at,
+		"sensitive": !c.notSensitive[in.Store], "version": storeVersion(keys)}
+	if in.Writer == "replay" {
+		out["replayedAt"] = now
+	}
+	return c.sign(out)
 }
 
 // keyRows: a store's keys as the signed store list shows them (names and writers, never values)
@@ -261,5 +301,3 @@ func sortedKeys[V any](m map[string]V) []string {
 	sort.Strings(out)
 	return out
 }
-
-var _ = strings.TrimSpace

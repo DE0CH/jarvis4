@@ -492,11 +492,11 @@ kube-system 43 MiB) uses about 1,290 MiB. Planned requests on top (MiB; limits i
 |---|---|---|
 | cloudflared ×2 + kernel-id | 136 | 272 |
 | router ×2 (peak seen on the control box: 680 MiB with standby + leader) | 1,024 | 2,048 |
-| kernel: notary, notarizer, mover, merger, spawner, identity, gullible, secrets-blue, secrets-green | 288 | 800 |
+| kernel: notary, notarizer, mover, merger, spawner, identity, gullible, minter, secrets-blue, secrets-green | 320 | 848 |
 | cert-manager ×3 (no upstream requests; measured elsewhere about 100) | ~100 | none |
 | CloudNativePG operator + Barman plugin | 148 | 328 |
 | Postgres ×2 (512 each) + Barman sidecars ×2 | 1,152 | 1,536 |
-| **total with the base** | **about 3,840** | **about 6,270** |
+| **total with the base** | **about 3,870** | **about 6,320** |
 
 It does not fit: the requests alone reach the node's 3,820 MiB before any burst, and the services that step 5 moves
 onto the cluster need far more (on the services box: search peaked at 1,060 MiB, icloud-index at 3,607 MiB). Today

@@ -1,4 +1,5 @@
-// A store's earlier versions, from the core's signed list (core/history.go; checked against the pinned core key): what
+// A store's earlier versions, from the core's signed list (core/history.go; checked against the pinned core key), or once
+// the kernel serves the router's list (router/storeversions.go; each key's receipt is secrets'): what
 // made each one and its key names, never values. Restore… opens the review page, which shows exactly what the core
 // will change and signs it with Face ID.
 import SwiftUI

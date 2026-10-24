@@ -47,6 +47,10 @@ the kit). Order (Deyao): the kernel, the iOS app, the new cluster, then the stat
   a roster naming the derived keys in the same Recover, so the roster always names the keys secrets serves with.
 - keys/root.pub: the app registers its root key's public half with the router (no Face ID); the setup session commits
   it once. Changing it later is a commit, as box.pub was.
+- The members: notary, notarizer, mover, merger, spawner, identity, gullible, minter and secrets (the serving colour).
+  The minter (DECISIONS 230) is the only component with GitHub egress; secrets reaches nothing outside the cluster but
+  the minter, which it finds by role in the roster (its agreement key seals the deploy-key token, its signing key
+  signs the answer). A minter restart makes the roster stale like any other component's.
 
 ## Steps
 0. This plan.

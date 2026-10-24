@@ -1,4 +1,4 @@
-// fakekernel: a stand-in for the kernel's eight components, for ios.yml's kernel-health UI test (KernelUITests): one
+// fakekernel: a stand-in for the kernel's nine components, for ios.yml's kernel-health UI test (KernelUITests): one
 // server answers every role at http://ADDR/<role> (the router's KERNEL_URL = http://ADDR/%s), each with fresh keys
 // and kernel/sig's own roster check (sig.Trust) against a root key made here. With -router it then plays the root key
 // and the app: registers the root key with the router and posts the roster it signs (POST /api/kernel/root-key, POST
@@ -20,7 +20,7 @@ import (
 	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
-var roles = []string{"gullible", "identity", "merger", "mover", "notarizer", "notary", "secrets", "spawner"}
+var roles = []string{"gullible", "identity", "merger", "minter", "mover", "notarizer", "notary", "secrets", "spawner"}
 
 type component struct {
 	c     *sig.Component

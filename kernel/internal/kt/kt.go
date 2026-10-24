@@ -22,7 +22,7 @@ type World struct {
 	KeysDoc     sig.Doc
 }
 
-var Roles = []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "secrets"}
+var Roles = []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "minter", "secrets"}
 
 func New(t *testing.T) *World {
 	w := &World{T: t, C: map[string]*sig.Component{}}

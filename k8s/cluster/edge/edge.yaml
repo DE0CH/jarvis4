@@ -64,7 +64,7 @@ data:
       listen 8080;
       server_tokens off;
       location = /healthz { access_log off; return 200 "ok\n"; }
-      location ~ ^/(notary|notarizer|mover|merger|spawner|identity|gullible|secrets-blue|secrets-green)/identity$ {
+      location ~ ^/(notary|notarizer|mover|merger|spawner|identity|gullible|minter|secrets-blue|secrets-green)/identity$ {
         limit_except GET { deny all; }
         set $component $1;
         set $upstream http://$component.jarvis4-kernel.svc.cluster.local:8080/identity;

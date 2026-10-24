@@ -2562,3 +2562,28 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      `infra/setup.py sessions` prints a failed session's reason under it; the app's session list shows the reason
      under a failed row (and "Stopped outside Jarvis" for a lost machine), its session page the time it failed and a
      section for a lost machine with its Resume; the web page the same. Tested: `TestAFailedSessionSaysWhy`.
+
+230. **Secrets hands out, the minter uses** (Deyao, 2026-10-23/24; `kernel/minter`, `kernel/secrets`,
+     `router/storeversions.go`). The kernel's secrets only hands secrets out: it never uses one, and keeps nothing it
+     doesn't need. (1) A new kernel component, the **minter**, its own binary, Deployment and roster member, is the
+     only one with GitHub egress (`egress: github`; secrets has none and reaches only the minter in the cluster,
+     `KERNEL_MINTER_URL`). A deploy-key call: secrets checks the phone-signed begin and opens `github-deploy-keys` with
+     the phone's share as before, seals the token to the minter's agreement key from the roster and sends the minter
+     the begin, the phone's signature and its keys statement; the minter checks that same request itself, makes exactly
+     one GitHub call (add, or delete by the id GitHub gave at the add, which secrets records and keeps in its line
+     state), drops the token and answers signed; secrets then writes or deletes the repo's store. Listing keys,
+     deleting by title and taking back a lost race's key are gone: such keys are orphans the router can find with a
+     read token and have the phone remove by id (`keyId` on a remove; only that key goes). The phone-facing API is
+     unchanged. (2) Store history leaves the kernel (Deyao chose this over keeping it there): the router keeps each
+     store's versions in Postgres — the entries it saw written, secrets' signed `key-written` receipts and the backup
+     objects — and a restore is a `write_key` with writer `replay` carrying an earlier receipt, which secrets checks
+     against its own signature and the entry's hashes, keeping the writer it names. The app checks every receipt
+     against the pinned secrets before it shows the plan; no phone signature is needed, as nothing is opened. (3) Gone
+     from secrets: `store-key` (every writer computes P + K: `sig.StoreKey`, the app's `StorePoint`), the format checks
+     the phone already signs over (the title, the ed25519 key; `replaces` stays, the app shows it), the derived nonce and
+     carry keys, the box-key PEM loader, the `core` store guards but one (`storeName`), and the test-only repo-store
+     names. Why: a component that never uses a secret can't leak one through a bug in using it, and each thing secrets
+     doesn't keep is one less thing a compromised secrets could lie about. Tested: `kernel/secrets`
+     `TestTheMinterChecksThePhoneItself`, `TestDeployKeyReAddLeavesAnOrphanAndRemoveDeletesByID`,
+     `TestAReplayPutsAnEarlierEntryBack`; `kernel/minter` `TestMintOverHTTP`; `router`
+     `TestAKernelRestoreReplaysTheEarlierEntry` (against the real kernel); the interop Kernel test's P + K vectors.
