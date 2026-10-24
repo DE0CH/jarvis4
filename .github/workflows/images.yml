@@ -7,7 +7,7 @@ name: images
 on:
   push:
     branches: [main]
-    paths: [kernel/**, router/**, machine/**, session-image/**, policy/**, tasks/**, app/**, infra/setup.py, infra/setup_trust_test.py, infra/setup_write_test.py, infra/setup_roster_test.py, infra/image-unpacked-size.py, .github/workflows/images.yml]
+    paths: [kernel/**, router/**, machine/**, session-image/**, policy/**, tasks/**, app/**, infra/setup.py, infra/setup_trust_test.py, infra/setup_write_test.py, infra/setup_roster_test.py, infra/kernel-pin.py, infra/kernel_pin_test.py, ios/interop/rostervec/**, infra/image-unpacked-size.py, .github/workflows/images.yml]
   workflow_dispatch:
     inputs:
       base:
@@ -38,7 +38,7 @@ jobs:
       - run: cd kernel && go vet ./... && go test ./... && test -z "$(gofmt -l .)"
       - run: cd router && go vet ./... && go test ./...
       - run: cd machine && go vet ./... && go test ./...
-      - run: pip install -q cryptography && python3 infra/setup_trust_test.py && python3 infra/setup_write_test.py && python3 infra/setup_roster_test.py
+      - run: pip install -q cryptography && python3 infra/setup_trust_test.py && python3 infra/setup_write_test.py && python3 infra/setup_roster_test.py && python3 infra/kernel_pin_test.py
   base:
     needs: test
     runs-on: ubuntu-latest
@@ -155,6 +155,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0, ssh-key: "${{ secrets.PIN_DEPLOY_KEY }}" }  # the pin checks compare against older commits
+      - uses: actions/setup-go@v5  # infra/kernel-pin.py reads each component's packages with go list
+        with: { go-version: "1.25", cache: false }
       - name: pin the new images in k8s/cluster/ by digest (Flux rolls them out); never over a newer pin
         env: { CI_IMAGE_KEY: "${{ secrets.CI_IMAGE_KEY }}" }
         run: |
@@ -186,21 +188,17 @@ jobs:
             f=k8s/cluster/router/session-image-sigs.txt
             grep -q "^$S " "$f" || echo "$S $SIG" >> "$f"
           fi
-          # the kernel: its components move when kernel/ changed since the image it pins, every one but the secrets that
-          # serves (active-secrets.txt): a secrets restart empties it, so a release goes only into the next colour
+          # the kernel: a component restart stales the root-signed roster (fresh RAM-only keys) and locks Jarvis 4 until
+          # Deyao re-signs it, so a component moves only when the files its binary is built from changed since the build
+          # it pins AND a commit after that carries Deyao's `Kernel-Release: <why> (Deyao, YYYY-MM-DD)` trailer; never the
+          # secrets that serves (active-secrets.txt). Changed inputs with no release: this job fails after the router and
+          # session pins are pushed, and no kernel Deployment moves (infra/kernel-pin.py; docs/RUNBOOK.md "A kernel release")
+          krc=0
           if [ -f "$KF" ]; then
-            kcur="$(grep -hoE 'jarvis4-kernel:sha-[0-9a-f]{12}' "$KF" | head -1 | grep -oE '[0-9a-f]{12}$' || true)"
-            if [ -z "$kcur" ] || ! kfull="$(git rev-parse -q --verify "$kcur^{commit}")" || ! git diff --quiet "$kfull" "$GITHUB_SHA" -- kernel/; then
+            kmove="$(python3 infra/kernel-pin.py plan "$KF" "$(tr -d '[:space:]' < k8s/cluster/kernel/active-secrets.txt)" "$GITHUB_SHA")" || krc=1
+            if [ "$krc" = 0 ] && [ -n "$kmove" ]; then
               K="$(infra/image-digest.sh "ghcr.io/de0ch/jarvis4-kernel:$T")"
-              python3 - "$KF" "$(tr -d '[:space:]' < k8s/cluster/kernel/active-secrets.txt)" "$K" <<'PY'
-          import re,sys
-          f,active,img=sys.argv[1:4]; s=open(f).read()
-          parts=s.split("\n---\n")
-          for i,p in enumerate(parts):
-              if "kind: Deployment" in p and "name: secrets-"+active+"," not in p:
-                  parts[i]=re.sub(r"ghcr.io/de0ch/jarvis4-kernel:(latest|sha-[0-9a-f]{12}(@sha256:[0-9a-f]{64})?)", img, p)
-          open(f,"w").write("\n---\n".join(parts))
-          PY
+              python3 infra/kernel-pin.py apply "$KF" "$K" $kmove
             fi
           fi
           # the base this run built: the session image above stands on it, so session-image/Dockerfile's BASE moves to it
@@ -209,8 +207,8 @@ jobs:
             sed -i -E "s#^ARG BASE=.*#ARG BASE=$B#" session-image/Dockerfile
             grep -qxF "ARG BASE=$B" session-image/Dockerfile || { echo "session-image/Dockerfile has no ARG BASE line"; exit 1; }
           fi
-          git diff --quiet && exit 0
+          git diff --quiet && exit "$krc"
           git config user.name "jarvis4-ci"; git config user.email "ci@jarvis4.invalid"
           git commit -qam "images: pin $T${B:+ + session base $(echo "$B" | grep -o "base-sha-[0-9a-f]*")} [skip ci]"
-          for i in 1 2 3 4 5; do git push -q origin HEAD:main && exit 0; git pull -q --rebase origin main; done
+          for i in 1 2 3 4 5; do git push -q origin HEAD:main && exit "$krc"; git pull -q --rebase origin main; done
           exit 1

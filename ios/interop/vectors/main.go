@@ -1,5 +1,6 @@
 // vectors: kernel documents as the Go side makes them, for the app's interop test (ios/interop Kernel): a new
-// source's cert for session s1, an add-store's two certs, and the payloads that must be refused. Not in the image.
+// source's cert for session s1, an add-store's two certs, and the payloads that must be refused. Outside kernel/ so
+// it never counts as a kernel image input.
 package main
 
 import (

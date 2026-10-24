@@ -1,7 +1,8 @@
 FROM golang:1.25-bookworm AS build
 WORKDIR /src
 COPY . .
-RUN CGO_ENABLED=0 go test ./... && mkdir /out && \
+# no `go test` here: the images workflow's test job runs the kernel's tests before this build
+RUN mkdir /out && \
     for r in notary notarizer mover merger spawner identity gullible secrets; do \
       CGO_ENABLED=0 go build -trimpath -o /out/$r ./cmd/$r || exit 1; done
 
