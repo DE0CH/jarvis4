@@ -65,6 +65,14 @@ type Liveness struct {
 	NudgeError string    `json:"nudgeError,omitempty"`
 }
 
+// carryMemory: the in-memory fields of the copy this replica had, onto the one just read from the database
+// (statedb.go reload); the persisted ones are the database's
+func (l *Liveness) carryMemory(old *Liveness) {
+	l.waiting, l.settled, l.loginRepaired, l.loginBusy, l.grantRetry = old.waiting, old.settled, old.loginRepaired, old.loginBusy, old.grantRetry
+	l.oneShotFiring, l.dialogCheckedAt, l.dialogReported = old.oneShotFiring, old.dialogCheckedAt, old.dialogReported
+	l.screen, l.mem, l.disk = old.screen, old.mem, old.disk
+}
+
 type waitEpisode struct {
 	at        time.Time
 	statusAt  int64

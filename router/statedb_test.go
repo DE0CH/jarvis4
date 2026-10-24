@@ -206,6 +206,24 @@ func TestStateAcrossReplicas(t *testing.T) {
 			t.Fatalf("%d increments of 40 survived", d.Sessions["s1"].DiskGB)
 		}
 	})
+	// what a replica keeps in memory only (the pushed screen the stall watchdog reads) survives the other's writes
+	a.Do(func(d *persisted) {
+		d.Sessions["s1"].MachineID = "m1"
+		d.Sessions["s1"].Live = &Liveness{screen: &pushedScreen{at: time.Now()}}
+	})
+	b.Do(func(d *persisted) { d.Sessions["s1"].DiskGB++ })
+	a.Do(func(d *persisted) {
+		if l := d.Sessions["s1"].Live; l == nil || l.screen == nil || d.Sessions["s1"].DiskGB != 41 {
+			t.Fatalf("the screen was dropped by the reload (or the write lost): %+v", l)
+		}
+	})
+	// a new machine starts afresh
+	b.Do(func(d *persisted) { d.Sessions["s1"].MachineID = "m2" })
+	a.Do(func(d *persisted) {
+		if l := d.Sessions["s1"].Live; l != nil && l.screen != nil {
+			t.Fatal("another machine's screen was carried")
+		}
+	})
 }
 
 // the small documents: read and written in the database; a file of one on the volume is imported once and set aside
