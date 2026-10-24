@@ -1,8 +1,0 @@
-# Transcript search moved to DE0CH/services (namespace services; Deyao, 2026-10-24). Only its old volume is left here,
-# no longer exempt from pruning, so the next commit that drops this file deletes it.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata: { name: search-data, namespace: jarvis4-services }
-spec:
-  accessModes: [ReadWriteOnce]
-  resources: { requests: { storage: 8Gi } }

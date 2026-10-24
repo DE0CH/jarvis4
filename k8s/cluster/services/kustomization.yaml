@@ -1,7 +1,7 @@
-# Jarvis 4's shared services (the watch runner; the iCloud index when on; the old transcript search volume until it is pruned), on the node infra/cluster-node.sh added
+# Jarvis 4's shared services (the watch runner; the iCloud index when on), on the node infra/cluster-node.sh added
 # (nodeSelector jarvis4/pool=services: jarvis2-cluster-2, cx33), seeded from Jarvis 2's copies by infra/services-seed.sh.
 # The router reaches them at <name>.jarvis4-services.svc.cluster.local (k8s/cluster/router/router.yaml).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 # The iCloud index (icloud-index/) is off (Deyao, 2026-10-22): it is not part of Jarvis; listed again when he turns it on.
-resources: [namespace.yaml, secrets, search, watch]
+resources: [namespace.yaml, secrets, watch]
