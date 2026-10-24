@@ -62,7 +62,7 @@ private struct SessionDetailList: View {
           if let busy { StatusPill(text: busy.lowercased(), color: .orange, spinning: true) } else { StatusPill(text: p.text, color: p.color, spinning: p.spin) }
           if m.permissionMode == "bypass" { StatusPill(text: "skip perms", color: .red) }
           if m.oneShot { StatusPill(text: "one-shot") }
-          if m.state != "paused" && m.hasSchedule { StatusPill(text: "scheduled", color: .blue) }
+          if m.state != "paused" && m.hasSchedule && !["watching", "scheduled"].contains(p.text) { StatusPill(text: "scheduled", color: .blue) }
         }
         .accessibilityIdentifier("status-\(m.id)")
         if let info = autoPauseInfo { LabeledContent(info.label, value: info.value).accessibilityIdentifier("autopause-\(m.id)") }
@@ -144,6 +144,10 @@ private struct SessionDetailList: View {
           }
           ForEach(m.crons) { c in
             WakeRow(symbol: "repeat", when: Fmt.every(c.everySeconds), name: c.name, prompt: c.prompt, next: c.nextAt.map(Fmt.when))
+          }
+          ForEach(m.watches) { w in
+            WakeRow(symbol: "eye", when: "watch, checks \(Fmt.every(w.interval))", name: w.name, prompt: w.prompt, next: w.nextCheck.map(Fmt.when),
+                    tags: w.runs > 0 ? [Fmt.plural(w.runs, "check")] : [])
           }
         }
       }

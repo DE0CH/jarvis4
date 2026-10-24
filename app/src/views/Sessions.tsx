@@ -58,7 +58,9 @@ function SessionPill({ m }: { m: Session }) {
     if (!m.status) return <Pill kind="wait" spin>booting…</Pill>;
     if (m.status === "busy") return <Pill kind="wait">working</Pill>;
     if (m.status === "waiting") return <Pill kind="bad">needs you</Pill>;
-    if (m.status === "idle") return m.bgTasks ? <Pill kind="wait">{`idle · ${m.bgTasks} background`}</Pill> : <Pill kind="ok">idle</Pill>;
+    // idle only when nothing will prompt it again: a watch or a schedule takes the pill
+    if (m.status === "idle") return m.bgTasks ? <Pill kind="wait">{`idle · ${m.bgTasks} background`}</Pill>
+      : (m.watches || []).length ? <Pill kind="info">watching</Pill> : hasSchedule(m) ? <Pill kind="info">scheduled</Pill> : <Pill kind="ok">idle</Pill>;
     return <Pill kind="ok">{m.status}</Pill>;
   }
   return <Pill kind="dim">{m.state}</Pill>;
@@ -279,6 +281,12 @@ function Schedules({ m }: { m: Session }) {
         <Rows><Row label="Cron">{c.name}</Row><Row label="Repeats">{cronEvery(c.everySeconds)}</Row><Row label="Next">{when(c.nextAt)}</Row></Rows>
         <Quote by="Prompt" color="blue" lines={2}>{clip(c.prompt)}</Quote>
       </Box>)}
+      {(m.watches || []).map((x) => <Box key={"x" + x.name}>
+        <Rows><Row label="Watch">{x.name}</Row><Row label="Checks">{cronEvery(x.interval)}</Row>
+          {!!x.nextCheckIso && <Row label="Next check">{when(Date.parse(x.nextCheckIso))}</Row>}
+          {!!x.expiresAtIso && <Row label="Gives up">{when(Date.parse(x.expiresAtIso))}</Row>}</Rows>
+        <Quote by="Prompt when met" color="blue" lines={2}>{clip(x.prompt)}</Quote>
+      </Box>)}
     </Callout>
   );
 }
@@ -468,7 +476,7 @@ export function Sessions() {
                 {/* every card has the same parts and rows ("—" when empty), so they line up across a grid row (ui/align.tsx) */}
                 <Aligned part="head"><Flex justify="space-between" align="flex-start" gap={2} mb={1}>
                   <Heading size={3} style={{ flex: 1 }}>{sessionTitle(m)}</Heading>
-                  <Flex gap={1} wrap justify="flex-end" style={{ flexShrink: 0, maxWidth: "55%" }}><SessionPill m={m} />{!paused && hasSchedule(m) && <Pill kind="info">scheduled</Pill>}</Flex>
+                  <Flex gap={1} wrap justify="flex-end" style={{ flexShrink: 0, maxWidth: "55%" }}><SessionPill m={m} />{!paused && hasSchedule(m) && !(m.state === "started" && m.status === "idle" && !m.bgTasks) && <Pill kind="info">scheduled</Pill>}</Flex>
                 </Flex><MovingDetail m={m} /></Aligned>
                 <Aligned part="badges">{(m.permissionMode === "bypass" || m.oneShot || m.authFailed || leasePills(leases, m.id).length > 0) && <Flex gap={1} wrap align="center" mb={1}>
                   {leasePills(leases, m.id).map((l) => <Pill key={l.key} kind={l.held ? "info" : "dim"}>{l.text}</Pill>)}

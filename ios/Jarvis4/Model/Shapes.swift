@@ -41,7 +41,8 @@ struct Session: Identifiable, Equatable, Hashable {
   var createRequestId: String? { j["createRequestId"].text }
   var wakeups: [Wakeup] { j["wakeups"].array.map(Wakeup.init) }
   var crons: [Cron] { j["crons"].array.map(Cron.init) }
-  var hasSchedule: Bool { !wakeups.isEmpty || !crons.isEmpty }
+  var watches: [Watch] { j["watches"].array.map(Watch.init) }
+  var hasSchedule: Bool { !wakeups.isEmpty || !crons.isEmpty || !watches.isEmpty }
   var isTaskLine: Bool { harness.hasPrefix("task:") }
   /// OpenCode and OpenClaw sessions aren't in the Claude app: their primary action is the Remote page
   var hasRemote: Bool { harness == "opencode" || harness == "openclaw" || harness == "paseo-claude" }
@@ -137,6 +138,18 @@ struct Wakeup: Identifiable, Equatable, Hashable {
   var name: String { j["name"].string ?? "default" }
   var prompt: String { j["prompt"].string ?? "" }
   var at: Date? { j["at"].double.map { Date(timeIntervalSince1970: $0 / 1000) } ?? j["atIso"].string?.isoDate }
+}
+
+/// a condition the router's watch runner checks on an interval (router/watches.go): met, it wakes the session
+struct Watch: Identifiable, Equatable, Hashable {
+  let j: JSON
+  var id: String { name }
+  var name: String { j["name"].string ?? "" }
+  var prompt: String { j["prompt"].string ?? "" }
+  var interval: Int { j["interval"].int ?? 60 }
+  var nextCheck: Date? { j["nextCheckIso"].string?.isoDate }
+  var expires: Date? { j["expiresAtIso"].string?.isoDate }
+  var runs: Int { j["runs"].int ?? 0 }
 }
 
 struct Cron: Identifiable, Equatable, Hashable {

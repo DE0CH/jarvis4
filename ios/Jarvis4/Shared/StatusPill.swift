@@ -35,7 +35,11 @@ extension Session {
       switch s {
       case "busy": return ("working", .orange, false)
       case "waiting": return ("needs you", .red, false)
-      case "idle": return bgTasks > 0 ? ("idle · \(bgTasks) background", .orange, false) : ("idle", .green, false)
+      case "idle":
+        if bgTasks > 0 { return ("idle · \(bgTasks) background", .orange, false) }
+        // waiting on something that wakes it, not done: a watch or a schedule
+        if !watches.isEmpty { return ("watching", .blue, false) }
+        return hasSchedule ? ("scheduled", .blue, false) : ("idle", .green, false)
       default: return (s, .green, false)
       }
     default: return (state, .secondary, false)
