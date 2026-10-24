@@ -413,15 +413,7 @@ PEM private keys, the kit's prefix), as a second layer under "the core logs noth
 - **The session machines:** the Fly app `jarvis2-log-shipper` in org jarvis2-370 (`services/log-shipper`: Fly's log
   shipper with only the Loki sink, the same redaction, and no listening port: Vector's API would let any machine on the
   org's network tap every session's log), label `box="fly"`.
-- **Alerts** (rules as code: `infra/grafana.py`, Jarvis 4's own folder and contact point in the stack Jarvis 2 shares)
-  go to Discord #jarvis2-alerts: per node memory pressure, OOM kills, disk and a node gone quiet (any node that has
-  shipped in the last 24 h, so new nodes need nothing), the whole cluster gone quiet, Flux failing, control-plane
-  restarts, and the external probe: Grafana
-  Synthetic Monitoring calls `https://jarvis4.deyaochen.com/healthz` every minute from London and Frankfurt with its own
-  Access service token (path-scoped Access app; `router/healthz.go` answers 200 only while the router and its core
-  serve; on a box with no core, while the router serves and the kernel is healthy, `router/kernelhealth.go`). A rule whose query Grafana itself can't run keeps its last state; two `notice` canaries say when Grafana
-  hasn't been able to query its own metrics or logs for 15 min (DECISIONS 211). Each Discord message reads: what is
-  wrong, what it means, what to do (template `jarvis2`).
+- **No alerts** (Deyao, 2026-10-24; DECISIONS 237): nothing pages; logs and metrics are looked up when needed.
 
 - **The metadata address** (169.254.169.254, which keeps serving the user-data with the box key): NetworkPolicies keep
   the core, the router and cloudflared from it, and a box built from 2026-10-11 on drops every pod's packets to it in

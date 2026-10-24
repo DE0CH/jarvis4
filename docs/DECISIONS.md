@@ -2740,3 +2740,10 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      the final snapshot's freeze). At a stop the keeper kills normal first so it doesn't compete with the teardown.
      *Not chosen*: normal in the rescue cgroup (it would compete with a terminal grant's rescue commands for that
      cgroup's memory).
+
+237. **No alerts** (Deyao, 2026-10-24: "Turn off jarvis 2 alerts and delete the discord channel"). Grafana Cloud's
+     stack keeps the logs and metrics and sends nothing: both rule groups (Jarvis 2's `boxes`, Jarvis 4's `cluster`),
+     their folders, templates and Discord contact points, and the Synthetic Monitoring `/healthz` probe are deleted,
+     the stack's notification policy is reset, `infra/grafana.py` is gone, and Discord #jarvis2-alerts is deleted.
+     `/healthz` and its Access app stay as a check anyone with the service token can call. Supersedes the alert parts
+     of 187 and 211.

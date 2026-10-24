@@ -1,6 +1,6 @@
 package main
 
-// GET /healthz: the external uptime probe (Grafana Synthetic Monitoring, docs/RUNBOOK.md "Logs, metrics and alerts").
+// GET /healthz: an uptime check behind its own Access service token (the Grafana probe that called it is gone, DECISIONS 237).
 // Behind its own path-scoped Access app (jarvis4.deyaochen.com/healthz, ACCESS_HEALTH_AUD) that admits exactly one
 // service token (HEALTH_CLIENT_ID), which the probe holds; no email login. 200 only while this router serves and its
 // core serves (and its database answers, with this router's schema, and takes every record write); 503 names what isn't (a core that is empty after a reboot waits for Deyao's Recover). It reads nothing

@@ -1,4 +1,4 @@
-# fly deploy -c services/log-shipper/fly.toml (docs/RUNBOOK.md "Logs, metrics and alerts"); secrets: ORG, ACCESS_TOKEN
+# fly deploy -c services/log-shipper/fly.toml (docs/RUNBOOK.md "Logs and metrics"); secrets: ORG, ACCESS_TOKEN
 # (a read-only token of org jarvis2-370), LOKI_URL, LOKI_USERNAME, LOKI_PASSWORD (the Grafana write token)
 app = "jarvis2-log-shipper"
 primary_region = "lhr"

@@ -1,4 +1,4 @@
-# The session machines' log shipper (docs/RUNBOOK.md "Logs, metrics and alerts"): Fly's own log shipper (Vector reading
+# The session machines' log shipper (docs/RUNBOOK.md "Logs and metrics"): Fly's own log shipper (Vector reading
 # org jarvis2-370's log stream over NATS) sending to Grafana Cloud Logs, as the Fly app jarvis2-log-shipper in that org.
 # Changed from the upstream image: only the Loki sink, secret shapes replaced before anything leaves, and NO listening
 # ports (upstream serves Vector's API, whose `tap` would stream every session's log to any machine on the org's private

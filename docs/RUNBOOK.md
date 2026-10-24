@@ -83,7 +83,7 @@ PodDisruptionBudget of 1; DESIGN "The router is two stateless replicas"): the st
 it leaves the Service (its log: `stopping: out of the Service, …`), hands the scheduler's lease on, lets its running
 jobs end (`JOB_GRACE_SECONDS` 1740, under `terminationGracePeriodSeconds: 1800`), then exits (`stopped`); a job still
 running then is carried on by the other replica once its lease lapses. Its log is in Grafana
-(`namespace="jarvis4-router"`, "Logs, metrics and alerts"). After a crash (OOM, node reboot) the other replica serves
+(`namespace="jarvis4-router"`, "Logs and metrics"). After a crash (OOM, node reboot) the other replica serves
 on and carries the crashed one's jobs on; a cut-off start may leave an uncertified machine that the Machines tab flags
 with no session (Destroy it there). Moving the router to other nodes is a rollout like any other: the pods hold
 nothing, the records are in Postgres (its own backups).
@@ -347,7 +347,7 @@ The control box (`k8s/control/secrets/`, annotations in `k8s/control/apps/router
   with claude-env's `cloudflare-dash` skill (`cf_token.js jarvis2-device-tokens-control OUT
   a1c0fec57cf94af79479a6d827fa518c 91f7ce32fa614d73b7e1fc8f0e78582b`), then this part.
 - `--part alloy GRAFANA_LOGS_URL GRAFANA_LOGS_USER GRAFANA_METRICS_URL GRAFANA_METRICS_USER GRAFANA_WRITE_TOKEN` →
-  `alloy.enc.yaml` (both boxes have one): the host's Grafana Alloy ("Logs, metrics and alerts").
+  `alloy.enc.yaml` (both boxes have one): the host's Grafana Alloy ("Logs and metrics").
 
 The services box (`k8s/services/secrets/`, Secrets in jarvis2-services):
 
@@ -852,7 +852,7 @@ exited (DECISIONS 194).
   DATA_DIR>/state.json <its core.log>` deletes only what those files name. What it misses, the production sweep takes
   once it is 15 minutes old.
 
-## Logs, metrics and alerts (DESIGN "Logs and metrics")
+## Logs and metrics (DESIGN "Logs and metrics")
 
 Grafana Cloud stack `jumboshortbread1389` (https://jumboshortbread1389.grafana.net, EU Germany, Free: 50 GB logs, 10k
 metric series, 14 days). The account logs in **with GitHub as DE0CH** (no Grafana password). Credentials: the store
@@ -881,23 +881,8 @@ metric series, 14 days). The account logs in **with GitHub as DE0CH** (no Grafan
   `ACCESS_TOKEN` (`flyctl tokens create readonly jarvis2-370 --from-existing` with the org token), `LOKI_URL=https://logs-prod-012.grafana.net`,
   `LOKI_USERNAME=1833850`, `LOKI_PASSWORD` = `GRAFANA_WRITE_TOKEN`. One shared-cpu-1x 256 MB machine (USD 2.52/month at the budget's lhr rates, in
   the Fly budget; the Machines tab labels the app with what it is and this cost, `jarvisOwnApps` in `router/flyorgs.go`).
-- **Alerts:** `GRAFANA_ADMIN_TOKEN=… GRAFANA_DISCORD_WEBHOOK=… infra/grafana.py apply` (folder "Jarvis 4", group
-  `cluster`, contact point `jarvis4-discord`, template `jarvis4`; Jarvis 2's own rules, contact point, template and the
-  stack's policy are left alone; `show` lists the rules), to Discord #jarvis2-alerts (channel 1560217907072344104 in
-  DE0CH's server). Per node (label `node`): memory pressure, OOM, disk and "Gone quiet" (a node that sent metrics in
-  the last 24 h and none for 5 min), so a new node needs no change here. The probe: `GRAFANA_SM_TOKEN=… HEALTH_PROBE_ID=… HEALTH_PROBE_SECRET=… infra/grafana.py probe`.
-  Each rule carries three annotations, `summary` (what is wrong), `meaning` and `action`, and the contact point renders
-  them through the template `jarvis4` (a new rule gets all three). In a session the old image's
-  `pull-secrets --exec CMD` (or `session-secret --keys … --exec CMD`) runs it with `jarvis2-ops`; `show` prints each
-  rule's pending period, no-data and error states, and whether the live template matches the code.
-- **"DatasourceError" / "Grafana can't query its own metrics (or logs)":** Grafana Cloud's rule evaluator couldn't
-  reach its own Prometheus or Loki (e.g. `Post "https://prometheus-prod-65-prod-eu-west-2.grafana.net/…": dial tcp …:
-  i/o timeout`). Not a Jarvis problem: nothing to fix on our side, the boxes keep shipping. Every box rule has
-  execErrState KeepLast, so such errors don't page; only the two `notice` canaries do, after 15 min. Confirm the boxes
-  were fine with `count by (box) (node_time_seconds)` over the window (one point a minute, no gaps) and the rule
-  history `GET /api/v1/rules/history?from=…&to=…` (admin token; `current` "Error" entries carry the query error);
-  https://status.grafana.com for Grafana's side. While it lasts, the metric alerts (gone quiet, probe, memory, disk)
-  are blind; the app is the check.
+- **No alerts (Deyao, 2026-10-24):** Grafana sends nothing; the alert rules, contact points, the Synthetic
+  Monitoring probe and Discord #jarvis2-alerts are gone (DECISIONS 237). Logs and metrics are for looking things up.
 - **Re-minting** (each credential, when lost or leaked; then write it into `jarvis2-ops` with `infra/setup.py write`,
   and into the boxes' parts where named):
   - `GRAFANA_WRITE_TOKEN`, `GRAFANA_READ_TOKEN`: grafana.com → the org's Access Policies (log in with GitHub):
@@ -906,11 +891,5 @@ metric series, 14 days). The account logs in **with GitHub as DE0CH** (no Grafan
     browser page (header `X-Request-Id`). A new write token goes into both boxes' `alloy` parts and the shipper's
     `LOKI_PASSWORD`.
   - `GRAFANA_ADMIN_TOKEN`: the stack → Administration → Service accounts → `jarvis2-admin` → Add token.
-  - `GRAFANA_SM_TOKEN`: `POST https://synthetic-monitoring-api-eu-west-2.grafana.net/api/v1/register/install` with an
-    access-policy token (stacks:read, metrics:write, logs:write, traces:write) and `{"stackId":1876074,
-    "metricsInstanceId":3676371,"logsInstanceId":1833850}`.
-  - `GRAFANA_DISCORD_WEBHOOK`: a new webhook on #jarvis2-alerts (lobster: `POST /channels/<id>/webhooks`), then
-    `infra/grafana.py apply`.
-  - `HEALTH_PROBE_ID/SECRET`: `ROTATE=1 infra/cloudflare.py --health OUT`, then `infra/grafana.py probe`.
   - `ROUTER_BACKUP_AGE_KEY`: can't be re-minted for the backups already made; a new pair means a new
     `ROUTER_BACKUP_AGE_PUB` in `k8s/control/apps/router/router.yaml` (backups from then on).
