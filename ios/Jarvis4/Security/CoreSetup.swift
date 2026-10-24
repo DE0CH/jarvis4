@@ -75,8 +75,11 @@ enum CoreSetup {
     var sealed: [String: String]? = nil
     let backupSha256: String; let e: String; let dataSha256: String
     let writer: Writer
-    var core: Identity? = nil
+    var core: Core? = nil
     let at: String
+    /// the component that wrote it: a core (vouched for by the box key: boxSig) or the kernel's secrets (no boxSig; a
+    /// setup write is checked by the setup key alone)
+    struct Core: Decodable { let signingKey: String; let agreementKey: String; var boxSig: String? = nil }
   }
   /// a restore's receipt (core/history.go "store-restore-approved"): each key put back with its hashes, each removed
   struct RestoreReceipt: Decodable {
@@ -170,9 +173,9 @@ enum CoreSetup {
     let text = Data(Checks.writerText(store: store, key: key, e: b.e, dataSha256: b.dataSha256, backupSha256: b.backupSha256).utf8)
     /// the core the object names, vouched for by the box key
     func vouchedCore(_ what: String) throws -> PublicKeys {
-      guard let boxKey, let id = b.core else { throw TrustError.backup("\(o.key)'s \(what) can't be checked.") }
+      guard let boxKey, let id = b.core, let boxSig = id.boxSig else { throw TrustError.backup("\(o.key)'s \(what) can't be checked.") }
       let k = PublicKeys(signingKey: id.signingKey, agreementKey: id.agreementKey)
-      guard CoreCrypto.identityVouched(k, boxSig: id.boxSig, boxKey: boxKey) else { throw TrustError.backup("\(o.key) names a core the box key didn't vouch for.") }
+      guard CoreCrypto.identityVouched(k, boxSig: boxSig, boxKey: boxKey) else { throw TrustError.backup("\(o.key) names a core the box key didn't vouch for.") }
       return k
     }
     let sig = b.writer.sig ?? ""

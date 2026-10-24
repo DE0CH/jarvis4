@@ -227,5 +227,18 @@ check(throwsErr { _ = try CoreSetup.checkKeyBackup(marker(rm), setupKey: setupPu
 check(throwsErr { _ = try CoreSetup.checkKeyBackup(marker(rm), setupKey: setupPub, boxKey: nil) }, "…nor with no secrets to check it with")
 check(throwsErr { _ = try CoreSetup.checkKeyBackup(marker(rm, key: "A"), setupKey: setupPub, boxKey: nil, secretsKey: derived.signingKey) }, "…nor as another key's removal")
 
+// ---- a key the setup session wrote through the kernel: its backup names the kernel's secrets as its core (no boxSig);
+// the setup key's signature is what counts ----
+let secretsIdent = try! JSONSerialization.jsonObject(with: call("/identity").1)
+let setupText = Data(Checks.writerText(store: "default", key: "C", e: "", dataSha256: "", backupSha256: "").utf8)
+let setupWrite: [String: Any] = ["kind": "key-backup", "store": "default", "key": "C", "deleted": true, "sealed": NSNull(), "backupSha256": "", "e": "",
+                                 "dataSha256": "", "core": secretsIdent, "at": "2026-10-24T12:00:00Z",
+                                 "writer": ["by": "setup", "sig": try! setup.signature(for: setupText).derRepresentation.base64EncodedString()]]
+let setupObj = try! JSONDecoder().decode(CoreSetup.BackupObject.self, from: JSONSerialization.data(withJSONObject: [
+  "key": "keys/default/C.json", "body": String(decoding: try! JSONSerialization.data(withJSONObject: setupWrite), as: UTF8.self)]))
+check(!throwsErr { _ = try CoreSetup.checkKeyBackup(setupObj, setupKey: setupPub, boxKey: nil, secretsKey: derived.signingKey) },
+      "a setup write whose backup names the kernel's secrets checks against the setup key")
+check(throwsErr { _ = try CoreSetup.checkKeyBackup(setupObj, setupKey: otherPub, boxKey: nil, secretsKey: derived.signingKey) }, "…not against another setup key")
+
 print(failures == 0 ? "all kernel checks passed" : "\(failures) kernel check(s) FAILED")
 exit(failures == 0 ? 0 : 1)
