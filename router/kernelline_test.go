@@ -146,6 +146,22 @@ func TestAKernelLinesLife(t *testing.T) {
 	if st := kernelSession(rg, sid).State; st != "started" {
 		t.Fatalf("state %s", st)
 	}
+	// a batch may ask for a store on a kernel line too (it was refused as "no running machine": it looked for the old
+	// core's cert only)
+	if code, body := kdo(t, h, m1, "POST", "/m/api/requests/batch", `{"summary":"two things","items":[{"intent":"add-store","store":"batched","explanation":"for a test"}]}`); code != 200 {
+		t.Fatal(code, string(body))
+	}
+	var batched *Approval
+	rg.r.st.Do(func(d *persisted) {
+		for _, x := range d.Approvals {
+			if x.Session == sid && x.Options["store"] == "batched" {
+				batched = x
+			}
+		}
+	})
+	if batched == nil || batched.Kind != kernelAddApprovalKind || batched.Batch == "" {
+		t.Fatalf("%+v", batched)
+	}
 	// add-store: the phone signs both certs; the store's grant, moved onto the machine, merges with the main one
 	aid, err := rg.r.addStoreApproval(m1.ID, "extra", Origin{}, "", "")
 	if err != nil {

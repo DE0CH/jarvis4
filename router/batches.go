@@ -335,8 +335,9 @@ func (r *Router) checkBatchItem(c Caller, raw json.RawMessage) (*batchItem, erro
 			return nil, &badRequest{"add-store: store is required"}
 		}
 		r.st.Do(func(d *persisted) {
-			// a running machine with a cert (started, or initialising while it waits on a locked store), as AddStore takes
-			if s := d.Sessions[sid]; s != nil && s.MachineID != "" && s.Cert != nil && (s.State == "started" || s.State == "initialising") {
+			// a running machine with a cert or a kernel line (started, or initialising while it waits on a locked store),
+			// as addStoreApproval takes
+			if s := d.Sessions[sid]; s != nil && s.MachineID != "" && (s.Cert != nil || s.Kernel != nil) && (s.State == "started" || s.State == "initialising") {
 				it.machine = s.MachineID
 			}
 		})

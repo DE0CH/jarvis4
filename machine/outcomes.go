@@ -18,6 +18,7 @@ package main
 // never come through here.
 
 import (
+	"slices"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -213,6 +214,14 @@ func outcomeResult(a outcomeAsked, it OutcomeItem, cert Cert) (string, error) {
 		if err := need(); err != nil {
 			return "", err
 		}
+		if _, ok := readKernelTrust(); ok {
+			// a kernel line: the grant this machine's own reload checked (kernelboot.go) names the store; until the
+			// reload has run, the delivery is refused and the router tries it again
+			if !slices.Contains(cert.Stores, a.Store) {
+				return "", fmt.Errorf("this machine's checked grant doesn't name the store %q (yet)", a.Store)
+			}
+			return fmt.Sprintf("Checked: this machine's grant from the kernel names the store %q, and the supervisor pulls it by itself; run a command with the keys it needs as `session-secret --keys K1,K2 --exec CMD` (this shell's env doesn't change; `pull-secrets` makes the supervisor pull again now).", a.Store), nil
+		}
 		key, err := outcomeCoreKey()
 		if err != nil {
 			return "", err
@@ -230,6 +239,9 @@ func outcomeResult(a outcomeAsked, it OutcomeItem, cert Cert) (string, error) {
 	case "new-session":
 		if err := need(); err != nil {
 			return "", err
+		}
+		if _, ok := readKernelTrust(); ok { // the kernel's notarization names only the cert's id: nothing here to check it against
+			return fmt.Sprintf("This is Jarvis's report (on the kernel nothing here can check it): Deyao approved the proposed session. Its session id is %s; it is starting now.", it.Ref), nil
 		}
 		key, err := outcomeCoreKey()
 		if err != nil {
@@ -257,6 +269,12 @@ func outcomeResult(a outcomeAsked, it OutcomeItem, cert Cert) (string, error) {
 		}
 		return fmt.Sprintf("Checked: the core's approval (by the phone) of a new session with this proposal's title and prompt. Its session id is %s; it is starting now.", it.Ref), nil
 	case "repo/add", "repo/remove":
+		if _, ok := readKernelTrust(); ok { // the kernel's secrets answers the deploy key to the router, not to this machine
+			if a.Intent == "repo/remove" {
+				return "This is Jarvis's report (nothing signed reaches this machine on the kernel): the deploy key was removed.", nil
+			}
+			return "This is Jarvis's report (nothing signed reaches this machine on the kernel): the deploy key was added, in a store of its own. Unless the request said --no-store, that store comes into this session in the same approval and the waiter `jarvis2-request add-repo` started sets up the repo's SSH key (~/.jarvis2-await-github-*.log).", nil
+		}
 		if err := need(); err != nil {
 			return "", err
 		}

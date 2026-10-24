@@ -877,6 +877,9 @@ func addStore(name string) error {
 // awaitStore: wait (up to 1 h) for a cert of this machine that holds the store, then pull the secrets. Also what
 // `jarvis2-request add-store` runs after its request, which asks by itself (with a reason) and so must not ask again.
 func awaitStore(name string) error {
+	if _, ok := readKernelTrust(); ok {
+		return awaitStoreKernel(name)
+	}
 	coreKey, err := readTrim(coreKeyPath)
 	if err != nil {
 		return err
@@ -891,6 +894,27 @@ func awaitStore(name string) error {
 	for time.Now().Before(deadline) {
 		time.Sleep(5 * time.Second)
 		if !hasStore(certStores(c, coreKey, me), name) {
+			continue
+		}
+		r, err := askSecrets(secretsReq{Op: "reload"}, 20*time.Minute)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "added %s: the supervisor holds it now (%d keys); `session-secret --keys K1,K2 --exec CMD` runs a command with the keys it needs\n", name, r.N)
+		return nil
+	}
+	return errors.New("no approval within 1 h")
+}
+
+// awaitStoreKernel: a kernel machine's wait: the approval merges the store into this machine's grant and the router
+// tells the supervisor to reload (refresh-secrets), which rewrites cert.json from the checked documents; once it names
+// the store, one more reload makes sure the keys are held
+func awaitStoreKernel(name string) error {
+	fmt.Fprintf(os.Stderr, "waiting up to 1 h for %s (Deyao's approval in the Jarvis 4 app)\n", name)
+	deadline := time.Now().Add(time.Hour)
+	for time.Now().Before(deadline) {
+		time.Sleep(5 * time.Second)
+		if cert, err := readCert(); err != nil || !hasStore(cert.Stores, name) {
 			continue
 		}
 		r, err := askSecrets(secretsReq{Op: "reload"}, 20*time.Minute)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -128,5 +129,33 @@ func TestRequestOutcomes(t *testing.T) {
 	}
 	if err := notReplayed(outcomeFresh(more), time.Now()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// on a kernel line (no core): an added store is checked against the grant this machine's own reload checked, so an
+// outcome before the reload is refused (the router tries again) and one after it is told; a new session and a deploy
+// key are Jarvis's report
+func TestRequestOutcomesKernel(t *testing.T) {
+	old := kernelTrustPath
+	kernelTrustPath = t.TempDir() + "/kernel.json"
+	t.Cleanup(func() { kernelTrustPath = old })
+	b, _ := json.Marshal(kernelTrust{Root: "root", Notary: "notary", Machine: "fly-m1"})
+	if err := os.WriteFile(kernelTrustPath, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	proof := &SignedDoc{Payload: "nz", Sig: "s"}
+	add := outcomeAsked{Intent: "add-store", Store: "infra"}
+	it := OutcomeItem{Outcome: "approved", Ref: "s1", Proof: proof}
+	if _, err := outcomeResult(add, it, Cert{Stores: []string{"default"}}); err == nil {
+		t.Fatal("told before the grant names the store")
+	}
+	if s, err := outcomeResult(add, it, Cert{Stores: []string{"default", "infra"}}); err != nil || !strings.Contains(s, `grant from the kernel names the store "infra"`) {
+		t.Fatalf("%q %v", s, err)
+	}
+	if s, err := outcomeResult(outcomeAsked{Intent: "new-session"}, OutcomeItem{Outcome: "approved", Ref: "s2", Proof: proof}, Cert{}); err != nil || !strings.Contains(s, "Jarvis's report") || !strings.Contains(s, "s2") {
+		t.Fatalf("%q %v", s, err)
+	}
+	if s, err := outcomeResult(outcomeAsked{Intent: "repo/add", Repo: "DE0CH/x"}, OutcomeItem{Outcome: "approved", Ref: "q1"}, Cert{}); err != nil || !strings.Contains(s, "Jarvis's report") {
+		t.Fatalf("%q %v", s, err)
 	}
 }

@@ -82,10 +82,16 @@ var (
 
 var currentCert = readCert // a var so tests can supply a cert
 
+// readCert: the machine's settings. The old core's machines: its signed cert. A kernel machine has no core: cert.json
+// is what its own boot (and each reload) wrote from the kernel documents it checked (kernelboot.go), plain JSON.
 func readCert() (Cert, error) {
 	raw, err := os.ReadFile(certPath)
 	if err != nil {
 		return Cert{}, err
+	}
+	if _, ok := readKernelTrust(); ok {
+		var c Cert
+		return c, json.Unmarshal(raw, &c)
 	}
 	var d SignedDoc
 	if err := json.Unmarshal(raw, &d); err != nil {
