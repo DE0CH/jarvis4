@@ -467,7 +467,7 @@ func TestKeeperAsRoot(t *testing.T) {
 	// the teardown (no worker here): the harness's group and the session's processes end, the loop ends
 	waitFor(t, "the harness pid", 5*time.Second, func() bool { return harness() > 0 && harness() != h })
 	last := harness()
-	close(k.workerEnd) // no worker in this rig
+	close(k.coreEnd) // no supervisor-core in this rig
 	k.teardown(syscall.SIGTERM)
 	select {
 	case <-done:

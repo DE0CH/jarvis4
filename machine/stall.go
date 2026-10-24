@@ -155,6 +155,9 @@ func stallWatch() {
 	}
 	var c stallClock
 	for ; ; time.Sleep(stallEvery) {
+		if fileExists(harnessPausedPath) { // paused, or stopped for the final snapshot: not stalled
+			continue
+		}
 		screen, _, screenOK := readScreen() // screen.go
 		nudge, minutes := stallStep(&c, readHost(), screen, screenOK, time.Now())
 		if !nudge {

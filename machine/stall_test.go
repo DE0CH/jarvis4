@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -84,5 +86,34 @@ func TestReadHost(t *testing.T) {
 	workers.apply(workerEvent{Event: "Stop", SessionID: "c2", Tasks: &tasks}, time.Now())
 	if h := readHost(); h.jobs != 2 {
 		t.Fatalf("the hook-fed count wasn't used: %+v", h)
+	}
+}
+
+// TestLiveSentAcrossProcesses: supervisor-normal's live sync keeps what it sent in a file, so supervisor-core's
+// teardown sends only what changed since
+func TestLiveSentAcrossProcesses(t *testing.T) {
+	d := t.TempDir()
+	f := filepath.Join(d, "a.jsonl")
+	os.WriteFile(f, []byte("{}\n"), 0o644)
+	state := filepath.Join(d, "live-sent.json")
+	var sent []string
+	send := func(name string, body []byte) error { sent = append(sent, name); return nil }
+	normal := &liveSyncer{sent: map[string]time.Time{}, send: send, state: state}
+	if n := normal.pass([]string{f}); n != 1 {
+		t.Fatalf("normal sent %d", n)
+	}
+	core := &liveSyncer{sent: map[string]time.Time{}, send: send, state: state}
+	b, err := os.ReadFile(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	json.Unmarshal(b, &core.sent)
+	if n := core.pass([]string{f}); n != 0 {
+		t.Fatalf("the teardown sent %d unchanged transcripts again", n)
+	}
+	later := time.Now().Add(time.Minute)
+	os.Chtimes(f, later, later)
+	if n := core.pass([]string{f}); n != 1 {
+		t.Fatalf("the teardown sent %d changed transcripts, want 1", n)
 	}
 }

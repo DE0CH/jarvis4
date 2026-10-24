@@ -9,8 +9,8 @@ package main
 //     downgrade: op "reload": the router's newest cert, then a pull with it). A pull hands no value to anyone: its
 //     answer is the key names and the cert's stores. The values it holds are always exactly what the core sealed
 //     for the cert's stores.
-//   - RAM only: the values live in the worker's memory and in a memfd the keeper holds (secretsFD), so a restarted
-//     worker has them again without a new pull (the core may have locked the stores again since). A memfd is anonymous
+//   - RAM only: the values live in supervisor-core's memory and in a memfd the keeper holds (secretsFD), so a restarted
+//     supervisor-core has them again without a new pull (the core may have locked the stores again since). A memfd is anonymous
 //     memory, not a file on any filesystem; nothing is written to ~/.secrets, /run/jarvis or the snapshot.
 //   - Serving: the unix socket secretsSock (0600, user claude; root may connect too): one JSON request per
 //     connection, {"op": "names" | "get" (with "keys") | "pull" | "reload" | "boot-env"}. A process gets values only
@@ -46,7 +46,7 @@ import (
 
 var (
 	secretsSock  = dir + "/secrets.sock"
-	secretsFDEnv = "JARVIS_SECRETS_FD" // the worker's fd of the keeper's memfd
+	secretsFDEnv = "JARVIS_SECRETS_FD" // supervisor-core's fd of the keeper's memfd
 )
 
 const sysMemfdCreate = 319 // linux/amd64
@@ -62,7 +62,7 @@ type heldSecrets struct {
 
 var held = &heldSecrets{vals: map[string]string{}}
 
-// newMemfd: an anonymous RAM file (the keeper's, handed to every worker)
+// newMemfd: an anonymous RAM file (the keeper's, handed to every supervisor-core)
 func newMemfd() (*os.File, error) {
 	name := []byte("jarvis-secrets\x00")
 	fd, _, errno := syscall.Syscall(sysMemfdCreate, uintptr(unsafe.Pointer(&name[0])), 0, 0)
@@ -72,7 +72,7 @@ func newMemfd() (*os.File, error) {
 	return os.NewFile(fd, "memfd:jarvis-secrets"), nil
 }
 
-// loadHeld: the worker's start: the values the memfd holds (from an earlier worker), if any
+// loadHeld: supervisor-core's start: the values the memfd holds (from an earlier one), if any
 func (h *heldSecrets) loadHeld() {
 	s := os.Getenv(secretsFDEnv)
 	fd, err := strconv.Atoi(s)
@@ -92,7 +92,7 @@ func (h *heldSecrets) loadHeld() {
 		h.mu.Lock()
 		h.vals, h.pulled = st.Vals, st.Pulled
 		h.mu.Unlock()
-		log.Printf("secrets: %d keys kept in memory from the earlier worker", len(st.Vals))
+		log.Printf("secrets: %d keys kept in memory from the earlier supervisor-core", len(st.Vals))
 	}
 }
 
@@ -270,7 +270,7 @@ func handleSecrets(c *client, conn net.Conn) {
 //     way to ask for every key: a request must name each key it needs (no "all" op, no empty list, no wildcard),
 //     and a name not held is an error naming it.
 //
-// The one hand-over of every value is "boot-env": the harness's environment. Only to the keeper (root, the worker's
+// The one hand-over of every value is "boot-env": the harness's environment. Only to the keeper (root, supervisor-core's
 // parent: it builds the harness's env at each start of the harness, keeper.go), and to the boot steps (the process
 // the keeper named in harness.pid, a root-owned file) before bootedPath exists.
 func answerSecrets(c *client, req secretsReq, pid, uid int, caller string) secretsResp {
@@ -424,7 +424,7 @@ func askSecrets(req secretsReq, timeout time.Duration) (secretsResp, error) {
 	var resp secretsResp
 	var conn net.Conn
 	var err error
-	for i := 0; i < 30; i++ { // the supervisor may be starting (or its worker restarting)
+	for i := 0; i < 30; i++ { // the supervisor may be starting (or supervisor-core restarting)
 		if conn, err = net.DialTimeout("unix", secretsSock, 2*time.Second); err == nil {
 			break
 		}

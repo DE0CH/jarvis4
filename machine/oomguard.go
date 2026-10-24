@@ -17,13 +17,13 @@ package main
 //     (kill the hog, restart Claude) runs with memory to spare on a machine the session has filled, and a runaway
 //     rescue command can't fill it either. What it leaves running stays there (a Claude restarted through tmux runs
 //     under the tmux server, in the session's cgroup).
-//   - The supervisor's own pages pinned: the keeper and the worker each mlockall(MCL_CURRENT|MCL_FUTURE|MCL_ONFAULT)
+//   - The supervisor's own pages pinned: the keeper and supervisor-core each mlockall(MCL_CURRENT|MCL_FUTURE|MCL_ONFAULT)
 //     (with RLIMIT_MEMLOCK raised, as root), so their code is never dropped and read back from disk under pressure.
 //     MCL_ONFAULT locks pages as they are touched, so the Go runtime's reserved arenas aren't filled in up front.
 //     Locks aren't inherited across fork/exec: what they start is unlocked.
 //
 // What neither cgroup may take (sessionReserve - rescueLimit, 256 MB) is for the supervisor (27 MB measured: keeper
-// 11, worker 16), Fly's init and hallpass, and the kernel (the network stack the reports go out on, the page cache of
+// 11, supervisor-core 16, before supervisor-normal was split off), Fly's init and hallpass, and the kernel (the network stack the reports go out on, the page cache of
 // a snapshot). Only on a Fly machine as root, like protectFromOOM; a failure is logged and the machine boots without.
 
 import (
@@ -101,7 +101,7 @@ func joinCgroup(dir string) {
 	}
 }
 
-// lockMemory: this process's pages stay in RAM (the keeper at boot, the worker as it starts)
+// lockMemory: this process's pages stay in RAM (the keeper at boot, supervisor-core as it starts)
 var lockMemory = func(who string) {
 	if os.Getenv("FLY_MACHINE_ID") == "" {
 		return

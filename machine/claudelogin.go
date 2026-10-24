@@ -187,8 +187,8 @@ func mergeAccount(account string) error {
 	return writeAtomic(p, b)
 }
 
-// startCredsSync: tells the supervisor to run credsSync for the machine's life (its Claude login sync component,
-// supervisor.go): boot leaves claudeLoginOn, the supervisor starts it once booted. A var so tests don't.
+// startCredsSync: tells supervisor-normal to run credsSync for the machine's life (its Claude login sync component,
+// supervisor.go): boot (or an account switch) leaves claudeLoginOn, supervisor-normal starts it once booted. A var so tests don't.
 var startCredsSync = func() {
 	if err := os.WriteFile(claudeLoginOn, []byte("1"), 0o644); err != nil {
 		log.Printf("claude login: %v", err)
@@ -586,12 +586,12 @@ func liveBridge() string {
 	return ""
 }
 
-// claudeAccountCmd: the router switched the session's Claude account (supervisor command "claude-account"; the long
-// poll brings the pair, credsSync switches): a session that had no account starts its sync now
+// claudeAccountCmd: the router switched the session's Claude account (supervisor-core's command "claude-account"; the
+// long poll brings the pair, credsSync switches): a session that had no account leaves the marker, and
+// supervisor-normal starts its sync (startCredsSyncOnMarker)
 func claudeAccountCmd() {
 	log.Printf("claude login: the router switched this session's Claude account")
-	if !credsSyncOn.Load() {
+	if _, err := os.Stat(claudeLoginOn); err != nil {
 		startCredsSync()
-		go credsSync()
 	}
 }

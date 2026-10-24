@@ -1,8 +1,12 @@
 package main
 
-// The supervisor (docs/DESIGN.md "The supervisor and the guard"): the machine's one long-running process that talks
-// to the router, from the first second of boot to the kill. Boot starts it before anything else (prepare). Its
-// components, each in its own file:
+// The supervisor (docs/DESIGN.md "The supervisor and the guard"): two long-running processes that talk to the router,
+// from the first second of boot to the kill, each a child of the keeper (keeper.go), started again whenever it exits
+// (Deyao, 2026-10-24: the supervisor must not bloat; only the part that keeps the control plane alive is protected).
+//
+// supervisor-core keeps the control plane alive: whatever else fails, the router can still stop, snapshot, Upgrade,
+// pause, rescue through a terminal grant, and the teardown still uploads. Its memory is pinned (oomguard.go) and the
+// OOM killer leaves it alone (oom_score_adj -1000, the keeper's, inherited). Its components:
 //
 //	component                  file              guarded  what it does
 //	the guard                  guard.go          —        checks execs and deliveries; lets through only what is vouched for
@@ -14,28 +18,34 @@ package main
 //	snapshot and freeze        snapstream.go,    no       the final snapshot (pause, destroy): the session stopped,
 //	                           main.go                    the state taken, signed once; "nothing to snapshot" or the
 //	                                                      predecessor's while booting; free before an Upgrade (memory.go)
+//	teardown                   teardown.go       no       a stop signal: the changed transcripts, then the final snapshot
 //	Claude pause and resume    supervisor.go     no       pause-harness / resume-harness: SIGSTOP / SIGCONT the Claude
 //	                                                      process (launcher, tmux panes, their children); the freeze
 //	                                                      starts with it
-//	worker count               workers.go        no       subagents and background jobs, from the harness hook's
-//	                                                      notifications (a count, never a command)
-//	screen                     screen.go         no       the harness's pane for the read-only terminal (output only)
-//	status, memory, disk       status.go,        no       the reports the router's card and watches read (output only)
-//	                           memory.go, disk.go
-//	API proxy                  apiproxy.go       —        $JARVIS_URL for the session's scripts, signed as this machine
-//	live transcript sync       livesync.go       no       the transcripts to the Storage Box for search (output only)
-//	Claude login sync          claudelogin.go    no       the session's Claude pair kept in step with the router's
-//	log                        supervisorlog.go  no       the supervisor log, pushed to the router (output only)
+//	log                        supervisorlog.go  no       the supervisor log (both processes'), pushed to the router
 //	secrets                    secrets.go,       no       pulls the cert's stores from the core, holds them in RAM
 //	                           deploykeys.go              (never on disk) and serves them over its socket, every
 //	                                                      request logged; the deploy keys in its ssh-agent;
 //	                                                      refresh-secrets pulls again (putkey.go)
 //
-// It runs as root with user claude's file access, a child of the keeper (keeper.go), which is Fly's main child and
-// starts it again whenever it exits; the session (user claude) can't signal either. Both are out of the OOM killer's
-// reach (oom_score_adj -1000, set by the keeper and inherited); what the supervisor starts for the session (exec
-// commands, the text into the harness, a watch's check, git, tmux) goes through sessionCommand: user claude, back at
-// the default OOM score. A stop signal reaches the keeper, which asks the worker for the teardown (SIGUSR1).
+// supervisor-normal does the rest, none of which the control plane needs: no pinned memory, the default OOM score, in
+// the session's memory cgroup, so a session that fills the machine may take it down and the keeper starts it again.
+// Its components:
+//
+//	worker count               workers.go        no       subagents and background jobs, from the harness hook's
+//	                                                      notifications (a count, never a command)
+//	screen                     screen.go         no       the harness's pane for the read-only terminal (output only)
+//	stall watchdog             stall.go          no       a nudge into its harness after 15 idle minutes with jobs
+//	status, memory, disk       status.go,        no       the reports the router's card and watches read (output only)
+//	                           memory.go, disk.go
+//	API proxy                  apiproxy.go       —        $JARVIS_URL for the session's scripts, signed as this machine
+//	live transcript sync       livesync.go       no       the transcripts to the Storage Box for search (output only)
+//	Claude login sync          claudelogin.go    no       the session's Claude pair kept in step with the router's
+//
+// Both run as root with user claude's file access; the session (user claude) can't signal them. What either starts
+// for the session (exec commands, the text into the harness, a watch's check, git, tmux) goes through sessionCommand:
+// user claude, back at the default OOM score. A stop signal reaches the keeper, which kills supervisor-normal and asks
+// supervisor-core for the teardown (SIGUSR1).
 
 import (
 	"errors"
@@ -62,14 +72,15 @@ func exitText(err error) string {
 	return err.Error()
 }
 
-// supervise: the worker. While the machine boots it answers a snapshot with the predecessor's (or "nothing to
-// snapshot"); once booted it uploads real snapshots and starts the reports, the local Jarvis API and the live sync.
-func supervise() error {
+// superviseCore: supervisor-core, what keeps the control plane alive: the commands (stop, snapshot, Upgrade, pause),
+// execs and deliveries through the guard, the secrets and deploy keys, the supervisor log and the teardown's uploads. While the machine boots it answers a snapshot with the predecessor's (or "nothing to
+// snapshot"). Its memory is pinned and the OOM killer leaves it alone.
+func superviseCore() error {
 	logToSupervisorLog()
 	if privileged() {
-		lockMemory("supervisor worker")             // oomguard.go: mlock isn't inherited from the keeper
+		lockMemory("supervisor-core")               // oomguard.go: mlock isn't inherited from the keeper
 		if err := sessionFileAccess(); err != nil { // keeper.go: user claude's file access, root's uid
-			return fmt.Errorf("the worker's file access: %w", err)
+			return fmt.Errorf("supervisor-core's file access: %w", err)
 		}
 	}
 	c, err := newClient()
@@ -84,28 +95,13 @@ func supervise() error {
 		os.Exit(0)
 	}()
 	if _, _, err := finalSnapshotSum(); err == nil {
-		frozen.Store(true) // an earlier worker of this machine took the final snapshot: nothing guarded runs again
+		frozen.Store(true) // an earlier supervisor-core of this machine took the final snapshot: nothing guarded runs again
 	}
-	held.loadHeld()         // secrets.go: what an earlier worker held
+	held.loadHeld()         // secrets.go: what an earlier supervisor-core held
 	go serveSecrets(c)      // secrets.go: the session's secrets, RAM only
 	go serveSSHAgent()      // deploykeys.go: the deploy keys, RAM only
 	go pushSupervisorLog(c) // supervisorlog.go
-	workers = newWorkerCount(workersState)
-	go serveWorkerCount(workers) // workers.go: the hook's notifications
-	go func() {
-		for !booted() {
-			time.Sleep(time.Second)
-		}
-		go statusReporter(c)        // status.go
-		go memoryReporter(c)        // memory.go: RAM for the router's starvation watch
-		go diskReporter(c)          // disk.go: the root disk and the volume, for the router's low-disk warning
-		go screenReporter(c)        // screen.go: the pane for the read-only terminal
-		go stallWatch()             // stall.go: the 15-minute watchdog on its own harness
-		go serveAPIProxy(c)         // apiproxy.go: $JARVIS_URL for the session scripts
-		go liveSync(c)              // livesync.go: the transcripts to the Storage Box (through the router) for search
-		go startCredsSyncOnMarker() // claudelogin.go: the Claude login sync, once boot leaves its marker
-	}()
-	log.Printf("supervisor up (pid %d)", os.Getpid())
+	log.Printf("supervisor-core up (pid %d)", os.Getpid())
 	for {
 		var out struct {
 			Commands   []string   `json:"commands"`
@@ -126,6 +122,40 @@ func supervise() error {
 			runCommand(c, cmd)
 		}
 	}
+}
+
+// superviseNormal: supervisor-normal, everything that can go missing for a while without losing the machine: the
+// reports, the read-only terminal's pane, the stall watchdog, the worker count, the API proxy, the live transcript
+// sync and the Claude login sync. No pinned memory and no OOM protection: it runs in the session's memory cgroup, and
+// when it dies the keeper starts it again; supervisor-core never waits on it.
+func superviseNormal() error {
+	logToSupervisorLog()
+	if privileged() {
+		os.WriteFile("/proc/self/oom_score_adj", []byte("0\n"), 0o644) // the keeper's -1000 is for supervisor-core only
+		joinCgroup(sessionCgroup)                                      // oomguard.go: charged with the session
+		if err := sessionFileAccess(); err != nil {
+			return fmt.Errorf("supervisor-normal's file access: %w", err)
+		}
+	}
+	c, err := newClient()
+	if err != nil {
+		return err
+	}
+	workers = newWorkerCount(workersState)
+	go serveWorkerCount(workers) // workers.go: the hook's notifications
+	for !booted() {
+		time.Sleep(time.Second)
+	}
+	go statusReporter(c)        // status.go
+	go memoryReporter(c)        // memory.go: RAM for the router's starvation watch
+	go diskReporter(c)          // disk.go: the root disk and the volume, for the router's low-disk warning
+	go screenReporter(c)        // screen.go: the pane for the read-only terminal
+	go stallWatch()             // stall.go: the 15-minute watchdog on its own harness
+	go serveAPIProxy(c)         // apiproxy.go: $JARVIS_URL for the session scripts
+	go liveSync(c)              // livesync.go: the transcripts to the Storage Box (through the router) for search
+	go startCredsSyncOnMarker() // claudelogin.go: the Claude login sync, once boot (or an account switch) leaves its marker
+	log.Printf("supervisor-normal up (pid %d)", os.Getpid())
+	select {}
 }
 
 // runCommand: the unguarded commands, which carry no instruction (a word each)
@@ -184,7 +214,7 @@ func harnessPID() int {
 	return n
 }
 
-// keeperPID: the keeper (the worker's parent), never stopped or killed by the supervisor itself
+// keeperPID: the keeper (the supervisors' parent), never stopped or killed by the supervisor itself
 func keeperPID() int { return os.Getppid() }
 
 // children: pid → its children, from /proc
@@ -233,7 +263,7 @@ var tmuxPanes = func() []int {
 }
 
 // harnessTree: the launcher, every tmux pane's process and all their descendants, parents first; never the
-// supervisor (worker or keeper) or pid 1
+// supervisor (either half, or the keeper) or pid 1
 func harnessTree() []int {
 	kids := children()
 	skip := map[int]bool{os.Getpid(): true, keeperPID(): true, 1: true, 0: true}
@@ -302,7 +332,7 @@ func resumeHarness() error {
 // ---- the whole session, for the final snapshot -------------------------------------------------------------
 
 // freezeSession: the Claude process first (pauseHarness), then SIGSTOP to every other process of user claude
-// (signalSession: never root's, so never the keeper or this worker). Only on a Fly machine.
+// (signalSession: never root's, so never the keeper or the supervisors). Only on a Fly machine.
 var freezeSession = func() {
 	if os.Getenv("FLY_MACHINE_ID") == "" {
 		return

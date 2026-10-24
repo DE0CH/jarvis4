@@ -63,12 +63,16 @@ func logToSupervisorLog() {
 			tag = "boot"
 		case "boot":
 			tag = "keeper"
+		case "supervisor":
+			if len(os.Args) > 2 && os.Args[2] == "--normal" {
+				tag = "supervisor-normal"
+			}
 		}
 	}
 	log.SetOutput(io.MultiWriter(os.Stderr, fileLog{supervisorLogPath, tag}))
 }
 
-// pushSupervisorLog: the worker's push loop
+// pushSupervisorLog: supervisor-core's push loop (supervisor-normal's lines are in the same file)
 func pushSupervisorLog(c *client) {
 	for ; ; time.Sleep(logPushEvery) {
 		pushLogOnce(c)

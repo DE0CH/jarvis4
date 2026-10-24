@@ -43,7 +43,7 @@ func uploadSnapshot(c *client) error {
 	signedMu.Lock()
 	defer signedMu.Unlock()
 	if signedSum == "" {
-		if sum, sig, err := finalSnapshotSum(); err == nil { // an earlier supervisor worker of this machine signed one
+		if sum, sig, err := finalSnapshotSum(); err == nil { // an earlier supervisor-core of this machine signed one
 			signedSum, signedSig = sum, sig
 		}
 	}

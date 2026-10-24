@@ -2,7 +2,7 @@ package main
 
 // The teardown (Deyao, 2026-10-21: "sigterm sigint etc should trigger a clean but also priority driven teardown. As
 // in upload the most important items first quickly. Transcript tail is the most important, artifacts is less."): a
-// stop signal reaches the keeper (keeper.go), which sends the worker SIGUSR1. The worker uploads, most important
+// stop signal reaches the keeper (keeper.go), which kills supervisor-normal and sends supervisor-core SIGUSR1. It uploads, most important
 // first, each step on its own so whatever the machine got out before Fly's kill timeout stays with the router:
 //
 //  1. the transcripts that changed since their last copy (the live sync's, livesync.go), the newest first, then the

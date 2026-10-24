@@ -2725,3 +2725,18 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      (an episode written by one replica is the other's). Still per replica, by choice: the scheduler's retry backoff
      (a leader change only retries sooner), the Claude-account store write dedupe (a restart writes once more), the
      progress view of an account-switch "wake" job.
+236. **The supervisor is two processes: supervisor-core keeps the control plane alive, supervisor-normal does the rest**
+     (Deyao, 2026-10-24: "supervisor needs to not bloat. Theres a supervisor-core that handles the core functions that
+     has to do with keeping the control plane alive (e.g. answering stop, uploading archive) and other supervisor-normal
+     that handles less important tasks like watchdog, terminal upload etc", "Only the core needs to have ram oom, etc
+     protection"). The keeper starts `supervisor --core` and `supervisor --normal`, each restarted on its own.
+     Core: `/m/commands` (execs and deliveries through the guard, snapshot, free, pause/resume, refresh-secrets,
+     claude-account), the secrets and deploy keys, the log push, the teardown; pinned memory, oom_score_adj -1000.
+     Normal: the status, memory and disk reports, the pane, the stall watchdog, the worker count, the API proxy, the
+     live sync, the Claude login sync; no mlock, oom_score_adj 0, in the session's memory cgroup, so a full session can
+     take it down and nothing the control plane needs goes with it. What crossed between them goes through files on
+     the tmpfs: the account switch leaves the `claude-login` marker normal's sync watches; the live sync keeps what it
+     sent in `live-sent.json`, which core's teardown reads; the watchdog skips while `harness-paused` exists (a pause or
+     the final snapshot's freeze). At a stop the keeper kills normal first so it doesn't compete with the teardown.
+     *Not chosen*: normal in the rescue cgroup (it would compete with a terminal grant's rescue commands for that
+     cgroup's memory).

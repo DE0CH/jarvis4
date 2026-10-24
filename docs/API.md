@@ -963,7 +963,7 @@ Deyao's email or any service token of the account; the router then admits a toke
 
 Jarvis 1's session scripts call `$JARVIS_URL/api/…`. A Jarvis 4 machine gets `JARVIS_URL=http://127.0.0.1:7171`
 (plus placeholder `CF_ACCESS_CLIENT_ID/SECRET` and `SESSION_API_TOKEN`, which the scripts insist on; not for
-OpenCode/OpenClaw, whose harness scripts read CF_ACCESS_* as "publish the web UI"). There `jarvis-machine supervisor --worker`
+OpenCode/OpenClaw, whose harness scripts read CF_ACCESS_* as "publish the web UI"). There supervisor-normal (`jarvis-machine supervisor --normal`)
 serves a proxy that drops the scripts' headers and sends `/m/api/<rest>` (query kept, unsigned; the path is
 signed as every `/m` call). Any `:id` in the path must be the calling machine's session (403 otherwise).
 

@@ -66,7 +66,7 @@ func TestWorkersHookSequence(t *testing.T) {
 		t.Fatal("unsafe session id kept")
 	}
 	ev(`not json`)
-	// a restarted supervisor worker starts from the kept count
+	// a restarted supervisor-normal starts from the kept count
 	if again := newWorkerCount(state).get("s1"); again == nil || again.Jobs != nil && len(again.Jobs) != 0 {
 		t.Fatalf("kept count %+v", again)
 	}

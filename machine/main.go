@@ -2,18 +2,19 @@
 // "Machine side"). It is the image's entry point and its fixed init entry point:
 //
 //	jarvis-machine boot       ENTRYPOINT, as root: the keeper (keeper.go), Fly's main child for the machine's
-//	                           whole life. It starts the boot steps (prepare), the supervisor's worker and then
-//	                           the harness, each as its own child, restarts the worker and the harness when they
-//	                           die, and turns Fly's stop signal into the priority teardown.
+//	                           whole life. It starts the boot steps (prepare), supervisor-core and
+//	                           supervisor-normal and then the harness, each as its own child, restarts them when
+//	                           they die, and turns Fly's stop signal into the priority teardown.
 //	jarvis-machine prepare    the boot steps, as user claude (started by the keeper): make the machine's key
 //	                           pairs, wait for init, then check the succession cert, restore the predecessor's
 //	                           snapshot, have the supervisor pull the secrets, clone the repos and hand the
 //	                           harness's env (no secret value) to the keeper. Any failed check → start nothing.
 //	jarvis-machine init       what the core runs through Fly exec (no arguments): asks boot to go on.
-//	jarvis-machine supervisor --worker
-//	                           started by the keeper once init asked: the machine's long-running process that
-//	                           talks to the router (supervisor.go), with the guard (guard.go) in front of the
-//	                           commands that need it. Root, with user claude's file access (keeper.go).
+//	jarvis-machine supervisor --core|--normal
+//	                           started by the keeper once init asked: the machine's long-running processes that
+//	                           talk to the router (supervisor.go). --core keeps the control plane alive, with the
+//	                           guard (guard.go) in front of the commands that need it; --normal the reports and
+//	                           watches. Root, with user claude's file access (keeper.go).
 //	jarvis-machine stores [--json]
 //	                           every store and the key NAMES it holds (never a value), to know which store to
 //	                           ask for (stores.go).
@@ -147,11 +148,15 @@ func main() {
 		if sp, err = downgradeArgs(os.Args[2:]); err == nil {
 			err = downgrade(sp)
 		}
-	case "supervisor": // supervisor.go: the worker, started (and restarted) by the keeper
-		if len(os.Args) != 3 || os.Args[2] != "--worker" {
-			log.Fatal("usage: jarvis-machine supervisor --worker (the keeper starts it)")
+	case "supervisor": // supervisor.go: supervisor-core and supervisor-normal, started (and restarted) by the keeper
+		switch {
+		case len(os.Args) == 3 && os.Args[2] == "--core":
+			err = superviseCore()
+		case len(os.Args) == 3 && os.Args[2] == "--normal":
+			err = superviseNormal()
+		default:
+			log.Fatal("usage: jarvis-machine supervisor --core|--normal (the keeper starts them)")
 		}
-		err = supervise()
 	case "unprotected": // keeper.go: a command for the session: back under the OOM killer, as user claude, then exec
 		err = unprotected(os.Args[2:])
 	case "signal-session": // keeper.go: a signal to every process of user claude (kill -1 as claude)
@@ -266,7 +271,7 @@ func prepare() (spec harnessSpec, err error) {
 	if err != nil {
 		return spec, err
 	}
-	// 0. the supervisor's worker is the keeper's (keeper.go), up since init asked: it answers the router's commands at
+	// 0. supervisor-core is the keeper's (keeper.go), up since init asked: it answers the router's commands at
 	// every stage of this machine's life, so a pause or destroy never waits on a machine still booting (e.g. looping
 	// on a locked store): until bootedPath exists a snapshot command gets "nothing to snapshot"
 	os.Remove(bootedPath)

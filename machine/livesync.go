@@ -9,6 +9,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -21,20 +22,25 @@ import (
 const liveSyncMaxBytes = 256 << 20 // the router refuses more
 
 type liveSyncer struct {
-	mu   sync.Mutex
-	sent map[string]time.Time // file → the modification time last sent
-	send func(name string, body []byte) error
+	mu    sync.Mutex
+	sent  map[string]time.Time // file → the modification time last sent
+	send  func(name string, body []byte) error
+	state string // where sent is kept ("" = memory only)
 }
+
+// liveSentPath: what was sent, on the tmpfs: supervisor-normal's live sync writes it, supervisor-core's teardown
+// reads it, so the teardown sends only what changed since the last pass
+var liveSentPath = dir + "/live-sent.json"
 
 var (
 	liveOnce sync.Once
-	live     *liveSyncer // the worker's one syncer: the live sync and the teardown share what was sent
+	live     *liveSyncer // this process's one syncer
 )
 
-// liveSyncerFor: the worker's syncer, sending through c
+// liveSyncerFor: this process's syncer, sending through c
 func liveSyncerFor(c *client) *liveSyncer {
 	liveOnce.Do(func() {
-		live = &liveSyncer{sent: map[string]time.Time{}, send: func(name string, body []byte) error {
+		live = &liveSyncer{sent: map[string]time.Time{}, state: liveSentPath, send: func(name string, body []byte) error {
 			b, _, status, err := c.raw("POST", "/m/live-transcript", body, "X-Name", name)
 			if err != nil {
 				return err
@@ -44,6 +50,9 @@ func liveSyncerFor(c *client) *liveSyncer {
 			}
 			return nil
 		}}
+		if b, err := os.ReadFile(liveSentPath); err == nil {
+			json.Unmarshal(b, &live.sent)
+		}
 	})
 	return live
 }
@@ -73,6 +82,7 @@ func (l *liveSyncer) once() int { return l.pass(mainTranscripts()) }
 func (l *liveSyncer) pass(files []string) int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	defer l.save()
 	type cand struct {
 		path string
 		fi   os.FileInfo
@@ -115,7 +125,18 @@ func (l *liveSyncer) pass(files []string) int {
 	return n
 }
 
-// liveSync: the supervisor's live transcript sync (started by supervise once booted)
+// save: sent to l.state (l.mu held)
+func (l *liveSyncer) save() {
+	if l.state == "" {
+		return
+	}
+	b, _ := json.Marshal(l.sent)
+	if err := writeAtomic(l.state, b); err != nil {
+		log.Printf("live sync: %v", err)
+	}
+}
+
+// liveSync: supervisor-normal's live transcript sync (started once booted)
 func liveSync(c *client) {
 	l := liveSyncerFor(c)
 	every := liveSyncInterval()

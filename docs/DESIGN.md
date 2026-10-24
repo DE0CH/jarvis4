@@ -718,28 +718,35 @@ refused, so claude.ai MCP connectors are not available in these sessions.
 
 ### The supervisor and the guard (Deyao, 2026-10-16)
 
-**The supervisor** is the machine's one long-running process that talks to the control plane (`jarvis-machine
-supervisor --worker`, `machine/supervisor.go`), a child of the keeper (below). The keeper starts it as soon as init
-asked, before the boot steps need it, so it answers the router from the machine's first seconds to the kill; the
-harness's launcher (for Claude `harness-claude.sh`, which only keeps the `claude --remote-control` host alive in tmux)
-is another child of the keeper. Its components:
+**The supervisor** is two long-running processes that talk to the control plane (`machine/supervisor.go`), both
+children of the keeper (below), split so it doesn't bloat (Deyao, 2026-10-24): **supervisor-core** (`jarvis-machine
+supervisor --core`) keeps the control plane alive (answering stop, snapshot, Upgrade and pause, the guarded execs and
+deliveries, the secrets, the log, the teardown's uploads); **supervisor-normal** (`supervisor --normal`) does the
+less important work (the reports, the read-only terminal's pane, the stall watchdog, the worker count, the API proxy,
+the live transcript sync, the Claude login sync). Only supervisor-core has the memory and OOM protection; supervisor-normal
+runs at the default OOM score in the session's memory cgroup, so a session that fills the machine may take it down,
+and the keeper starts it again. The keeper starts both as soon as init asked, before the boot steps need them, so
+the router is answered from the machine's first seconds to the kill; the harness's launcher (for Claude
+`harness-claude.sh`, which only keeps the `claude --remote-control` host alive in tmux) is another child of the
+keeper. Their components:
 
-| component | file | guarded | what it does |
-|---|---|---|---|
-| the guard | `guard.go` | — | checks what comes in and lets through only what is vouched for (below) |
-| commands and deliveries | `supervisor.go` | execs and deliveries: yes; commands: no | reads `/m/commands` for the machine's life: execs (a router feature's shell command with its grant) and deliveries (prompts into the harness) through the guard; one-word commands as they are |
-| snapshot and freeze | `snapstream.go`, `main.go`, `memory.go`, `snapprogress.go` | no | `snapshot`: the final snapshot (pause, destroy): the session stopped, the state taken and signed once; while booting "nothing to snapshot" or the predecessor's; `free` before an Upgrade's snapshot; its progress (measured, then counted as the tar.gz is made) is reported every 3 s as numbers the router words into the session's status line ("pausing: uploading snapshot 1.2/3.4 GB (35%), 40 MB/s, 55 s left") and logged every 10 s |
-| Claude pause and resume | `supervisor.go` | no | `pause-harness` / `resume-harness`: SIGSTOP / SIGCONT the Claude process (the launcher, the tmux panes and everything under them); the freeze for the snapshot starts with it. The router's `POST /api/sessions/:id/harness`; no app button |
-| worker count | `workers.go` | no | subagents and background jobs: the harness's hook only notifies the supervisor over a local socket (ids, types, the event name; never a command), the supervisor holds the count and the status report carries it; the hook never fails a turn |
-| screen | `screen.go` | no | the harness's pane for the read-only terminal (output only) |
-| status, memory, disk | `status.go`, `memory.go`, `disk.go` | no | the reports the router's card and watches read (output only) |
-| API proxy | `apiproxy.go` | — | `$JARVIS_URL` for the session's scripts, each call signed as this machine |
-| live transcript sync | `livesync.go` | no | the transcripts to the Storage Box (through the router) for search (output only) |
-| Claude login sync | `claudelogin.go` | no | the session's Claude pair kept in step with the router's (long poll); on an account switch the new pair and account record are installed under the running claude (no restart), the token's account checked with Anthropic, Remote Control started again (Claude Code · Paseo: nothing to start, its API proxy sends the new pair) |
-| log | `supervisorlog.go` | no | the supervisor log (below) |
-| secrets | `secrets.go`, `deploykeys.go` | no | the session's secrets, in RAM only (below) |
+| component | process | file | guarded | what it does |
+|---|---|---|---|---|
+| the guard | core | `guard.go` | — | checks what comes in and lets through only what is vouched for (below) |
+| commands and deliveries | core | `supervisor.go` | execs and deliveries: yes; commands: no | reads `/m/commands` for the machine's life: execs (a router feature's shell command with its grant) and deliveries (prompts into the harness) through the guard; one-word commands as they are |
+| snapshot and freeze | core | `snapstream.go`, `main.go`, `memory.go`, `snapprogress.go` | no | `snapshot`: the final snapshot (pause, destroy): the session stopped, the state taken and signed once; while booting "nothing to snapshot" or the predecessor's; `free` before an Upgrade's snapshot; its progress (measured, then counted as the tar.gz is made) is reported every 3 s as numbers the router words into the session's status line ("pausing: uploading snapshot 1.2/3.4 GB (35%), 40 MB/s, 55 s left") and logged every 10 s |
+| Claude pause and resume | core | `supervisor.go` | no | `pause-harness` / `resume-harness`: SIGSTOP / SIGCONT the Claude process (the launcher, the tmux panes and everything under them); the freeze for the snapshot starts with it. The router's `POST /api/sessions/:id/harness`; no app button |
+| worker count | normal | `workers.go` | no | subagents and background jobs: the harness's hook only notifies the supervisor over a local socket (ids, types, the event name; never a command), the supervisor holds the count and the status report carries it; the hook never fails a turn |
+| screen | normal | `screen.go` | no | the harness's pane for the read-only terminal (output only) |
+| stall watchdog | normal | `stall.go` | no | a nudge into its own harness after 15 idle minutes with background jobs; nothing while the harness is paused or frozen |
+| status, memory, disk | normal | `status.go`, `memory.go`, `disk.go` | no | the reports the router's card and watches read (output only) |
+| API proxy | normal | `apiproxy.go` | — | `$JARVIS_URL` for the session's scripts, each call signed as this machine |
+| live transcript sync | normal | `livesync.go` | no | the transcripts to the Storage Box (through the router) for search (output only); what it sent is in `/run/jarvis/live-sent.json`, so the teardown sends only what changed since |
+| Claude login sync | normal | `claudelogin.go` | no | the session's Claude pair kept in step with the router's (long poll); on an account switch the new pair and account record are installed under the running claude (no restart), the token's account checked with Anthropic, Remote Control started again (Claude Code · Paseo: nothing to start, its API proxy sends the new pair) |
+| log | core | `supervisorlog.go` | no | the supervisor log (below) |
+| secrets | core | `secrets.go`, `deploykeys.go` | no | the session's secrets, in RAM only (below) |
 
-**The guard** is the supervisor's component that checks the commands coming in and protects only the ones that need
+**The guard** is supervisor-core's component that checks the commands coming in and protects only the ones that need
 it: anything that can run code in the session or steer its agent. Execs (shell commands) need the holder's
 signature and a phone grant, a standing rule or the session's allow list ("Grants" below); deliveries (wakeups,
 crons, watches, Inbox outcomes, leases, the image's own texts) need their voucher and the core's attestation, each
@@ -754,14 +761,14 @@ so that process is the supervisor's and nothing in the session can end it (`mach
 
 - **The keeper** is `jarvis-machine boot`, run as root for the machine's whole life. Its children, each in its own
   session (setsid): the boot steps (`jarvis-machine prepare`, user `claude`, which end by handing the harness's env
-  over a pipe, never on disk), the supervisor's worker (`supervisor --worker`, started again whenever it exits, backoff
-  1 s doubling to 30 s) and the harness (Jarvis 1's entrypoint, then `harness-*.sh`, user `claude`).
+  over a pipe, never on disk), supervisor-core and supervisor-normal (`supervisor --core`, `supervisor --normal`, each
+  started again whenever it exits, backoff 1 s doubling to 30 s and 1 min) and the harness (Jarvis 1's entrypoint, then `harness-*.sh`, user `claude`).
 - **The uid split.** The session runs as `claude` (with its sudo: root through sudo is the higher privilege, accepted).
-  The keeper and the worker run as root, so `kill`, `pkill -f jarvis-machine`, `kill -TERM -1` and process-group
+  The keeper and both supervisors run as root, so `kill`, `pkill -f jarvis-machine`, `kill -TERM -1` and process-group
   kills from the session fail with EPERM on them; their `/proc` files (environ, mem, oom_score_adj) are root's and
-  both are marked not dumpable. The worker keeps root's uid but takes `claude`'s file identity (setfsuid/setfsgid and
+  both are marked not dumpable. The supervisors keep root's uid but takes `claude`'s file identity (setfsuid/setfsgid and
   `claude`'s groups), so what it reads and writes under `~`, `/data` and `/run/jarvis` (its sockets included) is
-  checked and owned exactly as before, and its sockets serve `claude` and root. Every command it runs for the session
+  checked and owned exactly as before, and its sockets serve `claude` and root. Every command they run for the session
   (git, tmux, an exec, the text into the harness, a watch's check, the freeze's `kill -1`) goes through
   `jarvis-machine unprotected`, which takes `claude`'s uid, gid and groups for good and the default OOM score; the
   freeze and the Upgrade's free signal only `claude`'s processes. What only the keeper writes is in
@@ -775,10 +782,10 @@ so that process is the supervisor's and nothing in the session can end it (`mach
   and `harness-claude.sh` keeps a Claude host still running in tmux, else resumes the newest conversation as a
   reboot's resume would. Not once the session is stopped for its final snapshot. The status report carries the
   keeper's record (`__HARNESS__`: starts, running, last end; `registry.harness` in the router).
-- **Kept alive.** The keeper sets its own `oom_score_adj` to -1000 as root; the worker inherits it. The harness and the
+- **Kept alive.** The keeper sets its own `oom_score_adj` to -1000 as root; supervisor-core inherits it and supervisor-normal sets its own back to 0. The harness and the
   session's other processes are not protected: `unprotected` sets the default score as root before it drops, which
-  also sets the floor, so a session process can't take -1000 back. A restarted worker carries on from files in
-  `/run/jarvis` (the signed final snapshot, the worker count, how far the log was pushed) and the secrets in the
+  also sets the floor, so a session process can't take -1000 back. A restarted supervisor carries on from files in
+  `/run/jarvis` (the signed final snapshot, the worker count, how far the log and the live sync got) and the secrets in the
   keeper's memfd.
 - **Memory for the control plane** (`oomguard.go`, DECISIONS 221). Every session process runs under the cgroup v1
   memory cgroup `jarvis2-session`, which the keeper makes at boot with a limit of the machine's RAM minus 640 MB;
@@ -786,11 +793,11 @@ so that process is the supervisor's and nothing in the session can end it (`mach
   the status and screen readers) goes through `unprotected --rescue` into `jarvis2-rescue` (384 MB) instead, so a
   terminal command can still restart Claude or kill a hog on a machine the session has filled. The session hits its
   own limit (the kernel OOM-kills inside it) before it can take the memory the supervisor, Fly's init and the kernel
-  need. The keeper and the worker lock their pages in RAM (`mlockall`, MCL_ONFAULT), so a thrashing machine never drops
+  need. The keeper and supervisor-core lock their pages in RAM (`mlockall`, MCL_ONFAULT), so a thrashing machine never drops
   their code.
 - **The teardown.** SIGTERM, SIGINT (Fly's stop signal, 5 s by default before SIGKILL), SIGHUP and SIGQUIT to the
   keeper start a clean teardown that uploads the most important first (Deyao, 2026-10-21: "Transcript tail is the
-  most important, artifacts is less"), each step counting on its own: the worker (SIGUSR1) sends the transcripts that
+  most important, artifacts is less"), each step counting on its own: the keeper kills supervisor-normal, and supervisor-core (SIGUSR1) sends the transcripts that
   changed since their last copy (newest first, then the subagents': the live sync's `/m/live-transcript`, so the
   router's archive and search have them), then streams the final snapshot in priority order (the conversations and
   `~/.claude.json`, the small records, the other harnesses' state, the workspace, the artifacts last) and commits it
@@ -826,8 +833,8 @@ repo and the caller) holds them, and `~/.ssh` has only their public halves, whic
 (`IdentityFile …pub`, `IdentitiesOnly`, `IdentityAgent`). What stays on disk by Deyao's choice: the Claude login
 (`~/.claude/.credentials.json`) and a file a session writes itself with `session-secret --keys … --write`.
 
-**The supervisor log.** The boot steps, the keeper and the worker write each log line as JSON (`{at, text}`, the text
-prefixed `boot:`, `keeper:` or `supervisor:`) to `/run/jarvis/supervisor.log` (`claude`'s file) (tmpfs, rotated once pushed); the worker pushes new lines
+**The supervisor log.** The boot steps, the keeper and both supervisors write each log line as JSON (`{at, text}`, the text
+prefixed `boot:`, `keeper:`, `supervisor:` or `supervisor-normal:`) to `/run/jarvis/supervisor.log` (`claude`'s file) (tmpfs, rotated once pushed); supervisor-core pushes new lines
 to the router every 2 s (`POST /m/supervisor-log`), which keeps the session's log for its whole life and puts it in
 the session's archive on Destroy. Lines name commands, ids, counts and errors, never a command's text, a prompt or a
 secret value; as a second line of defence every secret value the supervisor holds (8 characters or more) is replaced by `[secret]`

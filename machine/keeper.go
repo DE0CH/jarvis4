@@ -12,16 +12,20 @@ package main
 //
 //	child                         identity                         restarted when it ends
 //	prepare (the boot steps)      user claude                      no: it hands the harness's env over and ends
-//	the supervisor's worker       root, with user claude's file    yes (backoff 1 s … 30 s)
-//	(supervise, supervisor.go)    access (fsuid/fsgid, groups)
+//	supervisor-core               root, with user claude's file    yes (backoff 1 s … 30 s)
+//	(superviseCore, supervisor.go) access (fsuid/fsgid, groups),
+//	                              pinned memory, OOM-protected
+//	supervisor-normal             root, user claude's file access, yes (backoff 1 s … 1 min)
+//	(superviseNormal)             the session's memory cgroup,
+//	                              the default OOM score
 //	the harness (entrypoint.sh    user claude                      yes (backoff 1 s … 1 min), with the same
 //	→ harness-*.sh)                                                conversation resumed
 //
 // The split by uid: user claude (the session, with its sudo) can't signal a root process (kill(2) needs the sender's
 // uid to match the target's real or saved uid), so `kill PID`, `pkill -f jarvis-machine`, `kill -TERM -1` and a
-// process-group kill from the session all fail with EPERM on the keeper and the worker; root through sudo can (higher
+// process-group kill from the session all fail with EPERM on the keeper and both supervisors; root through sudo can (higher
 // privilege: accepted). Root processes' /proc files (environ, mem, oom_score_adj) are root's too, and both are
-// marked not dumpable, so the session can't read the supervisor's memory or change its OOM score. The worker keeps
+// marked not dumpable, so the session can't read the supervisor's memory or change its OOM score. Both supervisors keep
 // root's uid but takes user claude's file identity (setfsuid/setfsgid and claude's groups), so every file it reads or
 // writes under ~ and /data, its sockets and /run/jarvis are exactly as before (owned by claude); every command it
 // runs for the session goes through `jarvis-machine unprotected`, which drops to user claude for good (uid, gid,
@@ -36,7 +40,7 @@ package main
 // snapshot.
 //
 // Stop signals (SIGTERM, SIGINT: Fly's stop; SIGHUP, SIGQUIT) start the priority teardown, most important first, so
-// a short kill timeout still saves what matters most: the worker (SIGUSR1, supervisor.go teardown) sends the
+// a short kill timeout still saves what matters most: supervisor-normal is killed, supervisor-core (SIGUSR1, supervisor.go teardown) sends the
 // transcripts that changed since their last copy (newest first, subagents after), then streams the final snapshot
 // (the transcripts and ~/.claude.json first, the workspace, the artifacts last) and commits it; then the harness's
 // process group gets SIGTERM, then SIGKILL, every other process of user claude too, and the keeper exits.
@@ -60,7 +64,7 @@ import (
 )
 
 var (
-	keeperDir        = "/run/jarvis-keeper"       // root's (0755): what only the keeper writes
+	keeperDir        = "/run/jarvis-keeper"        // root's (0755): what only the keeper writes
 	harnessPIDPath   = keeperDir + "/harness.pid"  // the boot steps' pid, then the harness launcher's (each start)
 	harnessStatePath = keeperDir + "/harness.json" // the harness's starts and last end (the status report)
 	sessionUser      = "claude"
@@ -70,7 +74,7 @@ var (
 	harnessBackoffMax = time.Minute
 	harnessStable     = 10 * time.Minute // up this long: the backoff starts again at 1 s
 	harnessGrace      = 5 * time.Second  // SIGTERM → SIGKILL for the harness's process group
-	teardownMax       = 30 * time.Minute // the worker's teardown, at most (Fly's kill timeout ends it sooner)
+	teardownMax       = 30 * time.Minute // supervisor-core's teardown, at most (Fly's kill timeout ends it sooner)
 )
 
 // ---- the session user ------------------------------------------------------------------------------------------
@@ -118,7 +122,7 @@ func session() sessionIDs {
 // sessionPeer: a socket caller the supervisor serves (secrets, ssh-agent): user claude, root, or this process's uid
 func sessionPeer(uid int) bool { return uid == 0 || uid == session().uid || uid == os.Getuid() }
 
-// privileged: this process runs as root (the keeper and the worker on the image)
+// privileged: this process runs as root (the keeper and both supervisors on the image)
 var privileged = func() bool { return os.Geteuid() == 0 }
 
 // sessionCommand: a command the supervisor runs for the session. As root it goes through `jarvis-machine
@@ -202,7 +206,7 @@ func dropToSession() error {
 	return nil
 }
 
-// sessionFileAccess: the worker's file identity becomes user claude's (fsuid, fsgid, groups) while its uid stays
+// sessionFileAccess: a supervisor's file identity becomes user claude's (fsuid, fsgid, groups) while its uid stays
 // root: what it reads and writes is checked and owned as before; only the session can't signal it. Every thread.
 func sessionFileAccess() error {
 	s := session()
@@ -228,7 +232,7 @@ func notDumpable() {
 }
 
 // signalSessionCmd: `jarvis-machine signal-session SIG`: kill(-1, SIG) as user claude, i.e. to every process of the
-// session but this one; never to root's (the keeper, the worker, Fly's)
+// session but this one; never to root's (the keeper, the supervisors, Fly's)
 func signalSessionCmd(args []string) error {
 	if len(args) != 1 {
 		return errors.New("usage: jarvis-machine signal-session STOP|CONT|TERM|KILL")
@@ -266,8 +270,9 @@ type keeperT struct {
 	mu        sync.Mutex
 	stopping  bool
 	stopCh    chan struct{}
-	worker    *os.Process
-	workerEnd chan struct{} // closed when the worker loop has ended (stopping)
+	core      *os.Process   // supervisor-core
+	coreEnd   chan struct{} // closed when supervisor-core's loop has ended (stopping)
+	normal    *os.Process   // supervisor-normal
 	harness   *exec.Cmd
 	state     harnessState
 	secretsFn func() map[string]string // the secrets for a start of the harness (k.secrets; tests replace it)
@@ -316,7 +321,8 @@ func keeper() error {
 		log.Printf("REFUSING TO START: the boot steps: %v", err)
 		select {}
 	}
-	go k.workerLoop()
+	go k.coreLoop()
+	go k.normalLoop()
 	go func() {
 		if spec := <-specCh; spec != nil {
 			k.harnessLoop(*spec)
@@ -333,7 +339,7 @@ func keeper() error {
 }
 
 func newKeeper() *keeperT {
-	k := &keeperT{stopCh: make(chan struct{}), workerEnd: make(chan struct{})}
+	k := &keeperT{stopCh: make(chan struct{}), coreEnd: make(chan struct{})}
 	k.secretsFn = k.secrets
 	return k
 }
@@ -385,7 +391,7 @@ func memoryDir(d string) error {
 	return nil
 }
 
-// protectFromOOM: oom_score_adj -1000 (never chosen by the OOM killer) for the keeper; the worker inherits it.
+// protectFromOOM: oom_score_adj -1000 (never chosen by the OOM killer) for the keeper; supervisor-core inherits it (supervisor-normal sets its own back to 0).
 // Only on a Fly machine.
 var protectFromOOM = func() {
 	if os.Getenv("FLY_MACHINE_ID") == "" {
@@ -446,59 +452,86 @@ func (k *keeperT) startPrepare(specCh chan<- *harnessSpec) error {
 	return nil
 }
 
-// workerLoop: the supervisor's worker, started once init asked (the boot steps have the keys then) and again
-// whenever it exits; the secrets' memfd is the keeper's, so a new worker has them without a pull
-func (k *keeperT) workerLoop() {
-	defer close(k.workerEnd)
-	for {
-		if _, err := os.Stat(goPath); err == nil {
-			break
-		}
-		if !k.sleep(time.Second) {
-			return
-		}
+// coreLoop: supervisor-core, started once init asked (the boot steps have the keys then) and again whenever it
+// exits; the secrets' memfd is the keeper's, so a new supervisor-core has them without a pull
+func (k *keeperT) coreLoop() {
+	defer close(k.coreEnd)
+	if !k.waitInit() {
+		return
 	}
-	mem, err := newMemfd() // secrets.go: the RAM copy of the secrets, kept across worker restarts
+	mem, err := newMemfd() // secrets.go: the RAM copy of the secrets, kept across restarts
 	if err != nil {
-		log.Printf("secrets memfd: %v (a restarted worker pulls again)", err)
+		log.Printf("secrets memfd: %v (a restarted supervisor-core pulls again)", err)
 	}
-	backoff := time.Second
-	for !k.isStopping() {
-		started := time.Now()
-		cmd := exec.Command("/proc/self/exe", "supervisor", "--worker")
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-		cmd.Env = os.Environ()
+	k.childLoop("supervisor-core", "--core", 30*time.Second, func(cmd *exec.Cmd) {
 		if mem != nil {
 			cmd.ExtraFiles = []*os.File{mem} // fd 3
 			cmd.Env = append(cmd.Env, secretsFDEnv+"=3")
 		}
+	}, &k.core)
+}
+
+// normalLoop: supervisor-normal, started with supervisor-core and again whenever it exits (it lowers its own OOM
+// protection and joins the session's memory cgroup, supervisor.go superviseNormal)
+func (k *keeperT) normalLoop() {
+	if !k.waitInit() {
+		return
+	}
+	k.childLoop("supervisor-normal", "--normal", time.Minute, nil, &k.normal)
+}
+
+// waitInit: until init asked (false: the machine is stopping)
+func (k *keeperT) waitInit() bool {
+	for {
+		if _, err := os.Stat(goPath); err == nil {
+			return true
+		}
+		if !k.sleep(time.Second) {
+			return false
+		}
+	}
+}
+
+// childLoop: `jarvis-machine supervisor FLAG` in its own session, started again (backoff 1 s … maxBackoff) until the
+// machine stops; *slot holds the running process
+func (k *keeperT) childLoop(name, flag string, maxBackoff time.Duration, prep func(*exec.Cmd), slot **os.Process) {
+	backoff := time.Second
+	for !k.isStopping() {
+		started := time.Now()
+		cmd := exec.Command("/proc/self/exe", "supervisor", flag)
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		cmd.Env = os.Environ()
+		if prep != nil {
+			prep(cmd)
+		}
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-		if err := cmd.Start(); err != nil {
-			log.Printf("supervisor worker: %v", err)
+		var err error
+		if err = cmd.Start(); err != nil {
+			log.Printf("%s: %v", name, err)
 		} else {
 			k.mu.Lock()
-			k.worker = cmd.Process
-			if k.stopping { // the teardown began while it started: it gets the signal the teardown sent the last one
+			*slot = cmd.Process
+			if k.stopping && flag == "--core" { // the teardown began while it started: it gets the signal the teardown sent the last one
 				cmd.Process.Signal(syscall.SIGUSR1)
 			}
 			k.mu.Unlock()
 			err = cmd.Wait()
 			k.mu.Lock()
-			k.worker = nil
+			*slot = nil
 			k.mu.Unlock()
 		}
 		if k.isStopping() {
-			log.Printf("supervisor worker ended (%s)", exitText(err))
+			log.Printf("%s ended (%s)", name, exitText(err))
 			return
 		}
 		if time.Since(started) > time.Minute {
 			backoff = time.Second
 		}
-		log.Printf("supervisor worker exited (%s); starting it again in %s", exitText(err), backoff)
+		log.Printf("%s exited (%s); starting it again in %s", name, exitText(err), backoff)
 		if !k.sleep(backoff) {
 			return
 		}
-		backoff = min(2*backoff, 30*time.Second)
+		backoff = min(2*backoff, maxBackoff)
 	}
 }
 
@@ -677,7 +710,7 @@ func readHarnessState() *harnessState {
 	return &s
 }
 
-// teardown: a stop signal. Most important first: the worker uploads the transcripts that changed and then the final
+// teardown: a stop signal. Most important first: supervisor-normal goes, supervisor-core uploads the transcripts that changed and then the final
 // snapshot; then the harness's process group and the rest of the session are stopped; then the keeper exits (Fly
 // ends the machine).
 func (k *keeperT) teardown(s os.Signal) {
@@ -686,20 +719,23 @@ func (k *keeperT) teardown(s os.Signal) {
 	k.mu.Lock()
 	k.stopping = true
 	close(k.stopCh)
-	w := k.worker
+	w, n := k.core, k.normal
 	k.mu.Unlock()
+	if n != nil {
+		n.Kill() // supervisor-normal holds nothing the teardown needs; it doesn't compete with it
+	}
 	if w != nil {
-		w.Signal(syscall.SIGUSR1) // supervisor.go teardown; the worker exits when it is done
+		w.Signal(syscall.SIGUSR1) // supervisor.go teardown; supervisor-core exits when it is done
 	} else {
-		log.Printf("no supervisor worker running (still booting, or between restarts)")
+		log.Printf("no supervisor-core running (still booting, or between restarts)")
 	}
 	select {
-	case <-k.workerEnd:
+	case <-k.coreEnd:
 	case <-time.After(teardownMax):
-		log.Printf("the worker's teardown is still going after %s; going on without it", teardownMax)
+		log.Printf("supervisor-core's teardown is still going after %s; going on without it", teardownMax)
 		k.mu.Lock()
-		if k.worker != nil {
-			k.worker.Kill()
+		if k.core != nil {
+			k.core.Kill()
 		}
 		k.mu.Unlock()
 	}
@@ -721,7 +757,7 @@ func (k *keeperT) teardown(s os.Signal) {
 	pushKeeperLog()
 }
 
-// pushKeeperLog: the keeper's last lines to the router (the worker, which pushes the log, has ended)
+// pushKeeperLog: the keeper's last lines to the router (supervisor-core, which pushes the log, has ended)
 func pushKeeperLog() {
 	c, err := newClient()
 	if err != nil {
