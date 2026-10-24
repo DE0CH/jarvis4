@@ -8,7 +8,6 @@ package main
 //   stale prompt    "waiting" for 1 h → Escape in the tmux pane (holder "status")
 //   attention DMs   idle / waiting / dead for 5 min → one DM per episode; the idle one can be muted
 //   downgrade DM    a new safeguard refusal or refusal fallback in a transcript, or the "switch model?" dialog
-//   stall nudge     idle with background jobs for 15 min → Jarvis 1's watchdog text as a peer message
 //   login           a session with a Claude account stopped on "Please run /login" and its pair is in step with
 //                   its account's again → deliver "continue" (the router never writes a login)
 //
@@ -27,8 +26,9 @@ import (
 	"time"
 )
 
-// Liveness: a session's reported status, its settings, and the loop's clocks (unexported: in memory only, as
-// in Jarvis 1, so a router restart just restarts them)
+// Liveness: a session's reported status, its settings, and the loop's clocks and episodes. All of it is in the
+// database (the router outlives the session and runs as replicas: docs/STATE.md); the machine's pane is apart, in
+// session_screens (screens.go), so its pushes every 2 s don't rewrite the records.
 type Liveness struct {
 	AutoPauseOff    bool   `json:"autoPauseOff,omitempty"`
 	NotifyIdleOff   bool   `json:"notifyIdleOff,omitempty"`
@@ -48,62 +48,49 @@ type Liveness struct {
 	BootedAt time.Time `json:"bootedAt,omitempty"`
 	HostUp   string    `json:"hostUp,omitempty"`
 
-	waiting         *waitEpisode
-	settled         *settledEpisode
-	Stall           *stallClock `json:"stall,omitempty"`
-	loginRepaired   *repairMark
-	loginBusy       bool
-	grantRetry      map[string]time.Time // holder → not before
-	oneShotFiring   bool
-	dialogCheckedAt int64 // statusUpdatedAt of the waiting episode whose pane was checked for the dialog
-	dialogReported  bool
-	screen          *pushedScreen // the pane the machine pushes itself (machine/screen.go); in memory only
-	mem             *memState     // memory.go: the starvation watch of the running machine; in memory only
-	disk            *diskState    // disk.go: the disk watch of the running machine; in memory only
-	// the stall watchdog's last nudge: when and how it ended ("" = delivered), for GET /setup/sessions
-	NudgeAt    time.Time `json:"nudgeAt,omitempty"`
-	NudgeError string    `json:"nudgeError,omitempty"`
+	Waiting       *WaitEpisode         `json:"waiting,omitempty"`
+	Settled       *SettledEpisode      `json:"settled,omitempty"`
+	LoginRepaired *RepairMark          `json:"loginRepaired,omitempty"`
+	GrantRetry    map[string]time.Time `json:"grantRetry,omitempty"` // holder → not before
+	// actions under way (a login "continue", a one-shot's destroy): when one started; one older than inFlightFor is
+	// over even if its replica died before clearing it
+	LoginBusyAt     time.Time  `json:"loginBusyAt,omitempty"`
+	OneShotFiringAt time.Time  `json:"oneShotFiringAt,omitempty"`
+	DialogCheckedAt int64      `json:"dialogCheckedAt,omitempty"` // statusUpdatedAt of the waiting episode whose pane was checked for the dialog
+	DialogReported  bool       `json:"dialogReported,omitempty"`
+	Mem             *MemState  `json:"mem,omitempty"`  // memory.go: the starvation watch of the running machine
+	Disk            *DiskState `json:"disk,omitempty"` // disk.go: the disk watch of the running machine
 }
 
-// carryMemory: the in-memory fields of the copy this replica had, onto the one just read from the database
-// (statedb.go reload); the persisted ones are the database's
-func (l *Liveness) carryMemory(old *Liveness) {
-	l.waiting, l.settled, l.loginRepaired, l.loginBusy, l.grantRetry = old.waiting, old.settled, old.loginRepaired, old.loginBusy, old.grantRetry
-	l.oneShotFiring, l.dialogCheckedAt, l.dialogReported = old.oneShotFiring, old.dialogCheckedAt, old.dialogReported
-	l.screen, l.mem, l.disk = old.screen, old.mem, old.disk
+// inFlightFor: how long an action under way holds its mark (LoginBusyAt, OneShotFiringAt)
+const inFlightFor = 10 * time.Minute
+
+func inFlight(at, now time.Time) bool { return !at.IsZero() && now.Sub(at) < inFlightFor }
+
+type WaitEpisode struct {
+	At        time.Time `json:"at"`
+	StatusAt  int64     `json:"statusAt"`
+	Cancelled bool      `json:"cancelled,omitempty"`
 }
 
-type waitEpisode struct {
-	at        time.Time
-	statusAt  int64
-	cancelled bool
+type SettledEpisode struct {
+	Kind     string    `json:"kind"`
+	Since    time.Time `json:"since"`
+	Notified bool      `json:"notified,omitempty"`
 }
 
-type settledEpisode struct {
-	kind     string
-	since    time.Time
-	notified bool
-}
-
-// stallClock: kept across a router restart (like the auto-pause clock), so frequent deploys don't keep restarting
-// the 15 minutes and the nudge never comes (Deyao, 2026-10-12: "the 15 minute background nudge is also gone")
-type stallClock struct {
-	At       time.Time `json:"at"`
-	StatusAt int64     `json:"statusAt"`
-}
-
-type repairMark struct {
-	uuid string
-	at   time.Time
+type RepairMark struct {
+	UUID string    `json:"uuid"`
+	At   time.Time `json:"at"`
 }
 
 type pilotConfig struct {
-	IdlePause, WaitingCancel, Attention, StallNudge, StaleReport, GrantRetry, RepairEvery, DowngradeLookback time.Duration
-	HarnessUp                                                                                                time.Duration
+	IdlePause, WaitingCancel, Attention, StaleReport, GrantRetry, RepairEvery, DowngradeLookback time.Duration
+	HarnessUp                                                                                    time.Duration
 }
 
 var defaultPilot = pilotConfig{
-	IdlePause: time.Hour, WaitingCancel: time.Hour, Attention: 5 * time.Minute, StallNudge: 15 * time.Minute,
+	IdlePause: time.Hour, WaitingCancel: time.Hour, Attention: 5 * time.Minute,
 	StaleReport: 3 * time.Minute, GrantRetry: 10 * time.Minute, RepairEvery: 10 * time.Minute, DowngradeLookback: 15 * time.Minute,
 	HarnessUp: 4 * time.Minute,
 }
@@ -237,20 +224,22 @@ func (r *Router) registerAutopilot(app appRoute, m machineRoute) {
 		})
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
-	// the read-only terminal: the machine's own capture of its pane (machine/screen.go), kept in memory
+	// the read-only terminal: the machine's own capture of its pane (machine/screen.go), in session_screens (screens.go)
 	m("POST /m/screen", func(w http.ResponseWriter, req *http.Request, machine string, body []byte) {
 		var in TermSnap
 		json.Unmarshal(body, &in)
+		var session string
 		r.st.Do(func(d *persisted) {
-			s := d.Sessions[d.Machines[machine]]
-			if s == nil || s.MachineID != machine {
+			if s := d.Sessions[d.Machines[machine]]; s != nil && s.MachineID == machine {
+				session = s.ID
+			}
+		})
+		if session != "" {
+			if err := r.st.PutScreen(session, machine, in); err != nil {
+				writeJSON(w, 503, map[string]string{"error": err.Error()})
 				return
 			}
-			if s.Live == nil {
-				s.Live = &Liveness{}
-			}
-			s.Live.screen = &pushedScreen{snap: in, at: time.Now()}
-		})
+		}
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
 	toggle := func(field string) http.HandlerFunc {
@@ -296,16 +285,14 @@ func (r *Router) registerAutopilot(app appRoute, m machineRoute) {
 // ---- the loop ---------------------------------------------------------------------------------------------
 
 type pilotAction struct {
-	Kind    string // dm | escape | dialog | nudge | login | continue | pause | destroy | harness-stuck
+	Kind    string // dm | escape | dialog | login | continue | pause | destroy | harness-stuck
 	Session string
 	Machine string // harness-stuck: the machine whose harness never came up
-	Text    string // dm, nudge
+	Text    string // dm
 	Repair  string // login: the uuid of the "Please run /login" reply being repaired
 	// login: the machine keeps its account's pair in step (machine/claudelogin.go): no write, only
 	// "continue" for a session stuck on "Please run /login"
-	Name    string
-	Jobs    int // nudge: the numbers its text is built from (the image builds the same text: vouch.go)
-	Minutes int
+	Name string
 }
 
 func (r *Router) startAutopilot() {
@@ -385,7 +372,7 @@ func sessionName(s *Session, g *Registry) string {
 }
 
 func (l *Liveness) mayExec(holder string, now time.Time) bool {
-	return l.grantRetry == nil || !now.Before(l.grantRetry[holder])
+	return l.GrantRetry == nil || !now.Before(l.GrantRetry[holder])
 }
 
 // planTick: one pass over the sessions; it moves the clocks and returns what to do. Called under the state lock.
@@ -398,8 +385,7 @@ func planTick(d *persisted, now time.Time, storedExp map[string]int64, c pilotCo
 		}
 		l := s.Live
 		if s.State != "started" || s.MachineID == "" {
-			l.IdleSince, l.waiting, l.settled, l.Stall, l.dialogCheckedAt, l.dialogReported = time.Time{}, nil, nil, nil, 0, false
-			l.screen = nil
+			l.IdleSince, l.Waiting, l.Settled, l.DialogCheckedAt, l.DialogReported = time.Time{}, nil, nil, 0, false
 			if s.MachineID == "" {
 				l.Reg = nil // paused: the next machine reports afresh
 			}
@@ -418,13 +404,10 @@ func planTick(d *persisted, now time.Time, storedExp map[string]int64, c pilotCo
 		// the harness check: a booted machine whose Claude never came up (no live host in the registry) for HarnessUp
 		// is failed with what its screen shows (2026-10-20: an unreadable /etc/claude-code left every new session
 		// on Claude Code's "Settings Error" prompt, shown as "booting…" for ever). Resume tries again on a new machine.
+		// The screen is read when the action runs (harnessStuck).
 		if s.Harness == "claude" && !operating && c.HarnessUp > 0 && l.HostUp != s.MachineID && s.Booted == s.MachineID &&
 			!l.BootedAt.IsZero() && now.Sub(l.BootedAt) >= c.HarnessUp {
-			screen := ""
-			if l.screen != nil {
-				screen = l.screen.snap.Screen
-			}
-			add(pilotAction{Kind: "harness-stuck", Session: id, Machine: s.MachineID, Name: name, Text: harnessStuckText(c.HarnessUp, screen)})
+			add(pilotAction{Kind: "harness-stuck", Session: id, Machine: s.MachineID, Name: name})
 			continue
 		}
 
@@ -436,21 +419,21 @@ func planTick(d *persisted, now time.Time, storedExp map[string]int64, c pilotCo
 		}
 
 		// one-shot: the prompt is done → destroy
-		if l.OneShot && g != nil && g.OneShotDone && !l.oneShotFiring && !operating {
-			l.oneShotFiring = true
+		if l.OneShot && g != nil && g.OneShotDone && !inFlight(l.OneShotFiringAt, now) && !operating {
+			l.OneShotFiringAt = now
 			add(pilotAction{Kind: "destroy", Session: id, Name: name})
 			continue
 		}
 
 		// "needs you" / idle / dead DM, once per settled episode
 		if operating || l.OneShot {
-			l.settled = nil
+			l.Settled = nil
 		} else if kind := attentionKind(g); kind == "" {
-			l.settled, l.AttentionSent = nil, ""
-		} else if key := attentionKey(kind, g); l.settled == nil || l.settled.kind != kind {
-			l.settled = &settledEpisode{kind: kind, since: now, notified: l.AttentionSent == key}
-		} else if !l.settled.notified && now.Sub(l.settled.since) >= c.Attention {
-			l.settled.notified, l.AttentionSent = true, key
+			l.Settled, l.AttentionSent = nil, ""
+		} else if key := attentionKey(kind, g); l.Settled == nil || l.Settled.Kind != kind {
+			l.Settled = &SettledEpisode{Kind: kind, Since: now, Notified: l.AttentionSent == key}
+		} else if !l.Settled.Notified && now.Sub(l.Settled.Since) >= c.Attention {
+			l.Settled.Notified, l.AttentionSent = true, key
 			if !(kind == "idle" && l.NotifyIdleOff) {
 				add(pilotAction{Kind: "dm", Session: id, Text: attentionText(kind, name)})
 			}
@@ -461,65 +444,42 @@ func planTick(d *persisted, now time.Time, storedExp map[string]int64, c pilotCo
 			since := max(l.DowngradeSeenAt, routerStarted.Add(-c.DowngradeLookback).UnixMilli())
 			if ev := freshRefusals(g.Refusals, since); len(ev) > 0 {
 				l.DowngradeSeenAt = ev[len(ev)-1].At
-				l.dialogReported = true
+				l.DialogReported = true
 				add(pilotAction{Kind: "dm", Session: id, Text: downgradeText(name, ev)})
 			} else if g.Status != "waiting" {
-				l.dialogCheckedAt, l.dialogReported = 0, false
-			} else if !l.dialogReported && l.dialogCheckedAt != g.StatusUpdatedAt && l.mayExec("status", now) {
-				l.dialogCheckedAt = g.StatusUpdatedAt
+				l.DialogCheckedAt, l.DialogReported = 0, false
+			} else if !l.DialogReported && l.DialogCheckedAt != g.StatusUpdatedAt && l.mayExec("status", now) {
+				l.DialogCheckedAt = g.StatusUpdatedAt
 				add(pilotAction{Kind: "dialog", Session: id, Name: name})
 			}
-		}
-
-		// stall nudge: idle with background jobs, no turn for StallNudge → a peer message, repeated every StallNudge.
-		// Claude Code (2.1.29x) keeps the status "busy" while background jobs run after the turn ended, so a
-		// "busy" session counts as waiting on its jobs when its pushed screen shows no turn running (no spinner)
-		jobsOnly := g != nil && g.BgTasks > 0 && g.Status == "idle"
-		unsure := false
-		if g != nil && g.BgTasks > 0 && g.Status == "busy" {
-			if l.screen == nil || now.Sub(l.screen.at) >= screenFresh {
-				unsure = true // no recent screen (a machine without the push, or just after a router restart): keep the clock
-			} else {
-				jobsOnly = !turnOnScreen(l.screen.snap.Screen)
-			}
-		}
-		if unsure && !operating && !l.OneShot {
-			// leave l.Stall as it is
-		} else if operating || l.OneShot || c.StallNudge <= 0 || !jobsOnly {
-			l.Stall = nil
-		} else if l.Stall == nil || l.Stall.StatusAt != g.StatusUpdatedAt {
-			l.Stall = &stallClock{At: now, StatusAt: g.StatusUpdatedAt}
-		} else if stalled := now.Sub(l.Stall.At); stalled >= c.StallNudge {
-			l.Stall.At = now
-			add(pilotAction{Kind: "nudge", Session: id, Text: nudgeText(g.BgTasks, stalled), Jobs: g.BgTasks, Minutes: int(stalled.Round(time.Minute) / time.Minute)})
 		}
 
 		// Claude login: a session with a Claude account keeps that account's pair in step by itself
 		// (machine/claudelogin.go); the router writes nothing (Deyao, 2026-10-14: no login repair). A turn that stopped on
 		// "Please run /login" gets "continue" once the session's pair is in step again.
-		if exp := storedExp[s.ClaudeAccount]; g != nil && !operating && !l.loginBusy && s.ClaudeAccount != "" &&
+		if exp := storedExp[s.ClaudeAccount]; g != nil && !operating && !inFlight(l.LoginBusyAt, now) && s.ClaudeAccount != "" &&
 			exp > now.UnixMilli() && g.CredsExpiresAt >= exp && g.Status == "idle" {
-			if u := g.AuthFailed; u != "" && (l.loginRepaired == nil || (l.loginRepaired.uuid != u && now.Sub(l.loginRepaired.at) >= c.RepairEvery)) {
-				l.loginRepaired = &repairMark{uuid: u, at: now}
-				l.loginBusy = true
+			if u := g.AuthFailed; u != "" && (l.LoginRepaired == nil || (l.LoginRepaired.UUID != u && now.Sub(l.LoginRepaired.At) >= c.RepairEvery)) {
+				l.LoginRepaired = &RepairMark{UUID: u, At: now}
+				l.LoginBusyAt = now
 				add(pilotAction{Kind: "login", Session: id, Repair: u, Name: name})
 			}
 		}
 
 		// a prompt unanswered for WaitingCancel → Escape (once per waiting episode)
 		if g == nil || g.Status != "waiting" || operating {
-			l.waiting = nil
+			l.Waiting = nil
 			// "status" is only wanted while a prompt waits (the dialog check, the Escape): once the session has
 			// moved on, a refusal from that episode is moot, so the card stops offering a grant for it (2026-10-12:
 			// a short question left "The machine turned away status" on a session that was running fine)
 			if g != nil && l.NeedsGrant == "status" {
 				l.NeedsGrant = ""
-				delete(l.grantRetry, "status")
+				delete(l.GrantRetry, "status")
 			}
-		} else if l.waiting == nil || l.waiting.statusAt != g.StatusUpdatedAt {
-			l.waiting = &waitEpisode{at: now, statusAt: g.StatusUpdatedAt}
-		} else if !l.waiting.cancelled && now.Sub(l.waiting.at) >= c.WaitingCancel && l.mayExec("status", now) {
-			l.waiting.cancelled = true
+		} else if l.Waiting == nil || l.Waiting.StatusAt != g.StatusUpdatedAt {
+			l.Waiting = &WaitEpisode{At: now, StatusAt: g.StatusUpdatedAt}
+		} else if !l.Waiting.Cancelled && now.Sub(l.Waiting.At) >= c.WaitingCancel && l.mayExec("status", now) {
+			l.Waiting.Cancelled = true
 			add(pilotAction{Kind: "escape", Session: id, Name: name})
 		}
 
@@ -548,27 +508,6 @@ func attentionText(kind, name string) string {
 	return fmt.Sprintf("🔴 Session “%s” isn't running a live Claude session — it may have died or need a re-login.", name)
 }
 
-// nudgeText: Jarvis 1's lib/stall.js nudgeText
-// turnOnScreen: Claude Code's spinner line is on the pane — a turn is running ("✢ Unfurling… (22s · thought for
-// 12s)"); a session only waiting on background jobs shows none
-var spinnerLine = regexp.MustCompile(`(?m)^\s*\S\s+[A-Z][\p{L}-]*…\s*\(\d`)
-
-func turnOnScreen(screen string) bool {
-	return spinnerLine.MatchString(ansiSeq.ReplaceAllString(screen, ""))
-}
-
-func nudgeText(bgTasks int, stalled time.Duration) string {
-	jobs := fmt.Sprintf("%d background jobs have", bgTasks)
-	if bgTasks == 1 {
-		jobs = "1 background job has"
-	}
-	return fmt.Sprintf("Jarvis watchdog: this session has been idle for %d min while %s been running, and none has finished or woken you. ", int(stalled.Round(time.Minute)/time.Minute), jobs) +
-		"Check on them now: read their output, and if a job is hung or no longer needed, stop it and continue the task another way. " +
-		"If a job is legitimately still running, make sure it will end on its own (a timeout or deadline), then end your turn — this check repeats while the state lasts. " +
-		"This is an automated message from Jarvis."
-}
-
-// freshRefusals: events newer than since (ms), de-duplicated by uuid
 func freshRefusals(ev []Refusal, since int64) []Refusal {
 	seen := map[string]bool{}
 	var out []Refusal
@@ -657,6 +596,11 @@ func harnessRetryUpgrade(s Session, newest string) bool {
 // harnessStuck: fail the session (the machine stays until a Resume finishes its pause, or a Destroy), log it in the
 // lifecycle, DM once
 func (r *Router) harnessStuck(a pilotAction) {
+	screen := ""
+	if snap, _, ok := r.latestScreen(a.Session); ok {
+		screen = snap.Screen
+	}
+	a.Text = harnessStuckText(defaultPilot.HarnessUp, screen)
 	failed := false
 	r.st.Do(func(d *persisted) {
 		s := d.Sessions[a.Session]
@@ -699,7 +643,7 @@ func (r *Router) runAction(a pilotAction) {
 			log.Printf("[oneshot] %s: %v", a.Session, err)
 			r.st.Do(func(d *persisted) {
 				if s := d.Sessions[a.Session]; s != nil && s.Live != nil {
-					s.Live.oneShotFiring = false // the next tick looks again
+					s.Live.OneShotFiringAt = time.Time{} // the next tick looks again
 				}
 			})
 			return
@@ -711,8 +655,8 @@ func (r *Router) runAction(a pilotAction) {
 			if err != nil {
 				log.Printf("[autopause] %s: cancelling the stale prompt failed: %v", a.Session, err)
 				r.st.Do(func(d *persisted) {
-					if s := d.Sessions[a.Session]; s != nil && s.Live != nil && s.Live.waiting != nil {
-						s.Live.waiting.cancelled = false
+					if s := d.Sessions[a.Session]; s != nil && s.Live != nil && s.Live.Waiting != nil {
+						s.Live.Waiting.Cancelled = false
 					}
 				})
 				return
@@ -736,27 +680,10 @@ func (r *Router) runAction(a pilotAction) {
 			}
 			r.st.Do(func(d *persisted) {
 				if s := d.Sessions[a.Session]; s != nil && s.Live != nil {
-					s.Live.dialogReported = true
+					s.Live.DialogReported = true
 				}
 			})
 			r.DM(fmt.Sprintf("🟡 Session “%s”: the safeguards flagged a message — Claude Code is asking whether to switch to another model.", a.Name))
-		}()
-	case "nudge":
-		go func() {
-			err := r.DeliverCanned(a.Session, Delivery{Kind: "nudge", Jobs: a.Jobs, Minutes: a.Minutes}, a.Text)
-			r.st.Do(func(d *persisted) {
-				if s := d.Sessions[a.Session]; s != nil && s.Live != nil {
-					s.Live.NudgeAt, s.Live.NudgeError = time.Now().UTC(), ""
-					if err != nil {
-						s.Live.NudgeError = err.Error()
-					}
-				}
-			})
-			if err != nil {
-				log.Printf("[stall] nudge for %s failed (retried next interval): %v", a.Session, err)
-				return
-			}
-			log.Printf("[stall] %s nudged", a.Session)
 		}()
 	case "continue":
 		go func() {
@@ -770,7 +697,7 @@ func (r *Router) runAction(a pilotAction) {
 		go func() {
 			defer r.st.Do(func(d *persisted) {
 				if s := d.Sessions[a.Session]; s != nil && s.Live != nil {
-					s.Live.loginBusy = false
+					s.Live.LoginBusyAt = time.Time{}
 				}
 			})
 			r.repairLogin(a)
@@ -786,7 +713,7 @@ func (r *Router) execAs(session, holder, cmd string, timeout time.Duration) (Exe
 	} else if err == nil {
 		r.st.Do(func(d *persisted) {
 			if s := d.Sessions[session]; s != nil && s.Live != nil {
-				delete(s.Live.grantRetry, holder)
+				delete(s.Live.GrantRetry, holder)
 				if s.Live.NeedsGrant == holder {
 					s.Live.NeedsGrant = ""
 				}
@@ -804,10 +731,10 @@ func (r *Router) noteRefusal(session, holder string, err error) {
 	}
 	r.st.Do(func(d *persisted) {
 		if s := d.Sessions[session]; s != nil && s.Live != nil {
-			if s.Live.grantRetry == nil {
-				s.Live.grantRetry = map[string]time.Time{}
+			if s.Live.GrantRetry == nil {
+				s.Live.GrantRetry = map[string]time.Time{}
 			}
-			s.Live.grantRetry[holder] = time.Now().Add(defaultPilot.GrantRetry)
+			s.Live.GrantRetry[holder] = time.Now().Add(defaultPilot.GrantRetry)
 			s.Live.NeedsGrant = holder
 		}
 	})

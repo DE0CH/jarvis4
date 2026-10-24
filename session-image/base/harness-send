@@ -1,6 +1,6 @@
 #!/bin/bash
 # Deliver a prompt (stdin) to this session's non-Claude-app harness — what Jarvis execs for the
-# first prompt, scheduled wakeups / watches, the stall nudge and Deyao's resume prompt, in place of
+# first prompt, scheduled wakeups / watches and Deyao's resume prompt, in place of
 # the remote-control path's peer message / typed prompt. Never keystrokes, so it cannot answer a
 # pending permission ask. Which harness is running decides the route:
 #   opencode    (harness-opencode.sh)   `paseo send` to the session's MAIN agent (recorded in

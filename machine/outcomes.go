@@ -18,7 +18,6 @@ package main
 // never come through here.
 
 import (
-	"slices"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -28,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"

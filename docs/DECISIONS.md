@@ -2709,3 +2709,19 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      backup check page uses the pinned secrets). A replay put needs no marker: the router writes back the very backup
      object the key had. Tested: router `TestAKernelRestoreReplaysTheEarlierEntry` (B's marker, its receipt secrets'
      own); the interop Kernel test (a real secrets' removal receipt checks; another secrets, none, another key: refused).
+235. **The 15-minute watchdog is the supervisor's own watch; the router keeps no session state in a replica's memory**
+     (Deyao, 2026-10-24: "the 15 minute jarvis watchdog is not running", "i thought we seperated state and compute?",
+     "for the watchdog it's actually a simple watch from the supervisor, nothing outside the image"). The router ran the
+     stall clock from fields of Liveness that lived only in memory; every write by any replica makes the next Do read
+     the records again, which dropped them, so the nudge never came. Now `machine/stall.go` looks at its own Claude host
+     every 10 s (its registry file, its shells and the hook-fed job count, its pane) and sends the text through the
+     Jarvis channel itself; the router has no nudge, no stall clock and no "nudge" delivery kind. The supervisor may
+     keep its state in memory: the container is the session's state and ends with it (Deyao). What outlives a session
+     keeps state apart from compute: the autopilot's episodes and the memory and disk watches are fields of the
+     records; an action under way is a timestamp (LoginBusyAt, OneShotFiringAt) that lapses after 10 minutes, so a
+     replica dying mid-action can't leave it stuck; the pushed pane is a row of `session_screens`, apart from the
+     versioned records, so its 2-second pushes don't make every replica reload. Tested: machine `TestStallStep`,
+     `TestReadHost`; router `TestPushedScreenNeedsNoGrant` (another replica sees the push), `TestStateAcrossReplicas`
+     (an episode written by one replica is the other's). Still per replica, by choice: the scheduler's retry backoff
+     (a leader change only retries sooner), the Claude-account store write dedupe (a restart writes once more), the
+     progress view of an account-switch "wake" job.

@@ -77,7 +77,7 @@ func TestMessageApprovals(t *testing.T) {
 	}
 	for name, a := range map[string]*SignedDoc{
 		"peer":       rule(phone, "peer", time.Hour),
-		"other kind": rule(phone, "nudge", time.Hour),
+		"other kind": rule(phone, "continue", time.Hour),
 		"stranger":   rule(stranger, "peer", time.Hour),
 	} {
 		if _, err := check(a, d); !errors.Is(err, errNeedsApproval) {
@@ -125,7 +125,6 @@ func TestNeedsMessageApproval(t *testing.T) {
 		want bool
 	}{
 		"request-outcome, sensitive": {sensitive, Delivery{Kind: "request-outcome"}, false},
-		"nudge, sensitive":           {sensitive, Delivery{Kind: "nudge", Minutes: 20, Jobs: 1}, false},
 		"continue, sensitive":        {sensitive, Delivery{Kind: "continue"}, false},
 		"upgraded, sensitive":        {sensitive, Delivery{Kind: "upgraded"}, false},
 		"lease-granted, sensitive":   {sensitive, Delivery{Kind: "lease-granted"}, false},
@@ -139,19 +138,19 @@ func TestNeedsMessageApproval(t *testing.T) {
 		"upward peer, plain":         {plain, peer("upward"), false},
 		"resume-prompt, sensitive":   {sensitive, Delivery{Kind: "resume-prompt"}, true},
 		"resume-prompt, plain":       {plain, Delivery{Kind: "resume-prompt"}, true},
-		"nudge, plain":               {plain, Delivery{Kind: "nudge"}, false},
+		"continue, plain":            {plain, Delivery{Kind: "continue"}, false},
 	} {
 		if got := needsMessageApproval(c.cert, c.d); got != c.want {
 			t.Errorf("%s: needsMessageApproval %v, want %v", name, got, c.want)
 		}
 	}
 	// and an unapproved one that needs none passes the check outright, even into a sensitive session
-	text, attested, err := deliveryText(Delivery{Kind: "nudge", Minutes: 30, Jobs: 2}, nil)
+	text, attested, err := deliveryText(Delivery{Kind: "continue"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id, err := checkMessageApproval(sensitive, Delivery{Kind: "nudge", Minutes: 30, Jobs: 2}, attested, text, time.Now()); err != nil || id != "" {
-		t.Fatalf("a nudge into a sensitive session: %q %v", id, err)
+	if id, err := checkMessageApproval(sensitive, Delivery{Kind: "continue"}, attested, text, time.Now()); err != nil || id != "" {
+		t.Fatalf("a continue into a sensitive session: %q %v", id, err)
 	}
 }
 
@@ -161,8 +160,8 @@ func TestPreviewRendersWithoutTakingIt(t *testing.T) {
 	old := currentCert
 	currentCert = func() (Cert, error) { return Cert{Line: "L1", Sensitive: true}, nil }
 	t.Cleanup(func() { currentCert = old })
-	text, errText := previewDelivery(Delivery{Kind: "nudge", Minutes: 15, Jobs: 1})
-	if errText != "" || !strings.HasPrefix(text, "Jarvis watchdog: this session has been idle for 15 min while 1 background job has") {
+	text, errText := previewDelivery(Delivery{Kind: "upgraded", From: "small", To: "medium"})
+	if errText != "" || !strings.Contains(text, "medium") {
 		t.Fatalf("%q %s", text, errText)
 	}
 	if _, errText := previewDelivery(Delivery{Kind: "wakeup"}); errText == "" {

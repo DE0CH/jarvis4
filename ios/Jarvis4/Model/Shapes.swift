@@ -240,7 +240,7 @@ struct Grant: Identifiable, Equatable, Hashable {
   var ends: Date? { j["ends"].string?.isoDate }
 }
 
-/// a message Jarvis wants to put into a session (a wakeup, a watchdog check-in, a peer's message, a resume prompt…),
+/// a message Jarvis wants to put into a session (a wakeup, a login “continue”, a peer's message, a resume prompt…),
 /// waiting for Deyao to deliver it (signed by this phone, Face ID) or deny it. The router's record: what is signed is
 /// checked against the router's draft (Checks.reviewMessages), never taken from here alone.
 struct PendingMessage: Identifiable, Equatable, Hashable {
@@ -251,7 +251,7 @@ struct PendingMessage: Identifiable, Equatable, Hashable {
   /// the delivery kind (MessageKind)
   var kind: String { j["kind"].string ?? "" }
   var kindLabel: String { j["kindLabel"].text ?? MessageKind.label(kind) }
-  /// the specific requester ("Jarvis's watchdog (the stall check)")
+  /// the specific requester ("Jarvis's login check")
   var from: String { j["from"].text ?? "Jarvis 4" }
   /// the exact text that goes into the session
   var text: String { j["text"].string ?? "" }
@@ -283,7 +283,7 @@ struct MessageRule: Identifiable, Equatable, Hashable {
 /// the delivery kinds a pending message can have, in words, and which may get a standing per-kind rule
 enum MessageKind {
   static let labels: [String: String] = [
-    "wakeup": "Wakeup", "cron": "Recurring wakeup", "watch": "Watch met", "watch-fail": "Watch gave up", "nudge": "Watchdog check-in",
+    "wakeup": "Wakeup", "cron": "Recurring wakeup", "watch": "Watch met", "watch-fail": "Watch gave up",
     "continue": "Login “continue”", "upgraded": "Upgrade note", "lease-granted": "Lease granted", "lease-taken": "Lease taken over",
     "lease-back": "Lease handed back", "request-outcome": "Inbox outcome", "peer": "Peer message", "resume-prompt": "Resume prompt",
   ]

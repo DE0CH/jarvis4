@@ -280,11 +280,10 @@ func signedRequestOf(req *http.Request, machine string, body []byte) *SignedRequ
 
 type Delivery struct {
 	ID      string         `json:"id"`
-	Kind    string         `json:"kind"` // wakeup | cron | watch | watch-fail | nudge | continue | upgraded | lease-* | request-outcome | peer | resume-prompt
+	Kind    string         `json:"kind"` // wakeup | cron | watch | watch-fail | continue | upgraded | lease-* | request-outcome | peer | resume-prompt
 	Request *SignedRequest `json:"request,omitempty"`
 	Run     int            `json:"run,omitempty"`
 	Minutes int            `json:"minutes,omitempty"`
-	Jobs    int            `json:"jobs,omitempty"`
 	From    string         `json:"from,omitempty"` // upgraded: the old and new size (memory.go)
 	To      string         `json:"to,omitempty"`
 	// leases.go: the device (a lease name), whether Deyao had taken it over and the holder was interrupted by that
@@ -369,8 +368,6 @@ func attested(d Delivery) ([]byte, string, error) {
 		return []byte(leaseGrantedText(d.Device, int64(d.Minutes), d.Handover, d.Interrupted, signedPrompt(d.Request))), origin, nil
 	case "peer":
 		return peerAttested(d.Peer)
-	case "nudge":
-		return []byte(nudgeText(d.Jobs, time.Duration(d.Minutes)*time.Minute)), "image-text", nil
 	case "upgraded":
 		if sizeMemGB(d.From) == 0 || sizeMemGB(d.To) == 0 {
 			return nil, "", errors.New("upgraded: not a machine size")

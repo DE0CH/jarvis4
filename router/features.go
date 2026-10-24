@@ -86,7 +86,7 @@ func (r *Router) DM(text string) {
 	log.Printf("[dm] %s", text)
 }
 
-// DeliverCanned: a text built into the session image ("continue", the watchdog's nudge), as a delivery the core
+// DeliverCanned: a text built into the session image ("continue"), as a delivery the core
 // attests: the router picks when, never what
 func (r *Router) DeliverCanned(session string, d Delivery, text string) error {
 	return r.deliverVouched(session, d)

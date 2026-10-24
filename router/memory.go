@@ -57,14 +57,14 @@ type MemAlert struct {
 	Detail string    `json:"detail"`
 }
 
-// memState: one machine's watch (in memory only, as in Jarvis 1)
-type memState struct {
-	machine      string
-	last         *MemSample
-	lastAt       time.Time
-	oomKills     *int64
-	alert        *MemAlert
-	healthySince time.Time
+// MemState: one machine's watch (in the records: any replica carries it on)
+type MemState struct {
+	Machine      string     `json:"machine"`
+	Last         *MemSample `json:"last,omitempty"`
+	LastAt       time.Time  `json:"lastAt"`
+	OOMKills     *int64     `json:"oomKills,omitempty"`
+	Alert        *MemAlert  `json:"alert,omitempty"`
+	HealthySince time.Time  `json:"healthySince,omitempty"`
 }
 
 func (s MemSample) availPct() float64 { return 100 * float64(s.AvailKb) / float64(s.TotalKb) }
@@ -87,12 +87,12 @@ func describeMem(s *MemSample) string {
 }
 
 // observe: a sample (or nil when the machine went silent) → true when a new starvation episode begins (DM it)
-func (m *memState) observe(sample *MemSample, now time.Time) bool {
+func (m *MemState) observe(sample *MemSample, now time.Time) bool {
 	reason := ""
 	if sample != nil {
 		switch {
-		case m.oomKills != nil && sample.OOMKills != nil && *sample.OOMKills > *m.oomKills:
-			n := *sample.OOMKills - *m.oomKills
+		case m.OOMKills != nil && sample.OOMKills != nil && *sample.OOMKills > *m.OOMKills:
+			n := *sample.OOMKills - *m.OOMKills
 			reason = fmt.Sprintf("the kernel killed %d process%s for lack of memory", n, map[bool]string{true: "", false: "es"}[n == 1])
 		case sample.PSIFull60 != nil && *sample.PSIFull60 >= memPSIFullPct:
 			reason = fmt.Sprintf("it is thrashing (stalled on memory %.0f%% of the last minute)", *sample.PSIFull60)
@@ -100,31 +100,31 @@ func (m *memState) observe(sample *MemSample, now time.Time) bool {
 			reason = "it is almost out of memory"
 		}
 		if sample.OOMKills != nil {
-			m.oomKills = sample.OOMKills
+			m.OOMKills = sample.OOMKills
 		}
-		m.last, m.lastAt = sample, now
-	} else if m.last != nil && m.last.availPct() < memShortAvailPct {
+		m.Last, m.LastAt = sample, now
+	} else if m.Last != nil && m.Last.availPct() < memShortAvailPct {
 		reason = "its machine stopped answering while short of memory"
 	}
 	if reason != "" {
-		m.healthySince = time.Time{}
+		m.HealthySince = time.Time{}
 		detail := describeMem(sample)
 		if detail == "" {
-			detail = describeMem(m.last)
+			detail = describeMem(m.Last)
 		}
-		if m.alert == nil {
-			m.alert = &MemAlert{Since: now, Reason: reason, Detail: detail}
+		if m.Alert == nil {
+			m.Alert = &MemAlert{Since: now, Reason: reason, Detail: detail}
 			return true
 		}
-		m.alert.Reason, m.alert.Detail = reason, detail
+		m.Alert.Reason, m.Alert.Detail = reason, detail
 		return false
 	}
-	if m.alert != nil && sample != nil { // healthy: the episode ends after memClear of these
-		if m.healthySince.IsZero() {
-			m.healthySince = now
+	if m.Alert != nil && sample != nil { // healthy: the episode ends after memClear of these
+		if m.HealthySince.IsZero() {
+			m.HealthySince = now
 		}
-		if now.Sub(m.healthySince) >= memClear {
-			m.alert, m.healthySince = nil, time.Time{}
+		if now.Sub(m.HealthySince) >= memClear {
+			m.Alert, m.HealthySince = nil, time.Time{}
 		}
 	}
 	return false
@@ -156,19 +156,19 @@ func upgradedText(from, to string) string {
 
 // memView: the session's memAlert and latest memory sample in /api/state (under the state lock)
 func memView(s *Session, v map[string]any) {
-	if s.Live == nil || s.Live.mem == nil || s.State != "started" || s.Live.mem.machine != s.MachineID {
+	if s.Live == nil || s.Live.Mem == nil || s.State != "started" || s.Live.Mem.Machine != s.MachineID {
 		return
 	}
-	m := s.Live.mem
-	if m.alert != nil {
-		a := map[string]any{"since": m.alert.Since, "reason": m.alert.Reason, "detail": m.alert.Detail, "nextSize": nil, "nextGb": nil, "nextGuest": nil}
+	m := s.Live.Mem
+	if m.Alert != nil {
+		a := map[string]any{"since": m.Alert.Since, "reason": m.Alert.Reason, "detail": m.Alert.Detail, "nextSize": nil, "nextGb": nil, "nextGuest": nil}
 		if next := upgradeTarget(s.Size); next != "" { // none: the running core can't start the next size, so no Upgrade button
 			a["nextSize"], a["nextGb"], a["nextGuest"] = next, sizeMemGB(next), sizeLabel(next)
 		}
 		v["memAlert"] = a
 	}
-	if m.last != nil && time.Since(m.lastAt) < memSilent {
-		v["memory"] = map[string]any{"totalMb": m.last.TotalKb / 1024, "availMb": m.last.AvailKb / 1024, "at": m.lastAt}
+	if m.Last != nil && time.Since(m.LastAt) < memSilent {
+		v["memory"] = map[string]any{"totalMb": m.Last.TotalKb / 1024, "availMb": m.Last.AvailKb / 1024, "at": m.LastAt}
 	}
 }
 
@@ -176,16 +176,16 @@ func memView(s *Session, v map[string]any) {
 func memSilentTick(d *persisted, now time.Time) []string {
 	var dms []string
 	for _, s := range d.Sessions {
-		if s.Live == nil || s.Live.mem == nil {
+		if s.Live == nil || s.Live.Mem == nil {
 			continue
 		}
-		m := s.Live.mem
-		if s.State != "started" || s.MachineID != m.machine {
-			s.Live.mem = nil
+		m := s.Live.Mem
+		if s.State != "started" || s.MachineID != m.Machine {
+			s.Live.Mem = nil
 			continue
 		}
-		if !m.lastAt.IsZero() && now.Sub(m.lastAt) >= memSilent && m.observe(nil, now) {
-			dms = append(dms, memMessage(sessionName(s, s.Live.Reg), s.Size, m.alert))
+		if !m.LastAt.IsZero() && now.Sub(m.LastAt) >= memSilent && m.observe(nil, now) {
+			dms = append(dms, memMessage(sessionName(s, s.Live.Reg), s.Size, m.Alert))
 		}
 	}
 	return dms
@@ -208,11 +208,11 @@ func (r *Router) registerMemory(app appRoute, m machineRoute) {
 			if s.Live == nil {
 				s.Live = &Liveness{}
 			}
-			if s.Live.mem == nil || s.Live.mem.machine != machine {
-				s.Live.mem = &memState{machine: machine}
+			if s.Live.Mem == nil || s.Live.Mem.Machine != machine {
+				s.Live.Mem = &MemState{Machine: machine}
 			}
-			if s.Live.mem.observe(&in, time.Now().UTC()) {
-				dm = memMessage(sessionName(s, s.Live.Reg), s.Size, s.Live.mem.alert)
+			if s.Live.Mem.observe(&in, time.Now().UTC()) {
+				dm = memMessage(sessionName(s, s.Live.Reg), s.Size, s.Live.Mem.Alert)
 			}
 		})
 		if dm != "" {

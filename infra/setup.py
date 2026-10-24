@@ -553,7 +553,7 @@ def main():
             print(s["id"], s["machineId"] or "-", s["state"], s["title"])
             if s.get("error"):  # why it failed (router/failures.go), or what a stopped machine left (router/lostmachine.go)
                 print("    error" + (f" (since {s['failedAt']})" if s.get("failedAt") else "") + ":", s["error"])
-            if "-v" in args:  # the autopilot's view: status, background jobs, stall clock, last nudge
+            if "-v" in args:  # the autopilot's view: status, background jobs, last report
                 print("   ", json.dumps({k: v for k, v in s.items() if k not in ("id", "machineId", "state", "title", "error")}, sort_keys=True))
     elif cmd == "lease":
         if len(args) < 2 or args[0] not in ("take-over", "hand-back"):

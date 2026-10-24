@@ -5,7 +5,7 @@
 // Deliver all: the router drafts one batch text with every listed message; it is checked item for item against what
 // the page shows (Checks.reviewMessages: the ids, each kind, sender and text, the cert's line, issued now, at most an
 // hour) and signed under ONE Face ID. A message can be delivered or denied on its own. Deny signs nothing.
-// A ruleable kind offers its rule ("Always deliver Jarvis's watchdog check-ins to this session"): one kind, this
+// A ruleable kind offers its rule ("Always deliver Jarvis's login “continue” to this session"): one kind, this
 // session, phone-signed (Checks.reviewMessageRule), revocable on the session's page.
 import SwiftUI
 

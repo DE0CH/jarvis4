@@ -1,13 +1,13 @@
 package main
 
 // Inputs Jarvis 4 delivers into a running session after it started (docs/DESIGN.md "Inputs to a machine"): a
-// wakeup's or cron's prompt, the router's watchdog nudge, a "continue" after a re-login. Each arrives in
+// wakeup's or cron's prompt, a "continue" after a re-login (the 15-minute watchdog is the supervisor's own, stall.go). Each arrives in
 // /m/commands as a delivery and is taken only when it is
 //
 //   - vouched for: a wakeup or cron is the session's OWN request (the machine-signed POST the session made to
 //     /m/api/sessions/<id>/wakeup or /crons, which the router keeps as it was), checked against this line's signing
 //     keys (lineKeysFile: every machine of the line adds its key; the file travels in the signed snapshot); the
-//     nudge and "continue" are texts built into this image, so the router chooses only when, never what;
+//     "continue" and the other notes are texts built into this image, so the router chooses only when, never what;
 //   - and logged: it carries the core's attestation over (this machine, the kind, the sha256 of the input), so
 //     every input is in the core's hash-chained input log (core/audit.go).
 //
@@ -191,11 +191,10 @@ type SignedRequest struct {
 
 type Delivery struct {
 	ID      string         `json:"id"`
-	Kind    string         `json:"kind"` // wakeup | cron | watch | watch-fail | nudge | continue | upgraded | lease-* | request-outcome | peer | resume-prompt
+	Kind    string         `json:"kind"` // wakeup | cron | watch | watch-fail | continue | upgraded | lease-* | request-outcome | peer | resume-prompt
 	Request *SignedRequest `json:"request,omitempty"`
 	Run     int            `json:"run,omitempty"`     // a cron's run number (a number)
-	Minutes int            `json:"minutes,omitempty"` // nudge: idle minutes (a number)
-	Jobs    int            `json:"jobs,omitempty"`    // nudge: background jobs (a number)
+	Minutes int            `json:"minutes,omitempty"` // a granted lease's length (a number)
 	From    string         `json:"from,omitempty"`    // upgraded: the old size (small | medium | large)
 	To      string         `json:"to,omitempty"`      // upgraded: the new size
 	// a lease (leases.go): the device (a lease name), and whether Deyao had taken it over (and interrupted this
@@ -302,16 +301,6 @@ func deliveryText(d Delivery, keys []string) (text string, attested []byte, err 
 		if err != nil {
 			return "", nil, err
 		}
-		return t, []byte(t), nil
-	case "nudge":
-		jobs := fmt.Sprintf("%d background jobs have", d.Jobs)
-		if d.Jobs == 1 {
-			jobs = "1 background job has"
-		}
-		t := fmt.Sprintf("Jarvis watchdog: this session has been idle for %d min while %s been running, and none has finished or woken you. ", d.Minutes, jobs) +
-			"Check on them now: read their output, and if a job is hung or no longer needed, stop it and continue the task another way. " +
-			"If a job is legitimately still running, make sure it will end on its own (a timeout or deadline), then end your turn — this check repeats while the state lasts. " +
-			"This is an automated message from Jarvis."
 		return t, []byte(t), nil
 	case "upgraded":
 		t, err := upgradedText(d.From, d.To)

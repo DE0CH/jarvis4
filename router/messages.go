@@ -1,7 +1,7 @@
 package main
 
 // Message approvals (docs/DESIGN.md "Message approvals"; machine/messages.go): every message Jarvis delivers into a
-// session holding a sensitive store (a wakeup, a cron run, a watch, the watchdog's check-in, a login "continue", an
+// session holding a sensitive store (a wakeup, a cron run, a watch, a login "continue", an
 // Inbox outcome, a peer message, a lease or upgrade note), and every resume prompt into any session, waits in the Inbox
 // as a pending message until Deyao delivers or denies THAT message (Deyao, 2026-10-20: "he should approve or deny the
 // specific message"). Deliver = the phone signs it: the session's line, the kind, the sha256 of exactly the bytes the
@@ -9,7 +9,7 @@ package main
 // go under one Face ID as one signed batch, each still listed. The machine takes the delivery only with that signature
 // (or a rule's), checked against the phone key in its core-signed cert.
 //
-// A standing per-kind rule ("Always deliver Jarvis's watchdog check-ins to this session") is the one opt-out: one kind,
+// A standing per-kind rule ("Always deliver this session's own wakeups to it") is the one opt-out: one kind,
 // one session, phone-signed, until removed (at most a year). Never for a peer message or a resume prompt.
 //
 // Who asked is told: Deny (or a lapse, or a failure after approval) comes back to a peer message's sender, and to the
@@ -105,7 +105,6 @@ var messageKinds = map[string][2]string{
 	"cron":            {"Recurring wakeup", "Always deliver this session's own recurring wakeups to it"},
 	"watch":           {"Watch met", "Always deliver this session's met watches to it"},
 	"watch-fail":      {"Watch gave up", "Always deliver this session's given-up watches to it"},
-	"nudge":           {"Watchdog check-in", "Always deliver Jarvis's watchdog check-ins to this session"},
 	"continue":        {"Login “continue”", "Always deliver Jarvis's login “continue” to this session"},
 	"upgraded":        {"Upgrade note", "Always deliver Jarvis's upgrade notes to this session"},
 	"lease-granted":   {"Lease granted", "Always deliver Jarvis's lease-granted notes to this session"},
@@ -131,7 +130,7 @@ func previewOnly(kind string) bool { return kind == "peer" || kind == "request-o
 // needsApproval: the session's machine takes this delivery only as the phone approved it (machine/messages.go
 // needsMessageApproval decides the same): a resume prompt (Deyao's words from the app) always; into a session holding a
 // sensitive store, an UPWARD peer message (words from a session holding less, or less permissive). Jarvis's own
-// messages (Inbox outcomes, the watchdog, "continue", lease and upgrade notes) and the session's own wakeups, crons and
+// messages (Inbox outcomes, "continue", lease and upgrade notes) and the session's own wakeups, crons and
 // watches go straight in, and so does an equal or downward peer message (DECISIONS 210)
 func (r *Router) needsApproval(sid string, d Delivery) bool {
 	switch d.Kind {
@@ -198,8 +197,6 @@ func messageText(d Delivery) (text, from, note string, ok bool) {
 			return fmt.Sprintf("[watch %q gave up] %s", name, fp), from, note, true
 		}
 		return fmt.Sprintf("[watch %q gave up] Conditional wakeup %q gave up (its check said to give up, or its time ran out without the condition being met). Decide what to do next.", name, name), from, note, true
-	case "nudge":
-		return string(input), fmt.Sprintf("Jarvis's watchdog (the session idled %d min while %d background jobs ran)", d.Minutes, d.Jobs), "", true
 	case "continue":
 		return string(input), "Jarvis's login check (the session stopped on “Please run /login”; its login is in step again)", "", true
 	case "upgraded":
@@ -238,11 +235,11 @@ func messageOrigin(sid string, d Delivery) *Origin {
 	return nil
 }
 
-// replaceKey: a newer message of the same thing replaces one still pending (the watchdog's next check-in, a cron's
+// replaceKey: a newer message of the same thing replaces one still pending (the next login “continue”, a cron's
 // next run); "" = each stands alone
 func replaceKey(d Delivery) string {
 	switch d.Kind {
-	case "nudge", "continue", "upgraded":
+	case "continue", "upgraded":
 		return d.Kind
 	case "lease-granted", "lease-taken", "lease-back":
 		return "lease " + d.Device

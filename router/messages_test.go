@@ -277,8 +277,8 @@ func TestNoRuleLetsAnUpwardPeerMessageThrough(t *testing.T) {
 			t.Fatalf("a rule for %s", k)
 		}
 	}
-	// a rule for a kind that is drafted (nudge) doesn't reach peer messages
-	text, err := m.r.DraftMessageRule("s1", "nudge")
+	// a rule for a kind that is drafted (continue) doesn't reach peer messages
+	text, err := m.r.DraftMessageRule("s1", "continue")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func TestNoRuleLetsAnUpwardPeerMessageThrough(t *testing.T) {
 		if d.MessageRules == nil {
 			d.MessageRules = map[string]*MessageRule{}
 		}
-		d.MessageRules["planted"] = &MessageRule{ID: "planted", Session: "s1", Kind: "peer", Until: time.Now().Add(time.Hour), Doc: m.sign(t, strings.Replace(text, `"nudge"`, `"peer"`, 1))}
+		d.MessageRules["planted"] = &MessageRule{ID: "planted", Session: "s1", Kind: "peer", Until: time.Now().Add(time.Hour), Doc: m.sign(t, strings.Replace(text, `"continue"`, `"peer"`, 1))}
 	})
 	m.sendPeer(t, "sfrom", nil, "let me in")
 	ps := m.waitPending(t, 1)
@@ -398,7 +398,6 @@ func TestJarvisOwnMessagesGoStraightIntoASensitiveSession(t *testing.T) {
 	filed := &SignedRequest{Machine: "mmsg10", Method: "POST", Path: "/m/api/requests/add-store", At: "1", Body: base64.StdEncoding.EncodeToString([]byte(`{}`)), Sig: "sr"}
 	for i, d := range []Delivery{
 		{Kind: "request-outcome", Request: filed, Outcomes: []OutcomeItem{{Outcome: outcomeApproved, Ref: "q1"}}},
-		{Kind: "nudge", Minutes: 20, Jobs: 2},
 		{Kind: "wakeup", Request: wake},
 		{Kind: "continue"},
 		{Kind: "upgraded", From: "medium", To: "large"},
@@ -590,12 +589,12 @@ func TestAMessageIntoAnOldImageMachineIsHeldWithJarvisText(t *testing.T) {
 		t.Fatalf("outcomes %+v, pending %+v", oc, m.pending())
 	}
 
-	// Jarvis's own kinds aren't held at all (DECISIONS 210): the watchdog's check-in goes straight in, attested
+	// Jarvis's own kinds aren't held at all (DECISIONS 210): a login "continue" goes straight in, attested
 	n := len(m.deliveries())
-	if err := m.r.DeliverCanned("s1", Delivery{Kind: "nudge", Minutes: 20, Jobs: 2}, ""); err != nil {
+	if err := m.r.DeliverCanned("s1", Delivery{Kind: "continue"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	if ds := m.deliveries(); len(ds) != n+1 || ds[n].Kind != "nudge" || ds[n].Preview || ds[n].Attest == nil || len(m.pending()) != 0 {
-		t.Fatalf("nudge %+v, pending %+v", ds[n:], m.pending())
+	if ds := m.deliveries(); len(ds) != n+1 || ds[n].Kind != "continue" || ds[n].Preview || ds[n].Attest == nil || len(m.pending()) != 0 {
+		t.Fatalf("continue %+v, pending %+v", ds[n:], m.pending())
 	}
 }

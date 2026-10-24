@@ -433,7 +433,7 @@ func harnessFixed(v Vouched, me string, firstMachine bool) map[string]string {
 var vouchedPath = dir + "/vouched.json" // a var so tests can move it
 
 func writeVouched(v Vouched) {
-	b, _ := json.Marshal(map[string]any{"liveSyncSeconds": v.Ex.LiveSyncSeconds, "sessionId": v.Ex.SessionID})
+	b, _ := json.Marshal(map[string]any{"liveSyncSeconds": v.Ex.LiveSyncSeconds, "sessionId": v.Ex.SessionID, "oneShot": v.Config.OneShot})
 	os.WriteFile(vouchedPath, b, 0o644)
 }
 
@@ -449,6 +449,17 @@ func sessionID(me string) string {
 		}
 	}
 	return me
+}
+
+func readVouchedBool(k string) bool {
+	b, err := os.ReadFile(vouchedPath)
+	if err != nil {
+		return false
+	}
+	var m map[string]any
+	json.Unmarshal(b, &m)
+	v, _ := m[k].(bool)
+	return v
 }
 
 func readVouchedInt(k string) int {

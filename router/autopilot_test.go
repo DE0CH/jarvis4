@@ -192,8 +192,8 @@ func TestStaleWaitingEscapeOnce(t *testing.T) {
 		t.Fatal("escaped twice in one episode")
 	}
 	// refused before: backing off
-	l.waiting.cancelled = false
-	l.grantRetry = map[string]time.Time{"status": later.Add(time.Minute)}
+	l.Waiting.Cancelled = false
+	l.GrantRetry = map[string]time.Time{"status": later.Add(time.Minute)}
 	if a := planTick(d, later, nil, c, no, no); strings.Contains(kinds(a), "escape") {
 		t.Fatal("escaped while backing off from a refusal")
 	}
@@ -218,49 +218,18 @@ func TestAttentionDM(t *testing.T) {
 		t.Fatal("pinged twice")
 	}
 	// muted idle ping
-	l.settled, l.NotifyIdleOff = nil, true
+	l.Settled, l.NotifyIdleOff = nil, true
 	planTick(d, now, nil, c, no, no)
 	if a := planTick(d, t5, nil, c, no, no); strings.Contains(kinds(a), "dm") {
 		t.Fatal("idle ping is muted")
 	}
 	// no report for a while = dead, which still pings
 	l.LastReport = now.Add(-time.Hour)
-	l.settled = nil
+	l.Settled = nil
 	planTick(d, now, nil, c, no, no)
 	a = planTick(d, t5, nil, c, no, no)
 	if len(a) != 1 || !strings.Contains(a[0].Text, "isn't running a live Claude session") {
 		t.Fatalf("dead: %+v", a)
-	}
-}
-
-func TestStallNudgeRepeats(t *testing.T) {
-	c, now := defaultPilot, time.Now()
-	l := &Liveness{AutoPauseOff: true}
-	d := running("s1", l)
-	no := func(string) bool { return false }
-	g := &Registry{Status: "idle", BgTasks: 2, StatusUpdatedAt: 3}
-	report(l, now, g)
-	planTick(d, now, nil, c, no, no)
-	for i := 1; i <= 2; i++ {
-		at := now.Add(time.Duration(i) * c.StallNudge)
-		report(l, at, g)
-		a := planTick(d, at, nil, c, no, no)
-		found := false
-		for _, x := range a {
-			if x.Kind == "nudge" && strings.HasPrefix(x.Text, "Jarvis watchdog: this session has been idle for 15 min while 2 background jobs have") {
-				found = true
-			}
-		}
-		if !found {
-			t.Fatalf("nudge %d: %+v", i, a)
-		}
-	}
-	// a turn (statusUpdatedAt changed) restarts the clock
-	g2 := &Registry{Status: "idle", BgTasks: 2, StatusUpdatedAt: 4}
-	at := now.Add(3 * c.StallNudge)
-	report(l, at, g2)
-	if a := planTick(d, at, nil, c, no, no); strings.Contains(kinds(a), "nudge") {
-		t.Fatal("nudged right after a turn")
 	}
 }
 
@@ -290,7 +259,10 @@ func TestLoginContinueOnly(t *testing.T) {
 	if len(a) != 1 || a[0].Kind != "login" || a[0].Repair != "u1" {
 		t.Fatalf("continue: %+v", a)
 	}
-	l.loginBusy = false
+	if a := planTick(d, now.Add(time.Minute), stored, c, no, no); strings.Contains(kinds(a), "login") {
+		t.Fatal("continued while the first is under way")
+	}
+	l.LoginBusyAt = time.Time{}
 	if a := planTick(d, now.Add(time.Hour), stored, c, no, no); strings.Contains(kinds(a), "login") {
 		t.Fatal("continued the same error twice")
 	}
@@ -495,7 +467,7 @@ func TestStatusRefusalClearsAfterWaiting(t *testing.T) {
 	no := func(string) bool { return false }
 	report(l, now, &Registry{Status: "waiting", StatusUpdatedAt: 3})
 	planTick(d, now, nil, c, no, no)
-	l.NeedsGrant, l.grantRetry = "status", map[string]time.Time{"status": now.Add(time.Hour)}
+	l.NeedsGrant, l.GrantRetry = "status", map[string]time.Time{"status": now.Add(time.Hour)}
 	planTick(d, now, nil, c, no, no)
 	if l.NeedsGrant != "status" {
 		t.Fatal("cleared while still waiting")
@@ -513,74 +485,6 @@ func TestStatusRefusalClearsAfterWaiting(t *testing.T) {
 	}
 }
 
-// the stall watchdog's 15 minutes survive router restarts (frequent deploys used to restart them, so no nudge came)
-func TestStallClockSurvivesRestart(t *testing.T) {
-	c, now := defaultPilot, time.Now()
-	c.Attention = 1000 * time.Hour
-	no := func(string) bool { return false }
-	l := &Liveness{AutoPauseOff: true}
-	d := running("s1", l)
-	stuck := &Registry{Status: "idle", BgTasks: 1, StatusUpdatedAt: 5}
-	report(l, now, stuck)
-	planTick(d, now, nil, c, no, no)
-	for at := now.Add(5 * time.Minute); at.Before(now.Add(c.StallNudge)); at = at.Add(5 * time.Minute) {
-		l = &Liveness{AutoPauseOff: true, Stall: l.Stall} // a restart: only the persisted fields survive
-		d = running("s1", l)
-		report(l, at, stuck)
-		if strings.Contains(kinds(planTick(d, at, nil, c, no, no)), "nudge") {
-			t.Fatal("nudged early")
-		}
-	}
-	at := now.Add(c.StallNudge)
-	report(l, at, stuck)
-	if !strings.Contains(kinds(planTick(d, at, nil, c, no, no)), "nudge") {
-		t.Fatal("15 min stalled across restarts didn't nudge")
-	}
-}
-
-// Claude Code keeps "busy" while background jobs run after the turn: the pushed screen tells a running turn apart
-func TestStallNudgeWhileBusyWithJobs(t *testing.T) {
-	c, now := defaultPilot, time.Now()
-	c.Attention = 1000 * time.Hour
-	no := func(string) bool { return false }
-	l := &Liveness{AutoPauseOff: true}
-	d := running("s1", l)
-	busy := &Registry{Status: "busy", BgTasks: 10, StatusUpdatedAt: 9}
-	idleScreen := "────── title ─\n❯ \n──────\n  ⏵⏵ bypass permissions on\n  ◯ general-purpose (+1) 8h 9m · ↓ 391k tokens\n"
-	turnScreen := "\x1b[33m✢\x1b[0m Unfurling… (22s · thought for 12s)\n  ⎿  Tip\n❯ \n"
-	if !turnOnScreen(turnScreen) || turnOnScreen(idleScreen) || turnOnScreen("✻ Worked for 3m 2s\n❯ \n") {
-		t.Fatal("turnOnScreen")
-	}
-	at := func(m int) time.Time { return now.Add(time.Duration(m) * time.Minute) }
-	push := func(m int, sc string) { l.screen = &pushedScreen{snap: TermSnap{Screen: sc}, at: at(m)} }
-	push(0, idleScreen)
-	report(l, now, busy)
-	planTick(d, now, nil, c, no, no)
-	push(15, idleScreen)
-	report(l, at(15), busy)
-	if !strings.Contains(kinds(planTick(d, at(15), nil, c, no, no)), "nudge") {
-		t.Fatal("busy with jobs and no turn on screen for 15 min: no nudge")
-	}
-	// a turn running restarts the clock
-	push(20, turnScreen)
-	report(l, at(20), busy)
-	planTick(d, at(20), nil, c, no, no)
-	if l.Stall != nil {
-		t.Fatal("a running turn kept the clock")
-	}
-	// no fresh screen (a router restart): the clock is kept, nothing decided
-	push(21, idleScreen)
-	report(l, at(21), busy)
-	planTick(d, at(21), nil, c, no, no)
-	kept := l.Stall
-	l.screen = nil
-	report(l, at(22), busy)
-	planTick(d, at(22), nil, c, no, no)
-	if l.Stall != kept || kept == nil {
-		t.Fatal("no screen dropped the clock")
-	}
-}
-
 // a booted machine whose Claude never came up (2026-10-20: Claude Code stuck on its "Settings Error" prompt) fails
 // after HarnessUp with what its screen shows; a host that came up, a busy session or a router-restart without the
 // clock are left alone
@@ -594,7 +498,7 @@ func TestHarnessNeverCameUp(t *testing.T) {
 	no := func(string) bool { return false }
 	report(l, now, nil) // the machine reports, no Claude host in the registry
 	l.BootedAt = now
-	l.screen = &pushedScreen{snap: TermSnap{Screen: "\x1b[1mSettings Error\x1b[0m\n\n /etc/claude-code/managed-settings.json\n   └ Settings file could not be read: EACCES: permission denied, stat\n\n ❯ 1. Fix with Claude\n   2. Exit and fix manually\n   3. Continue without these settings\n"}, at: now}
+	stuckScreen := "\x1b[1mSettings Error\x1b[0m\n\n /etc/claude-code/managed-settings.json\n   └ Settings file could not be read: EACCES: permission denied, stat\n\n ❯ 1. Fix with Claude\n   2. Exit and fix manually\n   3. Continue without these settings\n"
 	if a := planTick(d, now.Add(c.HarnessUp-time.Second), nil, c, no, no); strings.Contains(kinds(a), "harness-stuck") {
 		t.Fatal("failed before HarnessUp")
 	}
@@ -605,21 +509,24 @@ func TestHarnessNeverCameUp(t *testing.T) {
 	if len(a) != 1 || a[0].Kind != "harness-stuck" || a[0].Machine != "m1" {
 		t.Fatalf("got %+v", a)
 	}
-	for _, want := range []string{"didn't come up within 4 min", "Settings Error", "EACCES: permission denied", "3. Continue without these settings", "Resume starts it again"} {
-		if !strings.Contains(a[0].Text, want) {
-			t.Fatalf("%q lacks %q", a[0].Text, want)
-		}
-	}
 	// the router fails it: state failed with the reason, once
 	r := newTestRouter(t)
 	r.st.Do(func(p *persisted) {
 		p.Sessions["s1"] = &Session{ID: "s1", State: "started", MachineID: "m1", Booted: "m1", Harness: "claude", Live: &Liveness{}}
 	})
+	if err := r.st.PutScreen("s1", "m1", TermSnap{Screen: stuckScreen}); err != nil {
+		t.Fatal(err)
+	}
 	r.harnessStuck(a[0])
 	var st, er string
 	r.st.Do(func(p *persisted) { st, er = p.Sessions["s1"].State, p.Sessions["s1"].Error })
-	if st != "failed" || !strings.Contains(er, "Settings Error") {
-		t.Fatalf("state %q error %q", st, er)
+	if st != "failed" {
+		t.Fatalf("state %q", st)
+	}
+	for _, want := range []string{"didn't come up within 4 min", "Settings Error", "EACCES: permission denied", "3. Continue without these settings", "Resume starts it again"} {
+		if !strings.Contains(er, want) {
+			t.Fatalf("%q lacks %q", er, want)
+		}
 	}
 	// a host that came up: nothing
 	l2 := &Liveness{BootedAt: now, HostUp: "m1"}

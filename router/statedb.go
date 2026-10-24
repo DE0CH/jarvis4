@@ -309,15 +309,6 @@ func (s *State) reload(ctx context.Context, q querier) error {
 			x.Cert = c
 		}
 	}
-	// what this replica keeps only in memory goes on across the read: every write by any replica bumps the version,
-	// so a reload is the norm, and it dropped the pushed screen the stall watchdog reads (no nudge for days, Deyao
-	// 2026-10-24: "the 15 minute jarvis watchdog is not running"), the waiting and settled episodes, the memory and
-	// disk watches
-	for id, x := range d.Sessions {
-		if old := s.data.Sessions[id]; old != nil && old.Live != nil && x.Live != nil && old.MachineID == x.MachineID {
-			x.Live.carryMemory(old.Live)
-		}
-	}
 	w, err := rowsOf(&d)
 	if err != nil {
 		return err

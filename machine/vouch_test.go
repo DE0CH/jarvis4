@@ -219,9 +219,11 @@ func TestADeliveryIsTakenOnlyVouchedAndAttested(t *testing.T) {
 		t.Fatal("took a kind this image doesn't know")
 	}
 	// canned texts: the router chooses when, the image what
-	n, _, err := deliveryText(Delivery{Kind: "nudge", Minutes: 30, Jobs: 2}, keys)
-	if err != nil || !strings.HasPrefix(n, "Jarvis watchdog: this session has been idle for 30 min while 2 background jobs") {
+	if n, _, err := deliveryText(Delivery{Kind: "continue"}, keys); err != nil || n != "continue" {
 		t.Fatalf("%q %v", n, err)
+	}
+	if _, _, err := deliveryText(Delivery{Kind: "nudge", Minutes: 30}, keys); err == nil {
+		t.Fatal("took a nudge: the stall watch is the supervisor's own (stall.go)")
 	}
 	cron := Delivery{Kind: "cron", Run: 3, Request: signedRequest(mine, "m1", "POST", "/m/api/sessions/s1/crons", []byte(`{"name":"daily","prompt":"report","everySeconds":86400}`))}
 	if c, _, err := deliveryText(cron, keys); err != nil || c != `[recurring wakeup "daily" — run 3] report` {

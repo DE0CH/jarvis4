@@ -49,11 +49,11 @@ type DiskAlert struct {
 	Detail string    `json:"detail"`
 }
 
-type diskState struct {
-	machine string
-	last    *DiskSample
-	lastAt  time.Time
-	alert   *DiskAlert
+type DiskState struct {
+	Machine string      `json:"machine"`
+	Last    *DiskSample `json:"last,omitempty"`
+	LastAt  time.Time   `json:"lastAt"`
+	Alert   *DiskAlert  `json:"alert,omitempty"`
 }
 
 func (s DiskSample) main() (*DiskFS, string) {
@@ -68,8 +68,8 @@ func (f DiskFS) pct() float64 { return 100 * float64(f.AvailKb) / float64(f.Tota
 func gbText(kb int64) string { return fmt.Sprintf("%.1f GB", float64(kb)/1048576) }
 
 // observe: a sample → true when a new low-disk episode begins (DM it)
-func (d *diskState) observe(s *DiskSample, now time.Time) bool {
-	d.last, d.lastAt = s, now
+func (d *DiskState) observe(s *DiskSample, now time.Time) bool {
+	d.Last, d.LastAt = s, now
 	fs, where := s.main()
 	if fs == nil || fs.TotalKb <= 0 {
 		return false
@@ -77,15 +77,15 @@ func (d *diskState) observe(s *DiskSample, now time.Time) bool {
 	low := fs.pct() < diskLowPct || fs.AvailKb < diskLowMB*1024
 	detail := fmt.Sprintf("%s free of %s on %s", gbText(fs.AvailKb), gbText(fs.TotalKb), where)
 	switch {
-	case low && d.alert == nil:
-		d.alert = &DiskAlert{Since: now, Reason: "it is almost out of disk", Detail: detail}
+	case low && d.Alert == nil:
+		d.Alert = &DiskAlert{Since: now, Reason: "it is almost out of disk", Detail: detail}
 		return true
 	case low:
-		d.alert.Detail = detail
-	case d.alert != nil && fs.pct() >= diskClearPct && fs.AvailKb >= diskClearMB*1024:
-		d.alert = nil
-	case d.alert != nil:
-		d.alert.Detail = detail
+		d.Alert.Detail = detail
+	case d.Alert != nil && fs.pct() >= diskClearPct && fs.AvailKb >= diskClearMB*1024:
+		d.Alert = nil
+	case d.Alert != nil:
+		d.Alert.Detail = detail
 	}
 	return false
 }
@@ -109,26 +109,26 @@ func diskMessage(name string, a *DiskAlert, vol *Volume) string {
 // diskView: the session's disk, diskAlert and diskGb in /api/state (under the state lock)
 func diskView(s *Session, v map[string]any) {
 	v["diskGb"] = s.DiskGB
-	if s.Live == nil || s.Live.disk == nil || s.State != "started" || s.Live.disk.machine != s.MachineID {
+	if s.Live == nil || s.Live.Disk == nil || s.State != "started" || s.Live.Disk.Machine != s.MachineID {
 		return
 	}
-	d := s.Live.disk
-	if d.last == nil || time.Since(d.lastAt) > diskSilent {
+	d := s.Live.Disk
+	if d.Last == nil || time.Since(d.LastAt) > diskSilent {
 		return
 	}
-	fs, _ := d.last.main()
+	fs, _ := d.Last.main()
 	if fs == nil {
 		return
 	}
-	out := map[string]any{"totalMb": fs.TotalKb / 1024, "availMb": fs.AvailKb / 1024, "at": d.lastAt, "volume": d.last.Data != nil && d.last.Data.TotalKb > 0}
-	if r := d.last.Root; r != nil && d.last.Data != nil {
+	out := map[string]any{"totalMb": fs.TotalKb / 1024, "availMb": fs.AvailKb / 1024, "at": d.LastAt, "volume": d.Last.Data != nil && d.Last.Data.TotalKb > 0}
+	if r := d.Last.Root; r != nil && d.Last.Data != nil {
 		out["rootTotalMb"], out["rootAvailMb"] = r.TotalKb/1024, r.AvailKb/1024
 	}
 	v["disk"] = out
-	if d.alert != nil {
-		a := map[string]any{"since": d.alert.Since, "reason": d.alert.Reason, "detail": d.alert.Detail, "canGrow": d.last.Data != nil}
-		if d.last.Data != nil {
-			a["nextGb"] = nextDisk(int(d.last.Data.TotalKb / 1048576))
+	if d.Alert != nil {
+		a := map[string]any{"since": d.Alert.Since, "reason": d.Alert.Reason, "detail": d.Alert.Detail, "canGrow": d.Last.Data != nil}
+		if d.Last.Data != nil {
+			a["nextGb"] = nextDisk(int(d.Last.Data.TotalKb / 1048576))
 		} else {
 			a["why"] = "its machine has no volume: More disk comes with the core release that adds volumes"
 		}
@@ -153,18 +153,18 @@ func (r *Router) registerDisk(app appRoute, m machineRoute) {
 			if s.Live == nil {
 				s.Live = &Liveness{}
 			}
-			if s.Live.disk == nil || s.Live.disk.machine != machine {
-				s.Live.disk = &diskState{machine: machine}
+			if s.Live.Disk == nil || s.Live.Disk.Machine != machine {
+				s.Live.Disk = &DiskState{Machine: machine}
 			}
-			if s.Live.disk.observe(&in, time.Now().UTC()) {
+			if s.Live.Disk.observe(&in, time.Now().UTC()) {
 				dm = sessionName(s, s.Live.Reg)
 			}
 		})
 		if dm != "" {
 			var a *DiskAlert
 			r.st.Do(func(d *persisted) {
-				if s := d.Sessions[d.Machines[machine]]; s != nil && s.Live != nil && s.Live.disk != nil && s.Live.disk.alert != nil {
-					x := *s.Live.disk.alert
+				if s := d.Sessions[d.Machines[machine]]; s != nil && s.Live != nil && s.Live.Disk != nil && s.Live.Disk.Alert != nil {
+					x := *s.Live.Disk.Alert
 					a = &x
 				}
 			})

@@ -167,7 +167,7 @@ PY
   done
 }
 
-# Prompts Jarvis queued with `harness-send --queue` (wakeups, watches, the stall nudge, Deyao's
+# Prompts Jarvis queued with `harness-send --queue` (wakeups, watches, Deyao's
 # resume prompt): deliver oldest first; a failed delivery stays for the next pass (the daemon may
 # still be coming up), and is set aside after 20 tries so it cannot block the ones behind it.
 inbox_loop() {

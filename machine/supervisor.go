@@ -100,6 +100,7 @@ func supervise() error {
 		go memoryReporter(c)        // memory.go: RAM for the router's starvation watch
 		go diskReporter(c)          // disk.go: the root disk and the volume, for the router's low-disk warning
 		go screenReporter(c)        // screen.go: the pane for the read-only terminal
+		go stallWatch()             // stall.go: the 15-minute watchdog on its own harness
 		go serveAPIProxy(c)         // apiproxy.go: $JARVIS_URL for the session scripts
 		go liveSync(c)              // livesync.go: the transcripts to the Storage Box (through the router) for search
 		go startCredsSyncOnMarker() // claudelogin.go: the Claude login sync, once boot leaves its marker

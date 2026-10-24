@@ -23,22 +23,29 @@ type TermSnap struct {
 // pushedScreen: a machine's screen push counts while its heartbeat (30 s) can still be on time
 const screenFresh = 45 * time.Second
 
-type pushedScreen struct {
-	snap TermSnap
-	at   time.Time
+// pushedScreen: the latest pane the session's running machine pushed itself (machine/screen.go; screens.go), if it
+// is fresh
+func (r *Router) pushedScreen(session string) (TermSnap, bool) {
+	snap, age, ok := r.latestScreen(session)
+	if !ok || age >= screenFresh {
+		return TermSnap{}, false
+	}
+	snap.At = time.Now().Add(-age).UTC().Format(time.RFC3339)
+	return snap, true
 }
 
-// pushedScreen: the latest pane the session's machine pushed itself (machine/screen.go), if it is fresh
-func (r *Router) pushedScreen(session string) (TermSnap, bool) {
-	var out TermSnap
-	ok := false
+// latestScreen: the last pane the session's running machine pushed, however old
+func (r *Router) latestScreen(session string) (TermSnap, time.Duration, bool) {
+	var machine string
 	r.st.Do(func(d *persisted) {
-		if s := d.Sessions[session]; s != nil && s.Live != nil && s.Live.screen != nil && s.MachineID != "" && time.Since(s.Live.screen.at) < screenFresh {
-			out, ok = s.Live.screen.snap, true
-			out.At = s.Live.screen.at.UTC().Format(time.RFC3339)
+		if s := d.Sessions[session]; s != nil {
+			machine = s.MachineID
 		}
 	})
-	return out, ok
+	if machine == "" {
+		return TermSnap{}, 0, false
+	}
+	return r.st.Screen(session, machine)
 }
 
 // TermSnapshot: the pane. Viewing needs no grant (Deyao, 2026-10-12): the machine pushes its own capture; only a

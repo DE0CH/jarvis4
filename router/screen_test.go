@@ -1,9 +1,9 @@
 package main
 
 import (
+	"context"
 	"strings"
 	"testing"
-	"time"
 )
 
 // the read-only terminal: the machine pushes its pane, and the terminal shows it with no grant and no exec
@@ -23,9 +23,15 @@ func TestPushedScreenNeedsNoGrant(t *testing.T) {
 		t.Fatal("typing went through without a grant")
 	}
 	// a stale push (no heartbeat) isn't shown; another machine's push doesn't land on this session
-	r.st.Do(func(d *persisted) { d.Sessions["sA"].Live.screen.at = time.Now().Add(-screenFresh) })
+	r.st.sdb.db.pool.Exec(context.Background(), "UPDATE session_screens SET at = now() - interval '46 seconds' WHERE session_id = 'sA'")
 	if _, ok := r.pushedScreen("sA"); ok {
 		t.Fatal("a stale screen was used")
+	}
+	// any replica sees it: another router on the same database
+	r2 := newTestRouterOn(t, r)
+	r.st.PutScreen("sA", "mA", TermSnap{Screen: "fresh"})
+	if s, ok := r2.pushedScreen("sA"); !ok || s.Screen != "fresh" {
+		t.Fatalf("the other replica doesn't see the push: %v %v", s, ok)
 	}
 	addSession(r, "sB", "started", "mB", false)
 	other := newTestMachine(r, "mB")
@@ -38,4 +44,14 @@ func TestPushedScreenNeedsNoGrant(t *testing.T) {
 	if _, ok := r.pushedScreen("sB"); ok {
 		t.Fatal("a paused session's screen")
 	}
+}
+
+// newTestRouterOn: a second router replica on the same database as r
+func newTestRouterOn(t *testing.T, r *Router) *Router {
+	t.Helper()
+	st, err := OpenState(context.Background(), r.st.sdb.db, t.TempDir(), randomSealer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewRouter(Config{NoAccess: true, DataDir: st.dir, WebDir: t.TempDir()}, st, nil, Policy{})
 }

@@ -841,14 +841,11 @@ func (r *Router) registerInbox(app appRoute, m machineRoute, public publicRoute)
 				v := map[string]any{"id": s.ID, "machineId": s.MachineID, "state": s.State, "title": sessionTitle(*s), "image": s.Image, "stores": s.Stores,
 					// failures.go: why it failed and when; lostmachine.go: a machine that stopped outside Jarvis
 					"error": s.Error, "failedAt": s.FailedAt, "lost": s.Lost, "waiting": s.Waiting, "noSnapshot": s.NoSnapshot}
-				// the autopilot's view (no secrets): what the machine last reported and the stall watchdog's clock
+				// the autopilot's view (no secrets): what the machine last reported
 				if l := s.Live; l != nil {
-					v["lastReport"], v["nudgeAt"], v["nudgeError"], v["needsGrant"] = l.LastReport, l.NudgeAt, l.NudgeError, l.NeedsGrant
+					v["lastReport"], v["needsGrant"] = l.LastReport, l.NeedsGrant
 					if g := l.Reg; g != nil {
 						v["status"], v["bgTasks"], v["statusUpdatedAt"] = g.Status, g.BgTasks, g.StatusUpdatedAt
-					}
-					if l.Stall != nil {
-						v["stallSince"] = l.Stall.At
 					}
 					v["busy"] = r.busy(s.ID)
 				}

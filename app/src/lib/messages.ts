@@ -1,5 +1,5 @@
 // Pending messages (docs/API.md "Messages", router: per-message delivery approval): a message Jarvis wants to deliver
-// into a session holding a sensitive store (a wakeup, a watchdog check-in, …) or a resume prompt waits in the Inbox
+// into a session holding a sensitive store (a wakeup, a login “continue”, …) or a resume prompt waits in the Inbox
 // until Deyao delivers it (the phone signs THAT message, Face ID) or denies it. The Inbox shows a session's pending
 // messages together, as one entry. Pure functions only (npm test imports this file directly).
 import type { InboxItem, PendingMessage } from "./api";

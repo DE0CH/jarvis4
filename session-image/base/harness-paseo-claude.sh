@@ -172,7 +172,7 @@ PY
   done
 }
 
-# Prompts Jarvis queued with `harness-send --queue` (wakeups, watches, the stall nudge, "continue" after an
+# Prompts Jarvis queued with `harness-send --queue` (wakeups, watches, "continue" after an
 # account switch, Deyao's resume prompt): oldest first, each only once the main agent is idle (Paseo's send would
 # interrupt a running turn), retried, set aside after 20 failed tries.
 inbox_loop() {

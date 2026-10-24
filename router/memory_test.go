@@ -16,9 +16,9 @@ func f64(x float64) *float64 { return &x }
 
 func TestMemWatchEpisodes(t *testing.T) {
 	now := time.Now()
-	m := &memState{machine: "m1"}
+	m := &MemState{Machine: "m1"}
 	healthy := &MemSample{TotalKb: 4 << 20, AvailKb: 2 << 20, OOMKills: i64(0), PSIFull60: f64(0)}
-	if m.observe(healthy, now) || m.alert != nil {
+	if m.observe(healthy, now) || m.Alert != nil {
 		t.Fatal("a healthy machine starts no episode")
 	}
 	// the kernel killed something
@@ -27,28 +27,28 @@ func TestMemWatchEpisodes(t *testing.T) {
 	if !m.observe(oom, now.Add(10*time.Second)) {
 		t.Fatal("an OOM kill starts an episode")
 	}
-	if !strings.Contains(m.alert.Reason, "killed 2 processes") || m.alert.Detail != "400 MB free of 4.0 GB (biggest: claude 0.9 GB, chrome 0.3 GB)" {
-		t.Fatalf("%+v", m.alert)
+	if !strings.Contains(m.Alert.Reason, "killed 2 processes") || m.Alert.Detail != "400 MB free of 4.0 GB (biggest: claude 0.9 GB, chrome 0.3 GB)" {
+		t.Fatalf("%+v", m.Alert)
 	}
 	// more starvation in the same episode: no second DM
 	thrash := &MemSample{TotalKb: 4 << 20, AvailKb: 300 << 10, OOMKills: i64(2), PSIFull60: f64(25)}
-	if m.observe(thrash, now.Add(20*time.Second)) || !strings.Contains(m.alert.Reason, "thrashing") {
-		t.Fatalf("%+v", m.alert)
+	if m.observe(thrash, now.Add(20*time.Second)) || !strings.Contains(m.Alert.Reason, "thrashing") {
+		t.Fatalf("%+v", m.Alert)
 	}
 	// healthy for less than memClear: still on; then off
 	healthy = &MemSample{TotalKb: 4 << 20, AvailKb: 2 << 20, OOMKills: i64(2), PSIFull60: f64(0)}
 	m.observe(healthy, now.Add(time.Minute))
-	if m.alert == nil {
+	if m.Alert == nil {
 		t.Fatal("cleared too early")
 	}
 	m.observe(healthy, now.Add(time.Minute+memClear))
-	if m.alert != nil {
+	if m.Alert != nil {
 		t.Fatal("not cleared after memClear of healthy samples")
 	}
 	// almost out
 	low := &MemSample{TotalKb: 4 << 20, AvailKb: 100 << 10, OOMKills: i64(2)}
-	if !m.observe(low, now.Add(time.Hour)) || m.alert.Reason != "it is almost out of memory" {
-		t.Fatalf("%+v", m.alert)
+	if !m.observe(low, now.Add(time.Hour)) || m.Alert.Reason != "it is almost out of memory" {
+		t.Fatalf("%+v", m.Alert)
 	}
 }
 
@@ -57,10 +57,10 @@ func TestMemSilentTick(t *testing.T) {
 	short := &MemSample{TotalKb: 4 << 20, AvailKb: 300 << 10}
 	d := &persisted{Sessions: map[string]*Session{
 		"s1": {ID: "s1", Label: "Busy one", State: "started", MachineID: "m1", Size: "small",
-			Live: &Liveness{mem: &memState{machine: "m1", last: short, lastAt: now.Add(-2 * time.Minute)}}},
+			Live: &Liveness{Mem: &MemState{Machine: "m1", Last: short, LastAt: now.Add(-2 * time.Minute)}}},
 		"s2": {ID: "s2", State: "started", MachineID: "m2",
-			Live: &Liveness{mem: &memState{machine: "m2", last: &MemSample{TotalKb: 4 << 20, AvailKb: 3 << 20}, lastAt: now.Add(-2 * time.Minute)}}},
-		"s3": {ID: "s3", State: "paused", Live: &Liveness{mem: &memState{machine: "m3", last: short, lastAt: now.Add(-time.Hour)}}},
+			Live: &Liveness{Mem: &MemState{Machine: "m2", Last: &MemSample{TotalKb: 4 << 20, AvailKb: 3 << 20}, LastAt: now.Add(-2 * time.Minute)}}},
+		"s3": {ID: "s3", State: "paused", Live: &Liveness{Mem: &MemState{Machine: "m3", Last: short, LastAt: now.Add(-time.Hour)}}},
 	}}
 	dms := memSilentTick(d, now)
 	if len(dms) != 1 || !strings.Contains(dms[0], "“Busy one”") || !strings.Contains(dms[0], "stopped answering") || !strings.Contains(dms[0], "medium (4 GB)") {
@@ -69,10 +69,10 @@ func TestMemSilentTick(t *testing.T) {
 	if len(memSilentTick(d, now.Add(time.Minute))) != 0 {
 		t.Fatal("one DM per episode")
 	}
-	if d.Sessions["s3"].Live.mem != nil {
+	if d.Sessions["s3"].Live.Mem != nil {
 		t.Fatal("a paused session's watch is dropped")
 	}
-	if d.Sessions["s2"].Live.mem.alert != nil {
+	if d.Sessions["s2"].Live.Mem.Alert != nil {
 		t.Fatal("a silent machine with plenty of memory isn't starving")
 	}
 }
@@ -202,7 +202,7 @@ func TestMemUpgradeOffersOnlySizesTheCoreStarts(t *testing.T) {
 	if msg := memMessage("x", "medium", a); !strings.Contains(msg, "One tap moves it to large (8 GB)") {
 		t.Fatalf("%q", msg)
 	}
-	s := &Session{ID: "s1", State: "started", MachineID: "m1", Size: "large", Live: &Liveness{mem: &memState{machine: "m1", alert: a}}}
+	s := &Session{ID: "s1", State: "started", MachineID: "m1", Size: "large", Live: &Liveness{Mem: &MemState{Machine: "m1", Alert: a}}}
 	v := map[string]any{}
 	memView(s, v)
 	if m := v["memAlert"].(map[string]any); m["nextSize"] != nil || m["nextGb"] != nil {

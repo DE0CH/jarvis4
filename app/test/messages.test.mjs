@@ -6,14 +6,14 @@ import { readFileSync } from "node:fs";
 import { groupMessages, groupTitle, inboxEntries } from "../src/lib/messages.ts";
 
 const item = (id, session, sessionName, created, extra = {}) => ({
-  id, kind: "message", session, sessionName, caller: { kind: "router" }, callerText: "Jarvis's watchdog (the stall check)",
-  explanation: "Watchdog check-in", params: { session, text: "text of " + id }, created, expires: "2026-10-20T13:00:00Z",
+  id, kind: "message", session, sessionName, caller: { kind: "router" }, callerText: "Jarvis's login check",
+  explanation: "Login “continue”", params: { session, text: "text of " + id }, created, expires: "2026-10-20T13:00:00Z",
   open: { kind: "message", options: { messageId: id, sessionId: session } }, ...extra,
 });
 const pending = (id, session, sessionName, created, extra = {}) => ({
-  id, session, sessionName, kind: "nudge", kindLabel: "Watchdog check-in", from: "Jarvis's watchdog (the stall check)",
+  id, session, sessionName, kind: "continue", kindLabel: "Login “continue”", from: "Jarvis's login check",
   text: "line one\nline two of " + id, note: "", sha256: "0".repeat(64), created, expires: "2026-10-20T13:00:00Z",
-  state: "pending", error: "", ruleable: true, ruleText: "Always deliver Jarvis's watchdog check-ins to this session", ...extra,
+  state: "pending", error: "", ruleable: true, ruleText: "Always deliver Jarvis's login “continue” to this session", ...extra,
 });
 
 test("a session's pending messages are one group, oldest first, other sessions apart", () => {
@@ -34,7 +34,7 @@ test("a session's pending messages are one group, oldest first, other sessions a
   assert.equal(g[1].messages[1].from, "the wakeup “daily”");
   // an item the state doesn't list falls back to the Inbox item's own fields
   assert.equal(g[0].messages[0].text, "text of mq-a1");
-  assert.equal(g[0].messages[0].kindLabel, "Watchdog check-in");
+  assert.equal(g[0].messages[0].kindLabel, "Login “continue”");
   // the badge: one per session's group, plus the other requests
   assert.equal(inboxEntries(items, msgs), 3);
 });

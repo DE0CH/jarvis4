@@ -201,7 +201,7 @@ func (r *Router) AddGrant(session string, doc *Doc) (*StoredGrant, error) {
 		// loop kept its 10-minute back-off after a refusal, so a 10-minute grant often ran out unused and the
 		// callout stayed — the button looked like it did nothing (2026-10-11)
 		if s.Live != nil {
-			delete(s.Live.grantRetry, holder)
+			delete(s.Live.GrantRetry, holder)
 			if s.Live.NeedsGrant == holder {
 				s.Live.NeedsGrant = ""
 			}
