@@ -16,8 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       openssh-client rsync wget age htop sqlite3 file dnsutils iputils-ping librsvg2-bin \
       psmisc lsof iproute2 sshpass pv zstd libzbar0 whois gawk \
       libreoffice-impress libreoffice-writer libreoffice-calc poppler-utils \
-      xdotool xclip imagemagick \
+      xdotool xclip imagemagick postgresql python3-nacl \
  && rm -rf /var/lib/apt/lists/*
+# postgresql: a local server for the Jarvis router's tests (TEST_DATABASE_URL; `sudo pg_ctlcluster 16 main start`);
+# python3-nacl: sealed boxes for GitHub Actions secrets (the REST API's encrypted_value)
 # libreoffice-writer/impress/calc + poppler-utils: open and convert Office documents (soffice --convert-to pdf, pdftoppm;
 # calc recalculates .xlsx formulas, e.g. YCC expenses/claim_docs.py);
 # python-pptx (below) extracts their text.
