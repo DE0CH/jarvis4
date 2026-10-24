@@ -31,8 +31,10 @@ import (
 
 	"github.com/DE0CH/jarvis4/kernel/doc"
 	"github.com/DE0CH/jarvis4/kernel/gv"
+	"github.com/DE0CH/jarvis4/kernel/notarizer"
 	"github.com/DE0CH/jarvis4/kernel/perm"
 	"github.com/DE0CH/jarvis4/kernel/sig"
+	"github.com/DE0CH/jarvis4/kernel/spawner"
 )
 
 // KernelLine: where a kernel line is, as documents
@@ -197,24 +199,41 @@ func (r *Router) kernelSpawn(sid string) {
 	if size == "" {
 		size = "medium"
 	}
-	in := map[string]any{"cert": l.SourceCert, "notarized": l.SourceNz, "notarizer": nzID, "region": r.cfg.Region, "size": size, "diskGb": s.DiskGB}
-	op.note("", "asked the kernel's spawner to start a machine from "+string(l.Source)+" ("+size+")")
-	d, err := r.kernel.Doc("spawner", "/spawn", in)
-	if err != nil {
-		if strings.Contains(err.Error(), "no Fly token") && r.kernelTokenDMed.CompareAndSwap(false, true) {
+	gb := s.DiskGB
+	if gb == 0 {
+		gb = defaultDisk
+	}
+	id, vol := r.kernelAdopt(op, l.Source)
+	for try := 1; id == ""; try++ {
+		in := map[string]any{"cert": l.SourceCert, "notarized": l.SourceNz, "notarizer": nzID, "region": r.cfg.Region, "size": size, "diskGb": gb}
+		op.note("", "asked the kernel's spawner to start a machine from "+string(l.Source)+" ("+size+")")
+		d, err := r.kernel.Doc("spawner", "/spawn", in)
+		if err == nil {
+			var created struct {
+				ID     string `json:"id"`
+				Volume string `json:"volume"`
+			}
+			json.Unmarshal([]byte(d.Payload), &created)
+			id, vol = created.ID, created.Volume
+			break
+		}
+		var ke *KernelError
+		isKE := errors.As(err, &ke)
+		if isKE && ke.Reason == spawner.ReasonNoFlyToken && r.kernelTokenDMed.CompareAndSwap(false, true) {
 			// a restarted spawner: its token comes again with the app's Recover of the kernel, or from the setup session
 			r.DM("🔴 Jarvis 4 needs you — the kernel's spawner has no Fly token (it restarted), so no kernel session starts. Settings → Kernel → Recover gives it the token again (or the setup session: infra/setup.py kernel-fly-token).")
 		}
-		fail("start: " + err.Error())
-		return
+		// Fly's host for the volume was full (the spawner deleted that volume: a new spawn is a new volume, on another
+		// host), Fly failed, or the answer was lost (the machine it made, if any, is found and adopted or destroyed)
+		again := !isKE || ke.Reason == spawner.ReasonHostFull || ke.Reason == spawner.ReasonFly
+		if !again || try >= kernelSpawnTries {
+			fail("start: " + err.Error())
+			return
+		}
+		op.note("", fmt.Sprintf("the spawn failed (%v): try %d of %d", err, try+1, kernelSpawnTries))
+		time.Sleep(kernelInitStep)
+		id, vol = r.kernelAdopt(op, l.Source)
 	}
-	var created struct {
-		ID     string `json:"id"`
-		Volume string `json:"volume"`
-		DiskGB int    `json:"diskGb"`
-	}
-	json.Unmarshal([]byte(d.Payload), &created)
-	id := created.ID
 	op.machine(id)
 	pred := ""
 	if sc, err := doc.PeekCert(*l.SourceCert); err == nil && sc.Pred.Kind() == "fly" {
@@ -222,7 +241,7 @@ func (r *Router) kernelSpawn(sid string) {
 	}
 	r.st.Do(func(d *persisted) {
 		d.Machines[id] = sid
-		d.Started[id] = &Started{ID: id, KernelPred: pred, Volume: &Volume{ID: created.Volume, SizeGB: created.DiskGB, Path: "/data"}}
+		d.Started[id] = &Started{ID: id, KernelPred: pred, Volume: &Volume{ID: vol, SizeGB: gb, Path: "/data"}}
 	})
 	var mcert sig.Doc
 	for deadline := time.Now().Add(kernelInitMax); ; {
@@ -231,8 +250,8 @@ func (r *Router) kernelSpawn(sid string) {
 			break
 		}
 		var ke *KernelError
-		if !(errors.As(err, &ke) && (ke.Status == 409 || ke.Status == 502)) || time.Now().After(deadline) {
-			r.kernel.Doc("spawner", "/kill", map[string]any{"id": id})
+		if !(errors.As(err, &ke) && (ke.Reason == spawner.ReasonNotStarted || ke.Reason == spawner.ReasonFly)) || time.Now().After(deadline) {
+			r.kernelKillUp(id, nil)
 			fail("start: " + err.Error())
 			return
 		}
@@ -254,7 +273,7 @@ func (r *Router) kernelSpawn(sid string) {
 		}
 	}
 	if err != nil {
-		r.kernel.Doc("spawner", "/kill", map[string]any{"id": id})
+		r.kernelKillUp(id, nil)
 		fail("start: " + err.Error())
 		return
 	}
@@ -262,28 +281,137 @@ func (r *Router) kernelSpawn(sid string) {
 	go r.lcAwaitBoot(op, sid, id)
 }
 
-// kernelKill: the spawner kills the machine with its snapshot (required: keep it rather than lose its state), the
-// cert into the new source is notarized and the grant moves onto it. The snapshot hash it names ("" = none).
-// destroying: the line ends here, so the grant isn't moved (nothing takes it from the source, which the burn ends):
-// a grant signed by a mover that has since restarted (new keys) no longer opens, and must not block a destroy; a
-// repeat after the notarization went through finds the source already defined, which is the same outcome
-func (r *Router) kernelKill(sid, machine string, required, destroying bool) (string, error) {
+// kernelSpawnTries: how many spawns a start makes (each a new volume: one on a full host is deleted by the spawner)
+const kernelSpawnTries = 3
+
+// kernelAdopt: the machine an earlier spawn from this source made whose answer was lost (a crash, a timeout, another
+// replica's start that died), found with the router's read-only Fly token by the source its Fly metadata names → its
+// id and volume ("" = none). One the spawner knows (its init answers anything but unknown-machine) is adopted; every
+// other one is destroyed through the spawner. Only one machine of a source can take the line either way: the
+// notarizer refuses a source's second successor.
+func (r *Router) kernelAdopt(op *lcHandle, source doc.Object) (string, string) {
+	ms, err := listFlyMachines()
+	if err != nil {
+		log.Printf("[kernel] %s: no look for an earlier spawn's machine (%v)", source, err)
+		return "", ""
+	}
+	id, vol := "", ""
+	for _, m := range ms {
+		if m.Config.Metadata[spawner.SourceMeta] != string(source) || m.State == "destroyed" || m.State == "destroying" {
+			continue
+		}
+		if id == "" {
+			_, err := r.kernel.Doc("spawner", "/init", map[string]string{"id": m.ID})
+			var ke *KernelError
+			if err == nil || !(errors.As(err, &ke) && ke.Reason == spawner.ReasonUnknown) {
+				id = m.ID
+				if len(m.Config.Mounts) > 0 {
+					vol = m.Config.Mounts[0].Volume
+				}
+				op.note(m.ID, "machine "+m.ID+" from "+string(source)+" (an earlier spawn whose answer was lost) is the line's")
+				continue
+			}
+		}
+		op.note(m.ID, "machine "+m.ID+" from "+string(source)+" is a stray of an earlier spawn: asked the spawner to destroy it")
+		if _, err := r.kernel.Doc("spawner", "/destroy", map[string]string{"id": m.ID}); err != nil {
+			log.Printf("[kernel] stray %s: destroy: %v", m.ID, err)
+		}
+	}
+	return id, vol
+}
+
+// kernelKillUp: one kill of a kernel machine (snapshot: what it signed, nil = none) → the kill's cert. Fly's destroy is
+// waited for here (the spawner answers not-destroyed meanwhile); a volume the spawner's delete didn't take is kept in
+// its Started record (KernelVolumeLeft) for the leader to kill again (kernelVolumesTick).
+func (r *Router) kernelKillUp(machine string, snapshot map[string]any) (sig.Doc, error) {
 	in := map[string]any{"id": machine}
-	if s := r.snap(machine); s != nil && s.State == "committed" {
-		in["snapshot"] = map[string]any{"sha256": s.Sha256, "sig": s.Sig, "required": required}
-	} else if required {
-		in["snapshot"] = map[string]any{"required": true}
+	if snapshot != nil {
+		in["snapshot"] = snapshot
 	}
 	var d sig.Doc
 	var err error
 	for i := 0; ; i++ {
 		d, err = r.kernel.Doc("spawner", "/kill", in)
 		var ke *KernelError
-		if err == nil || !(errors.As(err, &ke) && ke.Status == 409 && strings.Contains(ke.Msg, "not destroyed yet")) || i > 120 {
+		if err == nil || !(errors.As(err, &ke) && ke.Reason == spawner.ReasonNotDestroyed) || i > 120 {
 			break
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(kernelKillStep)
 	}
+	if err != nil {
+		return sig.Doc{}, err
+	}
+	var k struct {
+		Cert       sig.Doc `json:"cert"`
+		VolumeLeft string  `json:"volumeLeft"`
+	}
+	if json.Unmarshal([]byte(d.Payload), &k) != nil || k.Cert.Payload == "" {
+		return sig.Doc{}, fmt.Errorf("kernel spawner /kill: no cert in the answer")
+	}
+	r.st.Do(func(dd *persisted) {
+		if st := dd.Started[machine]; st != nil {
+			st.KernelVolumeLeft = k.VolumeLeft
+		}
+	})
+	return k.Cert, nil
+}
+
+// kernelKillStep: the wait between kills while Fly isn't done destroying
+var kernelKillStep = 5 * time.Second
+
+// kernelVolumesTick: every killed kernel machine whose volume is left is killed again (the spawner answers the same
+// cert and tries the volume once more)
+func (r *Router) kernelVolumesTick() {
+	if r.kernel == nil {
+		return
+	}
+	var ms []string
+	r.st.Do(func(d *persisted) {
+		for m, st := range d.Started {
+			if st.KernelVolumeLeft != "" {
+				ms = append(ms, m)
+			}
+		}
+	})
+	for _, m := range ms {
+		if _, err := r.kernelKillUp(m, nil); err != nil {
+			log.Printf("[kernel] %s's volume: kill again: %v", m, err)
+		}
+	}
+}
+
+func (r *Router) kernelVolumesLoop() {
+	for {
+		awaitLead() // leaderlease.go
+		r.kernelVolumesTick()
+		time.Sleep(time.Minute)
+	}
+}
+
+// kernelKill: the spawner kills the machine with its snapshot, the cert into the new source is notarized and the grant
+// moves onto it. The snapshot hash it names ("" = none). required: keep the machine rather than lose its state: with
+// no committed snapshot signed by the machine's key the router doesn't ask for the kill.
+// destroying: the line ends here, so the grant isn't moved (nothing takes it from the source, which the burn ends):
+// a grant signed by a mover that has since restarted (new keys) no longer opens, and must not block a destroy; a
+// repeat after the notarization went through finds the source already defined, which is the same outcome
+func (r *Router) kernelKill(sid, machine string, required, destroying bool) (string, error) {
+	var snapshot map[string]any
+	key := ""
+	r.st.Do(func(d *persisted) {
+		if st := d.Started[machine]; st != nil {
+			key = st.SigningKey
+		}
+	})
+	if s := r.snap(machine); s != nil && s.State == "committed" && key != "" && sig.Verify(key, []byte(s.Sha256), s.Sig) {
+		snapshot = map[string]any{"sha256": s.Sha256, "sig": s.Sig}
+	} else if required {
+		why := "no snapshot"
+		if s != nil && s.State == "committed" {
+			why = "its snapshot isn't signed by its key"
+		}
+		return "", fmt.Errorf("machine %s is kept, not killed: %s", machine, why)
+	}
+	d, err := r.kernelKillUp(machine, snapshot)
 	if err != nil {
 		return "", err
 	}
@@ -293,7 +421,7 @@ func (r *Router) kernelKill(sid, machine string, required, destroying bool) (str
 	}
 	nz, err := r.kernel.Notarize(d)
 	var ke *KernelError
-	if destroying && err != nil && errors.As(err, &ke) && ke.Status == 409 && strings.Contains(ke.Msg, string(c.Succ)+" is already defined") {
+	if destroying && err != nil && errors.As(err, &ke) && ke.Reason == notarizer.ReasonDefined {
 		err = nil // an earlier try of this destroy notarized it (the spawner's kill cert, and its source id, are kept)
 	}
 	if err != nil {
@@ -524,8 +652,8 @@ func (r *Router) kernelResume(s Session, upgrade bool, unlock func(), op *lcHand
 }
 
 // kernelContinue: a kernel line's start or resume whose job another replica held when it died, carried on from where
-// the records say it is (every step is safe to repeat: the spawner answers a repeated spawn of a source with the
-// machine it made for it, kernel/spawner; its keys, the notarization and the move come again):
+// the records say it is (every step is safe to repeat: a spawn adopts the machine an earlier spawn of the source made,
+// kernelAdopt; its keys, the notarization and the move come again):
 //
 //	resuming with its old machine still on it  → the pause first, then the spawn (as kernelResume)
 //	starting / resuming with no machine         → the spawn from the kept source

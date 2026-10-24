@@ -9,10 +9,10 @@ package spawner
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,28 +24,46 @@ type MachineKeys struct {
 	SigningKey    string `json:"signingKey"`
 }
 
-// FlyMachine: a machine's state and the image Fly runs (registry/repository@sha256:…)
+// FlyMachine: a machine's state, the image Fly runs (registry/repository@sha256:…), the volume it mounts and the
+// source its Fly metadata names (SourceMeta; "" on a machine the spawner didn't make)
 type FlyMachine struct {
-	State string
-	Image string
+	State  string
+	Image  string
+	Volume string
+	Source string
 }
 
 // Fly: single calls, no waiting or retrying (the router retries)
 type Fly interface {
 	Configure(token string)
+	// CreateVolume: an empty volume; guest is the machine's size, Fly's hint to put the volume on a host with room for
+	// that machine (a volume is pinned to its host)
 	CreateVolume(region string, sizeGB int, guest map[string]any) (string, error)
-	// Create: a machine whose Fly metadata names the spawn it is for (spawnKey: the cert's id), so a spawn whose
-	// answer was lost (a crash, a timeout) finds it again with Find instead of making a second one
-	Create(image, region string, guest map[string]any, env map[string]string, volume, spawnKey string) (string, error)
-	// Find: the machines (not destroyed) whose metadata names spawnKey
-	Find(spawnKey string) ([]string, error)
+	// Create: a machine whose Fly metadata names the source it is from, so the router (with its read-only token)
+	// finds one whose answer was lost
+	Create(image, region string, guest map[string]any, env map[string]string, volume, source string) (string, error)
 	Inspect(id string) (FlyMachine, error)
 	Init(id string) (MachineKeys, error)
 	Destroy(id string) error
-	// Start: a stopped machine started again (its config, image and volume unchanged)
-	Start(id string) error
 	DeleteVolume(volume string) error
-	ExtendVolume(volume string, sizeGB int) (needsRestart bool, err error)
+}
+
+// FlyError: Fly's refusal: its HTTP status and the "status" word of its JSON answer (e.g. volume_placement_capacity)
+type FlyError struct {
+	HTTP   int
+	Status string
+	Msg    string
+}
+
+func (e *FlyError) Error() string { return e.Msg }
+
+// flyStatus: the refusal's HTTP status and Fly's status word (0, "" when err isn't Fly's refusal)
+func flyStatus(err error) (int, string) {
+	var fe *FlyError
+	if errors.As(err, &fe) {
+		return fe.HTTP, fe.Status
+	}
+	return 0, ""
 }
 
 // the session image's one command the spawner may run (session-image/Dockerfile); the Fly token allows only it
@@ -54,15 +72,15 @@ const initPath = "/usr/local/bin/jarvis2-init"
 // FlyApp: the one Fly app the spawner makes machines in
 const FlyApp = "jarvis4-sessions"
 
-// spawnMeta: the Fly metadata key naming the spawn a machine is for
-const spawnMeta = "jarvis4_spawn"
+// SourceMeta: the Fly metadata key naming the source a machine is from (the router lists machines by it)
+const SourceMeta = "jarvis4_source"
 
 const (
 	volumePath = "/data" // where the machine finds its volume (machine/volume.go)
 	volumeName = "jarvis4_state"
 )
 
-// ---- machine sizes (the same block is in router/sizes.go, core/fly.go, kernel/spawner/fly.go and machine/deliver.go; TestSizeBlocksMatch) ----
+// ---- machine sizes (the same block is in router/sizes.go, core/fly.go and machine/deliver.go, and its guest part in kernel/spawner/fly.go; TestSizeBlocksMatch) ----
 
 // The sizes: small (2 GB), medium (4 GB), large (8 GB), then every doubling past large, named by its memory ("16gb",
 // "32gb", …). Upgrade moves a session one step up, and there is no last step: a guest Fly can't make is Fly's to
@@ -98,28 +116,6 @@ func sizeGuest(size string) (cpuKind string, cpus, memoryMB int) {
 	return "performance", max(8, gb/8), gb * 1024
 }
 
-// nextSize: the size Upgrade moves to, twice the memory (a session with no size runs medium)
-func nextSize(size string) string {
-	gb := sizeMemGB(size)
-	if gb == 0 {
-		gb = namedSizes["medium"]
-	}
-	for name, n := range namedSizes {
-		if n == 2*gb {
-			return name
-		}
-	}
-	return strconv.Itoa(2*gb) + "gb"
-}
-
-// sizeText: "large (8 GB)", "16 GB"
-func sizeText(size string) string {
-	if gb := namedSizes[size]; gb != 0 {
-		return fmt.Sprintf("%s (%d GB)", size, gb)
-	}
-	return fmt.Sprintf("%d GB", sizeMemGB(size))
-}
-
 // ---- end of the machine sizes block ----
 
 type FlyAPI struct {
@@ -144,7 +140,7 @@ func (f *FlyAPI) call(method, path string, body any, out any) error {
 	token := f.token
 	f.mu.Unlock()
 	if token == "" {
-		return fmt.Errorf("the spawner has no Fly token yet (infra/setup.py sends it)")
+		return errNoToken
 	}
 	var rd io.Reader
 	if body != nil {
@@ -162,7 +158,11 @@ func (f *FlyAPI) call(method, path string, body any, out any) error {
 	b, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode/100 != 2 {
 		t := strings.TrimSpace(string(b))
-		return fmt.Errorf("%s %s: HTTP %d %s", method, path, resp.StatusCode, t[:min(300, len(t))])
+		var st struct {
+			Status string `json:"status"`
+		}
+		json.Unmarshal(b, &st)
+		return &FlyError{HTTP: resp.StatusCode, Status: st.Status, Msg: fmt.Sprintf("%s %s: HTTP %d %s", method, path, resp.StatusCode, t[:min(300, len(t))])}
 	}
 	if out != nil {
 		return json.Unmarshal(b, out)
@@ -170,17 +170,15 @@ func (f *FlyAPI) call(method, path string, body any, out any) error {
 	return nil
 }
 
+// errNoToken: the spawner restarted and the setup session (or the app's Recover) hasn't sent the token again
+var errNoToken = errors.New("the spawner has no Fly token yet (infra/setup.py sends it)")
+
 func (f *FlyAPI) CreateVolume(region string, sizeGB int, guest map[string]any) (string, error) {
 	var v struct {
 		ID string `json:"id"`
 	}
 	body := map[string]any{"name": volumeName, "region": region, "size_gb": sizeGB, "encrypted": true,
-		"snapshot_retention": 1, "auto_backup_enabled": false, "require_unique_zone": false}
-	if guest != nil {
-		// Fly places the volume on a host with room for a machine of this size: a volume is pinned to its host, and
-		// without the hint Fly may pick one too full for the machine (412 volume_placement_capacity)
-		body["compute"] = guest
-	}
+		"snapshot_retention": 1, "auto_backup_enabled": false, "require_unique_zone": false, "compute": guest}
 	if err := f.call("POST", "/volumes", body, &v); err != nil {
 		return "", err
 	}
@@ -190,62 +188,46 @@ func (f *FlyAPI) CreateVolume(region string, sizeGB int, guest map[string]any) (
 	return v.ID, nil
 }
 
-func (f *FlyAPI) Create(image, region string, guest map[string]any, env map[string]string, volume, spawnKey string) (string, error) {
+func (f *FlyAPI) Create(image, region string, guest map[string]any, env map[string]string, volume, source string) (string, error) {
 	var m struct {
 		ID string `json:"id"`
 	}
 	config := map[string]any{"image": image, "guest": guest, "env": env, "restart": map[string]any{"policy": "no"},
-		"metadata": map[string]string{spawnMeta: spawnKey}}
-	if volume != "" {
-		config["mounts"] = []map[string]any{{"volume": volume, "path": volumePath}}
-	}
+		"metadata": map[string]string{SourceMeta: source}, "mounts": []map[string]any{{"volume": volume, "path": volumePath}}}
 	if err := f.call("POST", "/machines", map[string]any{"region": region, "config": config}, &m); err != nil {
 		return "", err
 	}
 	return m.ID, nil
 }
 
-func (f *FlyAPI) Find(spawnKey string) ([]string, error) {
-	var ms []struct {
-		ID     string `json:"id"`
-		State  string `json:"state"`
-		Config struct {
-			Metadata map[string]string `json:"metadata"`
-		} `json:"config"`
-	}
-	if err := f.call("GET", "/machines?metadata."+spawnMeta+"="+url.QueryEscape(spawnKey), nil, &ms); err != nil {
-		return nil, err
-	}
-	ids := []string{}
-	for _, m := range ms { // the filter is Fly's; checked again here
-		if m.Config.Metadata[spawnMeta] == spawnKey && m.State != "destroyed" && m.State != "destroying" {
-			ids = append(ids, m.ID)
-		}
-	}
-	return ids, nil
-}
-
 func (f *FlyAPI) Inspect(id string) (FlyMachine, error) {
 	var m struct {
 		State  string `json:"state"`
 		Config struct {
-			Image string `json:"image"`
+			Image    string            `json:"image"`
+			Metadata map[string]string `json:"metadata"`
+			Mounts   []struct {
+				Volume string `json:"volume"`
+			} `json:"mounts"`
 		} `json:"config"`
 		ImageRef struct {
 			Registry, Repository, Tag, Digest string
 		} `json:"image_ref"`
 	}
 	if err := f.call("GET", "/machines/"+id, nil, &m); err != nil {
-		if strings.Contains(err.Error(), "HTTP 404") {
+		if code, _ := flyStatus(err); code == 404 {
 			return FlyMachine{State: "destroyed"}, nil // Fly forgets a machine some time after it is destroyed
 		}
 		return FlyMachine{}, err
 	}
-	image := m.Config.Image
+	fm := FlyMachine{State: m.State, Image: m.Config.Image, Source: m.Config.Metadata[SourceMeta]}
 	if m.ImageRef.Digest != "" {
-		image = m.ImageRef.Registry + "/" + m.ImageRef.Repository + "@" + m.ImageRef.Digest
+		fm.Image = m.ImageRef.Registry + "/" + m.ImageRef.Repository + "@" + m.ImageRef.Digest
 	}
-	return FlyMachine{State: m.State, Image: image}, nil
+	if len(m.Config.Mounts) > 0 {
+		fm.Volume = m.Config.Mounts[0].Volume
+	}
+	return fm, nil
 }
 
 // Init: jarvis2-init waits for the machine's keys (made at boot), prints them and lets boot go on. One run.
@@ -272,18 +254,6 @@ func (f *FlyAPI) Destroy(id string) error {
 	return f.call("DELETE", "/machines/"+id+"?force=true", nil, nil)
 }
 
-func (f *FlyAPI) Start(id string) error {
-	return f.call("POST", "/machines/"+id+"/start", nil, nil)
-}
-
 func (f *FlyAPI) DeleteVolume(volume string) error {
 	return f.call("DELETE", "/volumes/"+volume, nil, nil)
-}
-
-func (f *FlyAPI) ExtendVolume(volume string, sizeGB int) (bool, error) {
-	var out struct {
-		NeedsRestart bool `json:"needs_restart"`
-	}
-	err := f.call("PUT", "/volumes/"+volume+"/extend", map[string]any{"size_gb": sizeGB}, &out)
-	return out.NeedsRestart, err
 }

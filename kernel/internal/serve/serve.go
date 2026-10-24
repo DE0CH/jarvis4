@@ -16,16 +16,25 @@ import (
 	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
-// Error: an error with the HTTP status it answers
+// Error: an error with the HTTP status it answers and, for an answer the router acts on, a stable reason (the error
+// answer's "reason": a short kebab-case word the router matches instead of the message's words)
 type Error struct {
-	Code int
-	Msg  string
+	Code   int
+	Msg    string
+	Reason string
 }
 
 func (e *Error) Error() string { return e.Msg }
 
 // Fail: an error answered with code
-func Fail(code int, format string, a ...any) error { return &Error{code, fmt.Sprintf(format, a...)} }
+func Fail(code int, format string, a ...any) error {
+	return &Error{Code: code, Msg: fmt.Sprintf(format, a...)}
+}
+
+// FailBecause: an error answered with code and the stable reason
+func FailBecause(code int, reason, format string, a ...any) error {
+	return &Error{Code: code, Msg: fmt.Sprintf(format, a...), Reason: reason}
+}
 
 // Server: a component's mux; Handle wraps a JSON handler
 type Server struct {
@@ -73,17 +82,21 @@ func Handle[In any](s *Server, pattern string, fn func(In) (any, error)) {
 		}
 		out, err := fn(in)
 		if err != nil {
-			code := 500
+			code, reason := 500, ""
 			var e *Error
 			if errors.As(err, &e) {
-				code = e.Code
+				code, reason = e.Code, e.Reason
 			} else if errors.Is(err, sig.ErrNoRoster) {
 				code = 503
 			}
 			if code >= 500 {
 				log.Printf("%s: %v", pattern, err)
 			}
-			s.reply(w, code, map[string]string{"kind": "error", "error": err.Error()})
+			out := map[string]string{"kind": "error", "error": err.Error()}
+			if reason != "" {
+				out["reason"] = reason
+			}
+			s.reply(w, code, out)
 			return
 		}
 		if d, ok := out.(sig.Doc); ok { // already a signed document

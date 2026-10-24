@@ -1,14 +1,18 @@
 // Package spawner: the spawner (DESIGN "Target design"), the kernel's only holder of the Fly token. It attests Fly
 // facts only, so every cert it signs has the pair ⊤:
 //
-//	spawn:  a notarized cert into source-x → a Fly machine with the source's image and a new empty volume; once it is
-//	        up, its keys (jarvis2-init, through Fly) → (source-x, fly-M, ⊤) naming them and the image Fly runs.
-//	start:  M stopped without a kill (outside Jarvis, or Fly's own doing) → started again on its own volume; no cert:
-//	        the machine is the same Fly machine with the key pair its cert names (machine/main.go keeps it on the
-//	        volume), so its grant and documents stay as they are.
-//	kill:   M alive → destroyed, confirmed through Fly, its volume deleted → (fly-M, source-y, ⊤), source-y holding M's
-//	        image and settings and the hash of the snapshot M signed (none when M sent none; a caller that would rather
-//	        keep M than lose its state says required, and the kill is then refused).
+//	spawn:   a notarized cert into source-x → a new empty volume and a Fly machine on it with the source's image (by
+//	         digest) and the machine env naming the source, the kernel's roster and root key
+//	init:    M started on Fly with that digest → its keys (jarvis2-init, through Fly) → (source-x, fly-M, ⊤) naming
+//	         them and the image Fly runs; the first cert signed is the one kept
+//	kill:    M destroyed, confirmed through Fly → (fly-M, source-y, ⊤), source-y holding M's image and settings and the
+//	         hash of the snapshot M signed (the source's own when M sent none); one kill cert per machine
+//	destroy: a machine the spawner made that never came up (a spawn whose answer was lost) → destroyed, no cert
+//
+// Each call is single Fly calls with no waiting or retrying: the router retries (a 409 while Fly isn't there yet), moves
+// a spawn off a full host by spawning again, finds the machine of a spawn whose answer was lost with its read-only
+// token, and calls kill again while a volume is left. A second machine from one source can't take the line: the
+// notarizer refuses a second successor of a source.
 //
 // The machines it made, and each kill's cert, are kept on its own volume (state.json), so a restart neither forgets a
 // machine nor signs a second kill of one. The Fly token is not kept: the setup session sends it again.
@@ -18,6 +22,7 @@ import (
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -53,23 +58,35 @@ func reportedDigest(ref string) string {
 }
 
 const (
-	defaultDiskGB = 10
-	maxDiskGB     = 500
-	infoFlyToken  = "jarvis2/fly-token"
+	maxDiskGB    = 500
+	infoFlyToken = "jarvis2/fly-token"
+)
+
+// The reasons of the spawner's refusals the router acts on (the error answer's "reason", serve.FailBecause)
+const (
+	ReasonNoFlyToken   = "no-fly-token"    // 503: the setup session (or the app's Recover) sends the token again
+	ReasonFly          = "fly"             // 502: Fly refused or didn't answer; the call may be made again
+	ReasonHostFull     = "host-full"       // 502: Fly's 412 volume_placement_capacity; the volume is deleted, spawn again
+	ReasonUnknown      = "unknown-machine" // 404: not a machine the spawner made
+	ReasonNotStarted   = "not-started"     // 409: init before Fly says started
+	ReasonWrongImage   = "wrong-image"     // 409: Fly runs another digest than the source's
+	ReasonNotDestroyed = "not-destroyed"   // 409: Fly doesn't say destroyed yet; kill (or destroy) again
+	ReasonBadSnapshot  = "bad-snapshot"    // 400: the snapshot isn't signed by the machine's key
+	ReasonCameUp       = "came-up"         // 409: a destroy of a machine that has a cert: it is killed instead
+	ReasonKilled       = "killed"          // 409: init of a machine killed meanwhile
 )
 
 // Machine: one the spawner made
 type Machine struct {
 	ID       string     `json:"id"`
 	Source   doc.Object `json:"source"`
-	Content  doc.Source `json:"content"` // the source's image and settings (its snapshot is the predecessor's)
-	Volume   string     `json:"volume,omitempty"`
-	DiskGB   int        `json:"diskGb,omitempty"`
-	Keys     *doc.Keys  `json:"keys,omitempty"` // once init read them
+	Content  doc.Source `json:"content"`          // the source's image and settings (its snapshot is the predecessor's)
+	Volume   string     `json:"volume,omitempty"` // its volume, until Fly deleted it
+	Keys     *doc.Keys  `json:"keys,omitempty"`   // once init read them
 	Image    string     `json:"image,omitempty"`
 	Cert     *sig.Doc   `json:"cert,omitempty"`     // (source, fly-M, ⊤)
 	KillCert *sig.Doc   `json:"killCert,omitempty"` // (fly-M, source-y, ⊤), or a kill record for one never up
-	Killed   bool       `json:"killed,omitempty"`
+	Killed   bool       `json:"killed,omitempty"`   // destroyed on Fly by a kill or a destroy
 }
 
 type Spawner struct {
@@ -81,34 +98,15 @@ type Spawner struct {
 	env       map[string]string // what every machine's Fly config env gets (the router's address); the roster and the root key are added per spawn
 	path      string
 	machines  map[string]*Machine
-	orphans   map[string]bool // volumes whose delete failed: tried again at every kill
-	spawns    map[string]*Spawn
-	inflight  map[string]bool // spawn keys a Spawn call is working on now
-}
-
-// Spawn: one spawn, keyed by the id of the notarized cert into the source, written before Fly is asked for anything.
-// A repeated spawn of the same cert answers the machine it made (while that one isn't killed); one whose machine
-// never got recorded (a crash or a lost answer between Fly's create and the state write) finds it in Fly by the
-// metadata naming the key (Fly.Find), so a retry never makes a second machine.
-type Spawn struct {
-	Volume  string `json:"volume,omitempty"`
-	DiskGB  int    `json:"diskGb,omitempty"`
-	Machine string `json:"machine,omitempty"`
 }
 
 type state struct {
 	Machines map[string]*Machine `json:"machines"`
-	Orphans  []string            `json:"orphans"`
-	Spawns   map[string]*Spawn   `json:"spawns,omitempty"`
 }
-
-// crashAfterCreate: tests stop Spawn here, between Fly's create and the state write, as a crash would
-var crashAfterCreate func()
 
 // Open: the state at path (made if missing). env: the machines' Fly config env.
 func Open(path string, c *sig.Component, t *sig.Trust, fly Fly, env map[string]string) (*Spawner, error) {
-	sp := &Spawner{s: c.Signer, agreement: c.Agreement, trust: t, fly: fly, env: env, path: path,
-		machines: map[string]*Machine{}, orphans: map[string]bool{}, spawns: map[string]*Spawn{}, inflight: map[string]bool{}}
+	sp := &Spawner{s: c.Signer, agreement: c.Agreement, trust: t, fly: fly, env: env, path: path, machines: map[string]*Machine{}}
 	b, err := os.ReadFile(path)
 	if err == nil {
 		var st state
@@ -118,12 +116,6 @@ func Open(path string, c *sig.Component, t *sig.Trust, fly Fly, env map[string]s
 		if st.Machines != nil {
 			sp.machines = st.Machines
 		}
-		if st.Spawns != nil {
-			sp.spawns = st.Spawns
-		}
-		for _, o := range st.Orphans {
-			sp.orphans[o] = true
-		}
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
@@ -132,11 +124,7 @@ func Open(path string, c *sig.Component, t *sig.Trust, fly Fly, env map[string]s
 
 // save: the state, atomically (callers hold mu)
 func (sp *Spawner) save() error {
-	st := state{Machines: sp.machines, Orphans: []string{}, Spawns: sp.spawns}
-	for o := range sp.orphans {
-		st.Orphans = append(st.Orphans, o)
-	}
-	b, _ := json.Marshal(st)
+	b, _ := json.Marshal(state{Machines: sp.machines})
 	tmp := sp.path + ".tmp"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -152,6 +140,14 @@ func (sp *Spawner) save() error {
 		return err
 	}
 	return os.Rename(tmp, filepath.Clean(sp.path))
+}
+
+// flyFail: a Fly call that failed, answered with its reason
+func flyFail(what string, err error) error {
+	if errors.Is(err, errNoToken) {
+		return serve.FailBecause(503, ReasonNoFlyToken, "%v", err)
+	}
+	return serve.FailBecause(502, ReasonFly, "fly %s: %v", what, err)
 }
 
 // SetFlyToken: {"FLY_API_TOKEN": …} sealed to the spawner's agreement key
@@ -181,20 +177,8 @@ type SpawnInput struct {
 	DiskGB    int          `json:"diskGb"`
 }
 
-// placementTries: how many volumes a spawn tries when Fly answers that a volume's host has no room for the machine
-// (412 volume_placement_capacity): the volume is pinned to its host, so each try is a new volume on another host
-const placementTries = 3
-
-// hostFull: Fly's answer that the volume's host has no room for a machine of this size
-func hostFull(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "volume_placement_capacity")
-}
-
-func guestOf(kind string, cpus, mem int) map[string]any {
-	return map[string]any{"cpu_kind": kind, "cpus": cpus, "memory_mb": mem}
-}
-
-// Spawn: one Fly create (with a new empty volume) from a notarized source → {kind: "created", id, source, volume}
+// Spawn: a new empty volume and one Fly create on it, from a notarized source → {kind: "created", id, source, volume}.
+// A create that fails deletes the volume (one try; a volume left is the router's sweep's).
 func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 	if err := sig.CheckIdentity(in.Notarizer, "notarizer", sp.trust); err != nil {
 		return nil, serve.Fail(403, "%v", err)
@@ -214,11 +198,7 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 	if kind == "" {
 		return nil, serve.Fail(400, "size: small, medium, large or a doubling past it (16gb, 32gb, …)")
 	}
-	gb := in.DiskGB
-	if gb == 0 {
-		gb = defaultDiskGB
-	}
-	if gb < 1 || gb > maxDiskGB || in.Region == "" {
+	if in.DiskGB < 1 || in.DiskGB > maxDiskGB || in.Region == "" {
 		return nil, serve.Fail(400, "diskGb 1 to %d and a region", maxDiskGB)
 	}
 	if sp.env == nil {
@@ -228,73 +208,10 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 	if rd == nil {
 		return nil, serve.Fail(503, "%v", sig.ErrNoRoster)
 	}
-	key := in.Cert.ID()
-	created := func(m *Machine) map[string]any {
-		return map[string]any{"kind": "created", "id": m.ID, "source": m.Source, "volume": m.Volume, "diskGb": m.DiskGB}
-	}
-	// adopt: the machine Fly made for this spawn, recorded (callers hold mu)
-	adopt := func(sw *Spawn, id string) (any, error) {
-		m := &Machine{ID: id, Source: c.Succ, Content: *c.Source, Volume: sw.Volume, DiskGB: sw.DiskGB}
-		sp.machines[id], sw.Machine = m, id
-		if err := sp.save(); err != nil {
-			return nil, err
-		}
-		log.Printf("machine %s created from %s (%s)", id, c.Succ, c.Source.Image)
-		return created(m), nil
-	}
-
-	sp.mu.Lock()
-	if sp.inflight[key] {
-		sp.mu.Unlock()
-		return nil, serve.Fail(409, "this source's spawn is under way: try again")
-	}
-	sw := sp.spawns[key]
-	if sw != nil && sw.Machine != "" {
-		if m := sp.machines[sw.Machine]; m != nil && !m.Killed {
-			sp.mu.Unlock()
-			return created(m), nil // a repeat: the machine already made
-		}
-		sw = nil // that machine was killed: a new spawn
-	}
-	if sw != nil { // recorded but no machine: Fly may have made it before the answer was lost
-		ids, err := sp.fly.Find(key)
-		if err != nil {
-			sp.mu.Unlock()
-			return nil, serve.Fail(502, "fly: %v", err)
-		}
-		if len(ids) > 0 {
-			defer sp.mu.Unlock()
-			return adopt(sw, ids[0])
-		}
-	} else {
-		sw = &Spawn{DiskGB: gb}
-		sp.spawns[key] = sw
-		if err := sp.save(); err != nil {
-			delete(sp.spawns, key)
-			sp.mu.Unlock()
-			return nil, err
-		}
-	}
-	sp.inflight[key] = true
-	sp.mu.Unlock()
-	defer func() {
-		sp.mu.Lock()
-		delete(sp.inflight, key)
-		sp.mu.Unlock()
-	}()
-
-	if sw.Volume == "" {
-		vid, err := sp.fly.CreateVolume(in.Region, gb, guestOf(kind, cpus, mem))
-		if err != nil {
-			return nil, serve.Fail(502, "fly volume: %v", err)
-		}
-		sp.mu.Lock()
-		sw.Volume, sw.DiskGB = vid, gb
-		err = sp.save()
-		sp.mu.Unlock()
-		if err != nil {
-			return nil, err
-		}
+	guest := map[string]any{"cpu_kind": kind, "cpus": cpus, "memory_mb": mem}
+	vid, err := sp.fly.CreateVolume(in.Region, in.DiskGB, guest)
+	if err != nil {
+		return nil, flyFail("volume", err)
 	}
 	rj, _ := json.Marshal(rd)
 	// the machine checks the kernel's identities against the root key's roster (machine/kernelboot.go)
@@ -302,49 +219,32 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 	for k, v := range sp.env {
 		env[k] = v
 	}
-	guest := guestOf(kind, cpus, mem)
-	id, err := sp.fly.Create(c.Source.Image, in.Region, guest, env, sw.Volume, key)
-	for try := 2; hostFull(err) && try <= placementTries; try++ {
-		// the volume's host has no room for this machine; a volume is pinned to its host, so a new one is the way to
-		// another host (nothing was made: Fly refused before creating the machine)
-		old := sw.Volume
-		vid, verr := sp.fly.CreateVolume(in.Region, gb, guest)
-		if verr != nil {
-			break
-		}
-		sp.mu.Lock()
-		if sp.fly.DeleteVolume(old) != nil {
-			sp.orphans[old] = true
-		}
-		sw.Volume = vid
-		serr := sp.save()
-		sp.mu.Unlock()
-		if serr != nil {
-			return nil, serr
-		}
-		log.Printf("spawn: volume %s's host is full (%v); new volume %s, try %d", old, err, vid, try)
-		id, err = sp.fly.Create(c.Source.Image, in.Region, guest, env, sw.Volume, key)
-	}
-	if err == nil && crashAfterCreate != nil {
-		crashAfterCreate()
-	}
-	sp.mu.Lock()
-	defer sp.mu.Unlock()
+	id, err := sp.fly.Create(c.Source.Image, in.Region, guest, env, vid, string(c.Succ))
 	if err != nil {
-		// a lost answer may still have made it
-		if ids, ferr := sp.fly.Find(key); ferr == nil && len(ids) > 0 {
-			return adopt(sw, ids[0])
-		} else if ferr != nil {
-			return nil, serve.Fail(502, "fly create: %v (and the lookup for it: %v; the next try looks again)", err, ferr)
+		left := ""
+		if derr := sp.fly.DeleteVolume(vid); derr != nil {
+			left = fmt.Sprintf(" (volume %s left: %v)", vid, derr)
 		}
-		if sp.fly.DeleteVolume(sw.Volume) != nil {
-			sp.orphans[sw.Volume] = true
+		if code, st := flyStatus(err); code == 412 && st == "volume_placement_capacity" {
+			// the volume's host has no room for this machine; a volume is pinned to its host, so a new spawn (a new
+			// volume) is the way to another host
+			return nil, serve.FailBecause(502, ReasonHostFull, "fly create: %v%s", err, left)
 		}
-		delete(sp.spawns, key)
-		sp.save()
-		return nil, serve.Fail(502, "fly create: %v", err)
+		if errors.Is(err, errNoToken) {
+			return nil, flyFail("create", err)
+		}
+		return nil, serve.FailBecause(502, ReasonFly, "fly create: %v%s", err, left)
 	}
-	return adopt(sw, id)
+	m := &Machine{ID: id, Source: c.Succ, Content: *c.Source, Volume: vid}
+	sp.mu.Lock()
+	sp.machines[id] = m
+	err = sp.save()
+	sp.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("machine %s created from %s (%s)", id, c.Succ, c.Source.Image)
+	return map[string]any{"kind": "created", "id": id, "source": c.Succ, "volume": vid}, nil
 }
 
 // Init: one try at reading a created machine's keys (409 while it isn't up yet: the router retries) → its cert
@@ -354,25 +254,23 @@ func (sp *Spawner) Init(id string) (sig.Doc, error) {
 	sp.mu.Unlock()
 	switch {
 	case m == nil:
-		return sig.Doc{}, serve.Fail(404, "machine %s isn't one the spawner made", id)
-	case m.Killed:
-		return sig.Doc{}, serve.Fail(409, "machine %s was killed", id)
+		return sig.Doc{}, serve.FailBecause(404, ReasonUnknown, "machine %s isn't one the spawner made", id)
 	case m.Cert != nil:
 		return *m.Cert, nil
 	}
 	fm, err := sp.fly.Inspect(id)
 	if err != nil {
-		return sig.Doc{}, serve.Fail(502, "fly: %v", err)
+		return sig.Doc{}, flyFail("inspect", err)
 	}
 	if fm.State != "started" {
-		return sig.Doc{}, serve.Fail(409, "machine %s is %s, not started", id, fm.State)
+		return sig.Doc{}, serve.FailBecause(409, ReasonNotStarted, "machine %s is %s, not started", id, fm.State)
 	}
 	if reportedDigest(fm.Image) != imageDigest(m.Content.Image) {
-		return sig.Doc{}, serve.Fail(409, "machine %s runs %s, not its source's %s", id, fm.Image, m.Content.Image)
+		return sig.Doc{}, serve.FailBecause(409, ReasonWrongImage, "machine %s runs %s, not its source's %s", id, fm.Image, m.Content.Image)
 	}
 	k, err := sp.fly.Init(id)
 	if err != nil {
-		return sig.Doc{}, serve.Fail(502, "fly exec init: %v", err)
+		return sig.Doc{}, flyFail("exec init", err)
 	}
 	keys := doc.Keys{SigningKey: k.SigningKey, EncryptionKey: k.EncryptionKey}
 	c := doc.Cert{Kind: "succession", Pred: m.Source, Succ: doc.Object("fly-" + id), Pair: perm.Top(),
@@ -386,8 +284,11 @@ func (sp *Spawner) Init(id string) (sig.Doc, error) {
 	}
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
-	if m.Killed || m.Cert != nil {
-		return sig.Doc{}, serve.Fail(409, "machine %s was killed or initialised meanwhile", id)
+	switch {
+	case m.Cert != nil: // an init meanwhile: the first cert wins
+		return *m.Cert, nil
+	case m.Killed:
+		return sig.Doc{}, serve.FailBecause(409, ReasonKilled, "machine %s was killed meanwhile", id)
 	}
 	m.Keys, m.Image, m.Cert = &keys, fm.Image, &d
 	if err := sp.save(); err != nil {
@@ -399,166 +300,160 @@ func (sp *Spawner) Init(id string) (sig.Doc, error) {
 
 // Snapshot: what a machine signed over its snapshot (the hex sha256 of the tarball)
 type Snapshot struct {
-	Sha256   string `json:"sha256"`
-	Sig      string `json:"sig"`
-	Required bool   `json:"required"` // keep the machine rather than kill it without this snapshot vouched for
+	Sha256 string `json:"sha256"`
+	Sig    string `json:"sig"`
 }
 
 var hex64RE = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-// Kill: the machine destroyed (409 until Fly reports it), its volume deleted → (fly-M, source-y, ⊤); the same
-// answer again for a machine already killed
-func (sp *Spawner) Kill(id string, snap *Snapshot) (sig.Doc, error) {
+// destroyOnFly: the machine destroyed, as Fly says (single calls: a destroy, then a look) → its volume as Fly listed it
+func (sp *Spawner) destroyOnFly(id string) (string, error) {
+	fm, err := sp.fly.Inspect(id)
+	if err != nil {
+		return "", flyFail("inspect", err)
+	}
+	vol := fm.Volume
+	if fm.State != "destroyed" {
+		derr := sp.fly.Destroy(id)
+		if fm, err = sp.fly.Inspect(id); err != nil {
+			return "", flyFail("inspect", err)
+		}
+		if fm.State != "destroyed" {
+			return "", serve.FailBecause(409, ReasonNotDestroyed, "machine %s is %s, not destroyed yet (destroy: %v)", id, fm.State, derr)
+		}
+	}
+	return vol, nil
+}
+
+// dropVolume: one try at deleting the destroyed machine's volume → the volume still there ("" = gone)
+func (sp *Spawner) dropVolume(m *Machine) string {
+	sp.mu.Lock()
+	v := m.Volume
+	sp.mu.Unlock()
+	if v == "" {
+		return ""
+	}
+	if err := sp.fly.DeleteVolume(v); err != nil {
+		if code, _ := flyStatus(err); code != 404 {
+			log.Printf("machine %s: volume %s: delete: %v (the router kills it again)", m.ID, v, err)
+			return v
+		}
+	}
+	sp.mu.Lock()
+	m.Volume = ""
+	sp.save()
+	sp.mu.Unlock()
+	return ""
+}
+
+// Kill: the machine destroyed (409 until Fly reports it) → {kind: "killed", id, cert: (fly-M, source-y, ⊤), volumeLeft}.
+// The cert is signed once per machine and answered again to every later kill; each kill makes one try at deleting the
+// machine's volume, and volumeLeft names it while it is still there (the router kills again).
+func (sp *Spawner) Kill(id string, snap *Snapshot) (any, error) {
 	sp.mu.Lock()
 	m := sp.machines[id]
 	sp.mu.Unlock()
 	if m == nil {
-		return sig.Doc{}, serve.Fail(404, "machine %s isn't one the spawner made", id)
+		return nil, serve.FailBecause(404, ReasonUnknown, "machine %s isn't one the spawner made", id)
 	}
-	if m.KillCert != nil {
-		return *m.KillCert, nil
-	}
-	sum := ""
-	if snap != nil && snap.Sha256 != "" {
-		switch {
-		case m.Keys == nil:
-			if snap.Required {
-				return sig.Doc{}, serve.Fail(409, "machine %s never came up, so it signed no snapshot", id)
+	if m.KillCert == nil {
+		sum := ""
+		if snap != nil {
+			switch {
+			case m.Keys == nil:
+				return nil, serve.FailBecause(400, ReasonBadSnapshot, "machine %s never came up, so it signed no snapshot", id)
+			case !hex64RE.MatchString(snap.Sha256) || !sig.Verify(m.Keys.SigningKey, []byte(snap.Sha256), snap.Sig):
+				return nil, serve.FailBecause(400, ReasonBadSnapshot, "machine %s's snapshot isn't signed by its key", id)
 			}
-		case !hex64RE.MatchString(snap.Sha256) || !sig.Verify(m.Keys.SigningKey, []byte(snap.Sha256), snap.Sig):
-			if snap.Required {
-				return sig.Doc{}, serve.Fail(409, "machine %s is kept, not killed: its snapshot isn't signed by its key", id)
-			}
-		default:
 			sum = snap.Sha256
 		}
-	} else if snap != nil && snap.Required {
-		return sig.Doc{}, serve.Fail(409, "machine %s is kept, not killed: no snapshot", id)
-	}
-	fm, err := sp.fly.Inspect(id)
-	if err != nil {
-		return sig.Doc{}, serve.Fail(502, "fly: %v", err)
-	}
-	if fm.State != "destroyed" {
-		derr := sp.fly.Destroy(id)
-		if fm, err = sp.fly.Inspect(id); err != nil {
-			return sig.Doc{}, serve.Fail(502, "fly: %v", err)
+		if _, err := sp.destroyOnFly(id); err != nil {
+			return nil, err
 		}
-		if fm.State != "destroyed" {
-			return sig.Doc{}, serve.Fail(409, "machine %s is %s, not destroyed yet (destroy: %v)", id, fm.State, derr)
+		var d sig.Doc
+		var err error
+		if m.Keys == nil { // never up: no state, nothing goes on from it
+			d, err = sp.s.SignJSON(map[string]any{"kind": "killed", "id": id, "up": false})
+		} else {
+			b := make([]byte, 16)
+			rand.Read(b)
+			// a machine that signed no snapshot passes on the one its source named: it has no newer state the spawner
+			// vouched for
+			src := m.Content
+			if sum != "" {
+				src.Snapshot = sum
+			}
+			c := doc.Cert{Kind: "succession", Pred: doc.Object("fly-" + id), Succ: doc.NewSource(b), Pair: perm.Top(),
+				Source: &src, Signer: doc.BySpawner, IssuedAt: doc.Now()}
+			if err := c.Check(); err != nil {
+				return nil, err
+			}
+			d, err = sp.s.SignJSON(c)
 		}
-	}
-	var d sig.Doc
-	if m.Keys == nil { // never up: no state, nothing goes on from it
-		d, err = sp.s.SignJSON(map[string]any{"kind": "killed", "id": id, "up": false})
-	} else {
-		b := make([]byte, 16)
-		rand.Read(b)
-		// a machine that signed no snapshot passes on the one its source named: it has no newer state the spawner
-		// vouched for (the router kills a booted machine without one only when told to)
-		src := m.Content
-		if sum != "" {
-			src.Snapshot = sum
-		}
-		c := doc.Cert{Kind: "succession", Pred: doc.Object("fly-" + id), Succ: doc.NewSource(b), Pair: perm.Top(),
-			Source: &src, Signer: doc.BySpawner, IssuedAt: doc.Now()}
-		if err := c.Check(); err != nil {
-			return sig.Doc{}, err
-		}
-		d, err = sp.s.SignJSON(c)
-	}
-	if err != nil {
-		return sig.Doc{}, err
-	}
-	sp.mu.Lock()
-	m.Killed, m.KillCert = true, &d
-	if m.Volume != "" {
-		sp.orphans[m.Volume] = true
-	}
-	err = sp.save()
-	sp.mu.Unlock()
-	if err != nil {
-		return sig.Doc{}, err
-	}
-	sp.dropVolumes()
-	log.Printf("machine %s killed (snapshot %q)", id, sum)
-	return d, nil
-}
-
-// dropVolumes: every volume of a killed machine (and earlier failed deletes); a failure is tried at the next kill
-func (sp *Spawner) dropVolumes() {
-	sp.mu.Lock()
-	todo := []string{}
-	for v := range sp.orphans {
-		todo = append(todo, v)
-	}
-	sp.mu.Unlock()
-	for _, v := range todo {
-		if err := sp.fly.DeleteVolume(v); err != nil && !strings.Contains(err.Error(), "HTTP 404") {
-			log.Printf("volume %s: delete: %v (tried again at the next kill)", v, err)
-			continue
+		if err != nil {
+			return nil, err
 		}
 		sp.mu.Lock()
-		delete(sp.orphans, v)
-		sp.save()
-		sp.mu.Unlock()
-	}
-}
-
-// Start: a machine the spawner made that stopped without a kill (someone stopped it outside Jarvis, or Fly did), started
-// again with its own volume → {kind: "started", id, volume, was}. Only a machine that came up (its cert names its keys,
-// which it keeps on that volume) and still has its volume; a destroyed one can't come back.
-func (sp *Spawner) Start(id string) (any, error) {
-	sp.mu.Lock()
-	m := sp.machines[id]
-	sp.mu.Unlock()
-	switch {
-	case m == nil:
-		return nil, serve.Fail(404, "machine %s isn't one the spawner made", id)
-	case m.Killed:
-		return nil, serve.Fail(409, "machine %s was killed", id)
-	case m.Cert == nil:
-		return nil, serve.Fail(409, "machine %s never came up: nothing to start again", id)
-	case m.Volume == "":
-		return nil, serve.Fail(409, "machine %s has no volume: nothing to start it again from", id)
-	}
-	fm, err := sp.fly.Inspect(id)
-	if err != nil {
-		return nil, serve.Fail(502, "fly: %v", err)
-	}
-	switch fm.State {
-	case "started", "starting":
-	case "destroyed", "destroying":
-		return nil, serve.Fail(409, "machine %s is %s on Fly: it can't start again", id, fm.State)
-	default:
-		if err := sp.fly.Start(id); err != nil {
-			return nil, serve.Fail(502, "fly start: %v", err)
+		if m.KillCert == nil { // a kill meanwhile: its cert is the one
+			m.Killed, m.KillCert = true, &d
+			err = sp.save()
 		}
-		log.Printf("machine %s started again on volume %s (it was %s)", id, m.Volume, fm.State)
+		sp.mu.Unlock()
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("machine %s killed (snapshot %q)", id, sum)
 	}
-	return map[string]any{"kind": "started", "id": id, "volume": m.Volume, "was": fm.State}, nil
+	left := sp.dropVolume(m)
+	sp.mu.Lock()
+	d := *m.KillCert
+	sp.mu.Unlock()
+	return map[string]any{"kind": "killed", "id": id, "cert": d, "volumeLeft": left}, nil
 }
 
-// Extend: the live machine's volume grows to sizeGB (More disk) → {kind: "extended", id, sizeGb, needsRestart}
-func (sp *Spawner) Extend(id string, sizeGB int) (any, error) {
+// Destroy: a machine the spawner made that never came up (a spawn whose answer was lost, also one made just before a
+// restart that the state never recorded: Fly's metadata names its source) destroyed → {kind: "destroyed", id,
+// volumeLeft}, no cert. A machine with a cert is killed instead (409 came-up).
+func (sp *Spawner) Destroy(id string) (any, error) {
 	sp.mu.Lock()
 	m := sp.machines[id]
 	sp.mu.Unlock()
-	if m == nil || m.Killed || m.Volume == "" {
-		return nil, serve.Fail(409, "machine %s has no live volume of the spawner's", id)
+	if m != nil && m.Cert != nil && m.KillCert == nil {
+		return nil, serve.FailBecause(409, ReasonCameUp, "machine %s came up: it is killed, not destroyed", id)
 	}
-	if sizeGB <= m.DiskGB || sizeGB > maxDiskGB {
-		return nil, serve.Fail(400, "sizeGb: more than the volume's %d GB, at most %d", m.DiskGB, maxDiskGB)
+	if m == nil || !m.Killed {
+		if m == nil {
+			fm, err := sp.fly.Inspect(id)
+			if err != nil {
+				return nil, flyFail("inspect", err)
+			}
+			if fm.Source == "" {
+				return nil, serve.FailBecause(404, ReasonUnknown, "machine %s isn't one the spawner made", id)
+			}
+			m = &Machine{ID: id, Source: doc.Object(fm.Source)}
+		}
+		vol, err := sp.destroyOnFly(id)
+		if err != nil {
+			return nil, err
+		}
+		sp.mu.Lock()
+		if cur := sp.machines[id]; cur != nil {
+			m = cur
+		} else {
+			sp.machines[id] = m
+		}
+		if m.Volume == "" {
+			m.Volume = vol
+		}
+		m.Killed = true
+		err = sp.save()
+		sp.mu.Unlock()
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("machine %s destroyed (never came up)", id)
 	}
-	restart, err := sp.fly.ExtendVolume(m.Volume, sizeGB)
-	if err != nil {
-		return nil, serve.Fail(502, "fly volume extend: %v", err)
-	}
-	sp.mu.Lock()
-	m.DiskGB = sizeGB
-	sp.save()
-	sp.mu.Unlock()
-	return map[string]any{"kind": "extended", "id": id, "volume": m.Volume, "sizeGb": sizeGB, "needsRestart": restart}, nil
+	return map[string]any{"kind": "destroyed", "id": id, "volumeLeft": sp.dropVolume(m)}, nil
 }
 
 func Register(s *serve.Server, sp *Spawner) {
@@ -579,15 +474,9 @@ func Register(s *serve.Server, sp *Spawner) {
 	}) (any, error) {
 		return sp.Kill(in.ID, in.Snapshot)
 	})
-	serve.Handle(s, "POST /start", func(in struct {
+	serve.Handle(s, "POST /destroy", func(in struct {
 		ID string `json:"id"`
 	}) (any, error) {
-		return sp.Start(in.ID)
-	})
-	serve.Handle(s, "POST /extend", func(in struct {
-		ID     string `json:"id"`
-		SizeGB int    `json:"sizeGb"`
-	}) (any, error) {
-		return sp.Extend(in.ID, in.SizeGB)
+		return sp.Destroy(in.ID)
 	})
 }

@@ -207,7 +207,8 @@ func (k *Kernel) RootTop() sig.Doc {
 // FakeMachine: one machine, with the key pairs its image made
 type FakeMachine struct {
 	ID, Image, State string
-	Spawn            string // the spawn key in its Fly metadata
+	Source           string // the source its Fly metadata names
+	Volume           string
 	Env              map[string]string
 	Sig              *sig.Signer
 	Enc              *ecdh.PrivateKey
@@ -220,7 +221,12 @@ type FakeFly struct {
 	vols     map[string]bool
 	// Booting: new machines stay "starting" until Up
 	Booting bool
-	Starts  int // Start calls that started a machine
+	// Full: the next this-many creates answer that the volume's host is full (Fly's 412 volume_placement_capacity)
+	Full int
+	// Lose: the next this-many creates make the machine but answer an error (a lost answer)
+	Lose int
+	// StuckVolumes: volume deletes fail (Fly still holds the volume)
+	StuckVolumes bool
 }
 
 func NewFakeFly() *FakeFly {
@@ -238,21 +244,13 @@ func (f *FakeFly) CreateVolume(string, int, map[string]any) (string, error) {
 	return v, nil
 }
 
-func (f *FakeFly) Find(spawnKey string) ([]string, error) {
+func (f *FakeFly) Create(image, region string, guest map[string]any, env map[string]string, volume, source string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	ids := []string{}
-	for id, m := range f.Machines {
-		if m.Spawn == spawnKey && m.State != "destroyed" {
-			ids = append(ids, id)
-		}
+	if f.Full > 0 {
+		f.Full--
+		return "", &spawner.FlyError{HTTP: 412, Status: "volume_placement_capacity", Msg: "POST /machines: HTTP 412 insufficient resources to create new machine with existing volume " + volume}
 	}
-	return ids, nil
-}
-
-func (f *FakeFly) Create(image, region string, guest map[string]any, env map[string]string, volume, spawnKey string) (string, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.n++
 	id := fmt.Sprintf("%014x", f.n)
 	s, _ := sig.NewSigner()
@@ -261,7 +259,11 @@ func (f *FakeFly) Create(image, region string, guest map[string]any, env map[str
 	if f.Booting {
 		st = "starting"
 	}
-	f.Machines[id] = &FakeMachine{ID: id, Image: image, State: st, Env: env, Sig: s, Enc: e, Spawn: spawnKey}
+	f.Machines[id] = &FakeMachine{ID: id, Image: image, State: st, Env: env, Sig: s, Enc: e, Source: source, Volume: volume}
+	if f.Lose > 0 {
+		f.Lose--
+		return "", fmt.Errorf("connection reset")
+	}
 	return id, nil
 }
 
@@ -281,6 +283,28 @@ func (f *FakeFly) Machine(id string) *FakeMachine {
 	return f.Machines[id]
 }
 
+// List: a copy of every machine, as Fly's machine list shows them to the router's read-only token
+func (f *FakeFly) List() []FakeMachine {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := []FakeMachine{}
+	for _, m := range f.Machines {
+		out = append(out, *m)
+	}
+	return out
+}
+
+// Volumes: the volumes Fly still has
+func (f *FakeFly) Volumes() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := []string{}
+	for v := range f.vols {
+		out = append(out, v)
+	}
+	return out
+}
+
 func (f *FakeFly) Inspect(id string) (spawner.FlyMachine, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -288,7 +312,7 @@ func (f *FakeFly) Inspect(id string) (spawner.FlyMachine, error) {
 	if m == nil {
 		return spawner.FlyMachine{State: "destroyed"}, nil
 	}
-	return spawner.FlyMachine{State: m.State, Image: strings.Replace(m.Image, ":latest", "", 1)}, nil
+	return spawner.FlyMachine{State: m.State, Image: strings.Replace(m.Image, ":latest", "", 1), Volume: m.Volume, Source: m.Source}, nil
 }
 
 func (f *FakeFly) Init(id string) (spawner.MachineKeys, error) {
@@ -313,19 +337,10 @@ func (f *FakeFly) Destroy(id string) error {
 func (f *FakeFly) DeleteVolume(v string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	delete(f.vols, v)
-	return nil
-}
-
-// Start: a stopped machine started again (the same machine, keys and all)
-func (f *FakeFly) Start(id string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	m := f.Machines[id]
-	if m == nil || m.State == "destroyed" {
-		return fmt.Errorf("HTTP 404 no machine %s", id)
+	if f.StuckVolumes {
+		return &spawner.FlyError{HTTP: 412, Msg: "DELETE /volumes/" + v + ": HTTP 412 volume is attached"}
 	}
-	m.State, f.Starts = "started", f.Starts+1
+	delete(f.vols, v)
 	return nil
 }
 
@@ -337,8 +352,6 @@ func (f *FakeFly) Stop(id string) {
 		m.State = "stopped"
 	}
 }
-
-func (f *FakeFly) ExtendVolume(string, int) (bool, error) { return false, nil }
 
 // Secrets: one more secrets on its own server (the next colour, blue/green), and its URL
 func (k *Kernel) Secrets2(t testing.TB) (*secrets.Secrets, string) {

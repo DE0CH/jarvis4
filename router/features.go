@@ -53,22 +53,23 @@ func (r *Router) startFeatures() {
 	r.lcCutOff()  // lifecycle.go: an operation log a restart left open is closed as cut off
 	r.startDiscord()
 	r.startAutopilot()
-	go r.scheduleLoop()   // schedule.go: wakeups, crons, resume prompts
-	go r.leaseLoop()      // leases.go: expire silent holders, wake promoted ones
-	go r.watchLoop()      // watches.go: run due checks on the watch runner, deliver met / given-up watches
-	go r.archiveLoop()    // archive.go: restore files tidied
-	go r.budgetLoop()     // budget.go: the Fly budget cap
-	go r.bbBudgetLoop()   // bbbudget.go: the Browserbase spend DM
-	go r.uploadsLoop()    // uploads.go: stale attachments
-	go r.inboxLoop()      // inbox.go: requests and approvals go after 10 min
-	go r.outcomeLoop()    // outcomes.go: tell a session what became of its Inbox requests
-	go r.messageLoop()    // messages.go: approved messages delivered, pending ones lapse
-	go r.tasksLoop()      // tasks.go: daily schedules, runs, pausing finished task lines
-	go r.inputLogLoop()   // vouch.go: the core's input log onto the volume
-	go r.coreChangeLoop() // corechange.go: a new core → the earlier core's paused sessions are destroyed
-	go r.loginLoop()      // claudelogin.go: refresh the Claude login (own) or mirror Jarvis 1's (follow)
-	go r.volSweepLoop()   // volsweep.go: delete leftover session volumes (DECISIONS 195)
-	go r.lostLoop()       // lostmachine.go: machines that stopped without Jarvis doing it
+	go r.scheduleLoop()      // schedule.go: wakeups, crons, resume prompts
+	go r.leaseLoop()         // leases.go: expire silent holders, wake promoted ones
+	go r.watchLoop()         // watches.go: run due checks on the watch runner, deliver met / given-up watches
+	go r.archiveLoop()       // archive.go: restore files tidied
+	go r.budgetLoop()        // budget.go: the Fly budget cap
+	go r.bbBudgetLoop()      // bbbudget.go: the Browserbase spend DM
+	go r.uploadsLoop()       // uploads.go: stale attachments
+	go r.inboxLoop()         // inbox.go: requests and approvals go after 10 min
+	go r.outcomeLoop()       // outcomes.go: tell a session what became of its Inbox requests
+	go r.messageLoop()       // messages.go: approved messages delivered, pending ones lapse
+	go r.tasksLoop()         // tasks.go: daily schedules, runs, pausing finished task lines
+	go r.inputLogLoop()      // vouch.go: the core's input log onto the volume
+	go r.coreChangeLoop()    // corechange.go: a new core → the earlier core's paused sessions are destroyed
+	go r.loginLoop()         // claudelogin.go: refresh the Claude login (own) or mirror Jarvis 1's (follow)
+	go r.volSweepLoop()      // volsweep.go: delete leftover session volumes (DECISIONS 195)
+	go r.lostLoop()          // lostmachine.go: machines that stopped without Jarvis doing it
+	go r.kernelVolumesLoop() // kernelline.go: a killed kernel machine's volume left, killed again until it is gone
 }
 
 // stateHooks: add fields to GET /api/state

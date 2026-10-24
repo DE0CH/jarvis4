@@ -79,8 +79,8 @@ func TestSchedulerLease(t *testing.T) {
 	}
 }
 
-// a kernel start carried on while the first holder's spawn is still out: the spawner answers the repeated spawn of the
-// source with the machine it already made, so the line gets exactly one machine; and a start the records show done
+// a kernel start carried on while the first holder's spawn is still out: the carry-on finds the machine that spawn made
+// (by its source, with the read-only token) and adopts it, so the line gets exactly one machine; and a start the records show done
 // (initialising) leaves nothing to do
 func TestAKernelStartCarriedOn(t *testing.T) {
 	rg, k := kernelRig(t)

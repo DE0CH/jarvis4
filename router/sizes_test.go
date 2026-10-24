@@ -80,9 +80,22 @@ func TestSizeBlocksMatch(t *testing.T) {
 		return s[i:j]
 	}
 	ours := block("sizes.go")
-	for _, p := range []string{filepath.Join("..", "core", "fly.go"), filepath.Join("..", "kernel", "spawner", "fly.go"), filepath.Join("..", "machine", "deliver.go")} {
+	for _, p := range []string{filepath.Join("..", "core", "fly.go"), filepath.Join("..", "machine", "deliver.go")} {
 		if block(p) != ours {
 			t.Fatalf("%s's sizes block differs from router/sizes.go's", p)
+		}
+	}
+	// the kernel's spawner makes guests only (no Upgrade): its block is router/sizes.go's without the parts it doesn't
+	// use, each part it has the same
+	kernel := block(filepath.Join("..", "kernel", "spawner", "fly.go"))
+	for _, part := range strings.Split(kernel, "\n\n") {
+		if !strings.Contains(ours, part) {
+			t.Fatalf("kernel/spawner/fly.go's sizes block has a part router/sizes.go's lacks:\n%s", part)
+		}
+	}
+	for _, need := range []string{"func sizeMemGB(", "func sizeGuest(", "var namedSizes"} {
+		if !strings.Contains(kernel, need) {
+			t.Fatalf("kernel/spawner/fly.go's sizes block has no %s", need)
 		}
 	}
 }

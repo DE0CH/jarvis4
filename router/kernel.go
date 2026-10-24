@@ -52,6 +52,7 @@ type KernelError struct {
 	Role   string
 	Status int
 	Msg    string
+	Reason string // the component's stable reason for it (serve.FailBecause), "" when it gave none
 }
 
 func (e *KernelError) Error() string {
@@ -136,17 +137,18 @@ func (k *KernelClient) do(role, dep, method, path string, body any) ([]byte, int
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 	seq, _ := strconv.Atoi(resp.Header.Get(lineSeqHeader))
 	if resp.StatusCode != 200 {
-		msg := strings.TrimSpace(string(b))
+		msg, reason := strings.TrimSpace(string(b)), ""
 		var d sig.Doc
 		if json.Unmarshal(b, &d) == nil && d.Payload != "" {
 			var e struct {
-				Error string `json:"error"`
+				Error  string `json:"error"`
+				Reason string `json:"reason"`
 			}
 			if json.Unmarshal([]byte(d.Payload), &e) == nil && e.Error != "" {
-				msg = e.Error
+				msg, reason = e.Error, e.Reason
 			}
 		}
-		return nil, seq, &KernelError{role, resp.StatusCode, msg}
+		return nil, seq, &KernelError{Role: role, Status: resp.StatusCode, Msg: msg, Reason: reason}
 	}
 	return b, seq, nil
 }

@@ -13,18 +13,8 @@ import (
 // lostRig: a kernel line running on its first machine (booted, its secrets pulled), the router reading the fake Fly
 func lostRig(t *testing.T) (*rig, *kerneltest.Kernel, string, *kerneltest.FakeMachine) {
 	rg, k := kernelRig(t)
-	old := listFlyMachines
-	t.Cleanup(func() { listFlyMachines = old })
-	listFlyMachines = func() ([]flyMachineDetail, error) {
-		out := []flyMachineDetail{}
-		for id := range k.Fly.Machines {
-			m := k.Fly.Machine(id)
-			if m.State != "destroyed" { // Fly lists a destroyed machine for a while; gone is the harder case
-				out = append(out, flyMachineDetail{ID: id, State: m.State})
-			}
-		}
-		return out, nil
-	}
+	// Fly lists a destroyed machine for a while; gone is the harder case
+	listFlyMachines = func() ([]flyMachineDetail, error) { return fakeFlyList(k, false), nil }
 	rg.r.lc.flyEvents = func(machine string) ([]flyEvent, error) {
 		e := flyEvent{Type: "exit", Status: "stopped", Source: "user", Timestamp: time.Date(2026, 10, 22, 9, 30, 0, 0, time.UTC).UnixMilli()}
 		e.Request = &struct {
