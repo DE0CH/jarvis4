@@ -681,6 +681,8 @@ def kernel_roster(copy=None):
     for role in KERNEL_ROLES + ["secrets"]:
         dep = f"{role}-{copy}"
         m, state = component_identity(dep)
+        if role == "secrets":
+            empty = not state.get("master")
         if role == "secrets" and takeover:
             if state.get("master"):
                 raise SystemExit(f"{dep} is set up: the copy that takes over starts with an empty secrets (its release restarts it)")
@@ -689,10 +691,12 @@ def kernel_roster(copy=None):
         extra = f" ({dep}: {state.get('serving')}, master {'set' if state.get('master') else 'none'})" if state else ""
         print(f"  {m['role']:10} signing {m['signingKey'][:24]}…  agreement {m['agreementKey'][:24]}…{extra}")
     keys = {m["signingKey"] for m in members}
-    # the serving roster's keys this one no longer names (every one for the other copy; a restarted component's old
-    # keys for the serving one), and its retired keys a line still holds something signed by
-    retired = [m for r, m in now.get("members", {}).items() if r != "secrets" and m["signingKey"] not in keys]
-    still = [m for m in (cur.get("retiredInUse") or []) if m in now.get("retired", [])]  # only keys the root key named
+    # retired: for the other copy every serving member (it takes over from them); and the serving roster's keys this
+    # one no longer names that a line still holds something signed by (a restarted component's old keys; none when the
+    # kernel started empty, so its new volumes serve)
+    retired = [m for r, m in now.get("members", {}).items() if takeover and r != "secrets"]
+    named = list(now.get("members", {}).values()) + now.get("retired", [])  # only keys the root key named
+    still = [m for m in (cur.get("retiredInUse") or []) if m in named and m["role"] != "secrets"]
     for m in still:
         if m not in retired and m["signingKey"] not in keys:
             retired.append(m)
@@ -703,8 +707,13 @@ def kernel_roster(copy=None):
     payload = roster_payload(copy, members, retired, boot)
     setup_sig = base64.b64encode(setup_key().sign(payload.encode(), ec.ECDSA(hashes.SHA256()))).decode()
     out = call("POST", "/setup/kernel/roster", {"copy": copy, "payload": payload, "setupSig": setup_sig})
-    then = " (signed, the router flips to it by itself; then infra/setup.py kernel-flipped)" if takeover else ""
-    print(f"ok: roster {out['id'][:16]}… (copy {copy}, {len(retired)} retired) filed; Deyao signs it in the app: Settings → Kernel → Sign roster{then}")
+    if takeover:
+        then = "Deyao signs it in the app: Settings → Kernel → Sign roster (the router then flips to it by itself; then infra/setup.py kernel-flipped)"
+    elif empty:
+        then = "its secrets is empty: Deyao Recovers it in the app (Settings → Kernel → Recover the kernel's secrets), which signs this roster with the keys his kit derives"
+    else:
+        then = "Deyao signs it in the app: Settings → Kernel → Sign roster"
+    print(f"ok: roster {out['id'][:16]}… (copy {copy}, {len(retired)} retired) filed; {then}")
 
 
 def kernel_flipped():

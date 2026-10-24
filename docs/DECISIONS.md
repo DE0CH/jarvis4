@@ -2679,8 +2679,15 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      Why the notary has no handoff: its log is a chain per copy, and a challenge only needs a notary the roster names.
      Why a crash restart still costs a re-sign: the restarted component's fresh keys are vouched for only by a roster;
      its old keys go into that roster as retired, so live sessions don't notice. The first rollout renames every
-     kernel Deployment and volume (`<role>-blue`, `<role>-blue-data`): the kernel starts empty on blue, which is right
-     only while no session runs on it (PLAN-cluster step 5 not done). Tested: `kernel/kerneltest`
+     kernel Deployment and volume (`<role>-blue`, `<role>-blue-data`; Flux prunes the old ones): the kernel starts
+     empty on blue, which is right only while no session runs on it (PLAN-cluster step 5 not done). It is a bootstrap,
+     not a flip: every kernel Deployment names `:latest`, and the pin job pins a serving-copy Deployment that pins no
+     build onto the release itself, in place, with no hold (the other copy stays `:latest` at replicas 0); Deyao then
+     Recovers the kernel's secrets with his kit, which signs blue's roster (one Face ID). For that, a re-signed roster
+     of the serving copy retires only old keys something a line still holds is signed by (`retiredInUse` covers the
+     current members too): a kernel that started empty retires nothing, so its fresh notarizer and spawner volumes
+     serve rather than wait for a handoff that will never come; and the app's Recover section shows whenever the
+     serving secrets is empty, also on an iPhone that pinned secrets before. Tested: `kernel/kerneltest`
      `TestACopyFlipKeepsALiveLine` (two flips, blue → green → blue, a live line pulling, pausing on the new spawner,
      resuming, a second machine from the paused source refused, a new line), `TestTheHandoffRefusals` (the same copy,
      not retired, another role, another roster, a forged signer, a serving component), `TestACrashRestartKeepsTheGrants`;

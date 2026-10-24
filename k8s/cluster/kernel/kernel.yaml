@@ -9,7 +9,10 @@
 # and the hold `jarvis2/kernel-release: pending`). Once Deyao signs that copy's roster the router flips: every serving
 # component hands over and freezes, the notarizer's, the spawner's and secrets' state moves to the other copy
 # (router/kernelflip.go). Then infra/setup.py kernel-flipped names the new serving copy in active-kernel.txt, deletes its
-# hold and scales the old copy to zero until the next release lands on it.
+# hold and scales the old copy to zero until the next release lands on it. The copy label is `color` (a Deployment's
+# selector can't change, and secrets-blue/-green had it before the copies). A copy that pins no build (`:latest`) has
+# never been released: the pin job pins the serving one in place (the bootstrap, RUNBOOK "The first rollout of the two
+# copies"); the other stays `:latest` at replicas 0 until a release copies the serving images into it.
 # State: the notary's log, the notarizer's sources and the spawner's machines live on each copy's own volumes
 # (Recreate: one writer); mover, merger, the two signers and the minter hold nothing; secrets holds the stores in memory
 # only. Only the router (and kernel-id, GET /identity only) reaches them, and each copy's secrets its own minter; only
@@ -34,15 +37,15 @@ metadata: { name: notary-blue, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: notary, copy: blue } }
+  selector: { matchLabels: { app: kernel, role: notary, color: blue } }
   template:
-    metadata: { labels: { app: kernel, role: notary, copy: blue, egress: "none" } }
+    metadata: { labels: { app: kernel, role: notary, color: blue, egress: "none" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       containers:
         - name: notary
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-dcc425b899c7@sha256:5486ff2afdf1cbd084cf40d018a7ab1b79ad7725a0af51df3bce361616e9ab8c
+          image: ghcr.io/de0ch/jarvis4-kernel:latest
           command: ["/kernel/notary"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_DATA, value: /data }]
@@ -57,7 +60,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: notary-blue, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: notary, copy: blue }
+  selector: { app: kernel, role: notary, color: blue }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: v1
@@ -74,15 +77,15 @@ metadata: { name: notarizer-blue, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: notarizer, copy: blue } }
+  selector: { matchLabels: { app: kernel, role: notarizer, color: blue } }
   template:
-    metadata: { labels: { app: kernel, role: notarizer, copy: blue, egress: "none" } }
+    metadata: { labels: { app: kernel, role: notarizer, color: blue, egress: "none" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       containers:
         - name: notarizer
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-dcc425b899c7@sha256:5486ff2afdf1cbd084cf40d018a7ab1b79ad7725a0af51df3bce361616e9ab8c
+          image: ghcr.io/de0ch/jarvis4-kernel:latest
           command: ["/kernel/notarizer"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_DATA, value: /data }]
@@ -97,7 +100,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: notarizer-blue, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: notarizer, copy: blue }
+  selector: { app: kernel, role: notarizer, color: blue }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: apps/v1
@@ -106,15 +109,15 @@ metadata: { name: mover-blue, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: mover, copy: blue } }
+  selector: { matchLabels: { app: kernel, role: mover, color: blue } }
   template:
-    metadata: { labels: { app: kernel, role: mover, copy: blue, egress: "none" } }
+    metadata: { labels: { app: kernel, role: mover, color: blue, egress: "none" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       containers:
         - name: mover
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-dcc425b899c7@sha256:5486ff2afdf1cbd084cf40d018a7ab1b79ad7725a0af51df3bce361616e9ab8c
+          image: ghcr.io/de0ch/jarvis4-kernel:latest
           command: ["/kernel/mover"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -129,7 +132,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: mover-blue, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: mover, copy: blue }
+  selector: { app: kernel, role: mover, color: blue }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: apps/v1
@@ -138,15 +141,15 @@ metadata: { name: merger-blue, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: merger, copy: blue } }
+  selector: { matchLabels: { app: kernel, role: merger, color: blue } }
   template:
-    metadata: { labels: { app: kernel, role: merger, copy: blue, egress: "none" } }
+    metadata: { labels: { app: kernel, role: merger, color: blue, egress: "none" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       containers:
         - name: merger
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-dcc425b899c7@sha256:5486ff2afdf1cbd084cf40d018a7ab1b79ad7725a0af51df3bce361616e9ab8c
+          image: ghcr.io/de0ch/jarvis4-kernel:latest
           command: ["/kernel/merger"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -161,7 +164,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: merger-blue, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: merger, copy: blue }
+  selector: { app: kernel, role: merger, color: blue }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: v1
@@ -178,15 +181,15 @@ metadata: { name: spawner-blue, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: spawner, copy: blue } }
+  selector: { matchLabels: { app: kernel, role: spawner, color: blue } }
   template:
-    metadata: { labels: { app: kernel, role: spawner, copy: blue, egress: "fly" } }
+    metadata: { labels: { app: kernel, role: spawner, color: blue, egress: "fly" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       containers:
         - name: spawner
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-dcc425b899c7@sha256:5486ff2afdf1cbd084cf40d018a7ab1b79ad7725a0af51df3bce361616e9ab8c
+          image: ghcr.io/de0ch/jarvis4-kernel:latest
           command: ["/kernel/spawner"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_DATA, value: /data }, { name: KERNEL_MACHINE_URL, value: "http://jarvis4-box._peer.internal:8081,http://jarvis4-gw-b._peer.internal:8081" }]
@@ -201,7 +204,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: spawner-blue, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: spawner, copy: blue }
+  selector: { app: kernel, role: spawner, color: blue }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: apps/v1
@@ -210,15 +213,15 @@ metadata: { name: identity-blue, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: identity, copy: blue } }
+  selector: { matchLabels: { app: kernel, role: identity, color: blue } }
   template:
-    metadata: { labels: { app: kernel, role: identity, copy: blue, egress: "none" } }
+    metadata: { labels: { app: kernel, role: identity, color: blue, egress: "none" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       containers:
         - name: identity
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-dcc425b899c7@sha256:5486ff2afdf1cbd084cf40d018a7ab1b79ad7725a0af51df3bce361616e9ab8c
+          image: ghcr.io/de0ch/jarvis4-kernel:latest
           command: ["/kernel/identity"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -233,7 +236,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: identity-blue, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: identity, copy: blue }
+  selector: { app: kernel, role: identity, color: blue }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: apps/v1
@@ -242,15 +245,15 @@ metadata: { name: gullible-blue, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: gullible, copy: blue } }
+  selector: { matchLabels: { app: kernel, role: gullible, color: blue } }
   template:
-    metadata: { labels: { app: kernel, role: gullible, copy: blue, egress: "none" } }
+    metadata: { labels: { app: kernel, role: gullible, color: blue, egress: "none" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       containers:
         - name: gullible
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-dcc425b899c7@sha256:5486ff2afdf1cbd084cf40d018a7ab1b79ad7725a0af51df3bce361616e9ab8c
+          image: ghcr.io/de0ch/jarvis4-kernel:latest
           command: ["/kernel/gullible"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -265,7 +268,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: gullible-blue, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: gullible, copy: blue }
+  selector: { app: kernel, role: gullible, color: blue }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: apps/v1
@@ -274,9 +277,9 @@ metadata: { name: minter-blue, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: minter, copy: blue } }
+  selector: { matchLabels: { app: kernel, role: minter, color: blue } }
   template:
-    metadata: { labels: { app: kernel, role: minter, copy: blue, egress: "github" } }
+    metadata: { labels: { app: kernel, role: minter, color: blue, egress: "github" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -297,7 +300,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: minter-blue, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: minter, copy: blue }
+  selector: { app: kernel, role: minter, color: blue }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: apps/v1
@@ -306,9 +309,9 @@ metadata: { name: secrets-blue, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: secrets, copy: blue } }
+  selector: { matchLabels: { app: kernel, role: secrets, color: blue } }
   template:
-    metadata: { labels: { app: kernel, role: secrets, copy: blue, egress: "none" } }
+    metadata: { labels: { app: kernel, role: secrets, color: blue, egress: "none" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -329,7 +332,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: secrets-blue, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: secrets, copy: blue }
+  selector: { app: kernel, role: secrets, color: blue }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: v1
@@ -346,15 +349,15 @@ metadata: { name: notary-green, namespace: jarvis4-kernel }
 spec:
   replicas: 0
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: notary, copy: green } }
+  selector: { matchLabels: { app: kernel, role: notary, color: green } }
   template:
-    metadata: { labels: { app: kernel, role: notary, copy: green, egress: "none" } }
+    metadata: { labels: { app: kernel, role: notary, color: green, egress: "none" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       containers:
         - name: notary
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-dcc425b899c7@sha256:5486ff2afdf1cbd084cf40d018a7ab1b79ad7725a0af51df3bce361616e9ab8c
+          image: ghcr.io/de0ch/jarvis4-kernel:latest
           command: ["/kernel/notary"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_DATA, value: /data }]
@@ -369,7 +372,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: notary-green, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: notary, copy: green }
+  selector: { app: kernel, role: notary, color: green }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: v1
@@ -386,15 +389,15 @@ metadata: { name: notarizer-green, namespace: jarvis4-kernel }
 spec:
   replicas: 0
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: notarizer, copy: green } }
+  selector: { matchLabels: { app: kernel, role: notarizer, color: green } }
   template:
-    metadata: { labels: { app: kernel, role: notarizer, copy: green, egress: "none" } }
+    metadata: { labels: { app: kernel, role: notarizer, color: green, egress: "none" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       containers:
         - name: notarizer
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-dcc425b899c7@sha256:5486ff2afdf1cbd084cf40d018a7ab1b79ad7725a0af51df3bce361616e9ab8c
+          image: ghcr.io/de0ch/jarvis4-kernel:latest
           command: ["/kernel/notarizer"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_DATA, value: /data }]
@@ -409,7 +412,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: notarizer-green, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: notarizer, copy: green }
+  selector: { app: kernel, role: notarizer, color: green }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: apps/v1
@@ -418,15 +421,15 @@ metadata: { name: mover-green, namespace: jarvis4-kernel }
 spec:
   replicas: 0
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: mover, copy: green } }
+  selector: { matchLabels: { app: kernel, role: mover, color: green } }
   template:
-    metadata: { labels: { app: kernel, role: mover, copy: green, egress: "none" } }
+    metadata: { labels: { app: kernel, role: mover, color: green, egress: "none" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       containers:
         - name: mover
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-dcc425b899c7@sha256:5486ff2afdf1cbd084cf40d018a7ab1b79ad7725a0af51df3bce361616e9ab8c
+          image: ghcr.io/de0ch/jarvis4-kernel:latest
           command: ["/kernel/mover"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -441,7 +444,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: mover-green, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: mover, copy: green }
+  selector: { app: kernel, role: mover, color: green }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: apps/v1
@@ -450,15 +453,15 @@ metadata: { name: merger-green, namespace: jarvis4-kernel }
 spec:
   replicas: 0
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: merger, copy: green } }
+  selector: { matchLabels: { app: kernel, role: merger, color: green } }
   template:
-    metadata: { labels: { app: kernel, role: merger, copy: green, egress: "none" } }
+    metadata: { labels: { app: kernel, role: merger, color: green, egress: "none" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       containers:
         - name: merger
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-dcc425b899c7@sha256:5486ff2afdf1cbd084cf40d018a7ab1b79ad7725a0af51df3bce361616e9ab8c
+          image: ghcr.io/de0ch/jarvis4-kernel:latest
           command: ["/kernel/merger"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -473,7 +476,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: merger-green, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: merger, copy: green }
+  selector: { app: kernel, role: merger, color: green }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: v1
@@ -490,15 +493,15 @@ metadata: { name: spawner-green, namespace: jarvis4-kernel }
 spec:
   replicas: 0
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: spawner, copy: green } }
+  selector: { matchLabels: { app: kernel, role: spawner, color: green } }
   template:
-    metadata: { labels: { app: kernel, role: spawner, copy: green, egress: "fly" } }
+    metadata: { labels: { app: kernel, role: spawner, color: green, egress: "fly" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       containers:
         - name: spawner
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-dcc425b899c7@sha256:5486ff2afdf1cbd084cf40d018a7ab1b79ad7725a0af51df3bce361616e9ab8c
+          image: ghcr.io/de0ch/jarvis4-kernel:latest
           command: ["/kernel/spawner"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_DATA, value: /data }, { name: KERNEL_MACHINE_URL, value: "http://jarvis4-box._peer.internal:8081,http://jarvis4-gw-b._peer.internal:8081" }]
@@ -513,7 +516,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: spawner-green, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: spawner, copy: green }
+  selector: { app: kernel, role: spawner, color: green }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: apps/v1
@@ -522,15 +525,15 @@ metadata: { name: identity-green, namespace: jarvis4-kernel }
 spec:
   replicas: 0
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: identity, copy: green } }
+  selector: { matchLabels: { app: kernel, role: identity, color: green } }
   template:
-    metadata: { labels: { app: kernel, role: identity, copy: green, egress: "none" } }
+    metadata: { labels: { app: kernel, role: identity, color: green, egress: "none" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       containers:
         - name: identity
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-dcc425b899c7@sha256:5486ff2afdf1cbd084cf40d018a7ab1b79ad7725a0af51df3bce361616e9ab8c
+          image: ghcr.io/de0ch/jarvis4-kernel:latest
           command: ["/kernel/identity"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -545,7 +548,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: identity-green, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: identity, copy: green }
+  selector: { app: kernel, role: identity, color: green }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: apps/v1
@@ -554,15 +557,15 @@ metadata: { name: gullible-green, namespace: jarvis4-kernel }
 spec:
   replicas: 0
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: gullible, copy: green } }
+  selector: { matchLabels: { app: kernel, role: gullible, color: green } }
   template:
-    metadata: { labels: { app: kernel, role: gullible, copy: green, egress: "none" } }
+    metadata: { labels: { app: kernel, role: gullible, color: green, egress: "none" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       containers:
         - name: gullible
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-dcc425b899c7@sha256:5486ff2afdf1cbd084cf40d018a7ab1b79ad7725a0af51df3bce361616e9ab8c
+          image: ghcr.io/de0ch/jarvis4-kernel:latest
           command: ["/kernel/gullible"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -577,7 +580,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: gullible-green, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: gullible, copy: green }
+  selector: { app: kernel, role: gullible, color: green }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: apps/v1
@@ -586,9 +589,9 @@ metadata: { name: minter-green, namespace: jarvis4-kernel }
 spec:
   replicas: 0
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: minter, copy: green } }
+  selector: { matchLabels: { app: kernel, role: minter, color: green } }
   template:
-    metadata: { labels: { app: kernel, role: minter, copy: green, egress: "github" } }
+    metadata: { labels: { app: kernel, role: minter, color: green, egress: "github" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -609,7 +612,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: minter-green, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: minter, copy: green }
+  selector: { app: kernel, role: minter, color: green }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: apps/v1
@@ -618,9 +621,9 @@ metadata: { name: secrets-green, namespace: jarvis4-kernel }
 spec:
   replicas: 0
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: kernel, role: secrets, copy: green } }
+  selector: { matchLabels: { app: kernel, role: secrets, color: green } }
   template:
-    metadata: { labels: { app: kernel, role: secrets, copy: green, egress: "none" } }
+    metadata: { labels: { app: kernel, role: secrets, color: green, egress: "none" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -641,7 +644,7 @@ apiVersion: v1
 kind: Service
 metadata: { name: secrets-green, namespace: jarvis4-kernel }
 spec:
-  selector: { app: kernel, role: secrets, copy: green }
+  selector: { app: kernel, role: secrets, color: green }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 # ingress: the router (namespace jarvis4-router) on :8080, and kernel-id (jarvis2-edge), which nginx confines to GET
@@ -692,12 +695,12 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: kernel-secrets-minter-blue, namespace: jarvis4-kernel }
 spec:
-  podSelector: { matchLabels: { role: secrets, copy: blue } }
+  podSelector: { matchLabels: { role: secrets, color: blue } }
   policyTypes: [Egress]
   egress:
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }, podSelector: { matchLabels: { k8s-app: kube-dns } } }]
       ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
-    - to: [{ podSelector: { matchLabels: { app: kernel, role: minter, copy: blue } } }]
+    - to: [{ podSelector: { matchLabels: { app: kernel, role: minter, color: blue } } }]
       ports: [{ port: 8080, protocol: TCP }]
 ---
 # blue's minter takes calls from blue's secrets too (besides the router's and kernel-id's, above)
@@ -705,10 +708,10 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: kernel-minter-ingress-blue, namespace: jarvis4-kernel }
 spec:
-  podSelector: { matchLabels: { role: minter, copy: blue } }
+  podSelector: { matchLabels: { role: minter, color: blue } }
   policyTypes: [Ingress]
   ingress:
-    - from: [{ podSelector: { matchLabels: { app: kernel, role: secrets, copy: blue } } }]
+    - from: [{ podSelector: { matchLabels: { app: kernel, role: secrets, color: blue } } }]
       ports: [{ port: 8080 }]
 ---
 # green's secrets reaches green's minter only (an approved deploy-key call), and nothing outside the cluster
@@ -716,12 +719,12 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: kernel-secrets-minter-green, namespace: jarvis4-kernel }
 spec:
-  podSelector: { matchLabels: { role: secrets, copy: green } }
+  podSelector: { matchLabels: { role: secrets, color: green } }
   policyTypes: [Egress]
   egress:
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }, podSelector: { matchLabels: { k8s-app: kube-dns } } }]
       ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
-    - to: [{ podSelector: { matchLabels: { app: kernel, role: minter, copy: green } } }]
+    - to: [{ podSelector: { matchLabels: { app: kernel, role: minter, color: green } } }]
       ports: [{ port: 8080, protocol: TCP }]
 ---
 # green's minter takes calls from green's secrets too (besides the router's and kernel-id's, above)
@@ -729,8 +732,8 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: kernel-minter-ingress-green, namespace: jarvis4-kernel }
 spec:
-  podSelector: { matchLabels: { role: minter, copy: green } }
+  podSelector: { matchLabels: { role: minter, color: green } }
   policyTypes: [Ingress]
   ingress:
-    - from: [{ podSelector: { matchLabels: { app: kernel, role: secrets, copy: green } } }]
+    - from: [{ podSelector: { matchLabels: { app: kernel, role: secrets, color: green } } }]
       ports: [{ port: 8080 }]

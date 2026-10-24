@@ -234,8 +234,11 @@ func (r *Router) rosterCheck() {
 	}
 }
 
-// retiredInUse: the current roster's retired keys that something a line holds is signed by (its grant, its certs and
-// their notarizations): the next roster names them as retired again; the others can go
+// retiredInUse: the current roster's keys, its members' (but secrets') and its retired ones, that something a line
+// holds is signed by (its grant, its certs and their notarizations): a re-signed roster of the serving copy names
+// those it no longer has as members as retired, a roster of the other copy names the retired ones again; the others
+// can go (a component that restarted with nothing signed by its old keys leaves none: a kernel that starts empty
+// retires nothing)
 func (r *Router) retiredInUse() []sig.Identity {
 	type held struct {
 		role string
@@ -271,7 +274,13 @@ func (r *Router) retiredInUse() []sig.Identity {
 		}
 	})
 	out := []sig.Identity{}
-	for _, m := range ro.Retired {
+	keys := ro.Retired
+	for _, m := range ro.Members {
+		if m.Role != "secrets" {
+			keys = append(keys, m)
+		}
+	}
+	for _, m := range keys {
 		for _, h := range docs {
 			if h.role == m.Role && sig.Verify(m.SigningKey, []byte(h.d.Payload), h.d.Sig) {
 				out = append(out, m)

@@ -113,4 +113,26 @@ for n, (_, cp, _, i) in ds().items():
     assert M.HOLD not in p and ("replicas: 0" in p) == (cp == "blue"), (n, p)
 r = subprocess.run([sys.executable, PIN, "plan", KF, "green", git("rev-parse", "HEAD")], cwd=d, capture_output=True, text=True)
 assert r.returncode == 0 and r.stdout.split() and all(o.endswith("-blue") for o in r.stdout.split()), (r.returncode, r.stdout, r.stderr)
+
+# 9. the bootstrap (the first rollout): blue serves unpinned (:latest), green idle; a release pins blue itself onto the
+# build in place, no hold, green untouched (replicas 0, :latest); without the trailer nothing moves
+open(KF, "w").write(re.sub(r"ghcr.io/de0ch/jarvis4-kernel:(latest|sha-[0-9a-f]{12}(@sha256:[0-9a-f]{64})?)", "ghcr.io/de0ch/jarvis4-kernel:latest", yaml_src))
+d2 = tempfile.mkdtemp()
+git2 = lambda *a: subprocess.run(["git", *a], cwd=d2, env=env, check=True, capture_output=True, text=True).stdout.strip()
+subprocess.run(["tar", "-x", "-C", d2], input=arch, check=True)
+git2("init", "-q", "-b", "main"); git2("add", "-A"); git2("commit", "-qm", "two copies")
+r = subprocess.run([sys.executable, PIN, "plan", KF, "blue", git2("rev-parse", "HEAD")], cwd=d2, capture_output=True, text=True)
+assert r.returncode == 1 and r.stdout.split() == [] and "notary-blue (notary, pinned latest)" in r.stderr, (r.returncode, r.stdout, r.stderr)
+git2("commit", "-q", "--allow-empty", "-m", "first release\n\nKernel-Release: two copies (Deyao, 2026-10-24)")
+r = subprocess.run([sys.executable, PIN, "plan", KF, "blue", git2("rev-parse", "HEAD")], cwd=d2, capture_output=True, text=True)
+moved = r.stdout.split()
+assert r.returncode == 0 and sorted(moved) == sorted(n for n, (_, cp, _, _) in ds().items() if cp == "blue"), (r.returncode, moved, r.stderr)
+subprocess.run([sys.executable, PIN, "apply", KF, "blue", "ghcr.io/de0ch/jarvis4-kernel:sha-cccccccccccc@sha256:" + "3" * 64, *moved], check=True)
+for n, (_, cp, pin, i) in ds().items():
+    p = parts()[i]
+    assert M.HOLD not in p, (n, p)
+    if cp == "blue":
+        assert pin == "cccccccccccc" and "replicas: 1" in p, (n, p)
+    else:
+        assert pin is None and "replicas: 0" in p, (n, p)
 print("ok: kernel_pin_test")

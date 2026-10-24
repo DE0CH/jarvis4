@@ -12,6 +12,11 @@ and the hold `jarvis2/kernel-release: pending` on each of its Deployments. While
 flipped and committed: infra/setup.py kernel-flipped deletes it), a second release is refused: the copy it would land
 on may be serving already.
 
+The bootstrap: a SERVING-copy Deployment that pins no build (`:latest`, a kernel that has never been released: the
+first rollout of the two copies) moves onto SHA itself, in place, with no hold, under the same trailer rule; the other
+copy isn't moved for that role. There is nothing to hand over from (the kernel starts empty), so the setup is a
+Recover of the kernel's secrets, not a flip.
+
 A component's inputs: the module's own packages that `go list -deps ./cmd/<role>` reaches (their non-test .go files,
 by directory so a deleted file counts, plus embedded files), kernel/go.mod, kernel/go.sum and kernel/Dockerfile's
 build (comments, blank lines and `go test` steps dropped). Tests, kerneltest, internal/kt, flowtest and tools are not
@@ -155,7 +160,10 @@ def plan(kf, active, sha):
         for c, t in bad:
             print(f"::warning::{c[:12]} has a malformed trailer 'Kernel-Release: {t}' (needs 'Kernel-Release: <why> (Deyao, YYYY-MM-DD)'): ignored", file=sys.stderr)
         ok = next(((c, t) for c, t in good if not changed(c, sha, ins[role])), None)
-        if ok:
+        if ok and not pin:  # the bootstrap: the serving copy has never been released, it is pinned in place
+            print(f"{name}: kernel release {ok[0][:12]} ({ok[1]}): the serving copy's first pin, in place", file=sys.stderr)
+            move.append(name)
+        elif ok:
             print(f"{standby[role]}: kernel release {ok[0][:12]} ({ok[1]}): {', '.join(files)}", file=sys.stderr)
             move.append(standby[role])
         else:
@@ -169,7 +177,7 @@ def plan(kf, active, sha):
               "else revert the change. No kernel Deployment was pinned; the router and session pins went ahead.",
               file=sys.stderr)
         return 1
-    if move and held(text, other(active)):
+    if set(move) & set(standby.values()) and held(text, other(active)):
         print(f"::error::a kernel release is in flight on the {other(active)} copy ({HOLD}): it may serve already, so "
               f"this release waits until that flip is done and committed (infra/setup.py kernel-flipped; docs/RUNBOOK.md "
               f"'A kernel release'). No kernel Deployment was pinned; the router and session pins went ahead.", file=sys.stderr)
@@ -180,12 +188,17 @@ def plan(kf, active, sha):
 
 
 def apply(kf, active, img, names):
-    """the other copy: NAMES onto IMG, the rest onto the serving copy's image of their role; replicas 1 and the hold"""
+    """the other copy: NAMES onto IMG, the rest onto the serving copy's image of their role; replicas 1 and the hold.
+    A serving-copy name (the bootstrap): onto IMG in place, nothing else"""
     parts = open(kf).read().split("\n---\n")
     ds = deployments("\n---\n".join(parts))
+    for name, _, c, _, i in ds:
+        if c == active and name in names:
+            parts[i] = IMG.sub(img, parts[i])
     serving = {role: IMG.search(parts[i]).group(0) for _, role, c, _, i in ds if c == active}
+    release = any(c == other(active) and name in names for name, _, c, _, _ in ds)
     for name, role, c, _, i in ds:
-        if c != other(active):
+        if c != other(active) or not release:
             continue
         p = IMG.sub(img if name in names else serving[role], parts[i])
         p = re.sub(r"(?m)^  replicas: \d+$", "  replicas: 1", p)

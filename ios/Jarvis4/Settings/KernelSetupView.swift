@@ -83,7 +83,8 @@ struct KernelSetupView: View {
              "The router passes the root key's public half to a setup session, which commits it to git. Every component checks its roster against it.")
       }
 
-      if status?.configured == true, KernelTrust.pinned == nil, state?.master.isEmpty ?? true {
+      // a serving secrets that is empty (never set up, or it started again: memory only) is Recovered with the kit
+      if status?.configured == true, state?.master.isEmpty ?? (KernelTrust.pinned == nil) {
         Section {
           SecureField("Recovery kit", text: $kitText).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("kernel-kit")
           Button(busy ?? "Recover the kernel's secrets") { Task { await recover() } }
@@ -95,7 +96,7 @@ struct KernelSetupView: View {
       }
 
       // an empty secrets is signed into the roster by its Recover (with the keys the kit derives), not before
-      if let p = pendingNew, KernelTrust.pinned != nil || state?.master.isEmpty == false { rosterSection(p) }
+      if let p = pendingNew, state?.master.isEmpty == false { rosterSection(p) }
 
       if mine, roster != nil, status?.root == false {
         Section {

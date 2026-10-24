@@ -96,6 +96,10 @@ router["current"] = blue_doc
 old_mover = {"role": "mover", "signingKey": pub(ks["mover"][0]), "agreementKey": pub(ks["mover"][1])}
 ks2 = dict(ks, mover=(ec.generate_private_key(ec.SECP256R1()), ec.generate_private_key(ec.SECP256R1())))
 answers.update(answer("blue", ks2, {"master": "M"}))
+S.kernel_roster()  # nothing a line holds is signed by the old mover: nothing retired (a kernel that started empty)
+r = json.loads(filed[-1]["payload"])
+assert r["copy"] == "blue" and "retired" not in r and "secretsBoot" not in r, r
+router["retiredInUse"] = [old_mover]  # a live line's grant is the old mover's
 S.kernel_roster()
 r = json.loads(filed[-1]["payload"])
 assert r["copy"] == "blue" and r["retired"] == [old_mover] and "secretsBoot" not in r, r

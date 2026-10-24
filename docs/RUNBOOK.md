@@ -627,6 +627,28 @@ hand the same state to it and the flip goes on (a component that already took a 
 secrets of that copy that restarted after its takeover, or before it, has lost what it held (memory only): Recover it
 with the kit (Settings → Kernel), as after any secrets crash; the flip then counts its takeover done.
 
+#### The first rollout of the two copies (once; DECISIONS 233)
+
+The commit that brings the two copies replaces the single kernel (Deployments notary, notarizer, …, secrets-blue,
+secrets-green): Flux prunes the old Deployments, Services and volumes (notary-data, notarizer-data, spawner-data) and
+the kernel starts empty on blue. Right only while no session runs on the kernel (`infra/setup.py sessions` empty).
+It costs Deyao one Recover with his kit (one Face ID):
+
+1. The commit carries `Kernel-Release: … (Deyao, YYYY-MM-DD)`. Every kernel Deployment in it names `:latest`; the
+   pin job pins every blue Deployment onto that build by digest in place (the bootstrap: a serving copy that pins no
+   build), with no hold, and leaves green at `:latest`, replicas 0. Wait for that pin commit to roll out (Flux, a
+   minute; blue's pods restart once more onto the digest).
+2. `infra/setup.py kernel-roster` (blue; it retires nothing: nothing on the empty kernel is signed by the old keys).
+   Until Deyao acts the router DMs once that the roster is stale (it re-posts the old one, which the new components
+   refuse): expected.
+3. Discord Deyao "waiting on you: Settings → Kernel → Recover the kernel's secrets with your kit". His Recover claims
+   blue's secrets, signs the filed roster with the keys his kit derives (one Face ID) and gives the spawner its Fly
+   token if the backups hold the core store.
+4. `infra/setup.py kernel-fly-token <file from infra/fly-token.sh>` (always, so the spawner has the token either way),
+   then `infra/setup.py sessions` / the app's Kernel page: healthy, blue serving.
+
+The next release lands on green and flips as above.
+
 Testing the selection: `python3 infra/kernel_pin_test.py` (a made-up history), or `python3 infra/kernel-pin.py plan
 <kernel.yaml pinned at X^> blue X` for a real commit X.
 
