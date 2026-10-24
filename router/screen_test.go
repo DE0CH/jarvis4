@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -22,10 +23,19 @@ func TestPushedScreenNeedsNoGrant(t *testing.T) {
 	if code, _ := appDo(t, r, "POST", "/api/sessions/sA/terminal", `{"text":"x"}`); code == 200 {
 		t.Fatal("typing went through without a grant")
 	}
-	// a stale push (no heartbeat) isn't shown; another machine's push doesn't land on this session
+	// a stale push (no heartbeat) isn't fresh for the autopilot, but the terminal still shows it, with its time and
+	// without running anything in the machine; another machine's push doesn't land on this session
 	r.st.sdb.db.pool.Exec(context.Background(), "UPDATE session_screens SET at = now() - interval '46 seconds' WHERE session_id = 'sA'")
 	if _, ok := r.pushedScreen("sA"); ok {
 		t.Fatal("a stale screen was used")
+	}
+	if code, v := appDo(t, r, "GET", "/api/sessions/sA/terminal", ""); code != 200 || !strings.Contains(v["screen"].(string), "hello") || v["at"] == "" {
+		t.Fatalf("the terminal didn't show the last screen: %d %v", code, v)
+	}
+	// no screen at all: an error, no exec
+	addSession(r, "sC", "started", "mC", false)
+	if code, v := appDo(t, r, "GET", "/api/sessions/sC/terminal", ""); code == 200 || !strings.Contains(fmt.Sprint(v["error"]), "no screen") {
+		t.Fatalf("%d %v", code, v)
 	}
 	// any replica sees it: another router on the same database
 	r2 := newTestRouterOn(t, r)

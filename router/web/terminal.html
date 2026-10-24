@@ -247,8 +247,11 @@
       clearBanner("view");
       const f = r.data || {};
       const [x, y, w, h, vis] = String(f.cursor || "").split(",").map((v) => parseInt(v, 10));
-      // a pushed picture (f.at) is view only until a grant lets typing through
-      statusEl.textContent = (f.at && !typing ? "view only" : "live") + (w ? " · " + w + "×" + h : "");
+      // the picture is the one the machine uploads (f.at): view only until a grant lets typing through; an old one
+      // (the machine quiet for over a minute) says when it is from
+      const age = f.at ? (Date.now() - Date.parse(f.at)) / 1000 : 0;
+      const when = age > 60 ? " · from " + new Date(Date.parse(f.at)).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+      statusEl.textContent = (typing ? "live" : "view only") + (w ? " · " + w + "×" + h : "") + when;
       const key = (f.screen || "") + "|" + (f.cursor || "");
       if (key !== lastKey) { lastKey = key; draw(parseScreen(String(f.screen || ""), vis ? [x, y] : null)); }
     } else {
@@ -275,7 +278,8 @@
       while (queue.length) {
         const b = queue.shift();
         const r = await call("POST", "terminal", b);
-        if (!r.ok) { typing = false; failed(r, "input"); } else { typing = true; clearBanner("input"); }
+        if (!r.ok) { typing = false; failed(r, "input"); }
+        else { if (!typing) { typing = true; fitted = ""; fit(); } clearBanner("input"); }
       }
     } finally { sending = false; }
     setTimeout(tick, 150);
@@ -326,8 +330,10 @@
     if (k === fitted) return;
     fitted = k;
     clearTimeout(fitTimer);
-    // fitting the window is input too: without a grant the picture keeps the window's own size, quietly
-    fitTimer = setTimeout(async () => { const r = await call("POST", "terminal", { cols, rows }); if (r.ok) typing = true; else if (r.kind !== "grant") failed(r, "view"); else fitted = ""; }, 400);
+    // fitting the window is input too: only once typing went through (a grant in force); before that the picture
+    // keeps the window's own size and nothing is sent
+    if (!typing) { fitted = ""; return; }
+    fitTimer = setTimeout(async () => { const r = await call("POST", "terminal", { cols, rows }); if (!r.ok) fitted = ""; }, 400);
   }
   viewport();
   if (window.visualViewport) { visualViewport.addEventListener("resize", () => { viewport(); fit(); }); visualViewport.addEventListener("scroll", viewport); }

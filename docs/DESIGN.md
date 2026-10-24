@@ -1050,8 +1050,9 @@ any of the line's stores is sensitive, and the **line id** (the line's first mac
 - A session holding a **sensitive** store accepts only a fresh phone grant.
 - Messages into a session are no holder's: they are deliveries, approved per message ("Message approvals").
 - **Viewing the terminal needs no grant** (Deyao, 2026-10-12): the machine pushes its own capture of the harness's
-  pane to the router (`/m/screen`, every 2 s when it changed, 30 s heartbeat), as it pushes its status. Nothing goes
-  into the machine for it. Typing, resizing and the Escape on a stale prompt stay behind the `terminal` / `status`
+  pane to the router (`/m/screen`, every 2 s when it changed, 30 s heartbeat), as it pushes its status, and the
+  terminal shows the last one, however old (Deyao, 2026-10-24: "The supervisor should just upload it"). Nothing goes
+  into the machine for it, not even as a fallback; the page sends no resize until typing went through. Typing, resizing and the Escape on a stale prompt stay behind the `terminal` / `status`
   grants; the "switch model?" dialog check reads the pushed pane.
 - Grants name the line, which the machine reads from its core-signed cert, so the router can't make one line's
   grant open another line's machine. Request ids are single-use and at most 2 minutes old.

@@ -1,7 +1,8 @@
 package main
 
 // The live terminal (Jarvis 1's lib/tty.js over grants instead of Fly exec): the harness runs in tmux session
-// `claude` inside the machine; the app polls a capture of the pane and sends keystrokes. Holder "terminal".
+// `claude` inside the machine. Viewing is the pane the machine's supervisor uploads itself (machine/screen.go),
+// never a command run in the machine; typing and resizing are commands under the "terminal" holder's grant.
 
 import (
 	"errors"
@@ -12,12 +13,10 @@ import (
 
 func shq(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
-const snapCmd = `tmux capture-pane -p -e -t claude; printf '\n__CUR__%s\n' "$(tmux display-message -p -t claude '#{cursor_x},#{cursor_y},#{pane_width},#{pane_height},#{cursor_flag}')"`
-
 type TermSnap struct {
 	Screen string `json:"screen"`
 	Cursor string `json:"cursor"`       // x,y,width,height,visible
-	At     string `json:"at,omitempty"` // when the machine pushed it (a pushed screen; empty = read just now by the holder)
+	At     string `json:"at,omitempty"` // when the machine pushed it
 }
 
 // pushedScreen: a machine's screen push counts while its heartbeat (30 s) can still be on time
@@ -48,21 +47,15 @@ func (r *Router) latestScreen(session string) (TermSnap, time.Duration, bool) {
 	return r.st.Screen(session, machine)
 }
 
-// TermSnapshot: the pane. Viewing needs no grant (Deyao, 2026-10-12): the machine pushes its own capture; only a
-// machine on an image from before the push is read through the terminal holder (a grant).
+// TermSnapshot: the pane the session's running machine last uploaded, however old (At says when). Viewing needs no
+// grant and runs nothing in the machine (Deyao, 2026-10-12, 2026-10-24: "The supervisor should just upload it").
 func (r *Router) TermSnapshot(session string) (TermSnap, error) {
-	if snap, ok := r.pushedScreen(session); ok {
-		return snap, nil
+	snap, age, ok := r.latestScreen(session)
+	if !ok {
+		return TermSnap{}, errors.New("no screen from the machine yet: its supervisor sends the harness's pane every 2 s once the harness runs")
 	}
-	res, err := r.Exec(session, "terminal", snapCmd, 15*time.Second)
-	if err != nil {
-		return TermSnap{}, err
-	}
-	i := strings.LastIndex(res.Stdout, "\n__CUR__")
-	if i < 0 {
-		return TermSnap{}, errors.New("no tmux session (is the harness running?)")
-	}
-	return TermSnap{Screen: res.Stdout[:i], Cursor: strings.TrimSpace(res.Stdout[i+len("\n__CUR__"):])}, nil
+	snap.At = time.Now().Add(-age).UTC().Format(time.RFC3339)
+	return snap, nil
 }
 
 // allowed tmux key names for TermInput (anything else is sent as literal text)
