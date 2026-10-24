@@ -77,6 +77,13 @@ func (s *Schedule) empty() bool {
 	return len(s.Wakeups) == 0 && len(s.Crons) == 0 && s.ResumePrompt == "" && len(s.Watches) == 0
 }
 
+// willWake: something armed will prompt the session again (a wakeup, a cron, a watch, also one met or given up and
+// still being delivered)
+func willWake(d *persisted, sid string) bool {
+	s := d.Schedules[sid]
+	return s != nil && len(s.Wakeups)+len(s.Crons)+len(s.Watches) > 0
+}
+
 // sched: the session's schedule, made on demand (callers hold the state lock)
 func sched(d *persisted, sid string) *Schedule {
 	if d.Schedules == nil {

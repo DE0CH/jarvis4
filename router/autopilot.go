@@ -331,11 +331,11 @@ func (r *Router) autopilotTick() {
 func idleEligible(g *Registry) bool { return g != nil && g.Status == "idle" && g.BgTasks == 0 }
 
 // attentionKind: the state a session settled into, or "" while it works. nil = no live claude inside.
-func attentionKind(g *Registry) string {
+func attentionKind(g *Registry, armed bool) string {
 	switch {
 	case g != nil && g.Status == "waiting":
 		return "waiting"
-	case g != nil && g.Status == "idle" && g.BgTasks == 0:
+	case g != nil && g.Status == "idle" && g.BgTasks == 0 && !armed: // idle: done, and nothing will prompt it again
 		return "idle"
 	case g != nil && g.Status != "":
 		return ""
@@ -428,7 +428,7 @@ func planTick(d *persisted, now time.Time, storedExp map[string]int64, c pilotCo
 		// "needs you" / idle / dead DM, once per settled episode
 		if operating || l.OneShot {
 			l.Settled = nil
-		} else if kind := attentionKind(g); kind == "" {
+		} else if kind := attentionKind(g, willWake(d, id)); kind == "" {
 			l.Settled, l.AttentionSent = nil, ""
 		} else if key := attentionKey(kind, g); l.Settled == nil || l.Settled.Kind != kind {
 			l.Settled = &SettledEpisode{Kind: kind, Since: now, Notified: l.AttentionSent == key}

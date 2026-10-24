@@ -223,6 +223,14 @@ func TestAttentionDM(t *testing.T) {
 	if a := planTick(d, t5, nil, c, no, no); strings.Contains(kinds(a), "dm") {
 		t.Fatal("idle ping is muted")
 	}
+	// an armed watch: Claude stopped but something will prompt it again, so it isn't idle
+	l.Settled, l.AttentionSent, l.NotifyIdleOff = nil, "", false
+	sched(d, "s1").Watches["ci"] = &Watch{Name: "ci"}
+	planTick(d, now, nil, c, no, no)
+	if a := planTick(d, t5, nil, c, no, no); strings.Contains(kinds(a), "dm") {
+		t.Fatal("an idle ping with a watch armed")
+	}
+	delete(d.Schedules["s1"].Watches, "ci")
 	// no report for a while = dead, which still pings
 	l.LastReport = now.Add(-time.Hour)
 	l.Settled = nil
