@@ -281,7 +281,7 @@ func (r *Router) buildHandlers() {
 	// ---- state ---------------------------------------------------------------------------------------
 	app("GET /api/state", func(w http.ResponseWriter, req *http.Request) {
 		key, err := r.core.Key()
-		coreInfo := map[string]any{"up": err == nil}
+		coreInfo := map[string]any{"up": err == nil, "none": r.cfg.NoCore} // none: a box that runs the kernel only
 		if err == nil {
 			coreInfo["signingKey"], coreInfo["agreementKey"] = key["signingKey"], key["agreementKey"]
 		}

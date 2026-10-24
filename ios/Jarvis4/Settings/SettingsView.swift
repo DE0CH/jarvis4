@@ -36,13 +36,15 @@ struct SettingsView: View {
           } else {
             LabeledContent("Core", value: model.coreUp ? "Running" : "Not answering")
           }
-          Button("Reset or recover…", systemImage: "key.horizontal") { model.showSetup = true }.accessibilityIdentifier("open-setup")
+          if !model.noCore { // with no core, the kernel's secrets is Recovered under Kernel
+            Button("Reset or recover…", systemImage: "key.horizontal") { model.showSetup = true }.accessibilityIdentifier("open-setup")
+          }
           NavigationLink(value: SettingsRoute.backup) { Label("Encrypted backup", systemImage: "arrow.down.doc") }
             .accessibilityIdentifier("open-backup")
           NavigationLink(value: SettingsRoute.kernel) { Label("Kernel", systemImage: "cpu") }
             .accessibilityIdentifier("open-kernel")
         } header: { Text("Jarvis 4") } footer: {
-          Text("Either pairs this iPhone again.")
+          Text(model.noCore ? "Jarvis 4 runs the kernel only: Recover its secrets under Kernel." : "Either pairs this iPhone again.")
         }
         if model.coreNext != .null { NextCoreSection() }
       }

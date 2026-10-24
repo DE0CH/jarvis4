@@ -38,6 +38,11 @@ final class KernelUITests: JarvisUITestCase {
     XCTAssertTrue(said(banner).contains("No signed kernel roster"), "the warning doesn't name what is wrong: \(said(banner))")
     XCTAssertFalse(el("banner-core").exists, "a box with no core warns about the core")
     shot("kernel-unhealthy")
+    // Settings offers no Reset or recover (the old core's page): the kernel's secrets is Recovered under Kernel
+    tabRoot("Settings")
+    _ = scrolledTo(el("open-kernel"))
+    XCTAssertTrue(arrives(el("open-kernel"), 20, "Kernel in Settings"))
+    XCTAssertFalse(el("open-setup").exists, "a box with no core offers the core's Reset or recover")
   }
 
   /// A healthy kernel shows no warning on Sessions, and one component that stops answering does, by name.

@@ -39,6 +39,8 @@ final class AppModel {
   var messages: [PendingMessage] = []
   var messageRules: [MessageRule] = []
   var coreUp = false
+  /// the box runs no core (the kernel only): no Reset or recover
+  var noCore = false
   /// the kernel's health on a box that runs no core (router/kernelhealth.go); nil on a box with a core
   var kernelHealth: KernelHealth?
   /// what the Sessions page warns about for the core or the kernel (nil: nothing)
@@ -225,6 +227,7 @@ final class AppModel {
       messages = j["messages"].array.map(PendingMessage.init)
       messageRules = j["messageRules"].array.map(MessageRule.init)
       coreUp = j["core"]["up"].bool == true
+      noCore = j["core"]["none"].bool == true
       let k = j["kernel"]
       kernelHealth = k.object == nil ? nil : KernelHealth(checked: k["checked"].bool == true, healthy: k["healthy"].bool == true, problems: k["problems"].strings)
       coreNext = j["core"]["next"]
