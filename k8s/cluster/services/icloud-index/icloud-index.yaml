@@ -66,8 +66,8 @@ spec:
             # Total, lifetime cap on OpenRouter spend for images, scans, video frames and speech (USD). Raise it to
             # let more of the Drive be read; names and text documents are free.
             - { name: AI_BUDGET_USD, value: "25" }  # Deyao, 2026-10-01
-            - { name: VISION_MODEL, value: google/gemini-2.5-flash-lite }
-            - { name: AUDIO_MODEL, value: google/gemini-2.5-flash-lite }
+            - { name: VISION_MODEL, value: qwen/qwen3.8-omni-flash }
+            - { name: AUDIO_MODEL, value: qwen/qwen3.8-omni-flash }
             - { name: LIST_INTERVAL_H, value: "24" }
           envFrom: [{ secretRef: { name: icloud-index-secrets } }]
           volumeMounts:

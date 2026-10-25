@@ -7,8 +7,8 @@ Models are env-configurable: VISION_MODEL, AUDIO_MODEL, EMBED_MODEL, EMBED_DIMS.
 import base64, json, os, time, urllib.request, urllib.error
 
 BASE = os.environ.get("OPENROUTER_BASE", "https://openrouter.ai/api/v1")
-VISION_MODEL = os.environ.get("VISION_MODEL", "google/gemini-3.5-flash-lite")
-AUDIO_MODEL = os.environ.get("AUDIO_MODEL", "google/gemini-3.5-flash-lite")
+VISION_MODEL = os.environ.get("VISION_MODEL", "qwen/qwen3.8-omni-flash")
+AUDIO_MODEL = os.environ.get("AUDIO_MODEL", "qwen/qwen3.8-omni-flash")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "qwen/qwen3-embedding-8b")
 EMBED_DIMS = int(os.environ.get("EMBED_DIMS", "512"))
 QUERY_INSTRUCT = "Instruct: Given a search query, retrieve files from a personal cloud drive (documents, scans, photos, videos) whose content or name matches the query\nQuery: "
