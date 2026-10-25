@@ -51,7 +51,9 @@ perm_mode() { cat "$STATE/.permission-mode" 2>/dev/null || printf '%s' "${SESSIO
 # The profile patch: generated from this dsh's own tree with the patch emptied first, so it always fits the version
 write_profile() {
   local prof="$DSH_HOME/profiles/web"
-  mkdir -p "$prof"; : > "$prof/cordis.patch.yml"
+  # dsh makes the profile from its template on first use; the patch must be a YAML list ([] = none)
+  [ -f "$prof/package.json" ] || dsh --profile web --dump-config > /dev/null 2>> "$RUN/dump.err"
+  mkdir -p "$prof"; printf '[]\n' > "$prof/cordis.patch.yml"
   dsh --profile web --dump-config > "$RUN/dump.yml" 2>> "$RUN/dump.err" || { echo "[dsh] dump-config failed (see $RUN/dump.err)"; return 1; }
   python3 /usr/local/bin/dsh-profile-patch.py "$RUN/dump.yml" "$MODELS" "$SLUG" "$WD/.claude/skills" "$HOME/.claude/skills" \
     > "$prof/cordis.patch.yml.tmp" && mv "$prof/cordis.patch.yml.tmp" "$prof/cordis.patch.yml"
