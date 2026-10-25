@@ -28,6 +28,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -126,22 +127,15 @@ func (r *Router) sessionConfig(s *Session) (string, error) {
 		}
 	}
 	if s.RestoreCert != nil {
-		var oc struct {
-			Machine *struct {
-				ID string `json:"id"`
-			} `json:"machine"`
+		rs := r.snap(restoreSnap(s.ID))
+		if rs == nil {
+			return "", errors.New("the restore's snapshot or cert: its snapshot isn't here")
 		}
-		var sum string
-		var err error
-		if rs := r.snap(restoreSnap(s.ID)); rs != nil {
-			sum = rs.Sha256
-		} else {
-			err = errors.New("its snapshot isn't here")
-		}
-		if err != nil || s.RestoreCert.Decode(&oc) != nil || oc.Machine == nil {
+		m, err := restoreMachineID(s.RestoreCert)
+		if err != nil {
 			return "", fmt.Errorf("the restore's snapshot or cert: %v", err)
 		}
-		c.Restore = &RestoreRef{Machine: oc.Machine.ID, Sha256: sum}
+		c.Restore = &RestoreRef{Machine: m, Sha256: rs.Sha256}
 	}
 	if s.ImportFrom != "" { // jarvis1import.go: the Jarvis 1 session id (its first machine's) and the import manifest's hash
 		c.Restore = &RestoreRef{Machine: s.ImportFrom, Sha256: s.ImportSha}
@@ -740,3 +734,28 @@ var pulledMachines sync.Map // machine → its secrets pull went through (it is 
 
 func markPulled(machine string)     { pulledMachines.Store(machine, true) }
 func hasPulled(machine string) bool { _, ok := pulledMachines.Load(machine); return ok }
+
+// restoreMachineID: the archived line's machine, as the restoring machine's config check wants it (machine/vouch.go
+// machineIDRE): an old core's cert names it in machine.id; a kernel line's (the spawner's) only in succ, "fly-<id>",
+// its machine carrying keys and image but no id
+func restoreMachineID(cert *Doc) (string, error) {
+	var c struct {
+		Succ    string `json:"succ"`
+		Machine *struct {
+			ID string `json:"id"`
+		} `json:"machine"`
+	}
+	if cert.Decode(&c) != nil || c.Machine == nil {
+		return "", errors.New("the cert names no machine")
+	}
+	id := c.Machine.ID
+	if id == "" {
+		id, _ = strings.CutPrefix(c.Succ, "fly-")
+	}
+	if !restoreMachineRE.MatchString(id) {
+		return "", fmt.Errorf("the cert's machine %q isn't a machine id", id)
+	}
+	return id, nil
+}
+
+var restoreMachineRE = regexp.MustCompile(`^[a-z0-9]{1,40}$`) // machine/vouch.go machineIDRE

@@ -766,3 +766,24 @@ func TestArchiveProgressText(t *testing.T) {
 		t.Fatalf("waiting %q", s.Waiting)
 	}
 }
+
+// a kernel line's archived cert (the spawner's) names its machine only in succ: a restore of it once signed
+// restore.machine "" and the machine refused to start ("the cert's restore")
+func TestRestoreMachineID(t *testing.T) {
+	rg := newRig(t)
+	for _, c := range []struct {
+		cert map[string]any
+		want string
+	}{
+		{map[string]any{"kind": "succession", "pred": "source-26f541401cc8edec59e664b47591a506", "succ": "fly-185923da026d08",
+			"machine": map[string]string{"signingKey": "k", "encryptionKey": "e", "image": "i"}}, "185923da026d08"},
+		{map[string]any{"kind": "succession-cert", "machine": map[string]string{"id": "m1", "signingKey": "k"}}, "m1"},
+		{map[string]any{"kind": "succession", "succ": "source-26f541401cc8edec59e664b47591a506", "machine": map[string]string{}}, ""},
+		{map[string]any{"kind": "succession", "succ": "fly-185923da026d08"}, ""},
+	} {
+		got, err := restoreMachineID(rg.core.key.doc(c.cert))
+		if got != c.want || (err == nil) != (c.want != "") {
+			t.Errorf("%v: %q %v, want %q", c.cert, got, err, c.want)
+		}
+	}
+}

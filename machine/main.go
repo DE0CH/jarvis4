@@ -193,9 +193,9 @@ func prepareCmd() error {
 	}
 	spec, err := prepare()
 	if err != nil {
-		// any failed check → start nothing; keep the machine up so the failure is visible in its log
-		log.Printf("REFUSING TO START: %v", err)
-		select {}
+		// any failed check → start nothing; the keeper keeps the machine (and the supervisor) up, so the failure stays
+		// visible in its log. Not a select{}: with no other goroutine Go ends it as a deadlock, a stack dump in the log
+		return fmt.Errorf("REFUSING TO START: %v", err)
 	}
 	out := os.NewFile(3, "harness-spec") // keeper.go startPrepare
 	if out == nil {
