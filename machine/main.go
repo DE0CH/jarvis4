@@ -562,7 +562,7 @@ func cloneRepos(repos []string) {
 // artifacts last. The stream (snapstream.go) sends them in this order.
 var snapshotPaths = []string{".claude/projects", ".claude.json", ".claude/.first-prompt-sent", ".claude/.paseo-agent",
 	allowFile, changesFile, lineKeysFile, deliveredFile,
-	".paseo", ".local/share/opencode", ".openclaw", ".claude/cloudcli-assets", "workspace", "artifacts"}
+	".paseo", ".local/share/opencode", ".openclaw", ".claude/cloudcli-assets", ".dsh", ".claude/.dsh-session", "workspace", "artifacts"}
 
 // snapshotSkip: what the snapshot leaves out under those roots (filepath.Match against the path relative to $HOME):
 // the harnesses' logs, pid files, caches and downloaded binaries, which a successor rebuilds (Jarvis 1's excludes)
@@ -570,6 +570,7 @@ var snapshotSkip = []string{
 	".paseo/models", ".paseo/runtime", ".paseo/paseo.pid", ".paseo/*.log", ".paseo/*.out", ".paseo/*.err",
 	".local/share/opencode/log", ".local/share/opencode/bin",
 	".openclaw/logs", ".openclaw/tmp", ".openclaw/*.out", ".openclaw/*.err", ".openclaw/.hold", ".openclaw/gateway.pid",
+	".dsh/profiles/*/node_modules", ".dsh/*.lock",
 }
 
 func skipInSnapshot(rel string) bool {

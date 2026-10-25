@@ -196,6 +196,14 @@ RUN chmod +x /usr/local/bin/harness-openclaw.sh /usr/local/bin/openclaw-transcri
 # runtime bundle pinned by sha256 in session-image/cloudcli-runtime.json on first use.
 COPY harness-cloudcli.sh /usr/local/bin/harness-cloudcli.sh
 RUN chmod +x /usr/local/bin/harness-cloudcli.sh
+# DeepSeek Harness (harness dsh): Deyao's fork DE0CH/deepseek-harness serves its agent loop and web UI on the session;
+# OpenRouter routed to DeepSeek's own endpoint. The fork and its Node (24) are NOT in the image: session-image/Dockerfile
+# adds /usr/local/bin/dsh-runtime, which fetches the bundle pinned by sha256 in session-image/dsh-runtime.json on first
+# use. dsh-profile-patch.py feeds it the workspace CLAUDE.md (@imports) and the Claude Code skill roots.
+COPY harness-dsh.sh /usr/local/bin/harness-dsh.sh
+COPY dsh-profile-patch.py dsh-transcript.py dsh-send.py /usr/local/bin/
+COPY dsh-front.js /usr/local/lib/dsh-front.js
+RUN chmod +x /usr/local/bin/harness-dsh.sh /usr/local/bin/dsh-profile-patch.py /usr/local/bin/dsh-transcript.py /usr/local/bin/dsh-send.py
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/harness-claude.sh /usr/local/bin/workspace-layer.sh /usr/local/bin/pull-secrets /usr/local/bin/session-secret /usr/local/bin/content-sync /usr/local/bin/set-permission-mode
 USER claude
 WORKDIR /home/claude

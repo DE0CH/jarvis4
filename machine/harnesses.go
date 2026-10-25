@@ -8,12 +8,13 @@ package main
 //   paseo-claude  Claude Code driven by a Paseo daemon (harness-paseo-claude.sh), its Claude calls through
 //                 api-proxy.js with the session's current Claude login
 //   cloudcli      Claude Code driven by the CloudCLI fork (harness-cloudcli.sh), through api-proxy.js the same way
-// The last four take prompts through /usr/local/bin/harness-send and publish their own front end through the
+//   dsh           DeepSeek Harness web (harness-dsh.sh): its own agent loop on OpenRouter, its web UI
+// The last five take prompts through /usr/local/bin/harness-send and publish their own front end through the
 // session's tunnel (so they take CF_ACCESS_* as "publish it").
 
 // viaHarnessSend: the harness takes Jarvis's messages through harness-send (not a Claude host's channel)
 func viaHarnessSend(h string) bool {
-	return h == "opencode" || h == "openclaw" || h == "paseo-claude" || h == "cloudcli"
+	return h == "opencode" || h == "openclaw" || h == "paseo-claude" || h == "cloudcli" || h == "dsh"
 }
 
 // runsClaudeCode: Claude Code is the agent, so its hooks (the worker count, workers.go) run

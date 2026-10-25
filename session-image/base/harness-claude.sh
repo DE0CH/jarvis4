@@ -16,11 +16,12 @@ export HOME=/home/claude
 # Another harness than the Claude-app host: its own launcher. opencode = an OpenRouter model
 # under OpenCode + Paseo; paseo-claude = Claude Code driven by Paseo (the Paseo app + web UI);
 # openclaw = claw-code as the agent loop inside an OpenClaw gateway; cloudcli = Claude Code driven by
-# CloudCLI (the Jarvis 4 Chat app + web UI).
+# CloudCLI (the Jarvis 4 Chat app + web UI); dsh = DeepSeek Harness on OpenRouter (its web UI).
 [ "${SESSION_HARNESS:-claude}" = "opencode" ] && exec /usr/local/bin/harness-opencode.sh "$WD"
 [ "${SESSION_HARNESS:-claude}" = "paseo-claude" ] && exec /usr/local/bin/harness-paseo-claude.sh "$WD"
 [ "${SESSION_HARNESS:-claude}" = "openclaw" ] && exec /usr/local/bin/harness-openclaw.sh "$WD"
 [ "${SESSION_HARNESS:-claude}" = "cloudcli" ] && exec /usr/local/bin/harness-cloudcli.sh "$WD"
+[ "${SESSION_HARNESS:-claude}" = "dsh" ] && exec /usr/local/bin/harness-dsh.sh "$WD"
 
 # Pre-accept two interactive dialogs that would otherwise block the tmux-TTY remote-control
 # host forever (a blocked host never writes its session registry, so the dashboard shows

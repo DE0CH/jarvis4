@@ -9,6 +9,8 @@
 #   openclaw    (harness-openclaw.sh)   the gateway's `chat.send` into its main session
 #                                       (agent:main:main) — the one the Control UI and the app open;
 #                                       it answers "started" at once, the turn runs in the gateway.
+#   dsh         (harness-dsh.sh)        dsh-send.py: a prompt (mode queue) into the main DeepSeek Harness
+#                                       conversation (~/.claude/.dsh-session; made by the first prompt).
 #   cloudcli    (harness-cloudcli.sh)   the CloudCLI server's POST /api/jarvis/deliver: a turn of its main
 #                                       conversation (made by the first prompt), run with no client attached;
 #                                       the server answers at once, 409 while a turn runs (→ 75).
@@ -26,6 +28,7 @@ if pgrep -u "$(id -u)" -f harness-opencode.sh >/dev/null; then HARNESS=opencode
 elif pgrep -u "$(id -u)" -f harness-paseo-claude.sh >/dev/null; then HARNESS=paseo-claude
 elif pgrep -u "$(id -u)" -f harness-openclaw.sh >/dev/null; then HARNESS=openclaw
 elif pgrep -u "$(id -u)" -f harness-cloudcli.sh >/dev/null; then HARNESS=cloudcli
+elif pgrep -u "$(id -u)" -f harness-dsh.sh >/dev/null; then HARNESS=dsh
 else HARNESS=""; fi
 
 if [ "${1:-}" = "--queue" ]; then
@@ -48,6 +51,12 @@ if [ "$HARNESS" = openclaw ]; then
   params="$(python3 -c 'import json,sys,uuid; print(json.dumps({"sessionKey":"agent:main:main","message":sys.stdin.read(),"idempotencyKey":"jarvis-"+uuid.uuid4().hex}))' <<< "$TEXT")"
   # the gateway token is in its config (the CLI reads it); the port is the harness's own
   exec /usr/local/bin/openclaw gateway call chat.send --json --timeout 45000 --params "$params"
+fi
+
+# ---------------------------------------------------------------- dsh (DeepSeek Harness web) -----
+if [ "$HARNESS" = dsh ]; then
+  WD="$(tr '\0' '\n' < /proc/"$(pgrep -u "$(id -u)" -of harness-dsh.sh)"/cmdline 2>/dev/null | sed -n 3p)"
+  printf '%s' "$TEXT" | exec python3 /usr/local/bin/dsh-send.py "${WD:-$HOME/workspace}" "${IMGS[@]}"
 fi
 
 # ---------------------------------------------------------------- cloudcli (CloudCLI server) -----

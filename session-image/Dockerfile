@@ -26,12 +26,14 @@ USER root
 # Only vouched inputs shape a machine (docs/DESIGN.md "Inputs to a machine"):
 #  - the image's own ENV, recorded here, is the env jarvis-machine keeps (everything the machine's config adds
 #    besides the core's key and the router's address is dropped at boot: machine/vouch.go cleanEnv);
-#  - the OpenClaw and CloudCLI runtime bundles are pinned by sha256, not only by URL.
+#  - the OpenClaw, CloudCLI and dsh runtime bundles are pinned by sha256, not only by URL.
 RUN mkdir -p /opt/jarvis && env | grep -Ev '^(HOSTNAME|HOME|PWD|OLDPWD|SHLVL|_|TERM|USER|LOGNAME|SHELL)=' | sort > /opt/jarvis/image.env
 COPY session-image/openclaw-runtime.json /opt/jarvis/openclaw-runtime.json
 COPY --chmod=755 session-image/bin/openclaw /usr/local/bin/openclaw
 COPY session-image/cloudcli-runtime.json /opt/jarvis/cloudcli-runtime.json
 COPY --chmod=755 session-image/bin/cloudcli-runtime /usr/local/bin/cloudcli-runtime
+COPY session-image/dsh-runtime.json /opt/jarvis/dsh-runtime.json
+COPY --chmod=755 session-image/bin/dsh-runtime /usr/local/bin/dsh-runtime
 # Claude Code's managed settings (crossSessionInbound refuse) and the Jarvis channel's MCP config. The directory is made
 # first: a COPY --chmod=644 that creates it gives the DIRECTORY 644 too (no search bit), and then Claude Code, as user
 # claude, stops at its "Settings Error … EACCES" prompt before Remote Control comes up: every new session stuck on
