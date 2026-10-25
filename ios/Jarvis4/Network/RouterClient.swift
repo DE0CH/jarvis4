@@ -23,7 +23,15 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
     let s = (Bundle.main.object(forInfoDictionaryKey: "JarvisBase") as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "https://jarvis4.deyaochen.com/"
     return URL(string: s.hasSuffix("/") ? s : s + "/") ?? URL(string: "https://jarvis4.deyaochen.com/")!
   }()
-  var token: String { Keychain.string("access-token") ?? "" }
+  /// the Access login, kept in memory once read: its Keychain item opens only while the phone is unlocked, and a poll
+  /// that runs as the phone locks or wakes went out without it, so Access turned it away and the sign-in sheet popped
+  /// up (and closed itself) the next time the app opened
+  private var tokenCache: String?
+  var token: String {
+    if let tokenCache { return tokenCache }
+    tokenCache = Keychain.string("access-token")
+    return tokenCache ?? ""
+  }
   /// told when sign-in failed or came back (AppModel shows the signed-out screen)
   var onSignedOut: ((Bool) -> Void)?
 
@@ -56,6 +64,7 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
         return ""
       }
       Keychain.setString("access-token", tok)
+      tokenCache = tok
       onSignedOut?(false)
       return tok
     }
@@ -85,6 +94,8 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
   /// `upload`: raw bytes as the body instead of JSON, with `headers`
   func raw(_ method: String, _ path: String, _ body: [String: Any]? = nil, upload: Data? = nil, headers: [String: String] = [:],
            timeout: TimeInterval = 60) async throws -> (Int, Data) {
+    // a launch in the background or a locked phone can't read the login yet: wait for the unlock, never go out without it
+    while token.isEmpty && !UIApplication.shared.isProtectedDataAvailable { try await Task.sleep(for: .seconds(1)) }
     for attempt in 0..<2 {
       var r = URLRequest(url: url(path))
       r.httpMethod = method
