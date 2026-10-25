@@ -90,6 +90,7 @@ struct Harness: Identifiable, Equatable {
     Harness(id: "opencode", title: "OpenCode · OpenRouter", sub: "Paseo app + web UI"),
     Harness(id: "openclaw", title: "claw-code · OpenClaw", sub: "Claude subscription · OpenClaw app + Control UI"),
     Harness(id: "paseo-claude", title: "Claude Code · Paseo", sub: "Claude subscription · Paseo app + web UI"),
+    Harness(id: "cloudcli", title: "Claude Code · CloudCLI", sub: "Claude subscription · Jarvis 4 Chat app + web UI"),
   ]
   /// what an approval page says for a signed harness (a task line names its template)
   static func name(_ h: String) -> String {

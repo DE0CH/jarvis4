@@ -180,6 +180,7 @@ export function NewSession() {
           { value: "opencode", title: "OpenCode · OpenRouter", sub: "Paseo app + web UI" },
           { value: "openclaw", title: "claw-code · OpenClaw", sub: "Claude subscription · OpenClaw app + Control UI" },
           { value: "paseo-claude", title: "Claude Code · Paseo", sub: "Claude subscription · Paseo app + web UI" },
+          { value: "cloudcli", title: "Claude Code · CloudCLI", sub: "Claude subscription · Jarvis 4 Chat app + web UI" },
         ]} />
       </>
       {takesAccount && <><Lbl>Claude account</Lbl>

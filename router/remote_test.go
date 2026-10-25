@@ -210,6 +210,47 @@ func TestRemotePage(t *testing.T) {
 	}
 }
 
+// Claude Code · CloudCLI: its remote is its origin (Access is the gate), read from nothing on the machine; the
+// Jarvis 4 Chat app lists the sessions with harness=cloudcli
+func TestCloudCLIRemote(t *testing.T) {
+	r := newTestRouter(t)
+	addHarnessSession(r, "sCC", "cloudcli", "started", "mCC")
+	addHarnessSession(r, "sCP", "cloudcli", "paused", "")
+	addHarnessSession(r, "sPC", "paseo-claude", "started", "mPC")
+	defer fakeMachine(t, r, "mCC", func(holder, cmd string) ExecResult {
+		return ExecResult{Error: "the router ran " + holder + ": " + cmd + " on a cloudcli session"}
+	})()
+	h := r.Handler()
+	get := func(path string) (int, map[string]any) {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		out := map[string]any{}
+		json.Unmarshal(w.Body.Bytes(), &out)
+		return w.Code, out
+	}
+	if code, out := get("/api/sessions/sCC/remote"); code != 200 || out["webUrl"] != "https://sCC-s.deyaochen.com/" || out["harness"] != "cloudcli" || out["token"] != nil || out["pairUrl"] != nil {
+		t.Fatalf("%d %v", code, out)
+	}
+	code, out := get("/api/remotes?harness=cloudcli")
+	ss := out["sessions"].([]any)
+	if code != 200 || len(ss) != 2 {
+		t.Fatalf("%d %v", code, out)
+	}
+	byID := map[string]map[string]any{}
+	for _, s := range ss {
+		byID[s.(map[string]any)["id"].(string)] = s.(map[string]any)
+	}
+	if s := byID["sCC"]; s["webUrl"] != "https://sCC-s.deyaochen.com/" || s["model"] != "cloudcli/claude-opus-5-5" || s["error"] != nil {
+		t.Fatalf("%v", s)
+	}
+	if s := byID["sCP"]; s["state"] != "paused" || s["webUrl"] != nil {
+		t.Fatalf("%v", s)
+	}
+	if !proxyLoginHarness("cloudcli") || !harnessSend["cloudcli"] || deviceSchemes["jarvis4chat"] != "dev.de0ch.jarvis4chat" {
+		t.Fatal("cloudcli: an account switch through the API proxy, harness-send and the Jarvis 4 Chat app's pairing")
+	}
+}
+
 func TestTunnelProof(t *testing.T) {
 	a, b := tunnelProof("k", "s0000000000000001"), tunnelProof("k", "s0000000000000002")
 	if len(a) != 64 || a == b || a != tunnelProof("k", "s0000000000000001") || tunnelProof("", "s1") != "" {

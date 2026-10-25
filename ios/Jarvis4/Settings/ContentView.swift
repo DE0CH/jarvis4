@@ -110,7 +110,7 @@ struct PairedAppsView: View {
         Section {
           if apps.isEmpty { Text("None").foregroundStyle(.secondary) }
           ForEach(apps) { a in
-            LabeledContent(a.app == "openclaw" ? "OpenClaw" : a.app == "paseo" ? "Paseo" : a.app) {
+            LabeledContent(a.app == "openclaw" ? "OpenClaw" : a.app == "paseo" ? "Paseo" : a.app == "jarvis4chat" ? "Jarvis 4 Chat" : a.app) {
               Text(a.name + (a.model.isEmpty ? "" : " · " + a.model))
             }
             .swipeActions { Button("Remove", role: .destructive) { Task { await remove(a) } } }

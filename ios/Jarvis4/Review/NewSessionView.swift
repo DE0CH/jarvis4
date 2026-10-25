@@ -47,7 +47,7 @@ struct NewSessionView: View {
   /// not the core's own, not a harness's, and not `claude`, the one shared login's old store (accounts replaced it)
   private var offered: [StoreView] { stores.filter { !$0.isCore && !hidden.contains($0.name) && $0.name != "claude" } }
   /// the harnesses that run on a Claude account (policy/stores.json `claudeAccount`)
-  private var takesAccount: Bool { harness == "claude" || harness == "openclaw" || harness == "paseo-claude" }
+  private var takesAccount: Bool { harness == "claude" || harness == "openclaw" || harness == "paseo-claude" || harness == "cloudcli" }
   /// every sensitive store the session would get: picked here, or brought by the harness
   private var pickedSensitive: [String] { stores.filter { $0.sensitive && allStores.contains($0.name) }.map(\.name) }
   private var models: [Choice] { model.models.filter { ($0.harness ?? "claude") == harness } }

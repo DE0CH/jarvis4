@@ -1,10 +1,10 @@
 package main
 
-// Paired devices for Deyao's builds of the OpenClaw and Paseo apps (Jarvis 1's lib/devices.js, PARITY "Device
+// Paired devices for Deyao's builds of the OpenClaw and Paseo apps and the Jarvis 4 Chat app (Jarvis 1's lib/devices.js, PARITY "Device
 // pairing"): each app pairs ONCE and then lists the sessions it can drive (GET /api/remotes) and starts a paused one
 // (POST /api/sessions/:id/start), with no Access login of its own.
 //
-//   - Pairing: the app opens GET /api/devices/pair?state=…&name=…&model=…&app=openclaw|paseo in the system sign-in
+//   - Pairing: the app opens GET /api/devices/pair?state=…&name=…&model=…&app=openclaw|paseo|jarvis4chat in the system sign-in
 //     sheet, where Access logs Deyao in (the Jarvis 4 app's own Access app: his email only). The router mints a
 //     Cloudflare Access service token for that one device (CF_DEVICE_TOKENS_API: a Cloudflare token that can manage
 //     Access service tokens and nothing else) and hands its credentials back through the app's own URL scheme
@@ -14,11 +14,12 @@ package main
 //     /api/sessions/*/start, and admits Deyao's email or any service token of the account (ACCESS_DEVICES_AUD). The
 //     router then admits a service token only when its client id (the JWT's common_name) is a paired device's.
 //     The same device token passes the session hosts' Access (<id>-s.deyaochen.com admits any service token), where
-//     the apps reach the OpenClaw gateway and the Paseo daemon.
+//     the apps reach the OpenClaw gateway, the Paseo daemon and the CloudCLI server.
 //   - Revoke: DELETE /api/devices/:id deletes the service token at Cloudflare and forgets the device.
 //
 // The apps' server URL is a constant in each fork (DE0CH/openclaw JarvisConfig.baseURL, DE0CH/paseo app.config.js
-// jarvis.url); it must name this host (docs/RUNBOOK.md "Device pairing").
+// jarvis.url) or a build input (DE0CH/pwa-shell-ios PWA_SITE_URL of the Jarvis 4 Chat build); it must name this host
+// (docs/RUNBOOK.md "Device pairing").
 
 import (
 	"bytes"
@@ -40,7 +41,7 @@ import (
 )
 
 // deviceSchemes: the apps that pair, each with the URL scheme its pairing answer goes to
-var deviceSchemes = map[string]string{"openclaw": "openclaw-de0ch", "paseo": "paseo-de0ch"}
+var deviceSchemes = map[string]string{"openclaw": "openclaw-de0ch", "paseo": "paseo-de0ch", "jarvis4chat": "dev.de0ch.jarvis4chat"}
 
 var (
 	pairStateRE   = regexp.MustCompile(`^[A-Za-z0-9_-]{16,64}$`)

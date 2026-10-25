@@ -1,16 +1,17 @@
 name: fork-pin
-# Deyao's forks DE0CH/claw-code and DE0CH/openclaw publish a build on every push to their main (release
+# Deyao's forks DE0CH/claw-code, DE0CH/openclaw and DE0CH/claudecodeui publish a build on every push to their main (release
 # `de0ch-<sha12>`) and start this workflow (`gh workflow run fork-pin.yml -R DE0CH/jarvis2 -f name= -f url= -f sha=`,
 # a token with Actions write on this repo only: it can start a workflow, not push). It pins that build:
 #   claw     -> session-image/base/forks.json {url, sha, sha256}   (baked into the base, checked by sha256)
 #   openclaw -> session-image/openclaw-runtime.json {url, sha256}  (fetched on first use, checked by sha256)
+#   cloudcli -> session-image/cloudcli-runtime.json {url, sha256}  (fetched on first use, checked by sha256)
 # and pushes to main with its own deploy key (environment `release`; main's ruleset lets no workflow token push),
 # which starts images.yml (the commit touches session-image/**). Inputs are untrusted: the URL must be exactly the
 # fork's own release asset for a commit on the fork's main, and never older than the current pin.
 on:
   workflow_dispatch:
     inputs:
-      name: { description: "claw or openclaw", required: true, type: string }
+      name: { description: "claw, openclaw or cloudcli", required: true, type: string }
       url: { description: "the release asset URL", required: true, type: string }
       sha: { description: "the fork commit (40 hex)", required: true, type: string }
 permissions:
@@ -35,6 +36,7 @@ jobs:
           case "$NAME" in
             claw) REPO=DE0CH/claw-code; ASSET=claw-linux-x86_64; FILE=session-image/base/forks.json ;;
             openclaw) REPO=DE0CH/openclaw; ASSET=openclaw-runtime-linux-x64.tar.gz; FILE=session-image/openclaw-runtime.json ;;
+            cloudcli) REPO=DE0CH/claudecodeui; ASSET=cloudcli-runtime-linux-x64.tar.gz; FILE=session-image/cloudcli-runtime.json ;;
             *) echo "::error::unknown fork: $NAME"; exit 1 ;;
           esac
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::sha must be 40 lowercase hex"; exit 1; }

@@ -9,6 +9,8 @@ package main
 //             OpenClaw app + Control UI
 //   paseo-claude  Claude Code driven by a Paseo daemon (`paseo/<Claude model id>`), Claude subscription through
 //             api-proxy.js (so an account switch needs no restart, accountswap.go): the Paseo app + web UI
+//   cloudcli  Claude Code driven by Deyao's CloudCLI fork (`cloudcli/<Claude model id>`), Claude subscription through
+//             api-proxy.js like paseo-claude: the Jarvis 4 Chat app (the YYC AI app's code) + the chat web UI
 // The OpenCode list is Jarvis 1's curated one (every slug checked for tool calling on OpenRouter; prices are $/M
 // tokens in/out at curation).
 
@@ -36,6 +38,8 @@ var modelCatalog = []ModelChoice{
 	{"openclaw/claude-fable-5-1", "Fable 5.1", "openclaw"},
 	{"paseo/claude-opus-5-5", "Opus 5.5", "paseo-claude"},
 	{"paseo/claude-fable-5-1", "Fable 5.1", "paseo-claude"},
+	{"cloudcli/claude-opus-5-5", "Opus 5.5", "cloudcli"},
+	{"cloudcli/claude-fable-5-1", "Fable 5.1", "cloudcli"},
 }
 
 // the first model of each harness is its default
@@ -44,6 +48,7 @@ var harnessInfo = map[string]map[string]string{
 	"opencode":     {"label": "OpenCode · OpenRouter", "detail": "Paseo app + web UI"},
 	"openclaw":     {"label": "claw-code · OpenClaw", "detail": "Claude subscription · OpenClaw app + Control UI"},
 	"paseo-claude": {"label": "Claude Code · Paseo", "detail": "Claude subscription · Paseo app + web UI"},
+	"cloudcli":     {"label": "Claude Code · CloudCLI", "detail": "Claude subscription · Jarvis 4 Chat app + web UI"},
 }
 
 // paseoHarness: a Paseo daemon fronts the session (its app pairs with the daemon, its web UI is the session's tunnel
@@ -51,8 +56,9 @@ var harnessInfo = map[string]map[string]string{
 func paseoHarness(h string) bool { return h == "opencode" || h == "paseo-claude" }
 
 // proxyLoginHarness: Claude Code reaches the API only through api-proxy.js, which sends the session's current Claude
-// login per request (session-image harness-paseo-claude.sh): a running session switches accounts with no restart
-func proxyLoginHarness(h string) bool { return h == "paseo-claude" }
+// login per request (session-image harness-paseo-claude.sh, harness-cloudcli.sh): a running session switches accounts
+// with no restart
+func proxyLoginHarness(h string) bool { return h == "paseo-claude" || h == "cloudcli" }
 
 func defaultModel(harness string) string {
 	for _, m := range modelCatalog {

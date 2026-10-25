@@ -35,7 +35,7 @@ struct RemoteView: View {
           }
           Button("Copy link", systemImage: "doc.on.doc") { model.copy(web, "Link") }.accessibilityIdentifier("rm-copy-web")
         } header: { Text("Web UI") } footer: {
-          Text("Carries the session's key: don't share it.")
+          Text(info["harness"].string == "cloudcli" ? "Also in the Jarvis 4 Chat app." : "Carries the session's key: don't share it.")
         }
         if let pair = info["pairUrl"].text {
           let appUrl = pair.contains("#offer=") ? "paseo:///" + String(pair[pair.range(of: "#offer=")!.lowerBound...]) : pair

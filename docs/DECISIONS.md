@@ -2777,3 +2777,16 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      re-enable (`rcTyping`). The same read fixed the app title: `GET /v1/code/sessions/cse_<key>` now wraps the entry
      in `response_shape`, so the title read had been empty. *Not chosen*: the router driving it (Deyao's call), a
      restart of the host (loses background shells), a DM per revive (Deyao chose without).
+
+240. **Claude Code · CloudCLI, whose app is YYC AI's app** (Deyao, 2026-10-25: "use the YYC AI ios app for jarvis 4 …
+     code changes for it would change both instances"; chose a shared UI with a backend per server, a separate chat
+     app, and the CloudCLI fork in the session; "New chat … disable it"). A new harness `cloudcli` runs the image's
+     Claude Code under DE0CH/claudecodeui in local Jarvis mode (the same server and chat protocol as YYC AI, Claude Code
+     on the machine instead of a sandbox) behind `api-proxy.js` like `paseo-claude`, published on the session's tunnel
+     origin. DE0CH/pwa-shell-ios, YYC AI's native app, now has a backend per kind of server and is built twice from one
+     push: YYC AI and "Jarvis 4 Chat" (`dev.de0ch.jarvis4chat`), which pairs as a device (`app=jarvis4chat`), lists
+     `/api/remotes?harness=cloudcli`, resumes a paused session, and has no New chat, rename, delete or share links (a
+     session is one conversation; sessions start in the Jarvis 4 app). The fork, Node and a portable PostgreSQL come as a
+     runtime bundle pinned by sha256 (`fork-pin.yml` name `cloudcli`), as OpenClaw's, because of Fly's 8 GB image limit.
+     *Not chosen*: the router speaking the fork's protocol (chat in the router, against Jarvis 4's narrow job); a
+     second Paseo-protocol client in the app (more app code that only one instance uses).

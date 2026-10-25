@@ -45,7 +45,7 @@ struct Session: Identifiable, Equatable, Hashable {
   var hasSchedule: Bool { !wakeups.isEmpty || !crons.isEmpty || !watches.isEmpty }
   var isTaskLine: Bool { harness.hasPrefix("task:") }
   /// OpenCode and OpenClaw sessions aren't in the Claude app: their primary action is the Remote page
-  var hasRemote: Bool { harness == "opencode" || harness == "openclaw" || harness == "paseo-claude" }
+  var hasRemote: Bool { harness == "opencode" || harness == "openclaw" || harness == "paseo-claude" || harness == "cloudcli" }
   /// what the Claude app calls it (router/discord.go sessionTitle): the app's title, a CLI name, the label, the AI title
   var title: String {
     for k in ["serverTitle", "userTitle", "label", "aiTitle", "title", "name"] { if let t = j[k].text { return t } }

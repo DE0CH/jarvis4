@@ -696,6 +696,7 @@ watchdog, one-shot, snapshots and archives have one path; all but `claude` take 
 | `opencode` | OpenCode, driven by a Paseo daemon | the Paseo app (relay) + the daemon's web UI | OpenRouter key from the store `openrouter` |
 | `openclaw` | claw-code, run per turn by an OpenClaw gateway | the OpenClaw app + Control UI | the session's Claude account, sent by `api-proxy.js` |
 | `paseo-claude` (Deyao, 2026-10-20) | the image's unmodified Claude Code, driven by a Paseo daemon through the Claude Agent SDK | the Paseo app (relay) + the daemon's web UI | the session's Claude account, sent by `api-proxy.js` per request |
+| `cloudcli` (Deyao, 2026-10-25) | the image's unmodified Claude Code, driven by Deyao's CloudCLI fork (DE0CH/claudecodeui) through the Claude Agent SDK | the Jarvis 4 Chat app (DE0CH/pwa-shell-ios) + the fork's chat web UI | the session's Claude account, sent by `api-proxy.js` per request |
 
 Claude Code · Paseo (`harness-paseo-claude.sh`, DECISIONS 204): Claude Code loads the working dir's CLAUDE.md, skills,
 settings, hooks (the worker count) and MCP servers itself; its transcripts are its own; a pause keeps `~/.paseo` and the
@@ -707,6 +708,17 @@ pair on disk: the next request goes out on the new account, a turn in flight inc
 message waits until the main agent is idle (Paseo's send interrupts a running turn). Claude Code's own calls outside
 the API base URL (its profile, claude.ai connectors, bootstrap, telemetry) go to Anthropic with the placeholder and are
 refused, so claude.ai MCP connectors are not available in these sessions.
+
+Claude Code · CloudCLI (`harness-cloudcli.sh`, DECISIONS 240) logs in the same way. Its front end is the same server and
+chat protocol as YYC AI (the fork in local Jarvis mode, `JARVIS_LOCAL_WORKSPACE`: Claude Code on the machine, in the
+session's working dir), so YYC AI's iPhone app, built a second time as "Jarvis 4 Chat", is its app: it pairs with Jarvis 4
+(`app=jarvis4chat`), lists the `cloudcli` sessions (`/api/remotes?harness=cloudcli`) and talks to each session's origin
+with its device token. A session is one conversation (the server's main one, `GET /api/jarvis/main`, made by the first
+prompt); Jarvis's messages are `POST /api/jarvis/deliver` (409 while a turn runs → harness-send 75, the inbox retries).
+The fork, its Node and a portable PostgreSQL are a runtime bundle fetched on first use (`cloudcli-runtime`, pinned by
+sha256 in `session-image/cloudcli-runtime.json` by `fork-pin.yml`). The fork's Postgres (conversation rows, names) is
+not in the snapshot (a live data folder isn't safe to copy): after a resume the server rebuilds its rows from the
+transcripts, which are, as are the chat's pictures (`~/.claude/cloudcli-assets`).
 
 ### The supervisor and the guard (Deyao, 2026-10-16)
 

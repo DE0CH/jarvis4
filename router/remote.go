@@ -7,6 +7,8 @@ package main
 //             relay is end-to-end encrypted, the link IS the secret)
 //   openclaw  the OpenClaw gateway: Control UI over HTTPS and the app's WebSocket on the same origin; the gateway
 //             token (~/.openclaw/jarvis-remote.json, written by harness-openclaw.sh) is the secret
+//   cloudcli  the CloudCLI server (harness-cloudcli.sh): its chat web UI and the API + WebSocket the Jarvis 4 Chat app
+//             uses, on the same origin; Cloudflare Access is its only gate (no secret of its own, nothing to read)
 // The router reads those secrets on demand through a grant for holder "remote" (grants.go): its own key, so
 // Deyao can let the router read a session's remote without giving it the terminal. Never in /api/state.
 //
@@ -17,7 +19,7 @@ package main
 // sent by agent.js as x-agent-secret), so one session can't take over another's tunnel id: proof = hex
 // HMAC-SHA256(key, "jarvis2-tunnel:" + id).
 //
-// GET /api/remotes also admits Deyao's paired OpenClaw and Paseo apps (devices.go).
+// GET /api/remotes also admits Deyao's paired OpenClaw, Paseo and Jarvis 4 Chat apps (devices.go).
 
 import (
 	"crypto/hmac"
@@ -35,7 +37,7 @@ import (
 
 const remoteHolder = "remote"
 
-var remoteHarnesses = map[string]bool{"opencode": true, "openclaw": true, "paseo-claude": true}
+var remoteHarnesses = map[string]bool{"opencode": true, "openclaw": true, "paseo-claude": true, "cloudcli": true}
 
 // the commands the remote holder runs (bash -lc as the session user)
 const (
@@ -96,8 +98,12 @@ func parseRemote(harness, id, stdout string) RemoteInfo {
 	return info
 }
 
-// RemoteInfo: a started Paseo/OpenClaw session's remote, read through the remote holder
+// RemoteInfo: a started Paseo/OpenClaw session's remote, read through the remote holder (a CloudCLI session's is
+// only its origin: nothing to read)
 func (r *Router) RemoteInfo(s Session) RemoteInfo {
+	if s.Harness == "cloudcli" {
+		return RemoteInfo{WebURL: "https://" + tunnelHost(s.ID) + "/", Harness: s.Harness}
+	}
 	remoteCache.Lock()
 	hit, ok := remoteCache.m[s.MachineID]
 	remoteCache.Unlock()
@@ -138,7 +144,7 @@ func (r *Router) registerRemote(app appRoute, m machineRoute, public publicRoute
 			writeJSON(w, 404, map[string]string{"error": "no such session"})
 			return
 		case !remoteHarnesses[s.Harness]:
-			writeJSON(w, 400, map[string]string{"error": "only Paseo and OpenClaw sessions have a remote here — a Claude session is in the Claude app"})
+			writeJSON(w, 400, map[string]string{"error": "only Paseo, OpenClaw and CloudCLI sessions have a remote here — a Claude session is in the Claude app"})
 			return
 		case s.State != "started" || s.MachineID == "":
 			writeJSON(w, 409, map[string]string{"error": "session is " + s.State})
@@ -180,13 +186,14 @@ func tunnelProof(key, id string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// GET /api/remotes?harness=openclaw|opencode|paseo-claude|paseo → {sessions: [{id, title, state, model, harness, +
-// url, token, webUrl (openclaw) | pairUrl (a Paseo harness) — only on a started session whose front end is up, else
-// error}]}. harness=paseo: every session a Paseo daemon fronts (opencode and paseo-claude), what the Paseo app lists.
+// GET /api/remotes?harness=openclaw|opencode|paseo-claude|paseo|cloudcli → {sessions: [{id, title, state, model,
+// harness, + url, token, webUrl (openclaw) | pairUrl (a Paseo harness) | webUrl (cloudcli) — only on a started session
+// whose front end is up, else error}]}. harness=paseo: every session a Paseo daemon fronts (opencode and paseo-claude),
+// what the Paseo app lists; harness=cloudcli: what the Jarvis 4 Chat app lists.
 func (r *Router) remotes(w http.ResponseWriter, req *http.Request) {
 	harness := req.URL.Query().Get("harness")
 	if !remoteHarnesses[harness] && harness != "paseo" {
-		writeJSON(w, 400, map[string]string{"error": "harness must be openclaw, opencode, paseo-claude or paseo"})
+		writeJSON(w, 400, map[string]string{"error": "harness must be openclaw, opencode, paseo-claude, paseo or cloudcli"})
 		return
 	}
 	match := func(h string) bool { return h == harness || harness == "paseo" && paseoHarness(h) }
@@ -216,16 +223,22 @@ func (r *Router) remotes(w http.ResponseWriter, req *http.Request) {
 				if info.NeedsGrant != "" {
 					o["needsGrant"] = info.NeedsGrant
 				}
-				if harness == "openclaw" {
+				switch harness {
+				case "openclaw":
 					o["url"], o["token"] = nil, nil
-				} else {
+				case "cloudcli":
+					o["webUrl"] = nil
+				default:
 					o["pairUrl"] = nil
 				}
 				return
 			}
-			if harness == "openclaw" {
+			switch harness {
+			case "openclaw":
 				o["url"], o["token"], o["webUrl"] = info.URL, info.Token, info.WebURL
-			} else {
+			case "cloudcli":
+				o["webUrl"] = info.WebURL
+			default:
 				o["pairUrl"] = info.PairURL
 			}
 		}(s, o)

@@ -190,6 +190,12 @@ COPY openclaw-claw-harness /usr/local/lib/openclaw-claw-harness
 COPY harness-openclaw.sh /usr/local/bin/harness-openclaw.sh
 COPY openclaw-transcript /usr/local/bin/openclaw-transcript
 RUN chmod +x /usr/local/bin/harness-openclaw.sh /usr/local/bin/openclaw-transcript
+# Claude Code · CloudCLI (harness cloudcli): Deyao's CloudCLI fork (DE0CH/claudecodeui) drives the image's own claude,
+# behind api-proxy.js; the Jarvis 4 Chat app and the web UI are its front end. The fork, its Node and a portable
+# PostgreSQL are NOT in the image: session-image/Dockerfile adds /usr/local/bin/cloudcli-runtime, which fetches the
+# runtime bundle pinned by sha256 in session-image/cloudcli-runtime.json on first use.
+COPY harness-cloudcli.sh /usr/local/bin/harness-cloudcli.sh
+RUN chmod +x /usr/local/bin/harness-cloudcli.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/harness-claude.sh /usr/local/bin/workspace-layer.sh /usr/local/bin/pull-secrets /usr/local/bin/session-secret /usr/local/bin/content-sync /usr/local/bin/set-permission-mode
 USER claude
 WORKDIR /home/claude

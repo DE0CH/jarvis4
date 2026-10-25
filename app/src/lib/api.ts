@@ -253,7 +253,7 @@ export type CoreStore = {
 // doesn't offer them in pickers or list them in summaries
 export type Policy = Record<string, string[]>;
 // the harnesses that run on a Claude account (policy/stores.json `claudeAccount`), filled by loadPolicy
-export const accountHarnesses = new Set<string>(["claude", "openclaw", "paseo-claude"]);
+export const accountHarnesses = new Set<string>(["claude", "openclaw", "paseo-claude", "cloudcli"]);
 export async function loadPolicy(): Promise<Policy> {
   const j = await api<{ harnesses?: Record<string, { stores?: string[]; claudeAccount?: boolean }> }>("GET", "api/policy");
   const out: Policy = {};
@@ -302,7 +302,7 @@ export function challengeRequest(a: Approval, p: Policy = {}): { stores: string[
 export const newId = () => (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
 
 export const REGION: Record<string, string> = { arn: "Stockholm", fra: "Frankfurt", ams: "Amsterdam", lhr: "London", cdg: "Paris", waw: "Warsaw", mad: "Madrid", iad: "Virginia", ord: "Chicago", sjc: "San Jose", lax: "Los Angeles", sin: "Singapore", nrt: "Tokyo", hkg: "Hong Kong", syd: "Sydney" };
-export const HARNESS: Record<string, string> = { claude: "Claude Code", opencode: "OpenCode", openclaw: "OpenClaw", "paseo-claude": "Claude Code · Paseo" };
+export const HARNESS: Record<string, string> = { claude: "Claude Code", opencode: "OpenCode", openclaw: "OpenClaw", "paseo-claude": "Claude Code · Paseo", cloudcli: "Claude Code · CloudCLI" };
 export function ago(iso: string | Date) {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return "just now"; if (s < 3600) return Math.floor(s / 60) + " min ago"; if (s < 86400) return Math.floor(s / 3600) + " h ago"; return Math.floor(s / 86400) + " d ago";

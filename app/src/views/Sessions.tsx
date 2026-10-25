@@ -44,7 +44,7 @@ export function serverBusy(m: Session): string | null {
   return null;
 }
 // sessions the Claude app does not see: their primary action is the Remote page
-const hasRemote = (m: Session) => m.harness === "opencode" || m.harness === "openclaw" || m.harness === "paseo-claude";
+const hasRemote = (m: Session) => m.harness === "opencode" || m.harness === "openclaw" || m.harness === "paseo-claude" || m.harness === "cloudcli";
 function SessionPill({ m }: { m: Session }) {
   const sb = serverBusy(m);
   if (sb && m.state !== "destroying") return <Pill kind="wait" spin>{sb.toLowerCase()}</Pill>;

@@ -555,14 +555,15 @@ func cloneRepos(repos []string) {
 
 // what a snapshot holds (relative to $HOME): the conversation, the work, the artefacts, and the OpenCode/Paseo and
 // OpenClaw harnesses' own state (Paseo's daemon identity and pairings, OpenCode's sessions, the OpenClaw gateway's
-// state and device pairings), so their apps stay paired across a pause, as in Jarvis 1 (its lib/archive.js)
+// state and device pairings; the CloudCLI harness's chat pictures in ~/.claude/cloudcli-assets), so their apps stay
+// paired across a pause, as in Jarvis 1 (its lib/archive.js)
 //
 // In the order of what matters most (Deyao, 2026-10-21: the teardown uploads the most important first): the
 // conversations and ~/.claude.json, the small records, the other harnesses' state, then the workspace and the
 // artifacts last. The stream (snapstream.go) sends them in this order.
 var snapshotPaths = []string{".claude/projects", ".claude.json", ".claude/.first-prompt-sent", ".claude/.paseo-agent",
 	allowFile, changesFile, lineKeysFile, deliveredFile,
-	".paseo", ".local/share/opencode", ".openclaw", "workspace", "artifacts"}
+	".paseo", ".local/share/opencode", ".openclaw", ".claude/cloudcli-assets", "workspace", "artifacts"}
 
 // snapshotSkip: what the snapshot leaves out under those roots (filepath.Match against the path relative to $HOME):
 // the harnesses' logs, pid files, caches and downloaded binaries, which a successor rebuilds (Jarvis 1's excludes)
