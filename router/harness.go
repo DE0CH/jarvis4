@@ -11,6 +11,8 @@ package main
 //             api-proxy.js (so an account switch needs no restart, accountswap.go): the Paseo app + web UI
 //   cloudcli  Claude Code driven by Deyao's CloudCLI fork (`cloudcli/<Claude model id>`), Claude subscription through
 //             api-proxy.js like paseo-claude: the Jarvis 4 Chat app (the YYC AI app's code) + the chat web UI
+//   dsh       DeepSeek Harness (Deyao's fork DE0CH/deepseek-harness) on OpenRouter, routed only to DeepSeek's own
+//             endpoint (`dsh/<OpenRouter slug>`; only the dated slugs have one): its web UI on the session's origin
 // The OpenCode list is Jarvis 1's curated one (every slug checked for tool calling on OpenRouter; prices are $/M
 // tokens in/out at curation).
 
@@ -40,6 +42,8 @@ var modelCatalog = []ModelChoice{
 	{"paseo/claude-fable-5-1", "Fable 5.1", "paseo-claude"},
 	{"cloudcli/claude-opus-5-5", "Opus 5.5", "cloudcli"},
 	{"cloudcli/claude-fable-5-1", "Fable 5.1", "cloudcli"},
+	{"dsh/deepseek/deepseek-v4-pro-0813", "DeepSeek V4 Pro — $0.66 / $1.98", "dsh"},
+	{"dsh/deepseek/deepseek-v4.1-flash-1017", "DeepSeek V4.1 Flash — $0.15 / $0.60", "dsh"},
 }
 
 // the first model of each harness is its default
@@ -49,6 +53,7 @@ var harnessInfo = map[string]map[string]string{
 	"openclaw":     {"label": "claw-code · OpenClaw", "detail": "Claude subscription · OpenClaw app + Control UI"},
 	"paseo-claude": {"label": "Claude Code · Paseo", "detail": "Claude subscription · Paseo app + web UI"},
 	"cloudcli":     {"label": "Claude Code · CloudCLI", "detail": "Claude subscription · Jarvis 4 Chat app + web UI"},
+	"dsh":          {"label": "DeepSeek Harness · OpenRouter", "detail": "DeepSeek V4 on DeepSeek's endpoint · web UI"},
 }
 
 // paseoHarness: a Paseo daemon fronts the session (its app pairs with the daemon, its web UI is the session's tunnel

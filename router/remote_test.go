@@ -251,6 +251,27 @@ func TestCloudCLIRemote(t *testing.T) {
 	}
 }
 
+// DeepSeek Harness: its remote is the persistent dsh web UI's page for it, nothing read from the machine;
+// it takes prompts through harness-send, and it brings the openrouter and tunnel stores
+func TestDSHRemote(t *testing.T) {
+	r := newTestRouter(t)
+	addHarnessSession(r, "sDS", "dsh", "started", "mDS")
+	defer fakeMachine(t, r, "mDS", func(holder, cmd string) ExecResult {
+		return ExecResult{Error: "the router ran " + holder + ": " + cmd + " on a dsh session"}
+	})()
+	h := r.Handler()
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/sessions/sDS/remote", nil))
+	out := map[string]any{}
+	json.Unmarshal(w.Body.Bytes(), &out)
+	if w.Code != 200 || out["webUrl"] != "https://dsh.deyaochen.com/s/sDS/" || out["harness"] != "dsh" || out["token"] != nil {
+		t.Fatalf("%d %v", w.Code, out)
+	}
+	if m, err := sessionModel("dsh", ""); err != nil || m != "dsh/deepseek/deepseek-v4-pro-0813" || !harnessSend["dsh"] {
+		t.Fatalf("default model %q (%v), harness-send %v", m, err, harnessSend["dsh"])
+	}
+}
+
 func TestTunnelProof(t *testing.T) {
 	a, b := tunnelProof("k", "s0000000000000001"), tunnelProof("k", "s0000000000000002")
 	if len(a) != 64 || a == b || a != tunnelProof("k", "s0000000000000001") || tunnelProof("", "s1") != "" {

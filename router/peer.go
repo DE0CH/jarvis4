@@ -12,7 +12,7 @@ import (
 const peerMaxText = 16000
 
 // harnesses that take prompts through /usr/local/bin/harness-send rather than a claude host
-var harnessSend = map[string]bool{"opencode": true, "openclaw": true, "paseo-claude": true, "cloudcli": true}
+var harnessSend = map[string]bool{"opencode": true, "openclaw": true, "paseo-claude": true, "cloudcli": true, "dsh": true}
 
 // cleanPeerText: CRLF → LF, trimmed, capped
 func cleanPeerText(text string) string {

@@ -7,6 +7,8 @@ package main
 //             relay is end-to-end encrypted, the link IS the secret)
 //   openclaw  the OpenClaw gateway: Control UI over HTTPS and the app's WebSocket on the same origin; the gateway
 //             token (~/.openclaw/jarvis-remote.json, written by harness-openclaw.sh) is the secret
+//   dsh       DeepSeek Harness web (harness-dsh.sh): its web UI on the same origin; Cloudflare Access is its only
+//             gate (dsh-front.js hands dsh's launch token to a request Access admitted; nothing for the router to read)
 //   cloudcli  the CloudCLI server (harness-cloudcli.sh): its chat web UI and the API + WebSocket the Jarvis 4 Chat app
 //             uses, on the same origin; Cloudflare Access is its only gate (no secret of its own, nothing to read)
 // The router reads those secrets on demand through a grant for holder "remote" (grants.go): its own key, so
@@ -37,7 +39,15 @@ import (
 
 const remoteHolder = "remote"
 
-var remoteHarnesses = map[string]bool{"opencode": true, "openclaw": true, "paseo-claude": true, "cloudcli": true}
+var remoteHarnesses = map[string]bool{"opencode": true, "openclaw": true, "paseo-claude": true, "cloudcli": true, "dsh": true}
+
+// webOriginHarness: the remote is only the session's origin, Cloudflare Access its gate (nothing to read)
+//
+// A dsh session's link is the persistent dsh web UI (DE0CH/services dsh-web), which reaches that origin itself with its
+// own service token and stays up while the machine is paused
+func dshWebURL(id string) string { return "https://dsh.deyaochen.com/s/" + id + "/" }
+
+func webOriginHarness(h string) bool { return h == "cloudcli" || h == "dsh" }
 
 // the commands the remote holder runs (bash -lc as the session user)
 const (
@@ -101,7 +111,10 @@ func parseRemote(harness, id, stdout string) RemoteInfo {
 // RemoteInfo: a started Paseo/OpenClaw session's remote, read through the remote holder (a CloudCLI session's is
 // only its origin: nothing to read)
 func (r *Router) RemoteInfo(s Session) RemoteInfo {
-	if s.Harness == "cloudcli" {
+	if s.Harness == "dsh" {
+		return RemoteInfo{WebURL: dshWebURL(s.ID), Harness: s.Harness}
+	}
+	if webOriginHarness(s.Harness) {
 		return RemoteInfo{WebURL: "https://" + tunnelHost(s.ID) + "/", Harness: s.Harness}
 	}
 	remoteCache.Lock()
@@ -186,14 +199,14 @@ func tunnelProof(key, id string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// GET /api/remotes?harness=openclaw|opencode|paseo-claude|paseo|cloudcli → {sessions: [{id, title, state, model,
-// harness, + url, token, webUrl (openclaw) | pairUrl (a Paseo harness) | webUrl (cloudcli) — only on a started session
+// GET /api/remotes?harness=openclaw|opencode|paseo-claude|paseo|cloudcli|dsh → {sessions: [{id, title, state, model,
+// harness, + url, token, webUrl (openclaw) | pairUrl (a Paseo harness) | webUrl (cloudcli, dsh) — only on a started session
 // whose front end is up, else error}]}. harness=paseo: every session a Paseo daemon fronts (opencode and paseo-claude),
 // what the Paseo app lists; harness=cloudcli: what the Jarvis 4 Chat app lists.
 func (r *Router) remotes(w http.ResponseWriter, req *http.Request) {
 	harness := req.URL.Query().Get("harness")
 	if !remoteHarnesses[harness] && harness != "paseo" {
-		writeJSON(w, 400, map[string]string{"error": "harness must be openclaw, opencode, paseo-claude, paseo or cloudcli"})
+		writeJSON(w, 400, map[string]string{"error": "harness must be openclaw, opencode, paseo-claude, paseo, cloudcli or dsh"})
 		return
 	}
 	match := func(h string) bool { return h == harness || harness == "paseo" && paseoHarness(h) }
@@ -226,7 +239,7 @@ func (r *Router) remotes(w http.ResponseWriter, req *http.Request) {
 				switch harness {
 				case "openclaw":
 					o["url"], o["token"] = nil, nil
-				case "cloudcli":
+				case "cloudcli", "dsh":
 					o["webUrl"] = nil
 				default:
 					o["pairUrl"] = nil
@@ -236,7 +249,7 @@ func (r *Router) remotes(w http.ResponseWriter, req *http.Request) {
 			switch harness {
 			case "openclaw":
 				o["url"], o["token"], o["webUrl"] = info.URL, info.Token, info.WebURL
-			case "cloudcli":
+			case "cloudcli", "dsh":
 				o["webUrl"] = info.WebURL
 			default:
 				o["pairUrl"] = info.PairURL
