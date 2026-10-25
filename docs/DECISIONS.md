@@ -2790,3 +2790,25 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      runtime bundle pinned by sha256 (`fork-pin.yml` name `cloudcli`), as OpenClaw's, because of Fly's 8 GB image limit.
      *Not chosen*: the router speaking the fork's protocol (chat in the router, against Jarvis 4's narrow job); a
      second Paseo-protocol client in the app (more app code that only one instance uses).
+
+241. **Snapshots go straight between the machine and the bucket, compressed with S2** (Deyao, 2026-10-25: "i can't
+     resume an upgraded session. it's broken"; "yes. speed up the upload and download"). The Deepseek session's Upgrade
+     (4 → 8 GB) took 21 minutes and looked dead: its final snapshot (4.66 GB of files, 1.75 GB of tar.gz) went up in
+     871 s and came down in about 4.5 min, then unpacked for about 1.5 min with nothing in the log. Measured: the
+     machines' way to the router (Fly's WireGuard peer into m-gateway) carries about 6 MB/s per connection and 15 MB/s
+     in all (four 24 MB uploads from a session at once: 4 MB/s each), while the bucket answers a Fly machine at 86 MB/s
+     on one stream and 380 MB/s on eight; and from 15:22 the old machine had spent its shared-CPU burst (1.3 cores of
+     steal, 0.2 left to gzip). Now the machine puts its snapshot into its own object as a multipart upload, 4 parts of
+     16 MB in flight, through part URLs the router signs (`POST /m/snapshot-upload`, `…/parts`, `…/done`), and the
+     router reads the object back for its hash and facts before keeping it pending, so the commit is unchanged (the
+     machine signs the hash the router read); a boot reads its predecessor's through a signed URL in 16 MB ranges, 4 at
+     once (`GET /m/snapshot-url`), and checks the cert's hash as before. The compressor is S2 (measured on a throttled
+     machine over node_modules and a Go tree: 186 MB per CPU-second to compress, ratio 2.7; zstd's fastest 110, ratio
+     3.6; gzip 55, ratio 3.5), each top-level root flushed into blocks of its own so the conversations go out whole
+     first; readers tell S2 from the older gzip by the first bytes, and the names stay `snapshot.tar.gz`. A restore
+     logs its download and unpack every 10 s. On the same throttled session (about 0.25 of a core): 1.22 GB of files
+     went up in 69 s warm and 109 s cold, came down in 17–22 s. A router with no bucket to sign for (the stand-ins)
+     answers 404 and the machine streams through the router as before. *Not chosen*: a faster m-gateway (the cap is
+     on the WireGuard path, which every session shares, and the bytes don't need the router); zstd (better ratio,
+     1.7× the CPU, which a throttled machine doesn't have); several unpack writers (no gain measured on a Fly volume);
+     incremental snapshots (a larger change, for later).

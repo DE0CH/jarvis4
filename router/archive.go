@@ -12,7 +12,6 @@ package main
 
 import (
 	"archive/tar"
-	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -227,10 +226,11 @@ func walkTar(p string, fn func(h *tar.Header, body io.Reader) error) error {
 		return err
 	}
 	defer f.Close()
-	gz, err := gzip.NewReader(f)
+	gz, err := openSnapReader(f) // snapformat.go
 	if err != nil {
 		return err
 	}
+	defer gz.Close()
 	tr := tar.NewReader(gz)
 	for {
 		h, err := tr.Next()

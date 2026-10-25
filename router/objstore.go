@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +47,16 @@ type ObjStore interface {
 	Delete(ctx context.Context, key string) error
 	DeletePrefix(ctx context.Context, prefix string) error
 	List(ctx context.Context, prefix string) ([]string, error)
+}
+
+// objDirect: a store the machines reach themselves (snapdirect.go): a multipart upload whose parts they put through
+// signed URLs, and signed reads. The bucket has it; the memory stand-in doesn't (its machines stream through the router).
+type objDirect interface {
+	StartUpload(ctx context.Context, key string) (string, error) // → the upload id (earlier unfinished ones of key aborted)
+	PartURL(ctx context.Context, key, upload string, part int, ttl time.Duration) (string, error)
+	FinishUpload(ctx context.Context, key, upload string, etags []string) error // etags[i] is part i+1's
+	AbortUpload(ctx context.Context, key, upload string) error
+	GetURL(ctx context.Context, key string, ttl time.Duration) (string, error)
 }
 
 // objectsFromEnv: the bucket, or nil when no credential is set
@@ -89,6 +100,49 @@ func (o *s3Objects) Get(ctx context.Context, key string) (objectReader, error) {
 		return nil, err
 	}
 	return obj, nil
+}
+
+func (o *s3Objects) core() minio.Core { return minio.Core{Client: o.c} }
+
+func (o *s3Objects) StartUpload(ctx context.Context, key string) (string, error) {
+	// a machine that died mid-upload left its parts (stored, and billed): its successor's start ends them
+	if res, err := o.core().ListMultipartUploads(ctx, o.bucket, key, "", "", "", 100); err == nil {
+		for _, u := range res.Uploads {
+			if u.Key == key {
+				o.core().AbortMultipartUpload(ctx, o.bucket, key, u.UploadID)
+			}
+		}
+	}
+	return o.core().NewMultipartUpload(ctx, o.bucket, key, minio.PutObjectOptions{ContentType: "application/octet-stream"})
+}
+
+func (o *s3Objects) PartURL(ctx context.Context, key, upload string, part int, ttl time.Duration) (string, error) {
+	u, err := o.c.Presign(ctx, "PUT", o.bucket, key, ttl, url.Values{"partNumber": {strconv.Itoa(part)}, "uploadId": {upload}})
+	if err != nil {
+		return "", err
+	}
+	return u.String(), nil
+}
+
+func (o *s3Objects) FinishUpload(ctx context.Context, key, upload string, etags []string) error {
+	parts := make([]minio.CompletePart, len(etags))
+	for i, e := range etags {
+		parts[i] = minio.CompletePart{PartNumber: i + 1, ETag: e}
+	}
+	_, err := o.core().CompleteMultipartUpload(ctx, o.bucket, key, upload, parts, minio.PutObjectOptions{})
+	return err
+}
+
+func (o *s3Objects) AbortUpload(ctx context.Context, key, upload string) error {
+	return o.core().AbortMultipartUpload(ctx, o.bucket, key, upload)
+}
+
+func (o *s3Objects) GetURL(ctx context.Context, key string, ttl time.Duration) (string, error) {
+	u, err := o.c.PresignedGetObject(ctx, o.bucket, key, ttl, nil)
+	if err != nil {
+		return "", err
+	}
+	return u.String(), nil
 }
 
 func (o *s3Objects) Delete(ctx context.Context, key string) error {

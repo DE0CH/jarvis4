@@ -68,6 +68,15 @@ func (r *Router) haveSnap(machine string) bool {
 // snapStream: body into the machine's snapshot object, hashed and read for its facts on the way → pending
 func (r *Router) snapStream(ctx context.Context, machine string, body io.Reader) (string, int64, error) {
 	key := snapKey(machine)
+	sum, n, facts, err := snapIngest(body, func(b io.Reader) error { return r.objects.Put(ctx, key, b, -1) })
+	if err != nil {
+		return "", n, err
+	}
+	return sum, n, r.snapPending(machine, key, sum, n, facts)
+}
+
+// snapIngest: a snapshot's bytes into sink, hashed, counted and read for their facts on the way (at most snapshotMax)
+func snapIngest(body io.Reader, sink func(io.Reader) error) (string, int64, *snapshotFacts, error) {
 	h := sha256.New()
 	var n int64
 	pr, pw := io.Pipe()
@@ -81,26 +90,30 @@ func (r *Router) snapStream(ctx context.Context, machine string, body io.Reader)
 		factsDone <- f
 	}()
 	tee := io.TeeReader(io.LimitReader(body, snapshotMax+1), io.MultiWriter(h, pw, writerFunc(func(p []byte) { n += int64(len(p)) })))
-	err := r.objects.Put(ctx, key, tee, -1)
+	err := sink(tee)
 	pw.Close()
 	facts := <-factsDone
 	if err == nil && n > snapshotMax {
 		err = fmt.Errorf("body over %d bytes", int64(snapshotMax))
 	}
 	if err != nil {
-		return "", n, err
+		return "", n, nil, err
 	}
-	sum := hex.EncodeToString(h.Sum(nil))
+	return hex.EncodeToString(h.Sum(nil)), n, facts, nil
+}
+
+// snapPending: the machine's row names key, with that hash, size and facts, waiting for its signature
+func (r *Router) snapPending(machine, key, sum string, n int64, facts *snapshotFacts) error {
 	fb, _ := json.Marshal(facts)
 	if facts == nil {
 		fb = nil
 	}
 	dctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, err = r.pool().pool.Exec(dctx, `INSERT INTO snapshots (machine_id, object_key, sha256, sig, bytes, state, facts) VALUES ($1, $2, $3, '', $4, 'pending', $5)
+	_, err := r.pool().pool.Exec(dctx, `INSERT INTO snapshots (machine_id, object_key, sha256, sig, bytes, state, facts) VALUES ($1, $2, $3, '', $4, 'pending', $5)
 		ON CONFLICT (machine_id) DO UPDATE SET object_key = excluded.object_key, sha256 = excluded.sha256, sig = '', bytes = excluded.bytes,
 		state = 'pending', facts = excluded.facts, committed_at = NULL`, machine, key, sum, n, fb)
-	return sum, n, err
+	return err
 }
 
 type writerFunc func(p []byte)

@@ -9,7 +9,6 @@ package main
 
 import (
 	"archive/tar"
-	"compress/gzip"
 	"encoding/json"
 	"io"
 	"os"
@@ -220,12 +219,13 @@ func readSnapshotFacts(p string) (*snapshotFacts, error) {
 	return readSnapshotFactsFrom(f)
 }
 
-// readSnapshotFactsFrom: the facts of a snapshot's bytes (a tar.gz), read through once
+// readSnapshotFactsFrom: the facts of a snapshot's bytes (snapformat.go), read through once
 func readSnapshotFactsFrom(f io.Reader) (*snapshotFacts, error) {
-	gz, err := gzip.NewReader(f)
+	gz, err := openSnapReader(f)
 	if err != nil {
 		return nil, err
 	}
+	defer gz.Close()
 	tr := tar.NewReader(gz)
 	out := &snapshotFacts{}
 	var newest time.Time

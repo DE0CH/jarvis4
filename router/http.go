@@ -575,63 +575,28 @@ func (r *Router) buildHandlers() {
 		writeJSON(w, 200, map[string]any{"cert": cert, "predecessorCert": pred})
 	})
 	m("GET /m/snapshot", func(w http.ResponseWriter, req *http.Request, machine string, _ []byte) {
-		var pred string
-		r.st.Do(func(d *persisted) {
-			if st := d.Started[machine]; st != nil && st.KernelPred != "" { // kernelline.go: the source's machine
-				pred = st.KernelPred
-				return
-			}
-			if st := d.Started[machine]; st != nil && st.KernelCert != nil {
-				pred = "restore" // a kernel line's first machine: the archived snapshot its source names, if any (below)
-				return
-			}
-			if cert := d.Certs[machine]; cert != nil {
-				var c struct {
-					PredID string `json:"predecessorId"`
-				}
-				cert.Decode(&c)
-				pred = c.PredID
-			}
-		})
-		if pred == "restore" {
-			s := r.restoreFilesFor(machine) // restore.go: only a restoring line's first machine
-			if s == nil {
-				writeJSON(w, 404, map[string]string{"error": "no predecessor"})
-				return
-			}
-			rd, err := r.snapOpen(req.Context(), s)
-			if err != nil {
-				writeJSON(w, 404, map[string]string{"error": "no predecessor: " + err.Error()})
-				return
-			}
-			defer rd.Close()
-			w.Header().Set("Content-Type", "application/gzip")
-			http.ServeContent(w, req, "", s.CommittedAt, rd)
-			return
-		}
-		if pred == "" {
-			writeJSON(w, 404, map[string]string{"error": "no predecessor"})
-			return
-		}
-		s := r.snap(pred)
-		if s == nil || s.State != "committed" {
-			writeJSON(w, 404, map[string]string{"error": "no snapshot"})
+		s, signed, why := r.snapshotFor(machine) // snapdirect.go
+		if s == nil {
+			writeJSON(w, 404, map[string]string{"error": why})
 			return
 		}
 		rd, err := r.snapOpen(req.Context(), s)
 		if err != nil {
-			writeJSON(w, 404, map[string]string{"error": "no snapshot: " + err.Error()})
+			writeJSON(w, 404, map[string]string{"error": why + ": " + err.Error()})
 			return
 		}
 		defer rd.Close()
-		w.Header().Set("X-Snapshot-Sig", s.Sig)
-		w.Header().Set("Content-Type", "application/gzip")
+		if signed {
+			w.Header().Set("X-Snapshot-Sig", s.Sig)
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
 		http.ServeContent(w, req, "", s.CommittedAt, rd)
 	})
 	// the snapshot streams to the volume (a session's workspace can be several GB; the router has 1 GiB of memory):
 	// hashed on the way, the machine's request signature checked against that hash, then put in place
 	r.registerSnapStream(mmux, m) // snapstream.go: the final snapshot streamed, committed, carried or failed
 	r.registerSnapProgress(m)     // snapprogress.go: the final snapshot's progress, into the session's waiting line
+	r.registerSnapDirect(m)       // snapdirect.go: the final snapshot and a boot's straight to and from the bucket
 	mmux.Handle("POST /m/snapshot", r.requireMachineStream(func(w http.ResponseWriter, req *http.Request, machine, tmp string) {
 		if req.Header.Get("X-Snapshot-None") != "" {
 			os.Remove(tmp)

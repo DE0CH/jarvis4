@@ -2,7 +2,6 @@ package main
 
 import (
 	"archive/tar"
-	"compress/gzip"
 	"crypto/rand"
 	"io"
 	"net/http"
@@ -275,12 +274,14 @@ func TestTheTeardownSendsTheTranscriptTailFirst(t *testing.T) {
 			}
 			mu.Unlock()
 			w.Write([]byte(`{"ok":true}`))
+		case "/m/snapshot-upload": // a router with no bucket URLs: the stream below
+			w.WriteHeader(404)
 		case "/m/snapshot-stream":
 			mu.Lock()
 			events = append(events, "snapshot")
 			mu.Unlock()
 			// the window closes partway: read what came, list the tar entries, then cut the connection
-			gz, err := gzip.NewReader(io.LimitReader(req.Body, 64<<10))
+			gz, err := openSnapReader(io.LimitReader(req.Body, 64<<10))
 			if err == nil {
 				tr := tar.NewReader(gz)
 				for {

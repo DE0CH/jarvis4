@@ -2,7 +2,10 @@ module github.com/DE0CH/jarvis4/machine
 
 go 1.25.1
 
-require golang.org/x/crypto v0.43.0
+require (
+	github.com/klauspost/compress v1.18.0
+	golang.org/x/crypto v0.43.0
+)
 
 require (
 	filippo.io/nistec v0.0.4 // indirect

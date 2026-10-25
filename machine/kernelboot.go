@@ -308,7 +308,7 @@ func refreshKernelTrust(c *client, me string, keys map[string]string) (kernelTru
 func kernelRestore(c *client, want string) error {
 	tmp := predecessorTmp
 	defer os.Remove(tmp)
-	sum, _, err := c.download("/m/snapshot", tmp)
+	sum, _, err := fetchSnapshot(c, tmp) // snapdirect.go
 	if err != nil {
 		return err
 	}

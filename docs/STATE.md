@@ -403,6 +403,9 @@ Each step ships alone, keeps the router working, and is a clean cut for what it 
    `snapshots/<machine>.tar.gz` (minio-go multipart, 16 MiB parts) while the router hashes it and reads its facts
    (transcripts, tail, repo changes) into the row; commit flips the row to committed with the machine's signature; a
    booting machine's carry-over is a row naming its predecessor's object (no copy; the object goes with its last row);
+   a machine puts its final snapshot into its object itself (a multipart upload through part URLs the router signs,
+   read back by the router for its hash and facts) and reads its predecessor's through a signed URL, so the bytes skip
+   m-gateway (DECISIONS 241);
    carried secrets are `router_docs` rows (`carry/<machine>`); the archive copies the object to scratch first. A
    restore's archived snapshot is fetched into scratch, checked, and put in as the row `restore-<session>` (served from
    the bucket, dropped after the first boot); the Jarvis 1 imports' manifests and records, the backups' fallback export

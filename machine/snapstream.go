@@ -58,7 +58,10 @@ func uploadSnapshot(c *client) error {
 	}
 	prog := startProgress(c) // snapprogress.go: measured, then counted as it streams
 	prog.setPhase("uploading")
-	sum, n, err := streamSnapshot(c)
+	sum, n, err := directSnapshot(c) // snapdirect.go: straight to the bucket
+	if errors.Is(err, errNoDirect) {
+		sum, n, err = streamSnapshot(c)
+	}
 	prog.end(err)
 	if errors.Is(err, errNoStreaming) {
 		return uploadSnapshotFile(c)

@@ -30,7 +30,6 @@ package main
 import (
 	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/ecdh"
@@ -599,15 +598,19 @@ func makeSnapshot(path string) (string, int64, error) {
 	return sum, n, nil
 }
 
-// writeSnapshot: the snapshot as a tar.gz into w (a file, or the request body that streams it to the router:
-// snapstream.go) → its sha256 and size
+// writeSnapshot: the snapshot as a compressed tar (snapformat.go) into w (a file, the parts that go to the bucket:
+// snapdirect.go, or the request body that streams it to the router: snapstream.go) → its sha256 and size
 func writeSnapshot(w io.Writer) (string, int64, error) {
 	home, _ := os.UserHomeDir()
 	h := sha256.New()
 	prog := curProgress.Load() // snapprogress.go: the running snapshot's numbers (nil: not counted)
 	cw := &countWriter{w: io.MultiWriter(w, h), prog: prog}
-	gz := gzip.NewWriter(cw)
+	gz, err := newSnapWriter(cw)
+	if err != nil {
+		return "", 0, err
+	}
 	tw := tar.NewWriter(gz)
+	copyBuf := make([]byte, 256<<10) // fewer reads of a large file than io.Copy's 32 KB
 	for _, rel := range snapshotPaths {
 		root := filepath.Join(home, rel)
 		if _, err := os.Lstat(root); err != nil {
@@ -647,7 +650,7 @@ func writeSnapshot(w io.Writer) (string, int64, error) {
 				if prog != nil {
 					src = countReader{f, prog}
 				}
-				n, err := io.Copy(tw, io.LimitReader(src, h.Size))
+				n, err := io.CopyBuffer(tw, io.LimitReader(src, h.Size), copyBuf)
 				if err == nil && n < h.Size {
 					_, err = io.Copy(tw, io.LimitReader(zeros{}, h.Size-n))
 				}
@@ -656,6 +659,13 @@ func writeSnapshot(w io.Writer) (string, int64, error) {
 			return tw.WriteHeader(h)
 		})
 		if err != nil {
+			return "", 0, err
+		}
+		// each root in blocks of its own: the conversations and records go out whole before the workspace starts
+		if err := tw.Flush(); err != nil {
+			return "", 0, err
+		}
+		if err := gz.Flush(); err != nil {
 			return "", 0, err
 		}
 	}
@@ -700,14 +710,14 @@ var predecessorTmp = dir + "/predecessor.tar.gz"
 func restore(c *client, predSigningKey string, v Vouched) error {
 	tmp := predecessorTmp
 	defer os.Remove(tmp)
-	sum, hdr, err := c.download("/m/snapshot", tmp) // streamed to disk, hashed on the way
+	sum, sig, err := fetchSnapshot(c, tmp) // snapdirect.go: from the bucket to disk, then hashed
 	if err != nil {
 		return err
 	}
 	if sum != v.Cert.Snapshot {
 		return errors.New("the snapshot isn't the one the cert names")
 	}
-	if !verify(predSigningKey, []byte(sum), hdr.Get("X-Snapshot-Sig")) {
+	if !verify(predSigningKey, []byte(sum), sig) {
 		return errors.New("the snapshot isn't signed by the predecessor")
 	}
 	n, err := unpackFile(tmp)
@@ -721,22 +731,34 @@ func restore(c *client, predSigningKey string, v Vouched) error {
 // unpack: a snapshot (tar.gz relative to $HOME) into $HOME
 func unpack(body []byte) (int, error) { return unpackReader(bytes.NewReader(body)) }
 
+// unpackFile: a downloaded snapshot unpacked, its progress in the log
 func unpackFile(p string) (int, error) {
 	f, err := os.Open(p)
 	if err != nil {
 		return 0, err
 	}
 	defer f.Close()
-	return unpackReader(f)
+	prog := startRestoreLog("unpacking", 0)
+	defer prog.stop()
+	return unpackWith(f, &prog.done)
 }
 
+// unpackReader: a snapshot's files into $HOME
 func unpackReader(r io.Reader) (int, error) {
+	return unpackWith(r, nil)
+}
+
+// unpackWith: unpackReader, counting the uncompressed bytes into done (nil: not counted)
+func unpackWith(r io.Reader, done *atomic.Int64) (int, error) {
 	home, _ := os.UserHomeDir()
-	gz, err := gzip.NewReader(r)
+	zr, err := openSnapReader(r) // snapformat.go: S2, or gzip from before
 	if err != nil {
 		return 0, err
 	}
-	tr := tar.NewReader(gz)
+	defer zr.Close()
+	tr := tar.NewReader(zr)
+	dirs := map[string]bool{} // the directories made so far: one MkdirAll per directory, not per file
+	buf := make([]byte, 1<<20)
 	n := 0
 	for {
 		h, err := tr.Next()
@@ -759,17 +781,23 @@ func unpackReader(r io.Reader) (int, error) {
 			os.Remove(dst)
 			os.Symlink(h.Linkname, dst)
 		case tar.TypeReg:
-			os.MkdirAll(filepath.Dir(dst), 0o755)
+			if d := filepath.Dir(dst); !dirs[d] {
+				os.MkdirAll(d, 0o755)
+				dirs[d] = true
+			}
 			f, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(h.Mode)&0o777)
 			if err != nil {
 				return n, err
 			}
-			_, err = io.Copy(f, tr)
+			_, err = io.CopyBuffer(struct{ io.Writer }{f}, struct{ io.Reader }{tr}, buf) // 1 MB writes, not 32 KB
 			f.Close()
 			if err != nil {
 				return n, err
 			}
 			os.Chtimes(dst, h.ModTime, h.ModTime) // git's index keeps trusting unchanged files
+			if done != nil {
+				done.Add(h.Size)
+			}
 			n++
 		}
 	}
