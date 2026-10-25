@@ -32,7 +32,7 @@ spec:
       securityContext: { fsGroup: 65532 }
       containers:
         - name: router
-          image: ghcr.io/de0ch/jarvis4-router:sha-c830432516ad@sha256:a062662f27e6b83971c2ca2235d9c72b59577c78df1a00b83f22c0e09d9317d3
+          image: ghcr.io/de0ch/jarvis4-router:sha-d08c4c569119@sha256:d09f19d2132781a39f58e6f03c7cb5766da433d4ca80945261ff2d904ce2e696
           env:
             # the kernel's components (k8s/cluster/kernel): %s is the component's Service name
             - { name: KERNEL_URL, value: "http://%s.jarvis4-kernel.svc.cluster.local:8080" }
@@ -47,9 +47,9 @@ spec:
             # the key backups (storedocs.go): read from Jarvis 2's bucket (BACKUP_BUCKET, the read key may only read
             # there), written to Jarvis 4's own (versioned; the key adds versions only: infra/backup-read-key.py own-bucket)
             - { name: BACKUP_WRITE_BUCKET, value: jarvis4-backup-de0ch }
-            - { name: SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session:sha-c830432516ad@sha256:cb2957e2281b32d29a066a1dcd9d7600cc69747372581a38b5edf8aad76a9f43" }
+            - { name: SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session:sha-d08c4c569119@sha256:51599436b8fdf9d6d7f8073760d2f80669febb1ae8c18f76e3d1e447b0fa946b" }
             # the CI key's signature over "jarvis2-session-image <SESSION_IMAGE>" (images.yml, keys/ci.pub): the phone checks it
-            - { name: SESSION_IMAGE_SIG, value: "MEUCIFHmQ9o2v5A6gNLHu3UfYZHD5ZJSs+7O9PuynwB96OhTAiEA5xKjgLEpS+qrrijhCZyET3UmjaK0kj59h9PSM+sU40A=" }
+            - { name: SESSION_IMAGE_SIG, value: "MEQCIAbtNv0ZDZ5ncW8qe4DiMqoGzMxElFuKuP6nNOFzFCGNAiBdfewuZyzIza50KlJnI2Momo0S3IngvhB2T3RFexj2ow==" }
             # every earlier CI-pinned session image with its signature (session-image-sigs.txt here, images.yml)
             - { name: SESSION_IMAGE_SIGS_FILE, value: /sigs/session-image-sigs.txt }
             - { name: FLY_REGION, value: lhr }
@@ -160,7 +160,7 @@ spec:
       securityContext: { fsGroup: 65532 } # wg.conf is mode 0440: readable through the group
       containers:
         - name: m-gateway
-          image: ghcr.io/de0ch/jarvis4-router:sha-c830432516ad@sha256:a062662f27e6b83971c2ca2235d9c72b59577c78df1a00b83f22c0e09d9317d3
+          image: ghcr.io/de0ch/jarvis4-router:sha-d08c4c569119@sha256:d09f19d2132781a39f58e6f03c7cb5766da433d4ca80945261ff2d904ce2e696
           args: [m-gateway]
           env:
             - { name: POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
