@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { ssh-key: "${{ secrets.FORK_PIN_DEPLOY_KEY }}" }
+        with: { ssh-key: "${{ secrets.PIN_DEPLOY_KEY }}" }
       - name: check, pin, push
         env:
           NAME: ${{ inputs.name }}
