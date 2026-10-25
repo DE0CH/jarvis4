@@ -151,6 +151,7 @@ func superviseNormal() error {
 	go diskReporter(c)          // disk.go: the root disk and the volume, for the router's low-disk warning
 	go screenReporter(c)        // screen.go: the pane for the read-only terminal
 	go stallWatch()             // stall.go: the 15-minute watchdog on its own harness
+	go rcWatch()                // rcwatch.go: Remote Control brought back when it drops
 	go serveAPIProxy(c)         // apiproxy.go: $JARVIS_URL for the session scripts
 	go liveSync(c)              // livesync.go: the transcripts to the Storage Box (through the router) for search
 	go startCredsSyncOnMarker() // claudelogin.go: the Claude login sync, once boot (or an account switch) leaves its marker

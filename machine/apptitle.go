@@ -88,13 +88,30 @@ func codeSessionsGet(url, tok string, out any) (int, error) {
 	return 200, json.Unmarshal(b, out)
 }
 
+// codeSession: one entry of /v1/code/sessions
+type codeSession struct {
+	ID               string `json:"id"`
+	Title            string `json:"title"`
+	ConnectionStatus string `json:"connection_status"` // connected | disconnected: what the Claude app shows
+}
+
+// fetchCodeSession: GET /v1/code/sessions/cse_<key>, whose entry comes inside "response_shape" (seen 2026-10-25), or
+// bare as before
+func fetchCodeSession(key, tok string) (codeSession, int, error) {
+	var r struct {
+		codeSession
+		Shape *codeSession `json:"response_shape"`
+	}
+	st, err := codeSessionsGet(codeSessionsURL+"/cse_"+key, tok, &r)
+	if r.Shape != nil {
+		return *r.Shape, st, err
+	}
+	return r.codeSession, st, err
+}
+
 // fetchAppTitle: the entry's title on claude.ai ("" when it has none yet)
 func fetchAppTitle(key, tok string) (string, error) {
-	var one struct {
-		ID    string `json:"id"`
-		Title string `json:"title"`
-	}
-	st, err := codeSessionsGet(codeSessionsURL+"/cse_"+key, tok, &one)
+	one, st, err := fetchCodeSession(key, tok)
 	if err == nil {
 		return one.Title, nil
 	}
@@ -102,10 +119,7 @@ func fetchAppTitle(key, tok string) (string, error) {
 		return "", err
 	}
 	var list struct {
-		Data []struct {
-			ID    string `json:"id"`
-			Title string `json:"title"`
-		} `json:"data"`
+		Data []codeSession `json:"data"`
 	}
 	if _, err := codeSessionsGet(codeSessionsURL+"?limit=100", tok, &list); err != nil {
 		return "", err

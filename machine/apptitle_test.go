@@ -31,6 +31,8 @@ func TestAppTitle(t *testing.T) {
 		switch req.URL.Path {
 		case "/v1/code/sessions/cse_abc":
 			w.Write([]byte(`{"id":"cse_abc","title":"Renamed by Deyao"}`))
+		case "/v1/code/sessions/cse_wrapped": // the shape of 2026-10-25
+			w.Write([]byte(`{"response_shape":{"id":"cse_wrapped","title":"Inside the shape","connection_status":"connected"}}`))
 		case "/v1/code/sessions/cse_old":
 			w.WriteHeader(404)
 		case "/v1/code/sessions":
@@ -68,13 +70,20 @@ func TestAppTitle(t *testing.T) {
 	if got := a.current(); got != "From the list" {
 		t.Fatalf("title %q (%v)", got, calls)
 	}
+	os.WriteFile(filepath.Join(home, ".claude/sessions/1.json"), []byte(`{"pid":1,"startedAt":5,"bridgeSessionId":"session_wrapped"}`), 0o600)
+	if got := a.current(); got != "Inside the shape" {
+		t.Fatalf("title %q (%v)", got, calls)
+	}
+	if s, _, err := fetchCodeSession("wrapped", "tok-1"); err != nil || s.ConnectionStatus != "connected" {
+		t.Fatalf("connection status: %+v %v", s, err)
+	}
 	if !authOK {
 		t.Fatal("the request lacked the token or the beta header")
 	}
 	// a failed read keeps the last title of the same entry
 	a.at = time.Time{}
 	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) { w.WriteHeader(500) })
-	if got := a.current(); got != "From the list" {
+	if got := a.current(); got != "Inside the shape" {
 		t.Fatalf("after a failure %q", got)
 	}
 }

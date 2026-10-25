@@ -819,6 +819,9 @@ not running in time. The video, screenshots and logs (core, router, the setup an
   worker exited …"). Both are out of the OOM killer's reach (`oom_score_adj` -1000) and out of the session's reach
   (root: user claude can't signal them), so an out-of-memory machine or a stray `kill` loses harness processes, not
   the supervisor (DESIGN "The supervisor and the guard", The keeper).
+- Remote Control dropped under a live host (the app's session "disconnected", or no Remote Control in the pane): the
+  supervisor's watch types `/remote-control` and re-enables it after 3 min down, between turns (`remote control: …`
+  lines in the supervisor log; DECISIONS 239). A turn that never ends holds it off: interrupt the turn.
 - The harness died (Remote Control gone, the app's session "disconnected"), the machine still up: the keeper starts it
   again with the same conversation; each end is a supervisor log line `keeper: HARNESS ENDED (<how>) after <uptime>
   (start n, pid p) … starting it again in <backoff>`, and the session's `registry.harness` (`/api/state`) has the count

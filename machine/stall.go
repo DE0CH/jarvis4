@@ -36,6 +36,8 @@ type hostStatus struct {
 	status   string // idle | busy | waiting | shell …
 	statusAt int64  // statusUpdatedAt (ms): changes with every turn
 	jobs     int
+	pid      int64
+	bridge   string // its Remote Control entry ("" = none)
 }
 
 // stallClock: since when the host has waited on its jobs alone, on which turn
@@ -135,7 +137,7 @@ func readHost() hostStatus {
 		}
 		jobs = max(jobs, n)
 	}
-	return hostStatus{ok: true, status: h.Status, statusAt: h.StatusAt, jobs: jobs}
+	return hostStatus{ok: true, status: h.Status, statusAt: h.StatusAt, jobs: jobs, pid: h.PID, bridge: h.Bridge}
 }
 
 // shellJobs: the background shells claude runs (its children running a shell snapshot), as status.go's __BG__ counts

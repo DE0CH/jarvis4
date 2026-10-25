@@ -2759,3 +2759,21 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      session's id as the line and the phone key from secrets' key statement (`linePhone`), which is what the machine
      checks against; the app's message page names a kernel line by its id and this phone's own key. *Not chosen*:
      no signature for a resume prompt (anyone past the app login could type into a session); keeping the Inbox step.
+239. **The supervisor brings Remote Control back by itself** (Deyao, 2026-10-25: "Remote control in a session is not
+     always reliable"; "Shows disconnected, and also terminal view doesn't say it has remote control enabled"; "Not
+     jarvis do, supervisor do"; chose "Auto re-enable"). Only boot (the router's 4-minute `harness-check`) and an
+     account switch looked at Remote Control; a running host whose bridge dropped stayed off until someone typed
+     `/remote-control`. Claude Code rides out a short cut itself (claude.ai says `disconnected` about a minute into a
+     cut and `connected` within seconds of the network coming back: measured on a throwaway host behind a proxy that
+     was switched off), but it has give-up paths (`consecutive init failures, not retrying this session`, `Giving up
+     on re-registering environment`, `the server refused to reconnect this computer`), and its header's `/rc active`
+     is drawn once and never changes. Now `machine/rcwatch.go` checks every minute: down = no Remote Control entry on
+     the live host, or the entry is `disconnected` on claude.ai while the machine reaches Anthropic; after 3 minutes
+     down, between turns (idle, or busy with background jobs only), it types `/remote-control` and picks Disconnect
+     when the host still holds the entry, then Enable (the menu read from the pane's open dialog only, the cursor
+     moved to the choice; right after a Disconnect, `/remote-control` enables with no menu, which counts; Escape only
+     ever goes to an open menu); again after 10 minutes if it didn't take. Each revive is a new entry in the Claude
+     app with the same conversation (both paths tried live on a throwaway host: back and `connected` in about 4 s). One typist at a time with an account switch's
+     re-enable (`rcTyping`). The same read fixed the app title: `GET /v1/code/sessions/cse_<key>` now wraps the entry
+     in `response_shape`, so the title read had been empty. *Not chosen*: the router driving it (Deyao's call), a
+     restart of the host (loses background shells), a DM per revive (Deyao chose without).

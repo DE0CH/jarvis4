@@ -731,6 +731,7 @@ keeper. Their components:
 | worker count | normal | `workers.go` | no | subagents and background jobs: the harness's hook only notifies the supervisor over a local socket (ids, types, the event name; never a command), the supervisor holds the count and the status report carries it; the hook never fails a turn |
 | screen | normal | `screen.go` | no | the harness's pane for the read-only terminal (output only) |
 | stall watchdog | normal | `stall.go` | no | a nudge into its own harness after 15 idle minutes with background jobs; nothing while the harness is paused or frozen |
+| Remote Control watch | normal | `rcwatch.go` | no | the `claude` host's Remote Control, checked every minute (its registry entry, the entry's `connection_status` on claude.ai); down for 3 min → between turns it types `/remote-control`, Disconnect (an entry the host still holds) then Enable; again after 10 min if it didn't take; nothing while paused |
 | status, memory, disk | normal | `status.go`, `memory.go`, `disk.go` | no | the reports the router's card and watches read (output only) |
 | API proxy | normal | `apiproxy.go` | — | `$JARVIS_URL` for the session's scripts, each call signed as this machine |
 | live transcript sync | normal | `livesync.go` | no | the transcripts to the Storage Box (through the router) for search (output only); what it sent is in `/run/jarvis/live-sent.json`, so the teardown sends only what changed since |

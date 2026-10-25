@@ -538,6 +538,8 @@ func enableRemoteControl(oldBridge string) {
 		return
 	}
 	log.Printf("claude login: Claude Code stopped Remote Control for the account change: typing /remote-control")
+	rcTyping.Lock() // rcwatch.go
+	defer rcTyping.Unlock()
 	if err := sendKeys("-l", "/remote-control"); err == nil {
 		time.Sleep(300 * time.Millisecond)
 		err = sendKeys("Enter")
