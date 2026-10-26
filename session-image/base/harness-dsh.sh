@@ -47,8 +47,12 @@ for i in 1 2 3 4 5; do RT="$(/usr/local/bin/dsh-runtime 2>> "$RUN/runtime.err")"
 [ -n "$RT" ] || echo "[dsh] the runtime bundle could not be fetched (see $RUN/runtime.err)"
 dsh() { "$RT/node/bin/node" "$RT/app/node_modules/@deepseek-ai/dsh/lib/bin.js" "$@"; }
 
-# Jarvis's modes -> dsh's permission preset (read at each conversation's start)
+# Jarvis's modes -> dsh's permission mode (DSH_PERMISSION_MODE: its sandbox-policy and approval rows read it when dsh
+# web starts). bypass = danger-full-access, approval never; anything else = workspace-write, approval ask. A Fly
+# machine has no usable sandbox backend, so under workspace-write every shell command asks to escalate and waits for
+# an answer in the web UI (dsh-send connects with interactions=none and never answers).
 perm_mode() { cat "$STATE/.permission-mode" 2>/dev/null || printf '%s' "${SESSION_PERMISSION_MODE:-auto}"; }
+dsh_perm() { [ "$(perm_mode)" = bypass ] && echo danger-full-access || echo workspace-write; }
 
 # The profile patch: generated from this dsh's own tree with the patch emptied first, so it always fits the version
 write_profile() {
@@ -69,7 +73,7 @@ run_dsh() {
   while [ ! -e "$STATE/.one-shot-done" ]; do
     write_profile
     started=$(date +%s)
-    dsh --profile web --no-open --port "$DSH_PORT" --public-url "https://$WEB_HOST/" --trusted-host "$WEB_HOST" 2>&1 \
+    DSH_PERMISSION_MODE="$(dsh_perm)" dsh --profile web --no-open --port "$DSH_PORT" --public-url "https://$WEB_HOST/" --trusted-host "$WEB_HOST" 2>&1 \
       | while IFS= read -r line; do
           case "$line" in
             *"dsh web:"*token=*) t="${line##*token=}"; t="${t%%[&[:space:]]*}"; (umask 077; printf '%s' "$t" > "$RUN/token.tmp") && mv "$RUN/token.tmp" "$RUN/token"
@@ -212,7 +216,7 @@ tmux_pane() {
     "echo 'DeepSeek Harness ($SLUG) — web UI: https://$WEB_HOST/'; touch $RUN/web.out; tail -n 200 -F $RUN/web.out"
 }
 
-echo "[dsh] harness up in $WD (model: $SLUG, perm: $(perm_mode), name: ${LABEL:-auto})"
+echo "[dsh] harness up in $WD (model: $SLUG, perm: $(perm_mode) = $(dsh_perm), name: ${LABEL:-auto})"
 [ -n "$RT" ] && run_dsh &
 run_tunnel
 tmux_pane

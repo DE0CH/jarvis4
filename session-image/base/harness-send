@@ -56,7 +56,8 @@ fi
 # ---------------------------------------------------------------- dsh (DeepSeek Harness web) -----
 if [ "$HARNESS" = dsh ]; then
   WD="$(tr '\0' '\n' < /proc/"$(pgrep -u "$(id -u)" -of harness-dsh.sh)"/cmdline 2>/dev/null | sed -n 3p)"
-  printf '%s' "$TEXT" | exec python3 /usr/local/bin/dsh-send.py "${WD:-$HOME/workspace}" "${IMGS[@]}"
+  # not `… | exec`: an exec in a pipeline replaces only its subshell, and this script would go on to exit 3
+  printf '%s' "$TEXT" | python3 /usr/local/bin/dsh-send.py "${WD:-$HOME/workspace}" "${IMGS[@]}"; exit $?
 fi
 
 # ---------------------------------------------------------------- cloudcli (CloudCLI server) -----
