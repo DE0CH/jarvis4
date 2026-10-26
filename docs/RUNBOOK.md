@@ -342,10 +342,11 @@ The control box (`k8s/control/secrets/`, annotations in `k8s/control/apps/router
   (`router/bbbudget.go`; cap and warn line are `BROWSERBASE_BUDGET_USD` / `_WARN_USD` in the router's env).
 - `--part devices CF_DEVICE_TOKENS_API=file:…` → `router-devices.enc.yaml`: the Cloudflare token with which the router
   mints and deletes the paired apps' tokens (Access: Service Tokens read + write on the account, nothing else).
-  **Not written yet** (pairing NEW OpenClaw/Paseo apps waits on it; paired ones keep working): a Cloudflare API token can
-  only be minted in the dashboard (`CLOUDFLARE_API` gets 9109 on both `/user/tokens` and `/accounts/<id>/tokens`); mint it
-  with claude-env's `cloudflare-dash` skill (`cf_token.js jarvis2-device-tokens-control OUT
-  a1c0fec57cf94af79479a6d827fa518c 91f7ce32fa614d73b7e1fc8f0e78582b`), then this part.
+  Written 2026-10-26 (Cloudflare token `jarvis2-device-tokens-control`). A Cloudflare API token can only be minted in the
+  dashboard (`CLOUDFLARE_API` gets 9109 on both `/user/tokens` and `/accounts/<id>/tokens`); remint it with claude-env's
+  `cloudflare-dash` skill (`cf_token.js jarvis2-device-tokens-control OUT a1c0fec57cf94af79479a6d827fa518c
+  91f7ce32fa614d73b7e1fc8f0e78582b`), then this part. Without it every new pairing fails with "the router has no
+  CF_DEVICE_TOKENS_API".
 - `--part alloy GRAFANA_LOGS_URL GRAFANA_LOGS_USER GRAFANA_METRICS_URL GRAFANA_METRICS_USER GRAFANA_WRITE_TOKEN` →
   `alloy.enc.yaml` (both boxes have one): the host's Grafana Alloy ("Logs and metrics").
 
