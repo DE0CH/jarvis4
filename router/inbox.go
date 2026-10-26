@@ -566,7 +566,49 @@ func (r *Router) inboxLoop() {
 		awaitLead() // leaderlease.go
 		now := time.Now().UTC()
 		r.expireApprovals(now)
+		r.settleStrandedApprovals(now)
 		r.st.Do(func(d *persisted) { pruneRequests(d, now); pruneBatches(d, now) })
+	}
+}
+
+// settleStrandedApprovals: a session left "approval" with no approval naming it (2026-10-26: a lapsed kernel-source
+// approval before RejectAs knew that kind) waits for nothing: a line that ran before goes back to paused, a new one is
+// failed, so Start again asks again. Past inboxTTL from its creation and with no lifecycle action holding it, so a
+// new session whose approval is still being made is left alone.
+func (r *Router) settleStrandedApprovals(now time.Time) {
+	var ids []string
+	r.st.Do(func(d *persisted) {
+		named := map[string]bool{}
+		for _, a := range d.Approvals {
+			named[a.Session] = true
+		}
+		for id, s := range d.Sessions {
+			if s.State == "approval" && !named[id] && !now.Before(s.Created.Add(inboxTTL)) {
+				ids = append(ids, id)
+			}
+		}
+	})
+	for _, id := range ids {
+		if r.busy(id) {
+			continue
+		}
+		r.st.Do(func(d *persisted) {
+			s := d.Sessions[id]
+			for _, a := range d.Approvals {
+				if a.Session == id {
+					return
+				}
+			}
+			if s == nil || s.State != "approval" {
+				return
+			}
+			if s.Cert != nil || (s.Kernel != nil && s.Kernel.SourceCert != nil) {
+				s.State, s.Error = "paused", ""
+			} else {
+				s.State, s.Error = "failed", "its approval was gone from the Inbox: Start again asks again"
+			}
+			log.Printf("inbox: session %s waited in approval with no approval: now %s", id, s.State)
+		})
 	}
 }
 

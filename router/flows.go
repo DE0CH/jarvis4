@@ -920,16 +920,23 @@ func (r *Router) RejectAs(id, outcome string) error {
 	}
 	r.st.Do(func(d *persisted) {
 		s := d.Sessions[a.Session]
+		kind := a.Kind
+		if kind == kernelApprovalKind { // kernelline.go: a new line's first source, or a resume onto a new source
+			kind = "new-session"
+			if s != nil && s.Kernel != nil && s.Kernel.SourceCert != nil {
+				kind = "resume-upgrade"
+			}
+		}
 		switch {
 		case s == nil:
-		case a.Kind == "new-session" && a.Again:
+		case kind == "new-session" && a.Again:
 			s.State, s.Error = "failed", "the start again was "+outcome // a failed line asked to start again stays
-		case a.Kind == "new-session" && outcome == outcomeLapsed && deyaosOwn(a.Origin):
+		case kind == "new-session" && outcome == outcomeLapsed && deyaosOwn(a.Origin):
 			// Deyao's own New session that nobody answered in time: kept, so Start again asks again (no machine yet)
 			s.State, s.Error = "failed", "the approval lapsed (nobody answered within 10 minutes): Start again asks again"
-		case a.Kind == "new-session":
+		case kind == "new-session":
 			delete(d.Sessions, a.Session) // no machine was made
-		case a.Kind == "resume-upgrade":
+		case kind == "resume-upgrade":
 			s.State, s.Error = "paused", "" // nothing happened to the old machine
 		}
 	})

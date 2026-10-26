@@ -454,3 +454,70 @@ func TestAKernelKillKeepsWhatItMust(t *testing.T) {
 		t.Fatalf("volume left %q, Fly's %v", left(), k.Fly.Volumes())
 	}
 }
+
+// a kernel-source approval nobody answers settles like a new-session one: a session's proposal goes, Deyao's own is
+// kept failed; a resume onto a new source goes back to paused (2026-10-26: the session stayed "approval" for good)
+func TestALapsedKernelApprovalSettlesItsSession(t *testing.T) {
+	rg, _ := kernelRig(t)
+	approvalOf := func(sid string) (a *Approval) {
+		waitFor(t, "the approval", func() bool {
+			rg.r.st.Do(func(d *persisted) {
+				for _, x := range d.Approvals {
+					if x.Session == sid {
+						a = x
+					}
+				}
+			})
+			return a != nil
+		})
+		return a
+	}
+	proposed, err := rg.r.CreateSession(NewSession{Label: "proposed", Harness: "claude", Origin: &Origin{Caller: Caller{Kind: "session", Session: "sOther"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	own, err := rg.r.CreateSession(NewSession{Label: "own", Harness: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approvalOf(proposed).Kind != kernelApprovalKind || approvalOf(own).Kind != kernelApprovalKind {
+		t.Fatal("not kernel approvals")
+	}
+	resumed := "sResumed"
+	rg.r.st.Do(func(d *persisted) {
+		d.Sessions[resumed] = &Session{ID: resumed, State: "approval", Created: time.Now().UTC(), Harness: "claude", Kernel: &KernelLine{SourceCert: &sig.Doc{Payload: "{}"}}}
+	})
+	rg.r.addApproval(&Approval{Kind: kernelApprovalKind, Session: resumed})
+	rg.r.expireApprovals(time.Now().UTC().Add(11 * time.Minute))
+	if s := kernelSession(rg, proposed); s.ID != "" {
+		t.Fatalf("a session's lapsed proposal stayed: %+v", s)
+	}
+	if s := kernelSession(rg, own); s.State != "failed" {
+		t.Fatalf("Deyao's own: %s", s.State)
+	}
+	if s := kernelSession(rg, resumed); s.State != "paused" {
+		t.Fatalf("the resume: %s", s.State)
+	}
+}
+
+// a session left "approval" with no approval is settled once past inboxTTL; a fresh one (its approval still being
+// made) is left alone
+func TestAStrandedApprovalSessionIsSettled(t *testing.T) {
+	rg, _ := kernelRig(t)
+	old := time.Now().UTC().Add(-time.Hour)
+	rg.r.st.Do(func(d *persisted) {
+		d.Sessions["sNew"] = &Session{ID: "sNew", State: "approval", Created: old, Harness: "claude", Kernel: &KernelLine{}}
+		d.Sessions["sRan"] = &Session{ID: "sRan", State: "approval", Created: old, Harness: "claude", Kernel: &KernelLine{SourceCert: &sig.Doc{Payload: "{}"}}}
+		d.Sessions["sFresh"] = &Session{ID: "sFresh", State: "approval", Created: time.Now().UTC(), Harness: "claude", Kernel: &KernelLine{}}
+	})
+	rg.r.settleStrandedApprovals(time.Now().UTC())
+	if s := kernelSession(rg, "sNew"); s.State != "failed" || !strings.Contains(s.Error, "Start again") {
+		t.Fatalf("new: %+v", s)
+	}
+	if s := kernelSession(rg, "sRan"); s.State != "paused" {
+		t.Fatalf("ran: %s", s.State)
+	}
+	if s := kernelSession(rg, "sFresh"); s.State != "approval" {
+		t.Fatalf("fresh: %s", s.State)
+	}
+}
