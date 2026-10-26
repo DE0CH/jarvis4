@@ -60,10 +60,8 @@ func hasVolume() bool {
 
 // volumeSplit: the snapshot's paths that are directories (bind-mounted) and files (mirrored)
 func volumeSplit() (dirs, files []string) {
-	single := map[string]bool{".claude.json": true, ".claude/.first-prompt-sent": true, ".claude/.paseo-agent": true,
-		allowFile: true, changesFile: true, lineKeysFile: true, deliveredFile: true}
 	for _, rel := range snapshotPaths {
-		if single[rel] {
+		if snapshotFiles[rel] { // main.go
 			files = append(files, rel)
 		} else {
 			dirs = append(dirs, rel)

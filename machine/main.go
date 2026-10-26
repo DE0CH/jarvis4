@@ -564,6 +564,12 @@ var snapshotPaths = []string{".claude/projects", ".claude.json", ".claude/.first
 	allowFile, changesFile, lineKeysFile, deliveredFile,
 	".paseo", ".local/share/opencode", ".openclaw", ".claude/cloudcli-assets", ".dsh", ".claude/.dsh-session", "workspace", "artifacts"}
 
+// snapshotFiles: which of snapshotPaths are single files, not directories: the volume mirrors them instead of
+// bind-mounting them (volume.go; 2026-10-26: .claude/.dsh-session left out of the volume's own list became an empty
+// directory on every machine with a volume, so no dsh session could start its conversation)
+var snapshotFiles = map[string]bool{".claude.json": true, ".claude/.first-prompt-sent": true, ".claude/.paseo-agent": true,
+	".claude/.dsh-session": true, allowFile: true, changesFile: true, lineKeysFile: true, deliveredFile: true}
+
 // snapshotSkip: what the snapshot leaves out under those roots (filepath.Match against the path relative to $HOME):
 // the harnesses' logs, pid files, caches and downloaded binaries, which a successor rebuilds (Jarvis 1's excludes)
 var snapshotSkip = []string{

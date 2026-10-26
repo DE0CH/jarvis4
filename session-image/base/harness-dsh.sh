@@ -29,6 +29,8 @@ export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
 MACHINE="${SESSION_ID:-${FLY_MACHINE_ID:-$(hostname)}}"
 WEB_HOST="$MACHINE-s.deyaochen.com"   # the tunnel's own origin (cf-tunnel/worker.js)
 STATE="$HOME/.claude"; mkdir -p "$STATE/sessions"
+# a machine image before 2026-10-26 bind-mounted this file's path as a directory, and a snapshot may carry it
+[ -d "$STATE/.dsh-session" ] && rmdir "$STATE/.dsh-session" 2>/dev/null && echo "[dsh] removed the empty directory left at ~/.claude/.dsh-session"
 export DSH_HOME="$HOME/.dsh"; mkdir -p "$DSH_HOME"
 RUN="$HOME/.dsh-run"; mkdir -p "$RUN"; chmod 700 "$RUN"
 export DSH_PORT=3080 FRONT_PORT=6770

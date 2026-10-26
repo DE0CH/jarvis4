@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -14,7 +15,8 @@ func TestTheVolumeHoldsEverySnapshotPath(t *testing.T) {
 	if len(dirs)+len(files) != len(snapshotPaths) {
 		t.Fatalf("%d + %d of %d", len(dirs), len(files), len(snapshotPaths))
 	}
-	for _, f := range []string{".claude.json", allowFile, deliveredFile} {
+	// .claude/.dsh-session (2026-10-26): bind-mounted as a directory, no dsh session could keep its conversation id
+	for _, f := range []string{".claude.json", allowFile, deliveredFile, ".claude/.dsh-session", ".claude/.paseo-agent"} {
 		if !strings.Contains(strings.Join(files, " "), f) {
 			t.Fatalf("%s isn't mirrored: %v", f, files)
 		}
@@ -22,6 +24,11 @@ func TestTheVolumeHoldsEverySnapshotPath(t *testing.T) {
 	for _, d := range []string{"workspace", "artifacts", ".claude/projects"} {
 		if !strings.Contains(strings.Join(dirs, " "), d) {
 			t.Fatalf("%s isn't bind-mounted: %v", d, dirs)
+		}
+	}
+	for f := range snapshotFiles {
+		if !slices.Contains(snapshotPaths, f) {
+			t.Fatalf("snapshotFiles names %s, which the snapshot doesn't hold", f)
 		}
 	}
 }
