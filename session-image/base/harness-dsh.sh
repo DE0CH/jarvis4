@@ -54,7 +54,7 @@ write_profile() {
   # dsh makes the profile from its template on first use; the patch must be a YAML list ([] = none)
   [ -f "$prof/package.json" ] || dsh --profile web --dump-config > /dev/null 2>> "$RUN/dump.err"
   mkdir -p "$prof"; printf '[]\n' > "$prof/cordis.patch.yml"
-  dsh --profile web --dump-config > "$RUN/dump.yml" 2>> "$RUN/dump.err" || { echo "[dsh] dump-config failed (see $RUN/dump.err)"; return 1; }
+  dsh --profile web --dump-config > "$RUN/dump.yml" 2>> "$RUN/dump.err" || { echo "[dsh] dump-config failed: $(tail -n 1 "$RUN/dump.err" | cut -c1-300)"; return 1; }
   python3 /usr/local/bin/dsh-profile-patch.py "$RUN/dump.yml" "$MODELS" "$SLUG" "$WD/.claude/skills" "$HOME/.claude/skills" \
     > "$prof/cordis.patch.yml.tmp" && mv "$prof/cordis.patch.yml.tmp" "$prof/cordis.patch.yml"
 }
@@ -63,16 +63,22 @@ write_profile() {
 # and dsh-send.py. Stops for good once a one-shot is done.
 run_dsh() {
   cd "$WD" || return 1
+  local started rc
   while [ ! -e "$STATE/.one-shot-done" ]; do
     write_profile
+    started=$(date +%s)
     dsh --profile web --no-open --port "$DSH_PORT" --public-url "https://$WEB_HOST/" --trusted-host "$WEB_HOST" 2>&1 \
       | while IFS= read -r line; do
           case "$line" in
             *"dsh web:"*token=*) t="${line##*token=}"; t="${t%%[&[:space:]]*}"; (umask 077; printf '%s' "$t" > "$RUN/token.tmp") && mv "$RUN/token.tmp" "$RUN/token"
-                                 echo "dsh web: up on 127.0.0.1:$DSH_PORT (token kept in $RUN/token)" ;;
+                                 echo "dsh web: up on 127.0.0.1:$DSH_PORT (token kept in $RUN/token)"
+                                 echo "[dsh] dsh web is up on 127.0.0.1:$DSH_PORT" >&2 ;;
             *) printf '%s\n' "$line" ;;
           esac
         done >> "$RUN/web.out"
+    rc=${PIPESTATUS[0]}
+    # the supervisor log gets the exit and dsh's last line (keeper: tagged lines only, secrets redacted)
+    echo "[dsh] dsh web exited (code $rc) after $(( $(date +%s) - started )) s; restarting in 3 s; its last line: $(grep -v '^\[dsh\]' "$RUN/web.out" | tail -n 1 | cut -c1-300)"
     echo "[dsh] dsh web exited; restarting in 3 s" >> "$RUN/web.out"; sleep 3
   done
 }
@@ -110,9 +116,9 @@ send_first_prompt() {
 # Status shim + transcript export. busy = an open turn in any conversation; waiting = an open user question or a
 # pending approval; statusUpdatedAt moves on every status change and every new turn (one-shot, the stall watchdog).
 shim_loop() {
-  local n=0
+  local n=0 err last_err=""
   while true; do
-    python3 - "$MACHINE" "$LABEL" "$MODEL" <<'PY'
+    err=$(python3 - "$MACHINE" "$LABEL" "$MODEL" 2>&1 >/dev/null <<'PY'
 import glob, json, os, sys, time
 machine, label, model = sys.argv[1], sys.argv[2], sys.argv[3]
 home, state = os.environ["DSH_HOME"], os.path.expanduser("~/.claude")
@@ -131,7 +137,7 @@ for f in glob.glob(os.path.join(home, "storages", "session_projcache", "sessions
         t = raw("title")  # dsh keeps the title as a plain string
         if os.path.basename(f)[:-5] == main: title = str((t.get("title") if isinstance(t, dict) else t) or "") or title
     except Exception as e:
-        print(f"[dsh] status shim: {os.path.basename(f)}: {e!r}", file=sys.stderr)
+        print(f"{os.path.basename(f)}: {e!r}", file=sys.stderr)
 status = "waiting" if waiting else "busy" if busy else "idle"
 path = os.path.join(state, "sessions", "dsh.json")
 try: prev = json.load(open(path))
@@ -145,6 +151,9 @@ entry = {"pid": os.getppid(), "sessionId": main or "dsh", "name": title or label
 if entry != prev:
     tmp = path + ".tmp"; json.dump(entry, open(tmp, "w")); os.replace(tmp, path)
 PY
+)
+    if [ -n "$err" ] && [ "$err" != "$last_err" ]; then echo "[dsh] status shim: $(printf '%s' "$err" | tail -n 1 | cut -c1-300)"; fi
+    last_err="$err"
     n=$((n+1))
     [ $((n % 12)) = 0 ] && SESSION_MODEL="$MODEL" python3 /usr/local/bin/dsh-transcript.py "$WD" 2>> "$RUN/transcript.err"
     sleep 5

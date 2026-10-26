@@ -276,6 +276,7 @@ type keeperT struct {
 	harness   *exec.Cmd
 	state     harnessState
 	secretsFn func() map[string]string // the secrets for a start of the harness (k.secrets; tests replace it)
+	hlog      *harnessLog              // harnesslog.go: one for the machine's life, so its rate limit spans restarts
 }
 
 // harnessState: what the keeper tells the status report about the harness (harnessStatePath)
@@ -551,6 +552,10 @@ func (k *keeperT) harnessLoop(spec harnessSpec) {
 		cmd := sessionCommand(nil, baseEntry)
 		cmd.Env = env
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		out, perr := harnessStdout(k.harnessLog()) // harnesslog.go: its tagged lines also go to the supervisor log
+		if perr == nil {
+			cmd.Stdout, cmd.Stderr = out, out
+		}
 		if fi, err := os.Stat(session().home); err == nil && fi.IsDir() {
 			cmd.Dir = session().home
 		}
@@ -565,6 +570,9 @@ func (k *keeperT) harnessLoop(spec harnessSpec) {
 			k.harness = cmd
 		}
 		k.mu.Unlock()
+		if perr == nil {
+			out.Close() // the harness holds it now; the reader ends once the harness and its loops are gone
+		}
 		env = nil
 		if err != nil {
 			log.Printf("the harness didn't start: %v; trying again in %s", err, backoff)
