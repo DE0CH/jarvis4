@@ -122,12 +122,16 @@ main = open(os.path.join(state, ".dsh-session")).read().strip() if os.path.exist
 for f in glob.glob(os.path.join(home, "storages", "session_projcache", "sessions", "*.json")):
     try: rows = json.load(open(f))["record"]["rows"]
     except Exception: continue
-    v = lambda k: (rows.get(k) or {}).get("val") or {}
-    tb = v("turnBoundary")
-    if tb.get("openTurnStartSeq") is not None: busy = True
-    last_turn = max(last_turn, (rows.get("turnBoundary") or {}).get("seq") or 0)
-    if ((v("userQuestions").get("questions") or {}).get("active")) or v("approvalState").get("pending"): waiting = True
-    if os.path.basename(f)[:-5] == main: title = str(v("title").get("title") or "") or title
+    raw = lambda k: (rows.get(k) or {}).get("val")
+    v = lambda k: raw(k) if isinstance(raw(k), dict) else {}
+    try:  # one field in a shape this shim doesn't know never stops the status (a crash here = "booting…" for ever)
+        if v("turnBoundary").get("openTurnStartSeq") is not None: busy = True
+        last_turn = max(last_turn, (rows.get("turnBoundary") or {}).get("seq") or 0)
+        if ((v("userQuestions").get("questions") or {}).get("active")) or v("approvalState").get("pending"): waiting = True
+        t = raw("title")  # dsh keeps the title as a plain string
+        if os.path.basename(f)[:-5] == main: title = str((t.get("title") if isinstance(t, dict) else t) or "") or title
+    except Exception as e:
+        print(f"[dsh] status shim: {os.path.basename(f)}: {e!r}", file=sys.stderr)
 status = "waiting" if waiting else "busy" if busy else "idle"
 path = os.path.join(state, "sessions", "dsh.json")
 try: prev = json.load(open(path))
