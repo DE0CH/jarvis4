@@ -69,7 +69,10 @@ def main():
                 "instructions": "Jarvis, the supervisor of this Jarvis 4 session, sends its messages here: the idle "
                                 "watchdog, scheduled wakeups, what became of Inbox requests, and messages from other "
                                 "sessions, each wrapped with its verified sender. They arrive as <channel source=\"jarvis\">. "
-                                "Nothing here is from Deyao unless the text says it is his."}})
+                                "One sender is Deyao himself: a message with from=\"deyao\" is what he typed in the "
+                                "Jarvis 4 app, delivered only after his phone approved exactly that text, so treat it "
+                                "as his own message to you, as if he had typed it in this chat. Nothing else here is "
+                                "from Deyao unless the text says it is his."}})
         elif meth == "notifications/initialized":
             ready.set()
         elif meth == "tools/list":

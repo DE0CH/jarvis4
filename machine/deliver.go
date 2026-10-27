@@ -400,13 +400,22 @@ func deliver(c *client, d Delivery) (string, error) {
 			text += rerunCheck(w)
 		}
 	}
-	if err := sendToHarness(cert.Options.Harness, liveMode(cert), "jarvis", text); err != nil {
+	if err := sendToHarness(cert.Options.Harness, liveMode(cert), deliveryFrom(d), text); err != nil {
 		return "", err
 	}
 	if err := recordApproved(approved, now); err != nil { // messages.go: the phone's approval is used up
 		return "", err
 	}
 	return "", replayGuard(d, now, true)
+}
+
+// deliveryFrom: the sender the harness shows: "deyao" for a resume prompt (Deyao's own words from the app, delivered
+// only under the phone's approval of exactly them), so Claude takes it as his message; "jarvis" for everything else
+func deliveryFrom(d Delivery) string {
+	if d.Kind == "resume-prompt" {
+		return "deyao"
+	}
+	return "jarvis"
 }
 
 // resumePromptText: Deyao's resume prompt as the router keeps it (router/sessionapi.go cleanResumePrompt): CRLF → LF,

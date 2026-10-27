@@ -867,7 +867,10 @@ from its machine key) → the receiving machine's supervisor → its claude.
   by harness-claude.sh with `--dangerously-load-development-channels server:jarvis`, whose warning the harness
   confirms) pushes what the supervisor drops into its spool (`jarvis-channel-send`) as `<channel source="jarvis">`.
   A channel isn't a peer message, so `crossSessionInbound` doesn't touch it, and nothing depends on the session's
-  permission mode.
+  permission mode. Each message carries its sender: `from="deyao"` for a resume prompt (Deyao's words from the app,
+  in only under the phone's signature of exactly them), which the channel's instructions tell Claude to take as his
+  own message; `from="jarvis"` for everything else. Never keystrokes into the TUI: they could answer a pending
+  permission ask.
 - **The direction rule.** Equal or downward (the receiver's stores ⊆ the sender's, and the receiver no more
   permissive) is delivered at once; upward waits for Deyao's one tap in the Inbox (no Face ID, nothing signed). Stores
   are what the certs name (a repo is its store); grants don't count (they admit router features, not more for the
