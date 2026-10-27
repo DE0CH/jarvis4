@@ -70,15 +70,3 @@ func TestJarvisMessagesUseTheChannel(t *testing.T) {
 		}
 	}
 }
-
-// Deyao's resume prompt (his words from the app, phone-approved) reaches Claude as his, every other delivery as Jarvis's
-func TestResumePromptIsFromDeyao(t *testing.T) {
-	if got := deliveryFrom(Delivery{Kind: "resume-prompt"}); got != "deyao" {
-		t.Fatal(got)
-	}
-	for _, k := range []string{"wakeup", "cron", "watch", "watch-fail", "continue", "upgraded", "lease-granted", "request-outcome", "peer"} {
-		if got := deliveryFrom(Delivery{Kind: k}); got != "jarvis" {
-			t.Fatalf("%s: %s", k, got)
-		}
-	}
-}

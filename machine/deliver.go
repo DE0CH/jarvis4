@@ -400,22 +400,20 @@ func deliver(c *client, d Delivery) (string, error) {
 			text += rerunCheck(w)
 		}
 	}
-	if err := sendToHarness(cert.Options.Harness, liveMode(cert), deliveryFrom(d), text); err != nil {
+	if d.Kind == "resume-prompt" && !viaHarnessSend(cert.Options.Harness) {
+		// Deyao's own words go into the Claude host's input box, typed as his prompt (harness-claude.sh types what
+		// harness-send queues), never as a Jarvis message
+		err = typeIntoHost(text)
+	} else {
+		err = sendToHarness(cert.Options.Harness, liveMode(cert), "jarvis", text)
+	}
+	if err != nil {
 		return "", err
 	}
 	if err := recordApproved(approved, now); err != nil { // messages.go: the phone's approval is used up
 		return "", err
 	}
 	return "", replayGuard(d, now, true)
-}
-
-// deliveryFrom: the sender the harness shows: "deyao" for a resume prompt (Deyao's own words from the app, delivered
-// only under the phone's approval of exactly them), so Claude takes it as his message; "jarvis" for everything else
-func deliveryFrom(d Delivery) string {
-	if d.Kind == "resume-prompt" {
-		return "deyao"
-	}
-	return "jarvis"
 }
 
 // resumePromptText: Deyao's resume prompt as the router keeps it (router/sessionapi.go cleanResumePrompt): CRLF → LF,
@@ -490,6 +488,17 @@ func sendToHarness(harness, mode, from, text string) error {
 		return errors.New("the harness didn't take the message within 30 s")
 	}
 	if err != nil {
+		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// typeIntoHost: the text into the Claude host's input box as the user's prompt: harness-send queues it and
+// harness-claude.sh's typing loop types it and presses Enter once no dialog is up (the same typing as the first prompt)
+var typeIntoHost = func(text string) error {
+	cmd := sessionCommand(nil, "/usr/local/bin/harness-send", "--queue")
+	cmd.Stdin = strings.NewReader(text)
+	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil

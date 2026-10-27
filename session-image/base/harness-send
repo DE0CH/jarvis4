@@ -15,6 +15,9 @@
 #                                       conversation (made by the first prompt), run with no client attached;
 #                                       the server answers at once, 409 while a turn runs (→ 75).
 #   harness-send [--images <file with space-separated image paths>] < prompt.txt
+#   claude      (harness-claude.sh)     --queue only: Deyao's resume prompt, which the launcher's typing loop types
+#                                       into the host's input box as his prompt (Jarvis's own messages go through
+#                                       the Jarvis channel instead).
 #   harness-send --queue < prompt.txt   spool it for the harness launcher's inbox loop and return at once.
 #                                       What the JARVIS uses: delivery can take seconds (paseo) and
 #                                       a Fly exec is cut off at ~60 s, so the exec only writes a
@@ -29,6 +32,7 @@ elif pgrep -u "$(id -u)" -f harness-paseo-claude.sh >/dev/null; then HARNESS=pas
 elif pgrep -u "$(id -u)" -f harness-openclaw.sh >/dev/null; then HARNESS=openclaw
 elif pgrep -u "$(id -u)" -f harness-cloudcli.sh >/dev/null; then HARNESS=cloudcli
 elif pgrep -u "$(id -u)" -f harness-dsh.sh >/dev/null; then HARNESS=dsh
+elif pgrep -u "$(id -u)" -f harness-claude.sh >/dev/null; then HARNESS=claude
 else HARNESS=""; fi
 
 if [ "${1:-}" = "--queue" ]; then

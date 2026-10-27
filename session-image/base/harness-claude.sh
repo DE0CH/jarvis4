@@ -234,6 +234,35 @@ send_first_prompt() {
   echo "[harness-claude] first prompt NOT sent (nothing to type or typing failed)"
 }
 
+# Deyao's resume prompt (machine/deliver.go typeIntoHost → harness-send --queue → ~/.claude/harness-inbox/*.txt):
+# his own words from the app, so they go into the input box as his prompt, typed exactly as the first prompt, then
+# Enter. Typed only while the host is up and no dialog is open: the registry status isn't "waiting" (a permission ask
+# or a question) and the pane shows no "Esc to cancel", so the keystrokes never answer a dialog. While a turn runs the
+# TUI queues the prompt for after it, as when he types in the app. The file goes once it is typed.
+type_inbox() {
+  local inbox="$HOME/.claude/harness-inbox" f st pane
+  mkdir -p "$inbox"
+  while true; do
+    sleep 2
+    f="$(ls -1 "$inbox"/*.txt 2>/dev/null | head -1)"
+    [ -n "$f" ] || continue
+    [ -e "$HOME/.claude/.one-shot-done" ] && continue
+    pane="$(tmux capture-pane -p -t "$SESSION" 2>/dev/null)" || continue
+    # the input box is on screen (a dialog's options are "❯ 1. …", never a bare "❯")
+    grep -Eq '^❯( |$)' <<< "$pane" || continue
+    grep -Eq '^❯ +[0-9]+\.' <<< "$pane" && continue
+    grep -q 'Esc to cancel' <<< "$pane" && continue
+    st=""; read -r st _ < <(one_shot_status) || true
+    [ "$st" = waiting ] && continue
+    if type_text "$f"; then
+      sleep 1
+      tmux send-keys -t "$SESSION" Enter
+      echo "[harness-claude] typed Deyao's prompt ($(wc -c < "$f") bytes)"
+      rm -f "$f"
+    fi
+  done
+}
+
 # One-shot session (SESSION_ONE_SHOT=1 from the machine env): the first prompt is the whole
 # job. Once it has been pasted, watch claude's own session registry (~/.claude/sessions/<pid>.json,
 # the same file the dashboard reads) and treat the job as DONE when the host is idle with a
@@ -325,6 +354,7 @@ else
 fi
 send_first_prompt &
 one_shot_watch &
+type_inbox &
 # The Claude login (pushing a pair claude refreshed by itself, taking the router's) and the live transcript copy
 # are jarvis-machine's (machine/claudelogin.go, the agent's live sync): nothing here.
 while true; do
