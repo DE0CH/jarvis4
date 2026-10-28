@@ -2,7 +2,7 @@
 // org → app, so a leak anywhere shows (Deyao, 2026-10-11). jarvis4-sessions is this Jarvis's own: each machine with
 // the session it belongs to or "No session", and "test" when it points at a test router (its JARVIS2_URL is not
 // production's); Destroy only for a machine with no session (the router re-checks and destroys it through the
-// core's kill). Every other app and org is read-only: jarvis2-370 and kamyee read from Fly, personal from Jarvis 1's
+// core's kill). Every other app and org is read-only: jarvis2-370 reads from Fly, personal from Jarvis 1's
 // list. A machine that stands out (stopped, failed, stuck, no session, an app no Jarvis uses) or a volume attached
 // to nothing shows why in amber, and the count heads the page.
 import { api, ago, REGION, sessionTitle, type Machine, type FlyAppView, type FlyOrgView, type FlyVolumeView } from "../lib/api";

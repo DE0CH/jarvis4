@@ -7,7 +7,7 @@ import SwiftUI
 struct MachinesView: View {
   @Environment(AppModel.self) private var model
 
-  private static let orgOrder = ["jarvis2-370", "kamyee", "personal"]
+  private static let orgOrder = ["jarvis2-370", "personal"]
   private var orgs: [JSON] {
     model.machinesDoc["orgs"].array.sorted { a, b in
       let ia = Self.orgOrder.firstIndex(of: a["org"].string ?? "") ?? 99, ib = Self.orgOrder.firstIndex(of: b["org"].string ?? "") ?? 99

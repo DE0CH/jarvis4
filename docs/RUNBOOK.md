@@ -328,8 +328,7 @@ The control box (`k8s/control/secrets/`, annotations in `k8s/control/apps/router
   writes it; below).
 - `--part flyorgs FLY_ORG_READ_TOKENS=file:…` → `router-flyorgs.enc.yaml`: the Machines view's other orgs, JSON
   `{"jarvis2-370": "<token>", …}`, each `fly tokens create readonly -o <org>` (named "Jarvis 4 Machines tab
-  (read-only)"; revoke with `fly tokens list -o <org>` + `fly tokens revoke`). The empty org kamyee has none (no store
-  holds a token for it).
+  (read-only)"; revoke with `fly tokens list -o <org>` + `fly tokens revoke`).
 - `--part flypersonal FLY_PERSONAL_READ_TOKEN=file:…` → `router-flypersonal.enc.yaml`: org personal for the Machines
   view. `FLY_PERSONAL_ORG_TOKEN=<an org token of personal> infra/fly-personal-read-token.sh OUT` attenuates it offline to
   Organization read (it checks the result lists apps and can't create a machine). It reads every machine's config in

@@ -1,6 +1,6 @@
 #!/bin/bash
 # fly-personal-read-token.sh OUT — the router's read-only token for Fly org personal (the Machines view lists its apps:
-# Jarvis 1's de0ch-claude-sessions, KAMYEE's kamyee-jarvis3-sessions). FLY_PERSONAL_ORG_TOKEN (an org token of
+# Jarvis 1's de0ch-claude-sessions). FLY_PERSONAL_ORG_TOKEN (an org token of
 # personal, e.g. the setup session's FLY_API_TOKEN) attenuated offline with the caveat Organization {id, mask "r"}: it
 # can list and read, never create, change or exec. A Fly read token still returns every machine's config, env
 # included (docs/DECISIONS.md 138). Written to OUT (mode 600), never printed; then

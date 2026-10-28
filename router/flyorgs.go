@@ -5,7 +5,7 @@ package main
 // org → app, each machine and volume with why it stands out (a possible leak), if it does.
 //
 // Where each org comes from: Fly directly, with that org's READ-ONLY token. They can change nothing.
-//   - an org in FLY_ORG_READ_TOKENS ({"<org slug>": "<token>"}, router-secrets part `flyorgs`): jarvis2-370 and kamyee
+//   - an org in FLY_ORG_READ_TOKENS ({"<org slug>": "<token>"}, router-secrets part `flyorgs`): jarvis2-370
 //     (`fly tokens create readonly`);
 //   - org personal: FLY_PERSONAL_READ_TOKEN (part `flypersonal`, infra/fly-personal-read-token.sh): the personal org
 //     token attenuated to read on that org (caveat Organization mask "r"). It reads every machine's config in the org,
@@ -30,9 +30,8 @@ const ownFlyOrg = "jarvis2-370"
 
 // the apps a Jarvis runs sessions in; a machine anywhere else is unexplained
 var knownFlyApps = map[string]string{
-	"de0ch-claude-sessions":   "Jarvis 1 sessions",
-	"jarvis4-sessions":        "Jarvis 4 sessions",
-	"kamyee-jarvis3-sessions": "KAMYEE's Jarvis 3 sessions",
+	"de0ch-claude-sessions": "Jarvis 1 sessions",
+	"jarvis4-sessions":      "Jarvis 4 sessions",
 }
 
 // the apps Jarvis 4 itself runs that are not session apps: what each is for (the Machines tab's label, with the
