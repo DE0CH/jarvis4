@@ -114,7 +114,8 @@ type loginHub struct {
 		at   time.Time
 		body map[string]any
 	}
-	dm func(string)
+	saved []byte // the document as this replica last read or wrote it (reload: another replica wrote a newer one)
+	dm    func(string)
 	// check: a Re-login's account (uuid) may land in this hub (claudeaccounts.go: the hub's own account, and no other
 	// hub's); nil = any
 	check func(uuid string) error
@@ -131,15 +132,46 @@ func newLoginHub(st *State, name, store string) *loginHub {
 		if err := json.Unmarshal(b, &h.f); err != nil {
 			log.Printf("[login] %s unreadable: %v", name, err)
 		}
+		h.saved = b
 	}
 	return h
+}
+
+// loginNote: the mq notification (mq.go) that an account's login document changed, so the other replica reloads it
+func loginNote(name string) string { return "l:" + name }
+
+// reload: the document from the database when another replica wrote it since. A STOPGAP (2026-10-28): each replica
+// keeps the login in memory and only the leader refreshes, so without this the other replica kept serving the pair
+// the leader's refresh had just revoked ("Login expired" in the sessions whose polls reached it). The clean design
+// (the row as the only truth, the refresh under a database lock) is in RUNBOOK "The Claude accounts".
+func (h *loginHub) reload() {
+	h.mu.Lock() // across the read: a save in between must not be overwritten by the older document
+	defer h.mu.Unlock()
+	b, ok, err := h.st.ReadSealed(h.name)
+	if err != nil || !ok || bytes.Equal(b, h.saved) {
+		return
+	}
+	var f loginFile
+	if err := json.Unmarshal(b, &f); err != nil {
+		log.Printf("[login] %s unreadable: %v", h.name, err)
+		return
+	}
+	h.f, h.saved = f, b
+	h.usage.body = nil
+	h.broadcastLocked()
+	log.Printf("[login] %s: reloaded the pair another replica wrote (valid until %s)", h.store, time.UnixMilli(credsExpiry(f.Credentials)).UTC().Format(time.RFC3339))
 }
 
 // save: sealed into the database, committed before it returns (a refreshed pair must survive a crash right after: the
 // old refresh token is dead)
 func (h *loginHub) save() error {
 	b, _ := json.MarshalIndent(h.f, "", " ")
-	return h.st.WriteSealed(h.name, b)
+	if err := h.st.WriteSealed(h.name, b); err != nil {
+		return err
+	}
+	h.saved = b
+	h.st.notifyMQ(loginNote(h.name))
+	return nil
 }
 
 func (h *loginHub) broadcastLocked() {
@@ -425,6 +457,7 @@ func (h *loginHub) poll(ctx context.Context, who string, have, ack int64, wait t
 func (h *loginHub) refresh(force bool) (bool, error) {
 	h.refreshMu.Lock()
 	defer h.refreshMu.Unlock()
+	h.reload() // a pair another replica stored (a push, a Re-login) is the one to refresh
 	h.mu.Lock()
 	creds := h.f.Credentials
 	if creds == "" {

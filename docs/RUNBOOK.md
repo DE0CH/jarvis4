@@ -442,6 +442,17 @@ per account its email, expiry, last refresh, the participants of its refresh pro
   and gave it to every session whose cert names the core's old store `claude`. New sessions don't get that store; it
   stays in the core (a store can't be deleted) for those older lines.
 
+- **Two replicas, one login (a stopgap, 2026-10-28):** each router replica keeps every account's login in memory
+  and only the leader refreshes. A refresh revokes the old access token at once, so the other replica used to keep
+  serving the revoked pair to the sessions whose polls reached it ("Login expired · Please run /login" for some sessions
+  after every refresh, until that replica restarted). Now every save sends `pg_notify('mq', 'l:<doc name>')` and each
+  replica reloads the document when notified, every 30 s, and before a refresh (`loginHub.reload`,
+  `claudeAccounts.follow`). Still per replica: a new account added on one replica isn't in the other's list until
+  it restarts. **The clean fix, to do:** the database row as the only truth (no in-memory copy: polls and status
+  read the row, the refresh runs under `pg_advisory_xact_lock` per account and re-reads the row inside it, the
+  notification only wakes waiters, the pending Re-login lives in the row); then sessions get the access token only
+  (no refresh token on any machine), which deletes the push path and the prepare/ack/CLI-lock protocol.
+
 ## The iCloud index
 
 Transcript search is not Jarvis's: DE0CH/services (README there), a tenant on the cluster in namespace `services`

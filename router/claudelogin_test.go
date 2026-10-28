@@ -131,6 +131,39 @@ func TestLoginOfferNewerWinsAndAccount(t *testing.T) {
 	}
 }
 
+// two replicas on one database: a pair one stores (the leader's refresh) reaches the other's waiting polls at once
+// (the reload stopgap), instead of the other serving the revoked pair until it restarts
+func TestLoginReplicaReloads(t *testing.T) {
+	newFakeAnthropic(t)
+	r1, h1 := ownRouter(t)
+	now := time.Now().Add(8 * time.Hour).UnixMilli()
+	h1.offer(pairOf("a", now), acct1, "seed", true, false)
+	st2, err := OpenState(context.Background(), r1.st.sdb.db, t.TempDir(), r1.st.seal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2 := NewRouter(Config{NoAccess: true, DataDir: st2.dir, WebDir: t.TempDir()}, st2, nil, Policy{})
+	h2 := r2.accounts().hubs[h1.store]
+	if h2 == nil || h2.current().ExpiresAt != now {
+		t.Fatalf("the second replica's hub: %+v", h2)
+	}
+	time.Sleep(200 * time.Millisecond) // its LISTEN is up
+	got := make(chan loginAnswer, 1)
+	go func() { got <- h2.poll(context.Background(), "m:x", now, 0, 10*time.Second) }()
+	time.Sleep(100 * time.Millisecond)
+	if ok, err := h1.offer(pairOf("b", now+1000), "", "refresh", false, false); !ok || err != nil {
+		t.Fatal(ok, err)
+	}
+	select {
+	case a := <-got:
+		if a.ExpiresAt != now+1000 || !strings.Contains(a.Credentials, "at-b") {
+			t.Fatalf("the other replica answered %+v", a)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the other replica's poll never got the new pair")
+	}
+}
+
 // the lessons/74 protocol: participants lock before the refresh, the refresh waits for them, then all get the pair
 func TestLoginRefreshProtocol(t *testing.T) {
 	f := newFakeAnthropic(t)

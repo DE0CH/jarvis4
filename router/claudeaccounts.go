@@ -50,6 +50,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // the core's store of the one shared login before accounts (sessions from before the cut still hold it)
@@ -118,7 +119,31 @@ func (a *claudeAccounts) newHub(store string) *loginHub {
 	h.dm = a.r.DM
 	h.check = func(uuid string) error { return a.checkRelogin(store, uuid) }
 	h.elsewhere = a.hubFor
+	go a.follow(store, h)
 	return h
+}
+
+// follow: reload the hub when another replica changed its document (the mq notification, or every 30 s in case one
+// was lost), until the account is removed. Part of the reload stopgap (claudelogin.go reload).
+func (a *claudeAccounts) follow(store string, h *loginHub) {
+	if a.r.notes == nil {
+		return
+	}
+	ch, cancel := a.r.notes.sub(loginNote(h.name))
+	defer cancel()
+	for {
+		select {
+		case <-ch:
+		case <-time.After(30 * time.Second):
+		}
+		a.mu.Lock()
+		gone := a.hubs[store] != h
+		a.mu.Unlock()
+		if gone {
+			return
+		}
+		h.reload()
+	}
 }
 
 func (a *claudeAccounts) load(dataDir string) {
@@ -337,7 +362,10 @@ func (a *claudeAccounts) add(name string) (*loginHub, error) {
 		return h, nil // it exists: Add is then its sign-in, as Re-login
 	}
 	h := a.newHub(store)
-	if err := h.save(); err != nil { // the slot exists from here on, signed in or not
+	h.mu.Lock()
+	err := h.save() // the slot exists from here on, signed in or not
+	h.mu.Unlock()
+	if err != nil {
 		return nil, err
 	}
 	a.hubs[store] = h

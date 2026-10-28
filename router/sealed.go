@@ -140,6 +140,18 @@ func (s *State) WriteSealed(name string, plain []byte) error {
 	return err
 }
 
+// notifyMQ: a notification on the mq channel (mq.go), for the other replica's waiters; best effort
+func (s *State) notifyMQ(payload string) {
+	if s == nil || s.sdb == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := s.sdb.db.pool.Exec(ctx, "SELECT pg_notify('mq', $1)", payload); err != nil {
+		log.Printf("mq: notify %s: %v", payload, err)
+	}
+}
+
 // DeleteSealed: gone
 func (s *State) DeleteSealed(name string) error {
 	if s == nil || s.sdb == nil {
