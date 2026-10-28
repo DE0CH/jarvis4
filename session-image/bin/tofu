@@ -1,0 +1,25 @@
+#!/bin/sh
+# `tofu` (OpenTofu), fetched on first use like `openclaw` (Fly's 8 GB image limit: in the base image it pushed the
+# session image over it, 2026-10-28). Pinned by URL AND sha256, so what runs is fixed by this image's digest. A zip
+# that doesn't match is deleted and nothing runs. Deploys run from GitHub workflows; a session uses it to plan against
+# the live state before a push that deletes or replaces infra.
+set -e
+url=https://github.com/opentofu/opentofu/releases/download/v1.10.6/tofu_1.10.6_linux_amd64.zip
+want=15b7bed76420b50da3e121769c43341df8cd57d751ca14e6dbe9c850124c6dac
+dir="$HOME/.cache/tofu/$(printf %.12s "$want")"
+if [ ! -x "$dir/tofu" ]; then
+  mkdir -p "$HOME/.cache/tofu"
+  (
+    flock 9
+    if [ ! -x "$dir/tofu" ]; then
+      echo "tofu: fetching OpenTofu $(printf %.12s "$want")" >&2
+      tmp="$dir.tmp.$$"; rm -rf "$tmp" "$dir"; mkdir -p "$tmp"
+      curl -fsSL --retry 3 -o "$tmp.zip" "$url"
+      got="$(sha256sum "$tmp.zip" | cut -d' ' -f1)"
+      if [ "$got" != "$want" ]; then rm -rf "$tmp" "$tmp.zip"; echo "tofu: the zip's sha256 is $got, the image pins $want: refused" >&2; exit 1; fi
+      unzip -o -q "$tmp.zip" tofu -d "$tmp"; rm -f "$tmp.zip"
+      mv "$tmp" "$dir"
+    fi
+  ) 9>"$HOME/.cache/tofu/.lock"
+fi
+exec "$dir/tofu" "$@"

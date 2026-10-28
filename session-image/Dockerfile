@@ -30,6 +30,7 @@ USER root
 RUN mkdir -p /opt/jarvis && env | grep -Ev '^(HOSTNAME|HOME|PWD|OLDPWD|SHLVL|_|TERM|USER|LOGNAME|SHELL)=' | sort > /opt/jarvis/image.env
 COPY session-image/openclaw-runtime.json /opt/jarvis/openclaw-runtime.json
 COPY --chmod=755 session-image/bin/openclaw /usr/local/bin/openclaw
+COPY --chmod=755 session-image/bin/tofu /usr/local/bin/tofu
 COPY session-image/cloudcli-runtime.json /opt/jarvis/cloudcli-runtime.json
 COPY --chmod=755 session-image/bin/cloudcli-runtime /usr/local/bin/cloudcli-runtime
 COPY session-image/dsh-runtime.json /opt/jarvis/dsh-runtime.json
