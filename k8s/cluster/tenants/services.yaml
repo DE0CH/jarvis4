@@ -9,12 +9,13 @@ metadata:
   name: services
   labels: { pod-security.kubernetes.io/enforce: restricted }
 ---
-# search 2 × 1 Gi + cloudflared 2 × 128 Mi, rolling surges included (+1 of each)
+# search 2 × 1 Gi + cloudflared 2 × 128 Mi + dsh-web 2 × 128 Mi, rolling surges included (+1 of each), and one
+# OpenTofu runner pod (768 Mi, 1 CPU) at a time
 apiVersion: v1
 kind: ResourceQuota
 metadata: { name: services, namespace: services }
 spec:
-  hard: { limits.memory: 4Gi, requests.memory: 2Gi, limits.cpu: "3", persistentvolumeclaims: "2", requests.storage: 20Gi }
+  hard: { limits.memory: 5Gi, requests.memory: 3Gi, limits.cpu: "4", persistentvolumeclaims: "2", requests.storage: 20Gi }
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -54,6 +55,7 @@ spec:
   interval: 1m
   retryInterval: 30s
   timeout: 3m
+  dependsOn: [{ name: tofu-controller }]   # the Terraform CRD (k8s/cluster/tofu-controller)
   sourceRef: { kind: GitRepository, name: services }
   path: ./k8s
   prune: true
@@ -63,3 +65,16 @@ spec:
   decryption:
     provider: sops
     secretRef: { name: sops-age }
+---
+# the namespace's admin role has no rights on CRDs that don't aggregate into it: flux-services may also manage the
+# tenant's Terraform objects (tofu-controller, k8s/cluster/tofu-controller), in `services` only
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: flux-services-terraform, namespace: services }
+rules: [{ apiGroups: [infra.contrib.fluxcd.io], resources: [terraforms], verbs: ["*"] }]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: flux-services-terraform, namespace: services }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: flux-services-terraform }
+subjects: [{ kind: ServiceAccount, name: flux-services, namespace: flux-system }]
