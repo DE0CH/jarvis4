@@ -1,7 +1,0 @@
-allowCrossNamespaceRefs: true
-awsPackage: {install: false}
-eventsAddress: ""
-concurrency: 1
-runner:
-  serviceAccount:
-    allowedNamespaces: [services]

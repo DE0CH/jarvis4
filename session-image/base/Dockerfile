@@ -181,6 +181,11 @@ RUN chmod +x /usr/local/bin/harness-opencode.sh /usr/local/bin/harness-paseo-cla
 # sha256 (.github/workflows/fork-pin.yml writes the pin). OpenClaw + its Node 26 (~900 MB) are NOT in the image:
 # session-image/Dockerfile adds /usr/local/bin/openclaw, which fetches the runtime bundle pinned by sha256 in
 # session-image/openclaw-runtime.json on first use.
+# OpenTofu (~90 MB): deploys run from GitHub workflows (claude-env CLAUDE.md "GitOps runs in GitHub workflows"), and a
+# session plans against the live state before a push that deletes or replaces infra. Pinned by sha256.
+RUN curl -fsSL -o /tmp/tofu.zip https://github.com/opentofu/opentofu/releases/download/v1.10.6/tofu_1.10.6_linux_amd64.zip \
+ && echo "15b7bed76420b50da3e121769c43341df8cd57d751ca14e6dbe9c850124c6dac  /tmp/tofu.zip" | sha256sum -c - \
+ && unzip -o -q /tmp/tofu.zip tofu -d /usr/local/bin && rm /tmp/tofu.zip && tofu version
 COPY forks.json /usr/local/share/forks.json
 RUN url="$(python3 -c 'import json;print(json.load(open("/usr/local/share/forks.json"))["claw"]["url"])')" \
  && sum="$(python3 -c 'import json;print(json.load(open("/usr/local/share/forks.json"))["claw"]["sha256"])')" \

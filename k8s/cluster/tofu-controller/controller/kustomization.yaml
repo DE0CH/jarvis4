@@ -1,8 +1,0 @@
-# tofu-controller v0.16.5 (flux-iac/tofu-controller, MPL-2.0): `helm template tofu-controller tofu-controller/tofu-controller
-# --version 0.16.5 -n flux-system --include-crds -f values.yaml`, the runner image pinned by digest in the file, the
-# controller's here
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources: [tofu-controller-0.16.5.yaml]
-images:
-  - { name: ghcr.io/flux-iac/tofu-controller, digest: "sha256:1d6ee0e34ee56a22827541b1ef44e5a3d65ff21bdb870f79103c4c5d5e6d4cba" }
