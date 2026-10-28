@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -105,7 +106,8 @@ func TestTheRouterWritesEachAccountIntoItsCoreStore(t *testing.T) {
 		got[x["key"].(string)] = c.open(t, x)
 	}
 	c.mu.Unlock()
-	if got["CLAUDE_CREDENTIALS"] != cur.Credentials || got["CLAUDE_ACCOUNT"] != cur.Account {
+	// the store gets the pair as sessions do: without the refresh token (only the router refreshes)
+	if got["CLAUDE_CREDENTIALS"] != forMachine(cur.Credentials) || strings.Contains(got["CLAUDE_CREDENTIALS"], "refreshToken") || got["CLAUDE_ACCOUNT"] != cur.Account {
 		t.Fatalf("got %v", got)
 	}
 	// nothing changed: nothing written; no Inbox refresh was filed for the write

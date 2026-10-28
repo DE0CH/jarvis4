@@ -156,7 +156,7 @@ func TestLoginReplicaReloads(t *testing.T) {
 	}
 	select {
 	case a := <-got:
-		if a.ExpiresAt != now+1000 || !strings.Contains(a.Credentials, "at-b") {
+		if a.ExpiresAt != now+1000 || !strings.Contains(a.Credentials, "at-b") || strings.Contains(a.Credentials, "refreshToken") {
 			t.Fatalf("the other replica answered %+v", a)
 		}
 	case <-time.After(5 * time.Second):

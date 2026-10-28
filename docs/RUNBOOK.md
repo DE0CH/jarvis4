@@ -448,7 +448,15 @@ per account its email, expiry, last refresh, the participants of its refresh pro
   after every refresh, until that replica restarted). Now every save sends `pg_notify('mq', 'l:<doc name>')` and each
   replica reloads the document when notified, every 30 s, and before a refresh (`loginHub.reload`,
   `claudeAccounts.follow`). Still per replica: a new account added on one replica isn't in the other's list until
-  it restarts. **The clean fix, to do:** the database row as the only truth (no in-memory copy: polls and status
+  it restarts.
+- **Sessions get no refresh token (a stopgap, 2026-10-28):** the router hands machines the pair without
+  `refreshToken`/`refreshTokenExpiresAt` (`forMachine`: the long poll, `/m/api/credentials`, the account store's
+  `CLAUDE_CREDENTIALS`), so a session's claude can't refresh by itself any more. Before this, a session that did
+  revoked the router's pair: on 2026-10-28 `claude-chendeyao-uk`'s stored pair was dead (its refresh refused), every new
+  session of the account started on it with channels and Remote Control off ("Channels are not currently available"),
+  and only a Re-login fixed it. Claude Code runs on the access token alone (Remote Control and channels included) and
+  picks up the file the supervisor swaps at each router refresh. Pushes are still accepted (a session image whose
+  claude still holds an old token) and the prepare/ack protocol still runs, both harmless now. **The clean fix, to do:** the database row as the only truth (no in-memory copy: polls and status
   read the row, the refresh runs under `pg_advisory_xact_lock` per account and re-reads the row inside it, the
   notification only wakes waiters, the pending Re-login lives in the row); then sessions get the access token only
   (no refresh token on any machine), which deletes the push path and the prepare/ack/CLI-lock protocol.

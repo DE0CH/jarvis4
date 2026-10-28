@@ -130,7 +130,7 @@ func (r *Router) writeAccountStore(store, credentials, account string) error {
 	if _, err := r.storeCore().Call("/stores/create", map[string]string{"name": store}); err != nil && !strings.Contains(err.Error(), "exists") {
 		return fmt.Errorf("making the store: %w", err)
 	}
-	if err := r.writeRouterKey(store, "CLAUDE_CREDENTIALS", []byte(credentials), false); err != nil {
+	if err := r.writeRouterKey(store, "CLAUDE_CREDENTIALS", []byte(forMachine(credentials)), false); err != nil {
 		return err
 	}
 	if account == "" {

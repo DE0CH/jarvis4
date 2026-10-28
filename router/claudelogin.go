@@ -137,6 +137,26 @@ func newLoginHub(st *State, name, store string) *loginHub {
 	return h
 }
 
+// forMachine: the pair as a session gets it: without the refresh token, so only the router can refresh (a session's
+// claude that refreshed by itself revoked the router's pair, 2026-10-28: every new session of that account started on a
+// dead token, with channels and Remote Control off). Claude Code runs on the access token alone, Remote Control and
+// channels included, and re-reads the file the supervisor swaps at each router refresh. A STOPGAP like reload: the
+// push path and the prepare/ack protocol stay until the clean fix (RUNBOOK "The Claude accounts").
+func forMachine(credentials string) string {
+	var d map[string]any
+	if json.Unmarshal([]byte(credentials), &d) != nil {
+		return credentials
+	}
+	o, _ := d["claudeAiOauth"].(map[string]any)
+	if o == nil {
+		return credentials
+	}
+	delete(o, "refreshToken")
+	delete(o, "refreshTokenExpiresAt")
+	b, _ := json.Marshal(d)
+	return string(b)
+}
+
 // loginNote: the mq notification (mq.go) that an account's login document changed, so the other replica reloads it
 func loginNote(name string) string { return "l:" + name }
 
@@ -433,7 +453,7 @@ func (h *loginHub) poll(ctx context.Context, who string, have, ack int64, wait t
 		a := loginAnswer{Account: h.f.Account, ExpiresAt: exp, Gen: h.gen, Preparing: h.preparing}
 		newer := exp > have && h.f.Credentials != ""
 		if newer {
-			a.Credentials = h.f.Credentials
+			a.Credentials = forMachine(h.f.Credentials)
 		}
 		ready := newer || (h.preparing && ack != h.gen) || (!h.preparing && ack != 0)
 		ch := h.changed
@@ -1007,7 +1027,7 @@ func (r *Router) registerClaudeLogin(app appRoute, m machineRoute, public public
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, 200, map[string]any{"credentials": cur.Credentials, "account": cur.Account, "expiresAt": cur.ExpiresAt})
+		writeJSON(w, 200, map[string]any{"credentials": forMachine(cur.Credentials), "account": cur.Account, "expiresAt": cur.ExpiresAt})
 	})
 	m("POST /m/api/credentials", machinePush)
 
