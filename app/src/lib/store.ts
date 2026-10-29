@@ -25,14 +25,14 @@ export type AskRow = { label: string; value: string; id?: string };
 export type Confirm = { title: string; detail?: string; rows?: AskRow[]; action: string; danger?: boolean; input?: AskInput; resolve: (ok: boolean, text: string) => void };
 type Store = {
   state: State; tab: Tab; pending: Map<string, string>; records: Loaded<Rec>; stores: Loaded<CoreStore>; machines: Loaded<Machine>; flyOrgs: { orgs: FlyOrgView[]; attention: number; configError: string };
-  toasts: Toast[]; confirm: (Confirm & { id: number }) | null; sizes: Choice[]; models: Choice[]; refreshing: boolean; policy: Policy;
+  toasts: Toast[]; confirm: (Confirm & { id: number }) | null; sizes: Choice[]; regions: Choice[]; defaultRegion: string; models: Choice[]; refreshing: boolean; policy: Policy;
   tasks: TasksState;
 };
 const empty = <T,>(): Loaded<T> => ({ loading: false, loaded: false, items: [], err: null });
 const S: Store = {
   state: { sessions: [], approvals: [], core: { up: false } },
   tab: "sessions", pending: new Map(), records: empty(), stores: empty(), machines: empty(), flyOrgs: { orgs: [], attention: 0, configError: "" },
-  sizes: [], models: [], refreshing: false, toasts: [], confirm: null, policy: {},
+  sizes: [], regions: [], defaultRegion: "", models: [], refreshing: false, toasts: [], confirm: null, policy: {},
   tasks: { loading: false, loaded: false, data: { templates: [], instances: [], schedules: [] }, err: null },
 };
 const listeners = new Set<() => void>();
@@ -148,6 +148,7 @@ export function start() {
   // back in the foreground: refresh at once (this is also where an expired login gets noticed)
   AppState.addEventListener("change", (st) => { if (st === "active") refresh(false); });
   api<{ sizes: Choice[] }>("GET", "api/sizes").then((j) => { S.sizes = j.sizes || []; emit(); }).catch(() => {});
+  api<{ regions: Choice[]; default: string }>("GET", "api/regions").then((j) => { S.regions = j.regions || []; S.defaultRegion = j.default || ""; emit(); }).catch(() => {});
   api<{ models: Choice[] }>("GET", "api/models").then((j) => { S.models = j.models || []; emit(); }).catch(() => {});
   loadPolicy().then((p) => { S.policy = p; emit(); }).catch(() => {});
   refresh(true);

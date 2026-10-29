@@ -63,7 +63,7 @@ function Attachments({ items, add, remove, disabled }: { items: Picked[]; add: (
 const fmtSize = (n: number) => (n < 1024 ? `${n} B` : n < 1 << 20 ? `${(n / 1024).toFixed(0)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`);
 
 export function NewSession() {
-  const SIZES = useStore((s) => s.sizes), MODELS = useStore((s) => s.models), stores = useStore((s) => s.stores);
+  const SIZES = useStore((s) => s.sizes), REGIONS = useStore((s) => s.regions), defaultRegion = useStore((s) => s.defaultRegion), MODELS = useStore((s) => s.models), stores = useStore((s) => s.stores);
   useEffect(() => { loadStores(); }, []);
   // every store is offered, sensitive ones marked (never pre-picked); not the core's own store (it never goes to a
   // session), the deploy-key token's store (only a deploy-key call opens it), nor a harness's (they come with it)
@@ -74,6 +74,8 @@ export function NewSession() {
   const touched = useRef(false);
   useEffect(() => { if (!touched.current) setPicked(plain.some((s) => s.name === "default" && !s.sensitive) ? ["default"] : []); }, [plain.map((s) => s.name).join(",")]);
   const [model, setModel] = useState(""), [size, setSize] = useState("medium"), [harness, setHarness] = useState("claude");
+  // the Fly region its machines run in (router/regions.go); the router's default until another is picked
+  const [region, setRegion] = useState("");
   // the models of the chosen harness (the router swaps a model of another harness for that harness's default)
   const models = MODELS.filter((m) => (m.harness || "claude") === harness);
   useEffect(() => { setModel((m) => (models.some((x) => x.id === m) ? m : models[0]?.id || "")); }, [harness, models.map((m) => m.id).join(",")]);
@@ -147,7 +149,7 @@ export function NewSession() {
     const withRepos = [...new Set([...picked, ...repoStores(chosen)])];
     const body = { requestId: requestId.current, label: label.trim(), prompt: prompt.trim(), model, permissionMode: "bypass", size, harness, stores: withRepos, oneShot, autoPause: !oneShot && autoPause.includes("on"),
       repos: chosen.map((r) => r.url).join(","), apiProxy: apiProxy.includes("on"), ...(content.length ? { content } : {}),
-      ...(takesAccount && account ? { account } : {}) };
+      ...(takesAccount && account ? { account } : {}), ...(region && region !== defaultRegion ? { region } : {}) };
     try {
       const attachments = await upload();
       setBusy("Starting…");
@@ -207,6 +209,8 @@ export function NewSession() {
       <CheckboxCards id="ns-apiproxy" value={apiProxy} onChange={setApiProxy} options={[{ value: "on", title: "API proxy", sub: "Logs Anthropic API traffic to ~/artifacts/api-log" }]} />
       {SIZES.length > 0 && <><Lbl>Machine size</Lbl>
         <RadioCards id="ns-size" value={size} onChange={setSize} options={SIZES.map((s) => ({ value: s.id, title: s.id[0].toUpperCase() + s.id.slice(1), sub: s.label }))} /></>}
+      {REGIONS.length > 0 && <><Lbl>Region</Lbl>
+        <RadioCards id="ns-region" value={region || defaultRegion} onChange={setRegion} options={REGIONS.map((g) => ({ value: g.id, title: g.label || g.id, sub: g.id }))} /></>}
     </Page>
   );
 }

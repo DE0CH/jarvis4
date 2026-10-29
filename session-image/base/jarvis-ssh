@@ -1,0 +1,24 @@
+#!/bin/bash
+# Deyao's ssh into this session (entrypoint.sh starts it once per machine, in its own session):
+#   ssh claude@<session id>-ssh.deyaochen.com   (his ~/.ssh/config runs `cloudflared access ssh` for *-ssh.deyaochen.com)
+# Cloudflare Access (his login only) → the claude-tunnel Worker (DE0CH/claude-env cf-tunnel, SSH_SUFFIX) → this
+# session's tunnel <id>-ssh, which only this machine can register (the router's proof, TUNNEL_AGENT_SECRET) → the
+# agent's tcp:// target → sshd on 127.0.0.1:2222 (sshd_config: Access's short-lived certificate only, user claude).
+# A fresh shell; `tmux attach -t claude` is the harness. Log: ~/.jarvis-ssh.log.
+set -u
+SID="${SESSION_ID:-}"
+[[ "$SID" =~ ^s[0-9a-f]{16}$ ]] || { echo "[ssh] not a Jarvis 4 session id ($SID): no ssh"; exit 0; }
+[ -n "${CF_ACCESS_CLIENT_ID:-}" ] && [ -n "${CF_ACCESS_CLIENT_SECRET:-}" ] || { echo "[ssh] no CF_ACCESS_* (store tunnel): no ssh"; exit 0; }
+[ -n "${TUNNEL_AGENT_SECRET:-}" ] || { echo "[ssh] no tunnel proof from the router: no ssh"; exit 0; }
+# a host key of this machine's own (the image carries none)
+[ -e /etc/ssh/ssh_host_ed25519_key ] || sudo ssh-keygen -q -t ed25519 -N "" -f /etc/ssh/ssh_host_ed25519_key
+sudo mkdir -p /run/sshd
+while true; do
+  sudo /usr/sbin/sshd -D -e -f /etc/ssh/jarvis_sshd_config
+  echo "[ssh] sshd exited ($?); restarting"; sleep 3
+done &
+echo "[ssh] ssh claude@$SID-ssh.deyaochen.com"
+while true; do
+  TUNNEL_ID="$SID-ssh" TUNNEL_TARGET="tcp://127.0.0.1:2222" node /usr/local/lib/cf-tunnel-agent.js
+  sleep 3
+done

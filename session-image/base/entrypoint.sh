@@ -138,6 +138,13 @@ mapfile -t DIRS < <(find "$HOME/workspace" -mindepth 1 -maxdepth 1 -type d 2>/de
 # (see workspace-layer.sh). Regenerated on every boot, including resumes.
 [ "$WD" = "$HOME/workspace" ] && [ "${#DIRS[@]}" -gt 1 ] && /usr/local/bin/workspace-layer.sh "$WD"
 
+# --- Deyao's ssh ---------------------------------------------------------------
+# ssh claude@<session id>-ssh.deyaochen.com: sshd + the session's <id>-ssh tunnel (jarvis-ssh), once per machine and
+# in its own session, so a harness restart leaves it up.
+if [ "$RESTART" = 0 ]; then
+  setsid nohup /usr/local/bin/jarvis-ssh >"$HOME/.jarvis-ssh.log" 2>&1 </dev/null &
+fi
+
 # --- per-session start hooks --------------------------------------------------
 # Background servers a session started (a tunnel page, a watcher) die when Jarvis pauses the machine.
 # Executables in ~/artifacts/on-start/ come back with the pause snapshot and are run here, in the

@@ -346,7 +346,13 @@ func TestDestroyAfterTheMoverRestarted(t *testing.T) {
 // kernelStart: a new kernel session, its source signed by the phone (the spawn runs)
 func kernelStart(t *testing.T, rg *rig, k *kerneltest.Kernel, label string) string {
 	t.Helper()
-	sid, err := rg.r.CreateSession(NewSession{Label: label, Harness: "claude"})
+	return kernelStartIn(t, rg, k, NewSession{Label: label, Harness: "claude"})
+}
+
+// kernelStartIn: kernelStart with the whole New session
+func kernelStartIn(t *testing.T, rg *rig, k *kerneltest.Kernel, in NewSession) string {
+	t.Helper()
+	sid, err := rg.r.CreateSession(in)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -309,6 +309,13 @@ func (r *Router) buildHandlers() {
 		writeJSON(w, 200, map[string]any{"sizes": []map[string]string{
 			{"id": "small", "label": sizeLabel("small")}, {"id": "medium", "label": sizeLabel("medium")}, {"id": "large", "label": sizeLabel("large")}}})
 	})
+	app("GET /api/regions", func(w http.ResponseWriter, req *http.Request) {
+		regions := []map[string]string{}
+		for _, g := range sessionRegions {
+			regions = append(regions, map[string]string{"id": g.ID, "label": g.Label})
+		}
+		writeJSON(w, 200, map[string]any{"regions": regions, "default": r.cfg.Region})
+	})
 	app("GET /api/records", func(w http.ResponseWriter, req *http.Request) {
 		var recs []*Record
 		r.st.Do(func(d *persisted) { recs = append(recs, d.Records...) })
@@ -427,6 +434,9 @@ func (r *Router) buildHandlers() {
 			in.RequestID = randID()
 		}
 		args := map[string]any{"label": in.Label, "harness": in.Harness, "stores": in.Stores, "model": in.Model, "permissionMode": in.PermissionMode, "size": in.Size}
+		if in.Region != "" {
+			args["region"] = in.Region
+		}
 		if in.Repos != "" {
 			args["repos"] = in.Repos
 		}
@@ -833,7 +843,7 @@ func sessionView(s *Session, d *persisted) map[string]any {
 	v := map[string]any{
 		"serverTitle": s.AppTitle, "userTitle": s.UserTitle, "title": sessionTitle(*s), "liveSync": s.LiveSync,
 		"id": s.ID, "machineId": nullIfEmpty(s.MachineID), "released": s.MachineID == "" && s.State == "paused",
-		"name": name, "state": s.State, "status": s.Status, "error": s.Error, "created": s.Created, "region": "",
+		"name": name, "state": s.State, "status": s.Status, "error": s.Error, "created": s.Created, "region": s.Region, // "" = the router's default (GET /api/regions)
 		"environment": strings.Join(s.Stores, ","), "stores": s.Stores, "content": orEmptyS(s.Content), "harness": s.Harness, "label": s.Label, "aiTitle": s.Title,
 		"model": s.Model, "permissionMode": s.PermissionMode, "guest": guest, "size": s.Size, "pausedAt": s.PausedAt,
 		"image": s.Image, "createRequestId": s.RequestID, "repos": s.Repos, "discordChannel": s.DiscordChannel,

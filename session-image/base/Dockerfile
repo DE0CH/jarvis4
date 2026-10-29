@@ -13,7 +13,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl git tmux openssl unzip zip jq ripgrep ffmpeg less nano vim \
       python3 python3-pip python3-venv build-essential sudo gnupg procps \
-      openssh-client rsync wget age htop sqlite3 file dnsutils iputils-ping librsvg2-bin \
+      openssh-client openssh-server rsync wget age htop sqlite3 file dnsutils iputils-ping librsvg2-bin \
       psmisc lsof iproute2 sshpass pv zstd libzbar0 whois gawk \
       libreoffice-impress libreoffice-writer libreoffice-calc poppler-utils \
       xdotool xclip imagemagick python3-nacl \
@@ -175,6 +175,13 @@ COPY opencode-transcript.py /usr/local/bin/opencode-transcript.py
 COPY paseo-front.js /usr/local/lib/paseo-front.js
 COPY api-proxy.js /usr/local/lib/api-proxy.js
 COPY cf-tunnel-agent.js /usr/local/lib/cf-tunnel-agent.js
+# Deyao's ssh into the session (jarvis-ssh, started by entrypoint.sh): sshd on 127.0.0.1:2222 behind the session's
+# <id>-ssh tunnel, Cloudflare Access's short-lived certificates only (ssh-ca.pub; principal = his Access email's local
+# part). No host key in the image: each machine makes its own.
+COPY sshd_config /etc/ssh/jarvis_sshd_config
+COPY ssh-ca.pub /etc/ssh/jarvis-ca.pub
+COPY jarvis-ssh /usr/local/bin/jarvis-ssh
+RUN rm -f /etc/ssh/ssh_host_* && echo chendeyao000 > /etc/ssh/jarvis-principals && chmod +x /usr/local/bin/jarvis-ssh
 RUN chmod +x /usr/local/bin/harness-opencode.sh /usr/local/bin/harness-paseo-claude.sh /usr/local/bin/harness-send /usr/local/bin/session-attachments /usr/local/bin/opencode-transcript.py /usr/local/bin/opencode-instructions.py
 # The claw-code harness (a "claw-code · OpenClaw" model): claw-code (DE0CH/claw-code) is the agent loop, an OpenClaw
 # gateway (DE0CH/openclaw) the front end. claw (~20 MB) is baked in from the release pinned in forks.json, checked by

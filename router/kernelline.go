@@ -205,7 +205,7 @@ func (r *Router) kernelSpawn(sid string) {
 	}
 	id, vol := r.kernelAdopt(op, l.Source)
 	for try := 1; id == ""; try++ {
-		in := map[string]any{"cert": l.SourceCert, "notarized": l.SourceNz, "notarizer": nzID, "region": r.cfg.Region, "size": size, "diskGb": gb}
+		in := map[string]any{"cert": l.SourceCert, "notarized": l.SourceNz, "notarizer": nzID, "region": r.regionOf(&s), "size": size, "diskGb": gb}
 		op.note("", "asked the kernel's spawner to start a machine from "+string(l.Source)+" ("+size+")")
 		d, err := r.kernel.Doc("spawner", "/spawn", in)
 		if err == nil {

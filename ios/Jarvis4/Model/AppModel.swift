@@ -57,6 +57,9 @@ final class AppModel {
 
   // ---- lists loaded on demand ----
   var sizes: [Choice] = []
+  /// the Fly regions a session may run in (GET api/regions, router/regions.go) and the router's default
+  var regions: [Choice] = []
+  var defaultRegion = ""
   var models: [Choice] = []
   /// the stores each harness brings (GET api/policy): the router adds them, the pickers don't offer them
   var policy: [String: [String]] = [:]
@@ -200,10 +203,11 @@ final class AppModel {
     }
   }
 
-  /// the router's lists that change rarely (sizes, models, the harnesses' stores) and the core's stores
+  /// the router's lists that change rarely (sizes, regions, models, the harnesses' stores) and the core's stores
   func loadLists() async {
     let r = RouterClient.shared
     if let j = try? await r.get("api/sizes") { sizes = j["sizes"].array.map(Choice.init) }
+    if let j = try? await r.get("api/regions") { regions = j["regions"].array.map(Choice.init); defaultRegion = j["default"].string ?? "" }
     if let j = try? await r.get("api/models") { models = j["models"].array.map(Choice.init) }
     if let j = try? await r.get("api/policy") { policy = (j["harnesses"].object ?? [:]).mapValues { $0["stores"].strings } }
     await loadStores()

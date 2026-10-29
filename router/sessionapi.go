@@ -397,6 +397,9 @@ func (r *Router) checkProposal(c Caller, prefix string, in proposalIn, explRequi
 	}
 	args := map[string]any{"label": in.Label, "harness": in.Harness, "stores": in.Stores, "model": in.Model, "permissionMode": in.PermissionMode,
 		"size": in.Size, "prompt": fmt.Sprintf("(%d characters)", len([]rune(in.Prompt)))}
+	if in.Region != "" {
+		args["region"] = in.Region
+	}
 	if len(in.Content) > 0 {
 		args["content"] = in.Content
 	}

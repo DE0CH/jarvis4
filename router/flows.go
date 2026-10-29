@@ -145,6 +145,7 @@ type NewSession struct {
 	Model          string         `json:"model"`
 	PermissionMode string         `json:"permissionMode"`
 	Size           string         `json:"size"`
+	Region         string         `json:"region"` // regions.go: "" = the router's default
 	Harness        string         `json:"harness"`
 	Stores         []string       `json:"stores"`
 	Repos          string         `json:"repos"`
@@ -228,21 +229,25 @@ var (
 // init command gave its keys → the core's signed "started" document. A machine that never comes up is killed.
 // A core from before R2 answers "started" from /start itself (it waited and retried inside).
 func (r *Router) startMachine(image, size string) (*Doc, error) {
-	return r.startMachineDisk(image, size, 0, nil)
+	return r.startMachineDisk(image, size, "", 0, nil)
 }
 
-// startMachineDisk: startMachine with the machine's volume size (disk.go; 0 = the core's default)
+// startMachineDisk: startMachine with the machine's region ("" = the router's default) and volume size (disk.go; 0 =
+// the core's default)
 // created: told the machine's id as soon as the core's Fly create made it (lifecycle.go reads its Fly events from then)
-func (r *Router) startMachineDisk(image, size string, diskGB int, created func(id string)) (*Doc, error) {
-	return r.startMachineWith(image, size, diskGB, created, true)
+func (r *Router) startMachineDisk(image, size, region string, diskGB int, created func(id string)) (*Doc, error) {
+	return r.startMachineWith(image, size, region, diskGB, created, true)
 }
 
 // startMachineWith: waitLimit = wait out Fly's org machine limit (a handover's spare doesn't: handover.go)
-func (r *Router) startMachineWith(image, size string, diskGB int, created func(id string), waitLimit bool) (*Doc, error) {
+func (r *Router) startMachineWith(image, size, region string, diskGB int, created func(id string), waitLimit bool) (*Doc, error) {
 	if size == "" {
 		size = "medium"
 	}
-	in := map[string]any{"image": image, "region": r.cfg.Region, "size": size}
+	if region == "" {
+		region = r.cfg.Region
+	}
+	in := map[string]any{"image": image, "region": region, "size": size}
 	if diskGB > 0 {
 		in["diskGb"] = diskGB
 	}
@@ -358,13 +363,13 @@ func (r *Router) startAndCertify(sid string, approval *Doc) {
 		size = "medium"
 	}
 	// handover.go: the machine started while the old one stopped, when it is the one this start asks for
-	d := r.takeSpare(sid, nextMachine{Image: a.Request.Image, Size: s.Size, DiskGB: s.DiskGB})
+	d := r.takeSpare(sid, nextMachine{Image: a.Request.Image, Size: s.Size, Region: r.regionOf(&s), DiskGB: s.DiskGB})
 	var err error
 	if d != nil {
 		op.note("", "taking the next machine started while the old one stopped ("+size+", image "+a.Request.Image+")")
 	} else {
 		op.note("", "asked the core to start a machine ("+size+", image "+a.Request.Image+")")
-		d, err = r.startMachineDisk(a.Request.Image, s.Size, s.DiskGB, func(id string) {
+		d, err = r.startMachineDisk(a.Request.Image, s.Size, r.regionOf(&s), s.DiskGB, func(id string) {
 			op.machine(id)
 			op.note(id, "the core's Fly create made machine "+id+"; waiting for it to come up and give its keys (init)")
 		})
@@ -570,6 +575,9 @@ func (r *Router) CreateSession(in NewSession) (string, error) {
 	if in.Size == "" {
 		in.Size = "medium"
 	}
+	if in.Region != "" && !validRegion(in.Region) {
+		return "", bad("region %q: one of GET /api/regions", in.Region)
+	}
 	var err error
 	if in.Model, err = sessionModel(in.Harness, in.Model); err != nil { // harness.go
 		return "", err
@@ -603,7 +611,7 @@ func (r *Router) CreateSession(in NewSession) (string, error) {
 		return "", err
 	}
 	s := &Session{ID: "s" + randID(), State: "approval", Created: time.Now().UTC(), Label: in.Label, Prompt: in.Prompt, Model: in.Model,
-		PermissionMode: in.PermissionMode, Size: in.Size, Harness: in.Harness, Stores: stores, Repos: in.Repos, Content: content,
+		PermissionMode: in.PermissionMode, Size: in.Size, Region: in.Region, Harness: in.Harness, Stores: stores, Repos: in.Repos, Content: content,
 		ClaudeAccount: account, RequestID: in.RequestID, Live: newLiveness(in)}
 	if in.Import != nil {
 		s.ImportFrom, s.ImportSha = in.Import.Session, in.Import.Sha256

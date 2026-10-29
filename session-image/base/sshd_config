@@ -1,0 +1,25 @@
+# Deyao's ssh into the session (entrypoint.sh starts it; DE0CH/claude-env cf-tunnel: `cloudflared access ssh` to
+# https://<session id>-ssh.deyaochen.com → the Worker → the tunnel agent (TUNNEL_TARGET=tcp://127.0.0.1:2222) → here).
+# Local only: the tunnel is the one way in. The only credential is the short-lived certificate Cloudflare Access signs
+# for his login (the app's CA, ssh-ca.pub; principal = his Access email's local part), as user claude.
+Port 2222
+ListenAddress 127.0.0.1
+HostKey /etc/ssh/ssh_host_ed25519_key
+PidFile /run/jarvis-sshd.pid
+AllowUsers claude
+PermitRootLogin no
+AuthenticationMethods publickey
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+AuthorizedKeysFile none
+TrustedUserCAKeys /etc/ssh/jarvis-ca.pub
+AuthorizedPrincipalsFile /etc/ssh/jarvis-principals
+# PAM for the session setup (user claude's password is locked, which sshd refuses without it)
+UsePAM yes
+PrintMotd no
+X11Forwarding no
+AllowTcpForwarding yes
+ClientAliveInterval 30
+AcceptEnv LANG LC_* COLORTERM
+Subsystem sftp internal-sftp

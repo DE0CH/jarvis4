@@ -35,15 +35,16 @@ import (
 )
 
 // nextMachine: what the handover's start will ask the core for (startAndCertify: the approval's image, the session's
-// size and disk)
+// size, region and disk)
 type nextMachine struct {
 	Image  string
 	Size   string // "" = medium
+	Region string // regions.go: the session's region
 	DiskGB int
 }
 
 func (n nextMachine) same(o nextMachine) bool {
-	return n.Image == o.Image && orStr(n.Size, "medium") == orStr(o.Size, "medium") && n.DiskGB == o.DiskGB
+	return n.Image == o.Image && orStr(n.Size, "medium") == orStr(o.Size, "medium") && n.Region == o.Region && n.DiskGB == o.DiskGB
 }
 
 type spare struct {
@@ -82,7 +83,7 @@ func (r *Router) handoverNext(s Session, size string, diskGB int) *nextMachine {
 	if diskGB == 0 {
 		diskGB = s.DiskGB
 	}
-	return &nextMachine{Image: own, Size: size, DiskGB: diskGB}
+	return &nextMachine{Image: own, Size: size, Region: r.regionOf(&s), DiskGB: diskGB}
 }
 
 // launchSpare: the core's start of the next machine, in the background. A spare for the same machine already under
@@ -109,7 +110,7 @@ func (r *Router) launchSpare(sid string, want *nextMachine) {
 	}
 	go func() {
 		defer close(sp.done)
-		d, err := r.startMachineWith(want.Image, want.Size, want.DiskGB, func(id string) {
+		d, err := r.startMachineWith(want.Image, want.Size, want.Region, want.DiskGB, func(id string) {
 			sp.mu.Lock()
 			sp.id = id
 			sp.mu.Unlock()

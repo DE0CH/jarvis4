@@ -16,7 +16,9 @@
  *                       add both to the environment's variables.
  *   TUNNEL_ID           the tunnel id (default: the session id) -> https://<id>-s.deyaochen.com/
  *   TUNNEL_WORKER_URL   default wss://tunnel.deyaochen.com/__agent/<id>
- *   TUNNEL_TARGET       local origin to proxy to (default http://127.0.0.1:8899)
+ *   TUNNEL_TARGET       local origin to proxy to (default http://127.0.0.1:8899); tcp://HOST:PORT
+ *                       carries each tunnelled WebSocket as a TCP connection to HOST:PORT instead
+ *                       (binary frames = bytes: the session's sshd behind <id>-ssh.deyaochen.com)
  *   TUNNEL_AGENT_SECRET optional; only needed if the Worker was deployed with
  *                       an AGENT_SECRET (defense-in-depth; off by default).
  *
@@ -24,6 +26,7 @@
  */
 
 const { execSync } = require("node:child_process");
+const net = require("node:net");
 try {
   module.paths.push(execSync("npm root -g").toString().trim());
 } catch {}
@@ -48,7 +51,9 @@ if (!TUNNEL_ID && !process.env.TUNNEL_WORKER_URL) {
 }
 const WORKER_URL = process.env.TUNNEL_WORKER_URL ||
   `wss://${TUNNEL_HOST}/__agent/${TUNNEL_ID}`;
-const PUBLIC_URL = `https://${TUNNEL_ID}-s.deyaochen.com/`;
+const PUBLIC_URL = /-ssh$/.test(TUNNEL_ID)
+  ? `ssh://${TUNNEL_ID.replace(/-ssh$/, "")}-ssh.deyaochen.com` // a session's ssh tunnel (jarvis-ssh)
+  : `https://${TUNNEL_ID}-s.deyaochen.com/`;
 const TARGET = process.env.TUNNEL_TARGET || "http://127.0.0.1:8899";
 const AGENT_SECRET = process.env.TUNNEL_AGENT_SECRET; // optional
 const ACCESS_ID = process.env.CF_ACCESS_CLIENT_ID;
@@ -102,6 +107,7 @@ function connect() {
   // socket is open are queued.
   const openLocal = (msg) => {
     const send = (obj) => { try { ws.send(JSON.stringify(obj)); } catch {} };
+    if (TARGET.startsWith("tcp://")) { openTCP(msg, send); return; }
     let local;
     try {
       local = new WebSocket(TARGET.replace(/^http/, "ws") + msg.path, msg.protocols || [], { headers: msg.headers || {} });
@@ -122,6 +128,33 @@ function connect() {
     };
     local.on("close", (code, reason) => gone(code, reason));
     local.on("error", (e) => { gone(1011, "agent: local websocket failed: " + e.message); try { local.terminate(); } catch {} });
+  };
+
+  // tcp:// target: the WebSocket's binary frames are the bytes of one TCP connection. The socket is
+  // wrapped in the local WebSocket's shape (readyState / send / close) for the ws-msg and ws-close paths.
+  const openTCP = (msg, send) => {
+    const u = new URL(TARGET);
+    const sock = net.connect(Number(u.port), u.hostname);
+    const local = {
+      readyState: WebSocket.CONNECTING,
+      send: (data) => sock.write(data),
+      close: () => sock.end(),
+      terminate: () => sock.destroy(),
+    };
+    const entry = { local, queue: [] };
+    locals.set(msg.id, entry);
+    sock.on("connect", () => {
+      local.readyState = WebSocket.OPEN;
+      for (const [data] of entry.queue.splice(0)) sock.write(data);
+    });
+    sock.on("data", (data) => send({ type: "ws-msg", id: msg.id, data_b64: data.toString("base64") }));
+    const gone = (code, reason) => {
+      if (locals.get(msg.id) !== entry) return;
+      locals.delete(msg.id);
+      send({ type: "ws-close", id: msg.id, code, reason });
+    };
+    sock.on("close", () => gone(1000, ""));
+    sock.on("error", (e) => { gone(1011, "agent: local tcp failed: " + e.message); sock.destroy(); });
   };
 
   ws.on("message", async (raw) => {

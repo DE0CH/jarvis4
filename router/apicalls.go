@@ -548,6 +548,7 @@ var callRules = map[string]callRule{
 	"POST /api/sessions/{id}/watches":             callNo, // only a session's own signed request arms a watch (always 400 here)
 	"DELETE /api/sessions/{id}/watches/{name}":    callBody,
 	"GET /api/sizes":                              callBody,
+	"GET /api/regions":                            callBody,
 	"GET /api/state":                              callBody,
 	"GET /api/stores":                             callBody,
 	"PUT /api/stores/{store}/docs":                callBody, // explanations: no secret, no trust decision

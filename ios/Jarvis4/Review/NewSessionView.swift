@@ -23,6 +23,8 @@ struct NewSessionView: View {
   @State private var label = ""
   @State private var modelId = ""
   @State private var size = "medium"
+  /// "" = the router's default region
+  @State private var region = ""
   @State private var repos: Set<String> = []
   @State private var repoDefaulted = false
   @State private var autoPause = true
@@ -227,6 +229,12 @@ struct NewSessionView: View {
         Picker("Machine size", selection: $size) { ForEach(model.sizes) { s in Text("\(s.id.capitalized) · \(s.label ?? "")").tag(s.id) } }
           .accessibilityIdentifier("ns-size")
       }
+      if !model.regions.isEmpty {
+        Picker("Region", selection: Binding(get: { region.isEmpty ? model.defaultRegion : region }, set: { region = $0 })) {
+          ForEach(model.regions) { g in Text("\(g.label ?? g.id) · \(g.id)").tag(g.id) }
+        }
+        .accessibilityIdentifier("ns-region")
+      }
       if !oneShot {
         Toggle("Auto-pause when idle", isOn: $autoPause).accessibilityIdentifier("ns-autopause")
       }
@@ -311,6 +319,7 @@ struct NewSessionView: View {
                                  "autoPause": !oneShot && autoPause, "repos": chosen.map(\.url).joined(separator: ","), "apiProxy": apiProxy]
       if !content.isEmpty { body["content"] = content.sorted() }
       if takesAccount && !account.isEmpty { body["account"] = account }
+      if !region.isEmpty && region != model.defaultRegion { body["region"] = region }
       if !attached.isEmpty { body["attachments"] = ["uploadId": rid, "files": attached.map { ["name": $0.name] }] }
       busy = "Requesting…"
       try await RouterClient.shared.call("POST", "api/sessions", body)

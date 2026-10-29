@@ -30,6 +30,7 @@ type Session struct {
 	Model          string     `json:"model"`
 	PermissionMode string     `json:"permissionMode"`
 	Size           string     `json:"size"`
+	Region         string     `json:"region,omitempty"` // regions.go: the Fly region its machines start in ("" = the router's default)
 	Harness        string     `json:"harness"`
 	Stores         []string   `json:"stores"`
 	ClaudeAccount  string     `json:"claudeAccount,omitempty"` // claudeaccounts.go: the Claude account it uses, fixed when made

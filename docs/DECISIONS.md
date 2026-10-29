@@ -2812,3 +2812,28 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      on the WireGuard path, which every session shares, and the bytes don't need the router); zstd (better ratio,
      1.7× the CPU, which a throttled machine doesn't have); several unpack writers (no gain measured on a Fly volume);
      incremental snapshots (a larger change, for later).
+
+242. **A region per session, and ssh into a session from a real terminal** (Deyao, 2026-10-29: "does fly have a sg
+     region or a region close enough to hk (for latency)? and i want to have jarvis expose a capability to connect to
+     the terminal interface (say claude code) that i can use an actual terminal emulator for"; his answers: choose the
+     region per session; SSH via cloudflared; a new shell, from which he mostly types `tmux attach -t claude`; his
+     Access login is enough, no Face ID grant). Fly has no Hong Kong region; Singapore (`sin`) and Tokyo (`nrt`) are
+     the nearest. New session offers London, Singapore and Tokyo (`router/regions.go`, `GET /api/regions`); the
+     session keeps its `region` and every machine it starts (the kernel's spawn, the old core's start, a handover's
+     spare) asks for it, so a region is per session, not per box. The router, its database and the snapshots stay in
+     Falkenstein: a session far from them pays that distance on its snapshots and router calls, not on typing. The
+     region isn't signed (it decides only where the next machine runs). ssh: `ssh claude@<session id>-ssh.deyaochen.com`
+     with his `~/.ssh/config` running `cloudflared access ssh` (and `ssh-gen`) for `*-ssh.deyaochen.com`. That host is
+     its own Access app (DE0CH/claude-env `cf-tunnel/deploy.sh`): his login only, no service token, and a short-lived
+     certificate CA, which signs a certificate for his key (principal `chendeyao000`) when he connects. The tunnel
+     Worker passes only a WebSocket from a person to the tunnel `<id>-ssh`, which only the session's own machine can
+     register (the router's tunnel proof for that id, whatever token comes with it), and its agent
+     (`cf-tunnel-agent.js` with `TUNNEL_TARGET=tcp://127.0.0.1:2222`) carries the bytes to an sshd that listens on
+     127.0.0.1 only and takes nothing but a certificate from that CA, as user claude (`session-image/base/sshd_config`,
+     `ssh-ca.pub`, `jarvis-ssh`, started once per machine by `entrypoint.sh`). Each machine makes its own host key, so
+     a resumed session answers with a new one (the client config skips known_hosts for these hosts: the tunnel, not
+     the host key, says which machine answers). The `terminal` grant still guards the router's own typing into the
+     pane; ssh is his own login into the machine, as Remote Control is. *Not chosen*: a Face ID grant per connection
+     (Deyao: Access login only); attaching straight to the harness's tmux (he wants a shell, to run other commands
+     too); mosh or a WebSocket PTY client of our own (cloudflared and ssh are on every Mac, and ssh brings port
+     forwarding and scp); a public sshd on the Fly machine (nothing of a session faces the internet past Access).
