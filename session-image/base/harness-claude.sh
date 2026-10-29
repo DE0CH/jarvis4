@@ -248,6 +248,8 @@ type_inbox() {
     [ -n "$f" ] || continue
     [ -e "$HOME/.claude/.one-shot-done" ] && continue
     pane="$(tmux capture-pane -p -t "$SESSION" 2>/dev/null)" || continue
+    # the CLI draws the input box as "❯" + a no-break space (2.1.312); only a submitted prompt has a plain space
+    pane="${pane//$'\xc2\xa0'/ }"
     # the input box is on screen (a dialog's options are "❯ 1. …", never a bare "❯")
     grep -Eq '^❯( |$)' <<< "$pane" || continue
     grep -Eq '^❯ +[0-9]+\.' <<< "$pane" && continue
