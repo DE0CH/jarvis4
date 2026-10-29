@@ -66,10 +66,10 @@ spec:
             - { name: SETUP_KEY, value: "BEhYIkmGeCkg7D8vdKhRe8b00asMI8a9EyXNW41eBbIphkf6lZmy/c9FsRlqoXLD5JyRZgVOxLzM7OBv47Uy2Ms=" }
             # each session's channel goes under the Discord category "Jarvis 4" (guild 1482150592414486748)
             - { name: DISCORD_SESSIONS_CATEGORY, value: "Jarvis 4" }
-            # the Fly cap for app jarvis4-sessions alone (router/budget.go counts only its own app): the org's USD 50 is
-            # shared with Jarvis 2's router, which caps jarvis2-sessions at 50 by itself
-            - { name: FLY_BUDGET_USD, value: "20" }
-            - { name: FLY_BUDGET_WARN_USD, value: "15" }
+            # the Fly cap for app jarvis4-sessions (router/budget.go counts only its own app): DM at USD 45, every
+            # running session paused at USD 50 a month (Deyao, 2026-10-21; confirmed for Jarvis 4 2026-10-29)
+            - { name: FLY_BUDGET_USD, value: "50" }
+            - { name: FLY_BUDGET_WARN_USD, value: "45" }
             - { name: BROWSERBASE_BUDGET_USD, value: "10" }
             - { name: BROWSERBASE_BUDGET_WARN_USD, value: "8" }
           # SOPS-encrypted to the cluster's age key (k8s/cluster/secrets, infra/router-secrets.py --box cluster).
