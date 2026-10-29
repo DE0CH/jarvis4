@@ -164,10 +164,14 @@ func bbListSessions(key string) ([]bbSession, error) {
 	return out, json.NewDecoder(resp.Body).Decode(&out)
 }
 
+// bbView: the last tick's figures; like budget.go's view, written to router_docs (bbViewDoc) by the leader that ticks
+// and read from there by whichever replica answers /api/state
 var bbView struct {
 	sync.Mutex
 	v map[string]any
 }
+
+const bbViewDoc = "browserbase-budget-view.json"
 
 // bbBudgetTick: one sample; the DM texts are Jarvis 1's
 func (r *Router) bbBudgetTick(sessions []bbSession, now time.Time, capUSD, warnUSD float64) {
@@ -183,7 +187,13 @@ func (r *Router) bbBudgetTick(sessions []bbSession, now time.Time, capUSD, warnU
 	bbView.Lock()
 	bbView.v = map[string]any{"month": month, "capUsd": capUSD, "warnUsd": warnUSD, "overUsd": o.Total, "parts": o, "usage": u,
 		"warned": st.Warned, "capped": st.Capped, "sampledAt": st.SampledAt}
+	b, _ := json.Marshal(bbView.v)
 	bbView.Unlock()
+	if r.st != nil {
+		if err := r.st.WriteDoc(bbViewDoc, b); err != nil && r.st.sdb != nil {
+			log.Printf("[bb-budget] saving the view: %v", err)
+		}
+	}
 	detail := fmt.Sprintf("%.0f browser min, %.2f GB proxy across %d session(s)", u.Minutes, u.ProxyBytes/1e9, u.Count)
 	switch {
 	case capDM:
@@ -215,7 +225,13 @@ func (r *Router) bbBudgetLoop() {
 func init() {
 	stateHooks = append(stateHooks, func(r *Router, out map[string]any) {
 		bbView.Lock()
-		defer bbView.Unlock()
 		out["browserbaseBudget"] = bbView.v
+		bbView.Unlock()
+		if r != nil && r.st != nil {
+			var v map[string]any
+			if b, ok := r.st.ReadDoc(bbViewDoc); ok && json.Unmarshal(b, &v) == nil {
+				out["browserbaseBudget"] = v
+			}
+		}
 	})
 }

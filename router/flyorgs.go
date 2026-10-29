@@ -40,13 +40,12 @@ var jarvisOwnApps = map[string]string{
 	"jarvis2-log-shipper": "Jarvis 4's log shipper: sends the session machines' logs to Grafana Cloud",
 }
 
-// ownAppLabel: what the app is for, plus what its started machines cost a month at budget.go's rates (Fly's price
-// list for lhr; a machine in another region is priced the same, which is close enough for a label)
+// ownAppLabel: what the app is for, plus what its started machines cost a month at budget.go's rates (each in its region)
 func ownAppLabel(what string, ms []flyMachineDetail) string {
 	perHour := 0.0
 	for _, m := range ms {
 		if m.State == "started" {
-			perHour += hourlyMachineCost(m.Config.Guest)
+			perHour += hourlyMachineCost(m.Config.Guest, m.Region)
 		}
 	}
 	if perHour == 0 {

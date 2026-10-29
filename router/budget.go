@@ -3,7 +3,7 @@ package main
 // The Fly budget cap and "Also on Fly" (Jarvis 1 lib/budget.js, server.js budgetTick / scanFlyAccount).
 //
 // Fly has no spend cap and no billing alerts, so the router ESTIMATES this month's spend: every tick it sums
-// the $/hour of everything accruing in the sessions' app (started machines by their guest size, provisioned
+// the $/hour of everything accruing in the sessions' app (started machines by their guest size and region, provisioned
 // volumes) and adds rate × elapsed to a month-to-date total kept in the router's state (a Riemann sum,
 // blind while the router is down, bounded by maxDeltaH per gap). FLY_BUDGET_WARN_USD (default 45) → one DM;
 // FLY_BUDGET_USD (default 50, Deyao 2026-10-21; 0 = off) → pause every running session (r.Pause: snapshot, then the core's
@@ -44,13 +44,13 @@ const (
 // volume snapshots from its "Persistent storage" section, read 2026-10-15: USD 0.15 per provisioned GB-month, snapshots
 // USD 0.08 per stored GB-month with the first 10 GB free): a vCPU-second
 // shared 8.465e-7 / performance 1.2732e-5, each CPU with 0.25 GB (shared) or 2 GB (performance) of RAM included, every
-// further GB-second 2.316e-6, all times the region's markup (lhr, where sessions run: 1.134615385)
+// further GB-second 2.316e-6, all times the machine's region's markup (regionMarkup)
 var rates = struct {
 	sharedCPUPerHour, performanceCPUPerHour, ramPerGBHour, volumePerGBHour float64
 	sharedRAMIncluded, performanceRAMIncluded                              float64
 	snapshotPerGBHour, snapshotFreeGB                                      float64
 }{
-	8.465e-7 * 3600 * lhrMarkup, 1.2732e-5 * 3600 * lhrMarkup, 2.316e-6 * 3600 * lhrMarkup, 0.15 / hoursPerMonth,
+	8.465e-7 * 3600, 1.2732e-5 * 3600, 2.316e-6 * 3600, 0.15 / hoursPerMonth,
 	0.25, 2,
 	0.08 / hoursPerMonth, 10,
 }
@@ -136,7 +136,24 @@ func snapshotStorage(fly flyReader, volumes []string, now time.Time) (int64, int
 	return total, len(ids), firstErr
 }
 
-const lhrMarkup = 1.134615385
+// regionMarkup: Fly's machine price markup per region (its pricing page's calculator, every region it lists, read
+// 2026-10-29); a region not listed is priced at the dearest of them, so the cap errs high
+var regionMarkup = map[string]float64{
+	"ams": 1.038461538, "arn": 1.038461538, "cdg": 1.134615385, "dfw": 1.25, "ewr": 1, "fra": 1.153846154,
+	"gru": 1.615384615, "iad": 1, "jnb": 1.302884615, "lax": 1.199519231, "lhr": 1.134615385, "nrt": 1.307692308,
+	"ord": 1.25, "sin": 1.269230769, "sjc": 1.192307692, "syd": 1.269230769, "yyz": 1.115384615,
+}
+
+func markupOf(region string) float64 {
+	if m, ok := regionMarkup[region]; ok {
+		return m
+	}
+	top := 0.0
+	for _, m := range regionMarkup {
+		top = max(top, m)
+	}
+	return top
+}
 
 type flyGuest struct {
 	CPUKind  string `json:"cpu_kind"`
@@ -172,8 +189,8 @@ func volumeGone(state string) bool {
 	return state == "destroyed" || state == "pending_destroy" || state == "destroying"
 }
 
-// hourlyMachineCost: $/hour while started (a stopped machine bills cents a month for its rootfs: ignored)
-func hourlyMachineCost(g *flyGuest) float64 {
+// hourlyMachineCost: $/hour while started in region (a stopped machine bills cents a month for its rootfs: ignored)
+func hourlyMachineCost(g *flyGuest, region string) float64 {
 	if g == nil {
 		return 0
 	}
@@ -185,7 +202,7 @@ func hourlyMachineCost(g *flyGuest) float64 {
 	if g.CPUKind == "performance" {
 		rate, included = rates.performanceCPUPerHour, rates.performanceRAMIncluded
 	}
-	return cpus*rate + max(0, float64(g.MemoryMB)/1024-cpus*included)*rates.ramPerGBHour
+	return (cpus*rate + max(0, float64(g.MemoryMB)/1024-cpus*included)*rates.ramPerGBHour) * markupOf(region)
 }
 
 func hourlyVolumeCost(sizeGB int) float64 { return float64(sizeGB) * rates.volumePerGBHour }
@@ -202,7 +219,7 @@ func burnRate(ms []flyMachine, vs []flyVolume) burn {
 	var b burn
 	for _, m := range ms {
 		if m.State == "started" {
-			b.RatePerHour += hourlyMachineCost(m.Config.Guest)
+			b.RatePerHour += hourlyMachineCost(m.Config.Guest, m.Region)
 			b.Running++
 		}
 	}
@@ -344,10 +361,44 @@ type flyOther struct {
 	Detail  string `json:"detail"`
 }
 
+// budgetView: the last tick's figures. Only the replica that leads ticks (leaderlease.go), so it also writes them to
+// router_docs (budgetViewDoc) and /api/state reads them from there, whichever replica answers; this copy is what a
+// router without a database (tests) shows
 var budgetView struct {
 	sync.Mutex
 	budget map[string]any
 	fly    map[string]any
+}
+
+const budgetViewDoc = "fly-budget-view.json"
+
+func (r *Router) saveBudgetView() {
+	budgetView.Lock()
+	b, err := json.Marshal(map[string]any{"budget": budgetView.budget, "fly": budgetView.fly})
+	budgetView.Unlock()
+	if err != nil || r == nil || r.st == nil {
+		return
+	}
+	if err := r.st.WriteDoc(budgetViewDoc, b); err != nil && r.st.sdb != nil {
+		log.Printf("[budget] saving the view: %v", err)
+	}
+}
+
+// loadBudgetView: the leader's figures (budget, fly), else this replica's own
+func (r *Router) loadBudgetView() (budget, fly map[string]any) {
+	budgetView.Lock()
+	budget, fly = budgetView.budget, budgetView.fly
+	budgetView.Unlock()
+	if r == nil || r.st == nil {
+		return
+	}
+	if b, ok := r.st.ReadDoc(budgetViewDoc); ok {
+		var v struct{ Budget, Fly map[string]any }
+		if json.Unmarshal(b, &v) == nil {
+			return v.Budget, v.Fly
+		}
+	}
+	return
 }
 
 // the effects, swappable in tests
@@ -407,6 +458,7 @@ func (r *Router) budgetTick(fly flyReader, now time.Time, capUSD, warnUSD float6
 	ms, err := fly.Machines()
 	if err != nil {
 		r.setFlyView(map[string]any{"apps": 1, "machines": 0, "volumes": 0, "other": []flyOther{}, "error": err.Error(), "checkedAt": now.UTC()})
+		r.saveBudgetView()
 		return budgetActions{}, nil, err
 	}
 	vs, verr := fly.Volumes()
@@ -416,6 +468,10 @@ func (r *Router) budgetTick(fly flyReader, now time.Time, capUSD, warnUSD float6
 	}
 	r.setFlyView(view)
 	if !(capUSD > 0) {
+		budgetView.Lock()
+		budgetView.budget = nil
+		budgetView.Unlock()
+		r.saveBudgetView()
 		return budgetActions{}, nil, nil
 	}
 	b := burnRate(ms, vs)
@@ -437,6 +493,7 @@ func (r *Router) budgetTick(fly flyReader, now time.Time, capUSD, warnUSD float6
 		"perMonth": b.RatePerHour * hoursPerMonth, "running": b.Running, "volumes": b.Volumes,
 		"snapshots": b.Snapshots, "snapshotGb": float64(b.SnapshotBytes) / 1e9, "sampledAt": state.LastSampleAt}
 	budgetView.Unlock()
+	r.saveBudgetView()
 	var paused, unknown []string
 	if act.Enforce {
 		for _, m := range ms {
@@ -498,6 +555,7 @@ func (r *Router) budgetLoop() {
 	if token == "" {
 		log.Printf("[budget] FLY_READ_TOKEN unset: no budget cap, no Also on Fly")
 		r.setFlyView(map[string]any{"apps": 0, "machines": 0, "volumes": 0, "other": []flyOther{}, "error": "FLY_READ_TOKEN not set", "checkedAt": nil})
+		r.saveBudgetView()
 		return
 	}
 	fly := &flyAPI{base: "https://api.machines.dev", app: sessionsApp, token: token, http: &http.Client{Timeout: 30 * time.Second}}
@@ -513,10 +571,7 @@ func (r *Router) budgetLoop() {
 
 func init() {
 	stateHooks = append(stateHooks, func(r *Router, out map[string]any) {
-		budgetView.Lock()
-		defer budgetView.Unlock()
-		out["budget"] = budgetView.budget // null until the first sample, or with the cap off
-		out["fly"] = budgetView.fly
+		out["budget"], out["fly"] = r.loadBudgetView() // budget: null until the first sample, or with the cap off
 		out["flyApp"] = sessionsApp
 	})
 }

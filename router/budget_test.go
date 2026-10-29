@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"math"
 	"strings"
@@ -13,21 +14,21 @@ func near(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
 func TestCosts(t *testing.T) {
 	small := &flyGuest{CPUKind: "shared", CPUs: 2, MemoryMB: 2048}
 	// Fly's calculator (fly.io/docs/about/pricing, London): shared-cpu-2x 2 GB, performance-2x 4 GB (RAM included)
-	if math.Abs(hourlyMachineCost(small)-0.0211) > 0.00005 {
-		t.Fatal(hourlyMachineCost(small))
+	if math.Abs(hourlyMachineCost(small, "lhr")-0.0211) > 0.00005 {
+		t.Fatal(hourlyMachineCost(small, "lhr"))
 	}
 	perf := &flyGuest{CPUKind: "performance", CPUs: 2, MemoryMB: 4096}
-	if math.Abs(hourlyMachineCost(perf)-0.1040) > 0.00005 {
-		t.Fatal(hourlyMachineCost(perf))
+	if math.Abs(hourlyMachineCost(perf, "lhr")-0.1040) > 0.00005 {
+		t.Fatal(hourlyMachineCost(perf, "lhr"))
 	}
 	// the Upgrade's sizes (sizes.go): 16 GB shared, 32 GB on 8 performance CPUs
 	for size, perHour := range map[string]float64{"large": 0.0844, "16gb": 0.1601, "32gb": 0.5674, "64gb": 0.8701, "128gb": 1.7402} {
 		kind, cpus, mb := sizeGuest(size)
-		if got := hourlyMachineCost(&flyGuest{CPUKind: kind, CPUs: cpus, MemoryMB: mb}); math.Abs(got-perHour) > 0.00005 {
+		if got := hourlyMachineCost(&flyGuest{CPUKind: kind, CPUs: cpus, MemoryMB: mb}, "lhr"); math.Abs(got-perHour) > 0.00005 {
 			t.Fatalf("%s: %.4f an hour, Fly says %.4f", size, got, perHour)
 		}
 	}
-	if hourlyMachineCost(nil) != 0 || !near(hourlyVolumeCost(10), 1.5/730) {
+	if hourlyMachineCost(nil, "lhr") != 0 || !near(hourlyVolumeCost(10), 1.5/730) {
 		t.Fatal("nil guest / volume")
 	}
 	b := burnRate([]flyMachine{
@@ -39,7 +40,7 @@ func TestCosts(t *testing.T) {
 		}{perf}},
 	}, []flyVolume{{State: "created", SizeGB: 10}, {State: "destroyed", SizeGB: 99},
 		{State: "pending_destroy", SizeGB: 10}, {State: "destroying", SizeGB: 10}}) // deleted: not billed
-	if b.Running != 1 || b.Volumes != 1 || !near(b.RatePerHour, hourlyMachineCost(small)+hourlyVolumeCost(10)) {
+	if b.Running != 1 || b.Volumes != 1 || !near(b.RatePerHour, hourlyMachineCost(small, "")+hourlyVolumeCost(10)) {
 		t.Fatalf("%+v", b)
 	}
 }
@@ -271,5 +272,64 @@ func TestTheBudgetCountsVolumeSnapshots(t *testing.T) {
 	r.budgetTick(fly, now.Add(2*time.Minute), 30, 25)
 	if len(fly.asked) != 2 {
 		t.Fatalf("listed again within 30 min: %v", fly.asked)
+	}
+}
+
+// Singapore and Tokyo machines cost more than London's (Fly's markups 1.269 and 1.308 over 1.135); a region not in
+// Fly's list is priced as the dearest
+func TestRegionPrices(t *testing.T) {
+	g := &flyGuest{CPUKind: "shared", CPUs: 2, MemoryMB: 2048}
+	lhr, sin, nrt := hourlyMachineCost(g, "lhr"), hourlyMachineCost(g, "sin"), hourlyMachineCost(g, "nrt")
+	if !(math.Abs(sin/lhr-1.269230769/1.134615385) < 1e-9 && math.Abs(nrt/lhr-1.307692308/1.134615385) < 1e-9) {
+		t.Fatalf("lhr %.4f sin %.4f nrt %.4f", lhr, sin, nrt)
+	}
+	if hourlyMachineCost(g, "xyz") != hourlyMachineCost(g, "gru") {
+		t.Fatal("unknown region not priced as the dearest (São Paulo)")
+	}
+	m := machine("m1", "started")
+	m.Region = "nrt"
+	if b := burnRate([]flyMachine{m}, nil); !near(b.RatePerHour, hourlyMachineCost(m.Config.Guest, "nrt")) {
+		t.Fatalf("%+v", b)
+	}
+}
+
+// only the leading replica ticks; the other replica's /api/state shows the same figures (it once showed "No reading
+// yet" whenever the app's request landed on it)
+func TestBudgetViewOnEveryReplica(t *testing.T) {
+	url := testDBURL(t)
+	ctx := context.Background()
+	replica := func() *Router {
+		db, err := OpenDB(ctx, url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(db.Close)
+		st, err := OpenState(ctx, db, t.TempDir(), testSeal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return NewRouter(Config{NoAccess: true, DataDir: st.dir, WebDir: t.TempDir()}, st, nil, Policy{})
+	}
+	leader, other := replica(), replica()
+	fly := &fakeFly{ms: []flyMachine{machine("m1", "started")}}
+	t0 := time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC)
+	leader.budgetTick(fly, t0, 30, 25)
+	leader.budgetTick(fly, t0.Add(time.Hour), 30, 25)
+	leader.bbBudgetTick(nil, t0, 10, 8)
+	budgetView.Lock()
+	budgetView.budget, budgetView.fly = nil, nil // the other replica's own copy: it never ticked
+	budgetView.Unlock()
+	bbView.Lock()
+	bbView.v = nil
+	bbView.Unlock()
+	out := map[string]any{}
+	for _, h := range stateHooks {
+		h(other, out)
+	}
+	b, _ := out["budget"].(map[string]any)
+	f, _ := out["fly"].(map[string]any)
+	bb, _ := out["browserbaseBudget"].(map[string]any)
+	if b == nil || b["capUsd"] != 30.0 || !(b["spentUsd"].(float64) > 0) || f == nil || f["machines"] != 1.0 || bb == nil || bb["capUsd"] != 10.0 {
+		t.Fatalf("budget %v fly %v bb %v", b, f, bb)
 	}
 }

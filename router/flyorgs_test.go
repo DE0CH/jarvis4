@@ -182,8 +182,8 @@ func TestFlyOrgsOverviewOwnInfraApp(t *testing.T) {
 			a = &orgs[0].Apps[i]
 		}
 	}
-	// shared-cpu-1x 256 MB at budget.go's lhr rates: 8.465e-7 × 3600 × 1.134615385 × 730 h
-	want := "Jarvis 4's log shipper: sends the session machines' logs to Grafana Cloud · USD 2.52/month"
+	// shared-cpu-1x 256 MB in arn (Stockholm) at budget.go's rates: 8.465e-7 × 3600 × 1.038461538 × 730 h
+	want := "Jarvis 4's log shipper: sends the session machines' logs to Grafana Cloud · USD 2.31/month"
 	if a == nil || a.Label != want || len(a.Machines) != 1 || a.Machines[0].Attention != "" {
 		t.Fatalf("log shipper %+v", a)
 	}

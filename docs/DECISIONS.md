@@ -2837,3 +2837,17 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      (Deyao: Access login only); attaching straight to the harness's tmux (he wants a shell, to run other commands
      too); mosh or a WebSocket PTY client of our own (cloudflared and ssh are on every Mac, and ssh brings port
      forwarding and scp); a public sshd on the Fly machine (nothing of a session faces the internet past Access).
+
+243. **The spend figures come from the database, so every router replica shows them; machines are priced in their own
+     region** (Deyao, 2026-10-29: "Fly spend on jarvis 4 is broken"). Since the scheduler lease (step 6.8) only the
+     leading replica runs the budget loops, but each kept its figures in its own memory, so every `/api/state` that
+     landed on the other replica of two had `budget`, `fly` and `browserbaseBudget` null: the app's Fly spend read
+     "No reading yet" about half the time and its cap banner came and went. The leader now writes the figures to
+     `router_docs` (`fly-budget-view.json`, `browserbase-budget-view.json`) at each tick and `/api/state` reads them from
+     there on any replica (`TestBudgetViewOnEveryReplica`). The cap itself was never affected: the month's total and
+     its DM flags were already in the shared state. With regions per session (242) a Singapore or Tokyo machine was
+     priced at London's rate (Fly's markups: lhr 1.135, sin 1.269, nrt 1.308), so the estimate ran 12–15% low for
+     them; `hourlyMachineCost` now takes the machine's region from Fly's own price table (`regionMarkup`, every region
+     its calculator lists; an unlisted one is priced as the dearest, so the cap errs high), and the Machines tab's app
+     labels use the same (`TestRegionPrices`). *Not chosen*: every replica polling Fly itself (twice the reads, and
+     two clocks adding to one month's total).
