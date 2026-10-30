@@ -217,7 +217,7 @@ WORKDIR /home/claude
 # Native claude binary for the claude user.
 # Bump CLAUDE_REFRESH to bust the Docker cache and reinstall the LATEST CLI on rebuild
 # (the install.sh RUN is otherwise cached, so the CLI would never update).
-ARG CLAUDE_REFRESH=2026-09-23b
+ARG CLAUDE_REFRESH=2026-10-30
 RUN echo "claude cli refresh ${CLAUDE_REFRESH}" && curl -fsSL https://claude.ai/install.sh | bash && ~/.local/bin/claude --version
 ENV PATH=/home/claude/.local/bin:/usr/local/bin:/usr/bin:/bin
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
