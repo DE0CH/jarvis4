@@ -485,6 +485,16 @@ func (r *Router) deliverVouchedOpts(sid string, d Delivery, boot bool, o *Origin
 			out = DeliveryResult{ID: d.ID, Error: "the machine didn't answer within 60 s"}
 		}
 		if out.OK {
+			if scheduledKind(d.Kind) { // autopilot.go: idle after this turn pauses in minutes, not the hour
+				r.st.Do(func(p *persisted) {
+					if s := p.Sessions[sid]; s != nil {
+						if s.Live == nil {
+							s.Live = &Liveness{}
+						}
+						s.Live.ScheduledAt = time.Now().UnixMilli()
+					}
+				})
+			}
 			return nil
 		}
 		// the harness may still be booting: retry while nobody listens yet
@@ -506,6 +516,11 @@ func (r *Router) deliverVouchedOpts(sid string, d Delivery, boot bool, o *Origin
 		}
 		return errors.New("the machine refused or failed: " + out.Error)
 	}
+}
+
+// scheduledKind: a delivery the session armed for itself, which nobody is watching arrive
+func scheduledKind(kind string) bool {
+	return kind == "wakeup" || kind == "cron" || kind == "watch" || kind == "watch-fail"
 }
 
 // ---- the input log, persisted --------------------------------------------------------------------------------

@@ -622,3 +622,50 @@ func TestHarnessRetryUpgrade(t *testing.T) {
 		t.Fatal("a host that came up kept the mark")
 	}
 }
+
+// idle after a scheduled turn pauses in IdlePauseScheduled; after Deyao's own prompt it keeps the hour (Deyao, 2026-11-02)
+func TestAutoPauseAfterScheduledTurn(t *testing.T) {
+	c, now := defaultPilot, time.Now()
+	no := func(string) bool { return false }
+	human := now.Add(-3 * time.Hour).UnixMilli()
+	tick := func(l *Liveness, g *Registry, at time.Time) bool {
+		report(l, at, g)
+		return strings.Contains(kinds(planTick(running("s1", l), at, nil, c, no, no)), "pause")
+	}
+	// a cron delivered after his last prompt: 5 min
+	l := &Liveness{ScheduledAt: now.Add(-time.Minute).UnixMilli()}
+	g := &Registry{Status: "idle", StatusUpdatedAt: 7, HumanSection: true, LastHumanAt: human}
+	if tick(l, g, now) || tick(l, g, now.Add(c.IdlePauseScheduled-time.Second)) {
+		t.Fatal("paused before IdlePauseScheduled")
+	}
+	if !tick(l, g, now.Add(c.IdlePauseScheduled)) {
+		t.Fatal("idle after a scheduled turn didn't pause after IdlePauseScheduled")
+	}
+	// Deyao wrote after the wakeup: the hour
+	l = &Liveness{ScheduledAt: now.Add(-time.Minute).UnixMilli()}
+	g = &Registry{Status: "idle", StatusUpdatedAt: 8, HumanSection: true, LastHumanAt: now.UnixMilli()}
+	if tick(l, g, now) || tick(l, g, now.Add(30*time.Minute)) {
+		t.Fatal("paused within the hour after Deyao's prompt")
+	}
+	if !tick(l, g, now.Add(c.IdlePause)) {
+		t.Fatal("no pause after the hour")
+	}
+	// an image that doesn't report his prompts: the hour
+	l = &Liveness{ScheduledAt: now.Add(-time.Minute).UnixMilli()}
+	g = &Registry{Status: "idle", StatusUpdatedAt: 9}
+	if tick(l, g, now) || tick(l, g, now.Add(c.IdlePauseScheduled)) {
+		t.Fatal("paused early without the __HUMAN__ section")
+	}
+}
+
+func TestParseHuman(t *testing.T) {
+	raw := `{"pid":10,"sessionId":"aaaaaaaa-1111","status":"idle","bridgeSessionId":"b"}` + "\n__TITLES__\n__BG__\n__ONESHOT__\n__AUTH__\n__CREDS__\n__REFUSAL__\n__ACCOUNT__\n\n__HUMAN__\naaaaaaaa-1111 2026-11-02T09:33:35.702Z\nbbbbbbbb-2222 -\n__WORKERS__\n"
+	g := parseRegistry(raw)
+	if g == nil || !g.HumanSection || g.LastHumanAt != time.Date(2026, 11, 2, 9, 33, 35, 702e6, time.UTC).UnixMilli() {
+		t.Fatalf("got %+v", g)
+	}
+	g = parseRegistry(strings.Replace(raw, "__HUMAN__\naaaaaaaa-1111 2026-11-02T09:33:35.702Z\n", "", 1))
+	if g == nil || g.HumanSection || g.LastHumanAt != 0 {
+		t.Fatalf("an old image: %+v", g)
+	}
+}

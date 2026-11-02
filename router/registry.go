@@ -51,6 +51,25 @@ type Registry struct {
 	// the keeper's record of the harness (machine/keeper.go): how often it was started on this machine and how it
 	// last ended; nil: an image from before the keeper
 	Harness *HarnessRun `json:"harness,omitempty"`
+	// when Deyao last sent the host conversation a prompt (ms; 0 = none in the transcript's tail); HumanSection: the
+	// image reports it at all (machine/status.go __HUMAN__, images from 2026-11-02 on)
+	LastHumanAt  int64 `json:"lastHumanAt,omitempty"`
+	HumanSection bool  `json:"humanSection,omitempty"`
+}
+
+// parseHuman: the __HUMAN__ section → conversation id → its last human prompt (ms)
+func parseHuman(section string) map[string]int64 {
+	out := map[string]int64{}
+	for _, l := range strings.Split(section, "\n") {
+		f := strings.Fields(l)
+		if len(f) != 2 || !transcriptID.MatchString(f[0]) {
+			continue
+		}
+		if t, err := time.Parse(time.RFC3339Nano, f[1]); err == nil {
+			out[f[0]] = t.UnixMilli()
+		}
+	}
+	return out
 }
 
 // HarnessRun: the __HARNESS__ section (machine/keeper.go harnessState). Starts > 1: the harness's launcher died and
@@ -227,6 +246,7 @@ func parseRegistry(raw string) *Registry {
 	refusalPart, workersPart := cut(rest5, "__WORKERS__")
 	workersPart, harnessPart := cut(workersPart, "__HARNESS__")                     // images from 2026-10-21 on (the keeper)
 	refusalPart, accountPart, hasAccount := strings.Cut(refusalPart, "__ACCOUNT__") // images from 2026-10-20 on
+	accountPart, humanPart, hasHuman := strings.Cut(accountPart, "__HUMAN__")       // images from 2026-11-02 on
 	proof := ""
 	for _, e := range jsonLines(accountPart) {
 		proof = str(e, "accountUuid")
@@ -277,5 +297,6 @@ func parseRegistry(raw string) *Registry {
 		AuthFailed: failed[sid], CredsExpiresAt: credsExp, SessionsInside: len(entries),
 		OneShotDone: oneShotDone, Refusals: refusals, Workers: parseWorkers(workersPart, sid),
 		AccountSection: hasAccount, AccountProof: proof, Harness: parseHarness(harnessPart),
+		LastHumanAt: parseHuman(humanPart)[sid], HumanSection: hasHuman,
 	}
 }

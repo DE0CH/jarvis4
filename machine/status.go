@@ -5,7 +5,7 @@ package main
 // supervisor runs the same shell locally every 10 s and POSTs the raw output to /m/status when it changed, and at
 // least once a minute as a heartbeat; the router parses it (router/registry.go). It prints claude's registry
 // files, ai-title lines, background-job counts, the one-shot marker, transcript ids ending on "Please run
-// /login", the credentials file's expiry, refusal entries, the checked account of an account switch, then the subagent/background-job counts the supervisor holds (workers.go), and the keeper's harness record (starts, last end) — never a token.
+// /login", the credentials file's expiry, refusal entries, the checked account of an account switch, when Deyao last sent each conversation a prompt, then the subagent/background-job counts the supervisor holds (workers.go), and the keeper's harness record (starts, last end) — never a token.
 
 import (
 	"context"
@@ -28,6 +28,11 @@ const regCmd = `for f in /home/claude/.claude/sessions/*.json; do cat "$f" 2>/de
 	`echo __REFUSAL__; for f in /home/claude/.claude/projects/*/*.jsonl; do grep -h -E '"stop_reason":"refusal"|"subtype":"model_refusal_fallback"' "$f" 2>/dev/null | tail -4; done; ` +
 	// __ACCOUNT__: the installed token's account as Anthropic named it after a switch (claudelogin.go afterSwitch)
 	`echo __ACCOUNT__; cat /home/claude/.claude/.jarvis-account 2>/dev/null; echo; ` +
+	// __HUMAN__: per conversation, when Deyao last sent a prompt (Claude Code's origin kind "human"; wakeups, crons and
+	// peer messages arrive as "channel") — the router's auto-pause hour vs 5 min after a scheduled turn (autopilot.go)
+	`echo __HUMAN__; for f in /home/claude/.claude/sessions/*.json; do s=$(grep -o '"sessionId":"[^"]*"' "$f" | head -1 | cut -d'"' -f4); ` +
+	`[ -n "$s" ] || continue; t=$(tail -c 8000000 /home/claude/.claude/projects/*/"$s".jsonl 2>/dev/null | grep -F '"origin":{"kind":"human"}' | tail -1 | grep -o '"timestamp":"[^"]*"' | tail -1 | cut -d'"' -f4); ` +
+	`echo "$s ${t:--}"; done; ` +
 	`true`
 
 const (

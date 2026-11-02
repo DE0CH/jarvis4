@@ -53,7 +53,8 @@ same thing:
 ```
 
 What the router does by itself with a running session (`router/autopilot.go`, every 30 s), from that report:
-auto-pause after 1 h plain idle (unless `autoPause` is off, the session is one-shot, or another feature vetoes);
+auto-pause after 1 h plain idle, 5 min when the router delivered a wakeup, cron or watch after Deyao's last prompt
+(`lastHumanAt`, the machine's `__HUMAN__` section) (unless `autoPause` is off, the session is one-shot, or another feature vetoes);
 destroy a one-shot session once `oneShotDone` — forcefully (a failed archive doesn't stop it) and with a DM when work
 was lost: dirty repos as its final snapshot recorded them, a repo check that couldn't run, or a failed archive
 (`router/oneshot.go`, Jarvis 1's finishOneShot); Escape a prompt left `waiting` for 1 h (holder `status`); DM

@@ -2851,3 +2851,12 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      its calculator lists; an unlisted one is priced as the dearest, so the cap errs high), and the Machines tab's app
      labels use the same (`TestRegionPrices`). *Not chosen*: every replica polling Fly itself (twice the reads, and
      two clocks adding to one month's total).
+244. **An idle session pauses in 5 min after a scheduled turn, in 1 h after Deyao's own prompt** (Deyao, 2026-11-02:
+     "the router should keep track of the wakeup reason: if it's me then it times out after an hour, if it's a scheduled
+     wakeup then it's 5 minutes"). The router stamps `Live.ScheduledAt` when a wakeup, cron or watch delivery lands
+     (vouch.go); the machine reports when Deyao last sent the host conversation a prompt (`__HUMAN__`: the newest
+     transcript entry with Claude Code's `origin.kind == "human"`; channel deliveries are `"channel"`). Scheduled later
+     than his prompt → `IdlePauseScheduled` (5 min), else the hour; an image without the section keeps the hour. The
+     10-min hold before a due wakeup or cron stays. *Why*: a warm-up cron firing four times a day kept a machine up for
+     an hour after each 5-minute run. *Not chosen*: counting turns since the delivery (lease and Inbox messages start
+     turns too), and a router-side record of his prompts (they reach Claude through Remote Control, not the router).

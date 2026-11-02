@@ -3,7 +3,8 @@ package main
 // What the router does by itself with a running session, from the status its machine reports (registry.go):
 // Jarvis 1's autoPauseTick and oneShotTick (server.js) over grants instead of Fly exec.
 //
-//   auto-pause      idle (no background jobs) for 1 h → Pause; per-session off switch
+//   auto-pause      idle (no background jobs) for 1 h → Pause, 5 min when the last turn was a scheduled one (a wakeup,
+//                   cron or watch delivered after Deyao's last prompt); per-session off switch
 //   one-shot        the supervisor's ~/.claude/.one-shot-done marker → Destroy
 //   stale prompt    "waiting" for 1 h → Escape in the tmux pane (holder "status")
 //   attention DMs   idle / waiting / dead for 5 min → one DM per episode; the idle one can be muted
@@ -38,8 +39,11 @@ type Liveness struct {
 	// the settled episode already DMed ("idle:<statusUpdatedAt>"), so a router restart doesn't ping it again
 	// the auto-pause clock: idle since when, on which turn (statusUpdatedAt) — kept across a router restart, so
 	// frequent deploys don't keep restarting the hour
-	IdleSince     time.Time `json:"idleSince,omitempty"`
-	IdleStatusAt  int64     `json:"idleStatusAt,omitempty"`
+	IdleSince    time.Time `json:"idleSince,omitempty"`
+	IdleStatusAt int64     `json:"idleStatusAt,omitempty"`
+	// when the router last delivered a wakeup, cron or watch into the session (ms, vouch.go): later than Deyao's last
+	// prompt (Registry.LastHumanAt) = the session is idle after a scheduled turn, which pauses after IdlePauseScheduled
+	ScheduledAt   int64     `json:"scheduledAt,omitempty"`
 	AttentionSent string    `json:"attentionSent,omitempty"`
 	Reg           *Registry `json:"registry,omitempty"`
 	LastReport    time.Time `json:"lastReport,omitempty"`
@@ -86,13 +90,23 @@ type RepairMark struct {
 
 type pilotConfig struct {
 	IdlePause, WaitingCancel, Attention, StaleReport, GrantRetry, RepairEvery, DowngradeLookback time.Duration
-	HarnessUp                                                                                    time.Duration
+	HarnessUp, IdlePauseScheduled                                                                time.Duration
 }
 
 var defaultPilot = pilotConfig{
 	IdlePause: time.Hour, WaitingCancel: time.Hour, Attention: 5 * time.Minute,
 	StaleReport: 3 * time.Minute, GrantRetry: 10 * time.Minute, RepairEvery: 10 * time.Minute, DowngradeLookback: 15 * time.Minute,
-	HarnessUp: 4 * time.Minute,
+	HarnessUp: 4 * time.Minute, IdlePauseScheduled: 5 * time.Minute,
+}
+
+// idlePauseFor: how long a plain idle session runs before the auto-pause. A session that went idle after a scheduled
+// turn nobody is watching pauses in minutes (Deyao, 2026-11-02); after his own prompt it keeps the hour. An image that
+// doesn't report his prompts keeps the hour.
+func idlePauseFor(l *Liveness, g *Registry, c pilotConfig) time.Duration {
+	if g != nil && g.HumanSection && l.ScheduledAt > 0 && l.ScheduledAt > g.LastHumanAt && c.IdlePauseScheduled > 0 {
+		return c.IdlePauseScheduled
+	}
+	return c.IdlePause
 }
 
 const pilotTick = 30 * time.Second
@@ -170,7 +184,7 @@ func liveView(s *Session, v map[string]any) {
 		v["workers"] = g.Workers // registry.go: subagents and background jobs running now
 	}
 	if !l.AutoPauseOff && !l.IdleSince.IsZero() && idleEligible(g) {
-		v["pauseInMs"] = max(int64(0), time.Until(l.IdleSince.Add(defaultPilot.IdlePause)).Milliseconds())
+		v["pauseInMs"] = max(int64(0), time.Until(l.IdleSince.Add(idlePauseFor(l, g, defaultPilot))).Milliseconds())
 	}
 }
 
@@ -483,7 +497,7 @@ func planTick(d *persisted, now time.Time, storedExp map[string]int64, c pilotCo
 			add(pilotAction{Kind: "escape", Session: id, Name: name})
 		}
 
-		// auto-pause after IdlePause of plain idle
+		// auto-pause after IdlePause of plain idle (IdlePauseScheduled after a scheduled turn)
 		if l.AutoPauseOff || l.OneShot || veto(id) || !idleEligible(g) {
 			l.IdleSince = time.Time{}
 			continue
@@ -491,7 +505,7 @@ func planTick(d *persisted, now time.Time, storedExp map[string]int64, c pilotCo
 		if l.IdleSince.IsZero() || l.IdleStatusAt != g.StatusUpdatedAt {
 			l.IdleSince, l.IdleStatusAt = now, g.StatusUpdatedAt // a turn the router didn't see starts the hour again
 		}
-		if now.Sub(l.IdleSince) >= c.IdlePause && !operating {
+		if now.Sub(l.IdleSince) >= idlePauseFor(l, g, c) && !operating {
 			add(pilotAction{Kind: "pause", Session: id, Name: name})
 		}
 	}
