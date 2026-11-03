@@ -30,7 +30,9 @@ type Session struct {
 	Model          string     `json:"model"`
 	PermissionMode string     `json:"permissionMode"`
 	Size           string     `json:"size"`
-	Region         string     `json:"region,omitempty"` // regions.go: the Fly region its machines start in ("" = the router's default)
+	Region         string     `json:"region,omitempty"` // regions.go: where its machines start ("" = the router's default)
+	Runner         string     `json:"runner,omitempty"` // awsrunner.go: aws | fly ("" = DEFAULT_RUNNER)
+	WG             *AWSWG     `json:"wg,omitempty"`     // awsrunner.go: the next AWS machine's WireGuard, until it is up
 	Harness        string     `json:"harness"`
 	Stores         []string   `json:"stores"`
 	ClaudeAccount  string     `json:"claudeAccount,omitempty"` // claudeaccounts.go: the Claude account it uses, fixed when made
@@ -120,6 +122,7 @@ type Started struct {
 	KernelCert    *Doc    `json:"kernelCert,omitempty"` // kernelline.go: the spawner's cert naming it (what its archive keeps)
 	// kernelline.go: killed, its volume the spawner's delete hasn't taken yet; the leader kills it again until it is gone
 	KernelVolumeLeft string `json:"kernelVolumeLeft,omitempty"`
+	WG               *AWSWG `json:"wg,omitempty"` // awsrunner.go: an AWS machine's WireGuard (no private key)
 }
 
 type persisted struct {

@@ -335,7 +335,7 @@ func resumeHarness() error {
 // freezeSession: the Claude process first (pauseHarness), then SIGSTOP to every other process of user claude
 // (signalSession: never root's, so never the keeper or the supervisors). Only on a Fly machine.
 var freezeSession = func() {
-	if os.Getenv("FLY_MACHINE_ID") == "" {
+	if machineID() == "" {
 		return
 	}
 	if err := pauseHarness(); err != nil {
@@ -350,7 +350,7 @@ var freezeSession = func() {
 // thawSession: SIGCONT to the session (the counterpart of freezeSession, after a failed snapshot); only on a Fly
 // machine
 var thawSession = func() {
-	if os.Getenv("FLY_MACHINE_ID") == "" {
+	if machineID() == "" {
 		return
 	}
 	if err := signalSession("CONT"); err != nil {

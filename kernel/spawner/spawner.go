@@ -62,15 +62,18 @@ func reportedDigest(ref string) string {
 const (
 	maxDiskGB    = 500
 	infoFlyToken = "jarvis2/fly-token"
+	infoAWSKey   = "jarvis4/aws-credentials"
 )
 
 // The reasons of the spawner's refusals the router acts on (the error answer's "reason", serve.FailBecause)
 const (
 	ReasonNoFlyToken   = "no-fly-token"    // 503: the setup session (or the app's Recover) sends the token again
 	ReasonFly          = "fly"             // 502: Fly refused or didn't answer; the call may be made again
+	ReasonNoAWSKey     = "no-aws-key"      // 503: the setup session (or the app's Recover) sends the AWS key again
+	ReasonAWS          = "aws"             // 502: EC2 refused or didn't answer; the call may be made again
 	ReasonHostFull     = "host-full"       // 502: Fly's 412 volume_placement_capacity; the volume is deleted, spawn again
 	ReasonUnknown      = "unknown-machine" // 404: not a machine the spawner made
-	ReasonNotStarted   = "not-started"     // 409: init before Fly says started
+	ReasonNotStarted   = "not-started"     // 409: init before the runner says started (AWS: before the keys line)
 	ReasonWrongImage   = "wrong-image"     // 409: Fly runs another digest than the source's
 	ReasonNotDestroyed = "not-destroyed"   // 409: Fly doesn't say destroyed yet; kill (or destroy) again
 	ReasonBadSnapshot  = "bad-snapshot"    // 400: the snapshot isn't signed by the machine's key
@@ -81,6 +84,7 @@ const (
 // Machine: one the spawner made
 type Machine struct {
 	ID       string     `json:"id"`
+	Runner   string     `json:"runner,omitempty"` // "aws", or "" for Fly (state from before the AWS runner)
 	Source   doc.Object `json:"source"`
 	Content  doc.Source `json:"content"`          // the source's image and settings (its snapshot is the predecessor's)
 	Volume   string     `json:"volume,omitempty"` // its volume, until Fly deleted it
@@ -98,11 +102,14 @@ type Spawner struct {
 	op        sync.RWMutex
 	cont      *serve.Continuity // its mode in the copy flip (path + ".mode")
 	token     string            // the Fly token (memory only), handed over with the machines
+	awsKey    *AWSCredentials   // the AWS key (memory only), handed over with the machines
 	s         *sig.Signer
 	agreement *ecdh.PrivateKey
 	trust     *sig.Trust
 	fly       Fly
-	env       map[string]string // what every machine's Fly config env gets (the router's address); the roster and the root key are added per spawn
+	aws       *AWSAPI
+	env       map[string]string // what every Fly machine's config env gets (the router's address); the roster and the root key are added per spawn
+	awsEnv    map[string]string // the same for an AWS machine (the router's address on the tailnet)
 	path      string
 	machines  map[string]*Machine
 }
@@ -111,8 +118,9 @@ type state struct {
 	Machines map[string]*Machine `json:"machines"`
 }
 
-// Open: the state at path (made if missing), its mode beside it. env: the machines' Fly config env.
-func Open(path string, c *sig.Component, t *sig.Trust, fly Fly, env map[string]string) (*Spawner, error) {
+// Open: the state at path (made if missing), its mode beside it. env, awsEnv: the env every Fly / AWS machine gets
+// (the router's address as that runner's machines reach it). aws nil: no AWS runner.
+func Open(path string, c *sig.Component, t *sig.Trust, fly Fly, aws *AWSAPI, env, awsEnv map[string]string) (*Spawner, error) {
 	cont, err := serve.OpenContinuity(path + ".mode")
 	if err != nil {
 		return nil, err
@@ -122,7 +130,7 @@ func Open(path string, c *sig.Component, t *sig.Trust, fly Fly, env map[string]s
 			return nil, err
 		}
 	}
-	sp := &Spawner{cont: cont, s: c.Signer, agreement: c.Agreement, trust: t, fly: fly, env: env, path: path, machines: map[string]*Machine{}}
+	sp := &Spawner{cont: cont, s: c.Signer, agreement: c.Agreement, trust: t, fly: fly, aws: aws, env: env, awsEnv: awsEnv, path: path, machines: map[string]*Machine{}}
 	b, err := os.ReadFile(path)
 	if err == nil {
 		var st state
@@ -158,16 +166,77 @@ func (sp *Spawner) save() error {
 	return os.Rename(tmp, filepath.Clean(sp.path))
 }
 
-// flyFail: a Fly call that failed, answered with its reason
+// flyFail: a runner call that failed, answered with its reason
 func flyFail(what string, err error) error {
-	if errors.Is(err, errNoToken) {
+	switch {
+	case errors.Is(err, errNoToken):
 		return serve.FailBecause(503, ReasonNoFlyToken, "%v", err)
+	case errors.Is(err, errNoAWSCredentials):
+		return serve.FailBecause(503, ReasonNoAWSKey, "%v", err)
+	case errors.Is(err, errNotYet):
+		return serve.FailBecause(409, ReasonNotStarted, "%v", err)
+	}
+	var ae *AWSError
+	if errors.As(err, &ae) {
+		return serve.FailBecause(502, ReasonAWS, "aws %s: %v", what, err)
 	}
 	return serve.FailBecause(502, ReasonFly, "fly %s: %v", what, err)
 }
 
+func orFly(runner string) string {
+	if runner == "" {
+		return "fly"
+	}
+	return runner
+}
+
+// runnerOf: the runner of a machine id: an EC2 instance id (i-…) is AWS's, anything else Fly's
+func runnerOf(id string) string {
+	if strings.HasPrefix(id, "i-") {
+		return "aws"
+	}
+	return "fly"
+}
+
+// runner: the API of a machine id's runner
+func (sp *Spawner) runner(id string) Runner {
+	if runnerOf(id) == "aws" && sp.aws != nil {
+		return sp.aws
+	}
+	return flyRunner{sp.fly}
+}
+
+// object: the machine's object, "<runner>-<id>"
+func object(id string) doc.Object { return doc.Object(runnerOf(id) + "-" + id) }
+
 // serving: a call may go on (callers hold op shared)
 func (sp *Spawner) serving() error { return sp.cont.Serving() }
+
+// SetAWSCredentials: AWSCredentials sealed to the spawner's agreement key
+func (sp *Spawner) SetAWSCredentials(sealed sig.Sealed) (any, error) {
+	sp.op.RLock()
+	defer sp.op.RUnlock()
+	if err := sp.serving(); err != nil {
+		return nil, err
+	}
+	if sp.aws == nil {
+		return nil, serve.Fail(503, "this spawner has no AWS runner")
+	}
+	plain, err := sig.OpenSealed(sp.agreement, sealed, infoAWSKey)
+	if err != nil {
+		return nil, serve.Fail(400, "can't open the AWS key")
+	}
+	var v AWSCredentials
+	if json.Unmarshal(plain, &v) != nil || v.AccessKeyID == "" || v.SecretAccessKey == "" {
+		return nil, serve.Fail(400, "need AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
+	}
+	sp.aws.Configure(v)
+	sp.mu.Lock()
+	sp.awsKey = &v
+	sp.mu.Unlock()
+	log.Printf("AWS key set")
+	return map[string]string{"kind": "aws-key-set"}, nil
+}
 
 // SetFlyToken: {"FLY_API_TOKEN": …} sealed to the spawner's agreement key
 func (sp *Spawner) SetFlyToken(sealed sig.Sealed) (any, error) {
@@ -202,10 +271,14 @@ type SpawnInput struct {
 	Region    string       `json:"region"`
 	Size      string       `json:"size"`
 	DiskGB    int          `json:"diskGb"`
+	Runner    string       `json:"runner,omitempty"` // "aws" or "fly" ("" = fly: the router from before the AWS runner)
+	// WireGuard: an AWS machine's way to the router, which the router makes per spawn (aws.go WireGuard)
+	WireGuard *WireGuard `json:"wireguard,omitempty"`
 }
 
-// Spawn: a new empty volume and one Fly create on it, from a notarized source → {kind: "created", id, source, volume}.
-// A create that fails deletes the volume (one try; a volume left is the router's sweep's).
+// Spawn: a machine on a new, empty disk on the source's runner (Fly: a volume and one create on it; AWS: one
+// instance), from a notarized source → {kind: "created", id, source, volume}. A Fly create that fails deletes the
+// volume (one try; a volume left is the router's sweep's).
 func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 	sp.op.RLock()
 	defer sp.op.RUnlock()
@@ -233,41 +306,66 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 	if in.DiskGB < 1 || in.DiskGB > maxDiskGB || in.Region == "" {
 		return nil, serve.Fail(400, "diskGb 1 to %d and a region", maxDiskGB)
 	}
-	if sp.env == nil {
-		return nil, serve.Fail(503, "the spawner has no router address for its machines (KERNEL_MACHINE_URL)")
+	var run Runner = flyRunner{sp.fly}
+	switch in.Runner {
+	case "", "fly":
+	case "aws":
+		if sp.aws == nil {
+			return nil, serve.Fail(503, "this spawner has no AWS runner")
+		}
+		if !AWSRegions[in.Region] {
+			return nil, serve.Fail(400, "no AWS region %q", in.Region)
+		}
+		if instanceType(mem) == "" {
+			return nil, serve.Fail(400, "no instance type for size %s", in.Size)
+		}
+		if in.WireGuard == nil {
+			return nil, serve.Fail(400, "an AWS machine needs its wireguard")
+		}
+		if err := in.WireGuard.Check(); err != nil {
+			return nil, serve.Fail(400, "%v", err)
+		}
+		run = sp.aws
+	default:
+		return nil, serve.Fail(400, "runner: aws or fly")
+	}
+	base := sp.env
+	if in.Runner == "aws" {
+		base = sp.awsEnv
+	}
+	if base == nil {
+		return nil, serve.Fail(503, "the spawner has no router address for its %s machines (KERNEL_MACHINE_URL, KERNEL_AWS_MACHINE_URL)", orFly(in.Runner))
 	}
 	rd := sp.trust.Doc()
 	if rd == nil {
 		return nil, serve.Fail(503, "%v", sig.ErrNoRoster)
 	}
 	guest := map[string]any{"cpu_kind": kind, "cpus": cpus, "memory_mb": mem}
-	vid, err := sp.fly.CreateVolume(in.Region, in.DiskGB, guest)
-	if err != nil {
-		return nil, flyFail("volume", err)
-	}
 	rj, _ := json.Marshal(rd)
 	// the machine checks the kernel's identities against the root key's roster (machine/kernelboot.go)
 	env := map[string]string{"JARVIS2_SOURCE": string(c.Succ), "JARVIS2_KERNEL_ROSTER": string(rj), "JARVIS2_KERNEL_ROOT": sp.trust.Root()}
-	for k, v := range sp.env {
+	for k, v := range base {
 		env[k] = v
 	}
-	id, err := sp.fly.Create(c.Source.Image, in.Region, guest, env, vid, string(c.Succ))
+	id, vid, err := run.Create(CreateInput{Image: c.Source.Image, Region: in.Region, Guest: guest, MemoryMB: mem, Env: env,
+		DiskGB: in.DiskGB, Source: string(c.Succ), WireGuard: in.WireGuard})
 	if err != nil {
-		left := ""
-		if derr := sp.fly.DeleteVolume(vid); derr != nil {
-			left = fmt.Sprintf(" (volume %s left: %v)", vid, derr)
-		}
 		if code, st := flyStatus(err); code == 412 && st == "volume_placement_capacity" {
 			// the volume's host has no room for this machine; a volume is pinned to its host, so a new spawn (a new
 			// volume) is the way to another host
-			return nil, serve.FailBecause(502, ReasonHostFull, "fly create: %v%s", err, left)
+			return nil, serve.FailBecause(502, ReasonHostFull, "fly create: %v", err)
 		}
-		if errors.Is(err, errNoToken) {
-			return nil, flyFail("create", err)
+		var ae *AWSError
+		if errors.As(err, &ae) && ae.Code == "InsufficientInstanceCapacity" {
+			return nil, serve.FailBecause(502, ReasonHostFull, "aws create: %v", err)
 		}
-		return nil, serve.FailBecause(502, ReasonFly, "fly create: %v%s", err, left)
+		return nil, flyFail("create", err)
 	}
-	m := &Machine{ID: id, Source: c.Succ, Content: *c.Source, Volume: vid}
+	runner := ""
+	if runnerOf(id) == "aws" {
+		runner = "aws"
+	}
+	m := &Machine{ID: id, Runner: runner, Source: c.Succ, Content: *c.Source, Volume: vid}
 	sp.mu.Lock()
 	sp.machines[id] = m
 	err = sp.save()
@@ -295,7 +393,7 @@ func (sp *Spawner) Init(id string) (sig.Doc, error) {
 	case m.Cert != nil:
 		return *m.Cert, nil
 	}
-	fm, err := sp.fly.Inspect(id)
+	fm, err := sp.runner(id).Inspect(id)
 	if err != nil {
 		return sig.Doc{}, flyFail("inspect", err)
 	}
@@ -305,12 +403,12 @@ func (sp *Spawner) Init(id string) (sig.Doc, error) {
 	if reportedDigest(fm.Image) != imageDigest(m.Content.Image) {
 		return sig.Doc{}, serve.FailBecause(409, ReasonWrongImage, "machine %s runs %s, not its source's %s", id, fm.Image, m.Content.Image)
 	}
-	k, err := sp.fly.Init(id)
+	k, err := sp.runner(id).Init(id)
 	if err != nil {
-		return sig.Doc{}, flyFail("exec init", err)
+		return sig.Doc{}, flyFail("init", err)
 	}
 	keys := doc.Keys{SigningKey: k.SigningKey, EncryptionKey: k.EncryptionKey}
-	c := doc.Cert{Kind: "succession", Pred: m.Source, Succ: doc.Object("fly-" + id), Pair: perm.Top(),
+	c := doc.Cert{Kind: "succession", Pred: m.Source, Succ: object(id), Pair: perm.Top(),
 		Machine: &doc.Machine{Keys: keys, Image: fm.Image}, Signer: doc.BySpawner, IssuedAt: doc.Now()}
 	if err := c.Check(); err != nil {
 		return sig.Doc{}, serve.Fail(502, "machine %s: %v", id, err)
@@ -343,16 +441,18 @@ type Snapshot struct {
 
 var hex64RE = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-// destroyOnFly: the machine destroyed, as Fly says (single calls: a destroy, then a look) → its volume as Fly listed it
+// destroyOnFly: the machine destroyed, as its runner says (single calls: a destroy, then a look) → its volume as
+// Fly listed it ("" on AWS)
 func (sp *Spawner) destroyOnFly(id string) (string, error) {
-	fm, err := sp.fly.Inspect(id)
+	run := sp.runner(id)
+	fm, err := run.Inspect(id)
 	if err != nil {
 		return "", flyFail("inspect", err)
 	}
 	vol := fm.Volume
 	if fm.State != "destroyed" {
-		derr := sp.fly.Destroy(id)
-		if fm, err = sp.fly.Inspect(id); err != nil {
+		derr := run.Destroy(id)
+		if fm, err = run.Inspect(id); err != nil {
 			return "", flyFail("inspect", err)
 		}
 		if fm.State != "destroyed" {
@@ -370,7 +470,7 @@ func (sp *Spawner) dropVolume(m *Machine) string {
 	if v == "" {
 		return ""
 	}
-	if err := sp.fly.DeleteVolume(v); err != nil {
+	if err := sp.runner(m.ID).DeleteVolume(v); err != nil {
 		if code, _ := flyStatus(err); code != 404 {
 			log.Printf("machine %s: volume %s: delete: %v (the router kills it again)", m.ID, v, err)
 			return v
@@ -425,7 +525,7 @@ func (sp *Spawner) Kill(id string, snap *Snapshot) (any, error) {
 			if sum != "" {
 				src.Snapshot = sum
 			}
-			c := doc.Cert{Kind: "succession", Pred: doc.Object("fly-" + id), Succ: doc.NewSource(b), Pair: perm.Top(),
+			c := doc.Cert{Kind: "succession", Pred: object(id), Succ: doc.NewSource(b), Pair: perm.Top(),
 				Source: &src, Signer: doc.BySpawner, IssuedAt: doc.Now()}
 			if err := c.Check(); err != nil {
 				return nil, err
@@ -470,7 +570,7 @@ func (sp *Spawner) Destroy(id string) (any, error) {
 	}
 	if m == nil || !m.Killed {
 		if m == nil {
-			fm, err := sp.fly.Inspect(id)
+			fm, err := sp.runner(id).Inspect(id)
 			if err != nil {
 				return nil, flyFail("inspect", err)
 			}
@@ -478,6 +578,9 @@ func (sp *Spawner) Destroy(id string) (any, error) {
 				return nil, serve.FailBecause(404, ReasonUnknown, "machine %s isn't one the spawner made", id)
 			}
 			m = &Machine{ID: id, Source: doc.Object(fm.Source)}
+			if runnerOf(id) == "aws" {
+				m.Runner = "aws"
+			}
 		}
 		vol, err := sp.destroyOnFly(id)
 		if err != nil {
@@ -509,6 +612,7 @@ func (sp *Spawner) Destroy(id string) (any, error) {
 type handed struct {
 	Machines map[string]*Machine `json:"machines"`
 	FlyToken string              `json:"flyToken,omitempty"`
+	AWSKey   *AWSCredentials     `json:"awsKey,omitempty"`
 }
 
 func (sp *Spawner) Decide(r sig.Roster) error {
@@ -529,7 +633,7 @@ func (sp *Spawner) Handoff(roster string) ([]byte, error) {
 	}
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
-	return json.Marshal(handed{Machines: sp.machines, FlyToken: sp.token})
+	return json.Marshal(handed{Machines: sp.machines, FlyToken: sp.token, AWSKey: sp.awsKey})
 }
 
 // Takeover: the predecessor's machines replace this volume's (saved before it serves), and its Fly token
@@ -554,6 +658,10 @@ func (sp *Spawner) Takeover(id string, state []byte) error {
 		sp.fly.Configure(h.FlyToken)
 		sp.token = h.FlyToken
 	}
+	if err == nil && h.AWSKey != nil && sp.aws != nil {
+		sp.aws.Configure(*h.AWSKey)
+		sp.awsKey = h.AWSKey
+	}
 	sp.mu.Unlock()
 	if err != nil {
 		return err
@@ -561,7 +669,7 @@ func (sp *Spawner) Takeover(id string, state []byte) error {
 	if err := sp.cont.Took(id); err != nil {
 		return err
 	}
-	log.Printf("took over %d machines (Fly token: %v); serving", len(h.Machines), h.FlyToken != "")
+	log.Printf("took over %d machines (Fly token: %v, AWS key: %v); serving", len(h.Machines), h.FlyToken != "", h.AWSKey != nil)
 	return nil
 }
 
@@ -571,6 +679,11 @@ func Register(s *serve.Server, sp *Spawner) {
 		Sealed sig.Sealed `json:"sealed"`
 	}) (any, error) {
 		return sp.SetFlyToken(in.Sealed)
+	})
+	serve.Handle(s, "POST /aws-credentials", func(in struct {
+		Sealed sig.Sealed `json:"sealed"`
+	}) (any, error) {
+		return sp.SetAWSCredentials(in.Sealed)
 	})
 	serve.Handle(s, "POST /spawn", func(in SpawnInput) (any, error) { return sp.Spawn(in) })
 	serve.Handle(s, "POST /init", func(in struct {

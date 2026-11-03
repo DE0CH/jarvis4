@@ -44,6 +44,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/DE0CH/jarvis4/kernel/doc"
 	"io"
 	"log"
 	"net"
@@ -61,10 +62,12 @@ import (
 
 const (
 	dir         = "/run/jarvis"
-	keysPath    = dir + "/keys.json" // public halves, printed by init for the core (through Fly exec)
-	coreKeyPath = dir + "/core-key"  // the core's key, from the machine's Fly config (the core set it)
-	coreKeyEnv  = "JARVIS2_CORE_KEY" // the core that created this machine puts its signing key here
-	goPath      = dir + "/init-requested"
+	keysPath    = dir + "/keys.json"      // public halves, printed by init for the core (through Fly exec)
+	coreKeyPath = dir + "/core-key"       // the core's key, from the machine's Fly config (the core set it)
+	coreKeyEnv  = "JARVIS2_CORE_KEY"      // the core that created this machine puts its signing key here
+	goPath      = dir + "/init-requested" // init ran (Fly), or the keeper announced the keys (AWS)
+	consolePath = "/dev/ttyS0"            // an AWS instance's serial console (GetConsoleOutput)
+	keysMark    = "JARVIS2-KEYS "         // the console line's mark (kernel/spawner/aws.go)
 	certPath    = dir + "/cert.json"
 	bootedPath  = dir + "/booted"      // written once the boot is done (cert, snapshot, secrets, repos): the harness starts next
 	clientPath  = dir + "/client.json" // the router URL + this machine's id, for later commands
@@ -225,6 +228,26 @@ func initCmd() error {
 	return err
 }
 
+// machineID: this machine's id as its runner knows it: the EC2 instance id the instance's unit read (AWS), else
+// Fly's; "" when this isn't a session machine (a test, a dev box)
+func machineID() string {
+	if onAWS() {
+		return os.Getenv("JARVIS2_MACHINE_ID")
+	}
+	return os.Getenv("FLY_MACHINE_ID")
+}
+
+// machineObject: this machine's kernel object, "<runner>-<id>" (kernel/doc)
+func machineObject(id string) doc.Object {
+	if onAWS() {
+		return doc.Object("aws-" + id)
+	}
+	return doc.Object("fly-" + id)
+}
+
+// onAWS: started by the spawner's AWS runner (the instance's unit sets JARVIS2_RUNNER=aws)
+func onAWS() bool { return os.Getenv("JARVIS2_RUNNER") == "aws" }
+
 func keygen() error {
 	if err := sudo("install", "-d", "-o", "claude", "-m", "755", dir); err != nil {
 		return err
@@ -253,7 +276,7 @@ func sudo(args ...string) error {
 }
 
 func prepare() (spec harnessSpec, err error) {
-	me := os.Getenv("FLY_MACHINE_ID")
+	me := machineID()
 	// the core: the one that created this machine. It sets its signing key in the machine's Fly config, and only
 	// the core's Fly token (besides the setup session's org token) can create or change machines in this app —
 	// the router's is read-only — so the key comes from the core through Fly, never from the router.
@@ -1274,7 +1297,7 @@ func newClient() (*client, error) {
 	if err != nil {
 		return nil, err
 	}
-	conf := clientConf{os.Getenv("JARVIS2_URL"), os.Getenv("FLY_MACHINE_ID")}
+	conf := clientConf{os.Getenv("JARVIS2_URL"), machineID()}
 	if conf.URL != "" && conf.Machine != "" {
 		b, _ := json.Marshal(conf)
 		os.WriteFile(clientPath, b, 0o600)

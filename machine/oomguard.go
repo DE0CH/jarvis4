@@ -61,7 +61,7 @@ func rescueLimit(totalKb int64) int64 {
 
 // makeCgroups: the keeper's, at boot (before the boot steps start)
 var makeCgroups = func() {
-	if os.Getenv("FLY_MACHINE_ID") == "" {
+	if machineID() == "" {
 		return
 	}
 	if err := setupCgroups(); err != nil {
@@ -103,7 +103,7 @@ func joinCgroup(dir string) {
 
 // lockMemory: this process's pages stay in RAM (the keeper at boot, supervisor-core as it starts)
 var lockMemory = func(who string) {
-	if os.Getenv("FLY_MACHINE_ID") == "" {
+	if machineID() == "" {
 		return
 	}
 	if err := mlockAll(); err != nil {

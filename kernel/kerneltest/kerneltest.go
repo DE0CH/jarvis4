@@ -140,7 +140,7 @@ func (k *Kernel) startCopy(t testing.TB, name string) *Copy {
 		case "merger":
 			merger.Register(s, merger.New(c.Signer, trust))
 		case "spawner":
-			sp, err := spawner.Open(filepath.Join(cp.dir, "spawner"), c, trust, k.Fly, k.env)
+			sp, err := spawner.Open(filepath.Join(cp.dir, "spawner"), c, trust, k.Fly, nil, k.env, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

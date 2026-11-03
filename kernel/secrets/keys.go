@@ -176,7 +176,7 @@ func (c *Secrets) WriteKey(in WriteKeyInput) (SignedDoc, error) {
 			return SignedDoc{}, fail(400, "a machine write carries the grant the machine holds")
 		}
 		g, err := gv.Open(*in.Grant, c.trust)
-		if err != nil || g.Machine.Kind() != "fly" {
+		if err != nil || g.Machine.Kind() != "machine" {
 			return SignedDoc{}, fail(403, "a machine write's grant: %v", err)
 		}
 		if !VerifyWith(g.Keys.SigningKey, []byte(text), in.Sig) {
@@ -188,7 +188,7 @@ func (c *Secrets) WriteKey(in WriteKeyInput) (SignedDoc, error) {
 		if !exists && reservedStore(in.Store) {
 			return SignedDoc{}, fail(403, "store %s doesn't exist and a session doesn't make it: github-* stores come only from a repo's deploy key (Settings → Repos)", in.Store)
 		}
-		w = EntryWriter{By: "machine", Machine: g.Machine.FlyID()}
+		w = EntryWriter{By: "machine", Machine: g.Machine.MachineID()}
 	case "router":
 		// the router's own writes: only the Claude account stores, whose pair it refreshes with nobody there (DECISIONS
 		// 185, 188). Unsigned: the core can't tell the router from anything else on the box, so the writer is named

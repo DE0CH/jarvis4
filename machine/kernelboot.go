@@ -134,7 +134,7 @@ func checkKernelBoot(b kernelBootDocs, box *sig.Trust, source, me string, keys m
 		}
 		return nil
 	}
-	self := doc.Object("fly-" + me)
+	self := machineObject(me)
 	var mc doc.Cert
 	err := errors.New("no spawner in the roster")
 	for _, k := range box.SigningKeys("spawner") {
@@ -195,8 +195,8 @@ func checkKernelBoot(b kernelBootDocs, box *sig.Trust, source, me string, keys m
 			cert.Line = s
 		}
 	}
-	if sc.Pred.Kind() == "fly" {
-		cert.PredID = sc.Pred.FlyID()
+	if sc.Pred.Kind() == "machine" {
+		cert.PredID = sc.Pred.MachineID()
 	}
 	cert.Snapshot = sc.Source.Snapshot
 	// the phone's key and the stores' sensitivity, from secrets (what a core cert's phone and sensitive say): the
@@ -358,7 +358,7 @@ func checkKernelAttest(t kernelTrust, me, kind string, attested []byte, d *Signe
 		}
 	}
 	sum := sha256.Sum256(attested)
-	if ch.Subject != KernelInputSubject("fly-"+me, kind, hex.EncodeToString(sum[:])) {
+	if ch.Subject != KernelInputSubject(string(machineObject(me)), kind, hex.EncodeToString(sum[:])) {
 		return errors.New("the notary's challenge is for another input or machine")
 	}
 	return nil

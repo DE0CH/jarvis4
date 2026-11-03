@@ -121,7 +121,7 @@ func newRig(t *testing.T) *rig {
 	w := kt.New(t)
 	dir := t.TempDir()
 	fly := newFly()
-	sp, err := Open(filepath.Join(dir, "sp.json"), w.C["spawner"], w.Trust, fly, map[string]string{"JARVIS2_URL": "http://router"})
+	sp, err := Open(filepath.Join(dir, "sp.json"), w.C["spawner"], w.Trust, fly, nil, map[string]string{"JARVIS2_URL": "http://router"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestSpawnAndKill(t *testing.T) {
 	if len(r.fly.vols) != 0 || left != "" {
 		t.Fatalf("volumes left: %v %q", r.fly.vols, left)
 	}
-	sp2, err := Open(r.path, r.w.C["spawner"], r.w.Trust, r.fly, nil)
+	sp2, err := Open(r.path, r.w.C["spawner"], r.w.Trust, r.fly, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,7 +386,7 @@ func TestSpawnIsSingleCalls(t *testing.T) {
 	if r2.fly.ms[stray].source != string(mustPeek(cert2).Succ) {
 		t.Fatalf("the stray's metadata: %q", r2.fly.ms[stray].source)
 	}
-	sp2, _ := Open(r2.path, r2.w.C["spawner"], r2.w.Trust, r2.fly, map[string]string{"JARVIS2_URL": "http://router"})
+	sp2, _ := Open(r2.path, r2.w.C["spawner"], r2.w.Trust, r2.fly, nil, map[string]string{"JARVIS2_URL": "http://router"}, nil)
 	out, err := sp2.Destroy(stray)
 	if err != nil || out.(map[string]any)["volumeLeft"] != "" || r2.fly.ms[stray].state != "destroyed" || len(r2.fly.vols) != 0 {
 		t.Fatalf("destroy: %v %v %s %v", out, err, r2.fly.ms[stray].state, r2.fly.vols)

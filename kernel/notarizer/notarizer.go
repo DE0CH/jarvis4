@@ -109,14 +109,14 @@ func rule(c doc.Cert) error {
 	case doc.ByRoot:
 		ok = true
 	case doc.ByIPhone:
-		ok = pk == "sink" && sk == "source" || pk == "source" && sk == "fly"
+		ok = pk == "sink" && sk == "source" || pk == "source" && sk == "machine"
 	case doc.BySpawner:
-		ok = pk == "source" && sk == "fly" || pk == "fly" && sk == "source"
+		ok = pk == "source" && sk == "machine" || pk == "machine" && sk == "source"
 		if ok && !c.Pair.Leq(perm.Top()) || ok && !perm.Top().Leq(c.Pair) {
 			return fmt.Errorf("the spawner attests Fly facts only: its pair is ⊤")
 		}
 	case doc.ByIdentity:
-		ok = pk == "fly" && same
+		ok = pk == "machine" && same
 	case doc.ByGullible:
 		ok = pk == "source" && sk == "sink"
 	default:

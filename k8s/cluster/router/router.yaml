@@ -17,7 +17,7 @@ spec:
   selector: { matchLabels: { app: router } }
   template:
     # secrets-rev*: bumped by infra/router-secrets.py so a changed Secret restarts the pod (envFrom is read at start)
-    metadata: { labels: { app: router }, annotations: { jarvis2/secrets-rev: "7e99c39a0a2c", jarvis2/secrets-rev-wg: "ec3a90144137", jarvis2/secrets-rev-backup: "97ba541b62b5", jarvis2/secrets-rev-github: "8f78d40c37d3", jarvis2/secrets-rev-flyorgs: "000000000000", jarvis2/secrets-rev-flypersonal: "000000000000", jarvis2/secrets-rev-flyvolumes: "cdd49966c8fa", jarvis2/secrets-rev-browserbase: "000000000000", jarvis2/secrets-rev-devices: "39dda4058b05", jarvis2/secrets-rev-seal: "a15a0781d2da", jarvis2/secrets-rev-objects: "03e5615482c8", jarvis2/secrets-rev-db: "b74deeb37161" } }
+    metadata: { labels: { app: router }, annotations: { jarvis2/secrets-rev: "7e99c39a0a2c", jarvis2/secrets-rev-wg: "ec3a90144137", jarvis2/secrets-rev-backup: "97ba541b62b5", jarvis2/secrets-rev-github: "8f78d40c37d3", jarvis2/secrets-rev-flyorgs: "000000000000", jarvis2/secrets-rev-flypersonal: "000000000000", jarvis2/secrets-rev-flyvolumes: "cdd49966c8fa", jarvis2/secrets-rev-browserbase: "000000000000", jarvis2/secrets-rev-devices: "39dda4058b05", jarvis2/secrets-rev-seal: "a15a0781d2da", jarvis2/secrets-rev-objects: "03e5615482c8", jarvis2/secrets-rev-db: "b74deeb37161", jarvis2/secrets-rev-aws: "570a44bf9b3d" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -53,6 +53,10 @@ spec:
             # every earlier CI-pinned session image with its signature (session-image-sigs.txt here, images.yml)
             - { name: SESSION_IMAGE_SIGS_FILE, value: /sigs/session-image-sigs.txt }
             - { name: FLY_REGION, value: lhr }
+            # the AWS runner (router/awsrunner.go, docs/PLAN-aws.md): the runner a new session gets when it names none,
+            # and the m-gateways' WireGuard for the AWS machines (public keys; the private halves: Secret router-wg-aws)
+            - { name: DEFAULT_RUNNER, value: fly }
+            - { name: WG_AWS_GATEWAYS, value: "EEHeJdYheW1fsC/HSnqReGYMbkW9UUuh5QTMvwfEDmU=@10.99.0.1,w8kqS2AxSl8b5OxibyMWLf83GxMCjLEJel98M0vaykg=@10.99.0.2" }
             # the router's WireGuard peer in Fly org jarvis2-370 (fly wireguard create jarvis2-370 lhr jarvis4-box)
             - { name: MACHINE_URL, value: "http://jarvis4-box._peer.internal:8081,http://jarvis4-gw-b._peer.internal:8081" }
             # Access apps (infra/cloudflare.py --cluster; none is secret): "Jarvis 4", "Jarvis 4 setup", "Jarvis 4 devices",
@@ -74,7 +78,7 @@ spec:
             - { name: BROWSERBASE_BUDGET_WARN_USD, value: "8" }
           # SOPS-encrypted to the cluster's age key (k8s/cluster/secrets, infra/router-secrets.py --box cluster).
           # router-secrets-github stays LAST: with a key in several envFrom sources the last one wins
-          envFrom: [{ secretRef: { name: router-secrets, optional: true } }, { secretRef: { name: router-secrets-backup, optional: true } }, { secretRef: { name: router-secrets-flyorgs, optional: true } }, { secretRef: { name: router-secrets-flypersonal, optional: true } }, { secretRef: { name: router-secrets-flyvolumes, optional: true } }, { secretRef: { name: router-secrets-browserbase, optional: true } }, { secretRef: { name: router-secrets-devices, optional: true } }, { secretRef: { name: router-db } }, { secretRef: { name: router-secrets-objects } }, { secretRef: { name: router-seal } }, { secretRef: { name: router-secrets-github, optional: true } }]
+          envFrom: [{ secretRef: { name: router-secrets, optional: true } }, { secretRef: { name: router-secrets-backup, optional: true } }, { secretRef: { name: router-secrets-flyorgs, optional: true } }, { secretRef: { name: router-secrets-flypersonal, optional: true } }, { secretRef: { name: router-secrets-flyvolumes, optional: true } }, { secretRef: { name: router-secrets-browserbase, optional: true } }, { secretRef: { name: router-secrets-devices, optional: true } }, { secretRef: { name: router-db } }, { secretRef: { name: router-secrets-objects } }, { secretRef: { name: router-seal } }, { secretRef: { name: router-secrets-aws, optional: true } }, { secretRef: { name: router-secrets-github, optional: true } }]
           ports: [{ containerPort: 8080 }]
           readinessProbe: { httpGet: { path: /readyz, port: 8080 }, periodSeconds: 2, failureThreshold: 1 }
           volumeMounts: [{ name: data, mountPath: /data }, { name: sigs, mountPath: /sigs, readOnly: true }]
@@ -152,7 +156,7 @@ spec:
   minReadySeconds: 10
   selector: { matchLabels: { app: m-gateway } }
   template:
-    metadata: { labels: { app: m-gateway }, annotations: { jarvis4/rollout-check: "1", jarvis2/secrets-rev-wg-b: "73e3aa9dc695" } }
+    metadata: { labels: { app: m-gateway }, annotations: { jarvis4/rollout-check: "1", jarvis2/secrets-rev-wg-b: "73e3aa9dc695", jarvis2/secrets-rev-wg-aws: "b5922b667c9f" } }
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -166,6 +170,9 @@ spec:
             - { name: POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
             - { name: WG_CONFIGS, value: "/wg-a/wg.conf,/wg-b/wg.conf" }
             - { name: M_GATEWAY_TO, value: "http://router.jarvis4-router.svc.cluster.local:8081" }
+            # the AWS machines' WireGuard (router/awsgw.go): this pod's address by its ordinal; WG_AWS_KEYS from the Secret
+            - { name: WG_AWS_GATEWAYS, value: "EEHeJdYheW1fsC/HSnqReGYMbkW9UUuh5QTMvwfEDmU=@10.99.0.1,w8kqS2AxSl8b5OxibyMWLf83GxMCjLEJel98M0vaykg=@10.99.0.2" }
+          envFrom: [{ secretRef: { name: router-wg-aws, optional: true } }]
           readinessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 2, failureThreshold: 2 }
           volumeMounts: [{ name: wg-a, mountPath: /wg-a, readOnly: true }, { name: wg-b, mountPath: /wg-b, readOnly: true }]
           resources: { requests: { cpu: 20m, memory: 32Mi }, limits: { memory: 128Mi } }

@@ -20,7 +20,6 @@ require (
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/tinylib/msgp v1.3.0 // indirect
-	golang.org/x/crypto v0.39.0 // indirect
 	golang.org/x/net v0.41.0 // indirect
 	golang.org/x/sync v0.15.0 // indirect
 	golang.org/x/sys v0.36.0 // indirect
@@ -31,11 +30,11 @@ require (
 )
 
 require (
-	filippo.io/age v1.2.1
 	github.com/DE0CH/jarvis4/kernel v0.0.0
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/klauspost/compress v1.18.0
 	github.com/minio/minio-go/v7 v7.0.95
+	golang.org/x/crypto v0.39.0
 )
 
 replace github.com/DE0CH/jarvis4/kernel => ../kernel

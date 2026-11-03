@@ -146,6 +146,7 @@ type NewSession struct {
 	PermissionMode string         `json:"permissionMode"`
 	Size           string         `json:"size"`
 	Region         string         `json:"region"` // regions.go: "" = the router's default
+	Runner         string         `json:"runner"` // awsrunner.go: aws | fly, "" = DEFAULT_RUNNER
 	Harness        string         `json:"harness"`
 	Stores         []string       `json:"stores"`
 	Repos          string         `json:"repos"`
@@ -578,6 +579,12 @@ func (r *Router) CreateSession(in NewSession) (string, error) {
 	if in.Region != "" && !validRegion(in.Region) {
 		return "", bad("region %q: one of GET /api/regions", in.Region)
 	}
+	if in.Runner != "" && !validRunner(in.Runner) {
+		return "", bad("runner %q: aws or fly", in.Runner)
+	}
+	if in.Runner == "" {
+		in.Runner = defaultRunner() // fixed when made: a later change of the default doesn't move a session
+	}
 	var err error
 	if in.Model, err = sessionModel(in.Harness, in.Model); err != nil { // harness.go
 		return "", err
@@ -611,7 +618,7 @@ func (r *Router) CreateSession(in NewSession) (string, error) {
 		return "", err
 	}
 	s := &Session{ID: "s" + randID(), State: "approval", Created: time.Now().UTC(), Label: in.Label, Prompt: in.Prompt, Model: in.Model,
-		PermissionMode: in.PermissionMode, Size: in.Size, Region: in.Region, Harness: in.Harness, Stores: stores, Repos: in.Repos, Content: content,
+		PermissionMode: in.PermissionMode, Size: in.Size, Region: in.Region, Runner: in.Runner, Harness: in.Harness, Stores: stores, Repos: in.Repos, Content: content,
 		ClaudeAccount: account, RequestID: in.RequestID, Live: newLiveness(in)}
 	if in.Import != nil {
 		s.ImportFrom, s.ImportSha = in.Import.Session, in.Import.Sha256

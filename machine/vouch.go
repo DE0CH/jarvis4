@@ -35,9 +35,9 @@ import (
 
 const imageEnvFile = "/opt/jarvis/image.env" // the image's own ENV, written at build (session-image/Dockerfile)
 
-// what Fly itself sets in a machine (values only: they never name code)
+// what Fly itself sets in a machine, and what an AWS instance's unit sets (values only: they never name code)
 var flyEnv = []string{"FLY_MACHINE_ID", "FLY_APP_NAME", "FLY_REGION", "FLY_PRIVATE_IP", "FLY_PUBLIC_IP", "FLY_IMAGE_REF",
-	"FLY_ALLOC_ID", "FLY_VM_MEMORY_MB", "PRIMARY_REGION"}
+	"FLY_ALLOC_ID", "FLY_VM_MEMORY_MB", "PRIMARY_REGION", "JARVIS2_RUNNER", "JARVIS2_MACHINE_ID"}
 
 var (
 	flyValueRE = regexp.MustCompile(`^[A-Za-z0-9:._@/+-]{0,200}$`)

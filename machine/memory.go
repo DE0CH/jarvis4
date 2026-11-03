@@ -165,7 +165,7 @@ var signalProc = func(pid int, sig syscall.Signal) error { return syscall.Kill(p
 // root's: the keeper, this worker, Fly's), and record what was killed. Only on a Fly machine.
 func freeMemory() {
 	uid := session().uid
-	if os.Getenv("FLY_MACHINE_ID") == "" || uid == 0 { // never root's processes: it would kill the whole machine
+	if machineID() == "" || uid == 0 { // never root's processes: it would kill the whole machine
 		return
 	}
 	freeProcesses(os.Getpid(), harnessPID(), uid)

@@ -2860,3 +2860,18 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      10-min hold before a due wakeup or cron stays. *Why*: a warm-up cron firing four times a day kept a machine up for
      an hour after each 5-minute run. *Not chosen*: counting turns since the delivery (lease and Inbox messages start
      turns too), and a router-side record of his prompts (they reach Claude through Remote Control, not the router).
+245. **Sessions run on AWS EC2 by default, one instance per machine; Fly stays a per-session option** (Deyao,
+     2026-11-03: "lets not use fly … auto scale ec2 instances like yyc ai … we just allocate one when starting. Im ok
+     with waiting for it to start up for a few minutes", then "We shouldnt stop using fly … add an option and make aws
+     the default runner", "consider using a dedicated container os", "Just use wireguard"). A session has a runner
+     (`aws` | `fly`, fixed when made; `DEFAULT_RUNNER`). The spawner gets a second backend (kernel/spawner/aws.go): one
+     `RunInstances` from a per-region launch template running Flatcar Container Linux, whose Ignition user-data runs the
+     session image pinned by digest as the instance's one privileged container; the machine's keys reach the spawner
+     through the serial console (`GetConsoleOutput`), AWS's word as Fly's exec was Fly's; one volume, deleted with the
+     instance. Machine objects are `fly-<id>` or `aws-i-<id>`, kind "machine" (kernel/doc). An AWS machine reaches the
+     m-gateways over WireGuard: the router makes its key and tunnel address per spawn, the gateways start every
+     handshake to the instance's public IPv4, so the boxes still take nothing inbound. On-demand, in London, Singapore
+     and Tokyo (no Hong Kong), Deyao's own account. docs/PLAN-aws.md. *Not chosen*: ECS on Bottlerocket (a layer
+     between the spawner and the instance, for nothing the EC2 API doesn't give), a second EBS volume for /data (NVMe
+     keeps no device names), Tailscale for the way back (Deyao: the tunnel needs neither its auth nor its NAT
+     traversal), Cloudflare in front of /m (100 MB request limit against snapshot streams), spot instances.

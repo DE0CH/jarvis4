@@ -38,6 +38,11 @@ manifest so it restarts with the new Secret. SRC is `env:VAR` (default `env:KEY`
                  role router, made into postgres://router:…@jarvis4-db-rw.jarvis4-db.svc.cluster.local:5432/jarvis4?sslmode=require)
   --part wg-b    router-wg-b.enc.yaml, Secret router-wg-b — wg.conf of the second machines' gateway's peer jarvis4-gw-b
                  (`fly wireguard create jarvis2-370 lhr jarvis4-gw-b FILE`; router/mgateway.go), wg.conf=file:FILE
+  --part aws     router-aws.enc.yaml, Secret router-secrets-aws — AWS_READ_ACCESS_KEY_ID / AWS_READ_SECRET_ACCESS_KEY: the
+                 router's read-only AWS key (IAM user jarvis4-router-read, infra/aws/iam.tf): the AWS machines (router/awsrunner.go)
+  --part wg-aws  router-wg-aws.enc.yaml, Secret router-wg-aws — WG_AWS_KEYS only: the m-gateways' WireGuard private keys
+                 for the AWS machines, comma-separated by ordinal (router/awsgw.go; their public halves are WG_AWS_GATEWAYS
+                 in router.yaml)
   --part seal    router-seal.enc.yaml, Secret router-seal — ROUTER_SEAL_KEY only: the AES-256 key the router seals its secrets
                  in the database with (router/sealed.go; base64 of 32 random bytes; JARVIS4_ROUTER_SEAL_KEY in the infra
                  store). A rotation: the new key as ROUTER_SEAL_KEY and the old as ROUTER_SEAL_KEY_OLD, until it restarted
@@ -58,7 +63,7 @@ BOXES = {  # box → (age recipient file, secrets dir, {part: manifest path unde
         "browserbase": RT, "devices": RT, "alloy": None, "tunnel": None, "postgres": None, "postgres-app": None,
         "icloud-index": "services/icloud-index/icloud-index.yaml",
         "icloud-session": "services/icloud-index/icloud-index.yaml",
-        "db": RT, "objects": RT, "seal": RT, "wg-b": RT}),
+        "db": RT, "objects": RT, "seal": RT, "wg-b": RT, "aws": RT, "wg-aws": RT}),
 }
 RNS = "jarvis4-router"
 PARTS = {  # part → (file, Secret name, annotation, namespace)
@@ -75,6 +80,8 @@ PARTS = {  # part → (file, Secret name, annotation, namespace)
     "seal": ("router-seal.enc.yaml", "router-seal", "jarvis2/secrets-rev-seal", RNS),  # the router's seal key (router/sealed.go)
     "objects": ("router-objects.enc.yaml", "router-secrets-objects", "jarvis2/secrets-rev-objects", RNS),  # jarvis4-snapshots-de0ch (infra/objects-key.py)
     "db": ("router-db.enc.yaml", "router-db", "jarvis2/secrets-rev-db", RNS),  # the router's DATABASE_URL (docs/STATE.md)
+    "aws": ("router-aws.enc.yaml", "router-secrets-aws", "jarvis2/secrets-rev-aws", RNS),  # the router's read-only AWS key
+    "wg-aws": ("router-wg-aws.enc.yaml", "router-wg-aws", "jarvis2/secrets-rev-wg-aws", RNS),  # the gateways' AWS WireGuard keys
     "alloy": ("alloy.enc.yaml", "alloy", None, "jarvis2-obs"),
     "tunnel": ("tunnel.enc.yaml", "tunnel-token", None, "jarvis2-edge"),
     "postgres": ("postgres.enc.yaml", "postgres-s3", None, "jarvis4-db"),  # the database's backups (docs/STATE.md)

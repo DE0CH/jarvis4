@@ -68,6 +68,7 @@ func (r *Router) startFeatures() {
 	go r.coreChangeLoop()    // corechange.go: a new core → the earlier core's paused sessions are destroyed
 	go r.loginLoop()         // claudelogin.go: refresh the Claude login (own) or mirror Jarvis 1's (follow)
 	go r.volSweepLoop()      // volsweep.go: delete leftover session volumes (DECISIONS 195)
+	go r.awsListLoop()       // awsrunner.go: the AWS machines, for the gateways' peers
 	go r.lostLoop()          // lostmachine.go: machines that stopped without Jarvis doing it
 	go r.kernelVolumesLoop() // kernelline.go: a killed kernel machine's volume left, killed again until it is gone
 }

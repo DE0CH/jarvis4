@@ -295,10 +295,17 @@ enum KernelChecks {
           a.pair.allowed.only == ["store:" + store], a.pair.conditions == ["session:" + session] else {
       throw TrustError.mismatch("the first cert isn't this one store for this session")
     }
-    guard b.kind == "succession", b.pred == a.succ, b.signer == "iphone", b.succ.hasPrefix("fly-"), b.machine != nil, b.pair.isTop else {
+    guard b.kind == "succession", b.pred == a.succ, b.signer == "iphone", isMachine(b.succ), b.machine != nil, b.pair.isTop else {
       throw TrustError.mismatch("the second cert doesn't take that source onto a machine")
     }
-    return AddReview(store: store, machine: String(b.succ.dropFirst(4)))
+    return AddReview(store: store, machine: String(b.succ.drop(while: { $0 != "-" }).dropFirst()))
+  }
+
+  /// a machine object (kernel/doc): "fly-<Fly machine id>" or "aws-i-<EC2 instance id>"
+  static func isMachine(_ o: String) -> Bool {
+    if o.hasPrefix("fly-") { let id = o.dropFirst(4); return (8...32).contains(id.count) && isHex(id) }
+    if o.hasPrefix("aws-i-") { let id = o.dropFirst(6); return (8...17).contains(id.count) && isHex(id) }
+    return false
   }
 
   static func isSource(_ o: String) -> Bool { o.hasPrefix("source-") && o.count == 39 && isHex(o.dropFirst(7)) }

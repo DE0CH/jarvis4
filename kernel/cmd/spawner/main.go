@@ -16,7 +16,11 @@ func main() {
 		if u := os.Getenv("KERNEL_MACHINE_URL"); u != "" {
 			env = map[string]string{"JARVIS2_URL": u}
 		}
-		sp, err := spawner.Open(filepath.Join(os.Getenv("KERNEL_DATA"), "spawner.json"), s.C, s.Trust, spawner.NewFlyAPI(), env)
+		var awsEnv map[string]string
+		if u := os.Getenv("KERNEL_AWS_MACHINE_URL"); u != "" { // the m-gateway on the tailnet (docs/PLAN-aws.md)
+			awsEnv = map[string]string{"JARVIS2_URL": u}
+		}
+		sp, err := spawner.Open(filepath.Join(os.Getenv("KERNEL_DATA"), "spawner.json"), s.C, s.Trust, spawner.NewFlyAPI(), spawner.NewAWSAPI(), env, awsEnv)
 		if err != nil {
 			return err
 		}

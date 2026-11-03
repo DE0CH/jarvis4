@@ -48,6 +48,48 @@ type Fly interface {
 	DeleteVolume(volume string) error
 }
 
+// Runner: where machines run: Fly (flyRunner over the Fly API) or AWS (AWSAPI). Single calls, no waiting or retrying.
+type Runner interface {
+	// Create: a machine on a new, empty disk of in.DiskGB → its id and the volume to delete after it ("" = none)
+	Create(in CreateInput) (id, volume string, err error)
+	Inspect(id string) (FlyMachine, error)
+	Init(id string) (MachineKeys, error)
+	Destroy(id string) error
+	DeleteVolume(volume string) error
+}
+
+// CreateInput: one machine to make: the image pinned by digest, the region, the size (the Fly guest and its memory),
+// the env the core sets, the disk, the source it is from and (AWS) its WireGuard
+type CreateInput struct {
+	Image    string
+	Region   string
+	Guest    map[string]any
+	MemoryMB int
+	Env      map[string]string
+	DiskGB   int
+	Source   string
+	// WireGuard: an AWS machine's (nil on Fly, whose private network the machine reaches the router over)
+	WireGuard *WireGuard
+}
+
+// flyRunner: the Fly API as a Runner: a volume, then the machine on it (a create that fails deletes the volume)
+type flyRunner struct{ Fly }
+
+func (f flyRunner) Create(in CreateInput) (string, string, error) {
+	vid, err := f.Fly.CreateVolume(in.Region, in.DiskGB, in.Guest)
+	if err != nil {
+		return "", "", err
+	}
+	id, err := f.Fly.Create(in.Image, in.Region, in.Guest, in.Env, vid, in.Source)
+	if err != nil {
+		if derr := f.Fly.DeleteVolume(vid); derr != nil {
+			err = fmt.Errorf("%w (volume %s left: %v)", err, vid, derr)
+		}
+		return "", "", err
+	}
+	return id, vid, nil
+}
+
 // FlyError: Fly's refusal: its HTTP status and the "status" word of its JSON answer (e.g. volume_placement_capacity)
 type FlyError struct {
 	HTTP   int

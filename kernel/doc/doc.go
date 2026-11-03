@@ -19,33 +19,42 @@ import (
 
 // ---- objects ---------------------------------------------------------------------------------------------------
 
-// Object: "sink", "source-<32 hex>" or "fly-<Fly machine id>"
+// Object: "sink", "source-<32 hex>" or a machine: "fly-<Fly machine id>" or "aws-<EC2 instance id>" (DECISIONS: the
+// AWS runner, docs/PLAN-aws.md)
 type Object string
 
 const Sink Object = "sink"
 
 var (
-	sourceRE = regexp.MustCompile(`^source-[0-9a-f]{32}$`)
-	flyRE    = regexp.MustCompile(`^fly-[0-9a-f]{8,32}$`)
-	imageRE  = regexp.MustCompile(`^[a-z0-9./-]+(:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@sha256:[0-9a-f]{64}$`)
-	hex64RE  = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	sourceRE  = regexp.MustCompile(`^source-[0-9a-f]{32}$`)
+	machineRE = regexp.MustCompile(`^(fly-[0-9a-f]{8,32}|aws-i-[0-9a-f]{8,17})$`)
+	imageRE   = regexp.MustCompile(`^[a-z0-9./-]+(:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@sha256:[0-9a-f]{64}$`)
+	hex64RE   = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
-// Kind: "sink", "source", "fly" or "" (not an object)
+// Kind: "sink", "source", "machine" or "" (not an object)
 func (o Object) Kind() string {
 	switch {
 	case o == Sink:
 		return "sink"
 	case sourceRE.MatchString(string(o)):
 		return "source"
-	case flyRE.MatchString(string(o)):
-		return "fly"
+	case machineRE.MatchString(string(o)):
+		return "machine"
 	}
 	return ""
 }
 
-// FlyID: the Fly machine id of a fly- object
-func (o Object) FlyID() string { return strings.TrimPrefix(string(o), "fly-") }
+// Runner: where a machine object runs, "fly" or "aws" ("" for the sink and a source)
+func (o Object) Runner() string {
+	if o.Kind() != "machine" {
+		return ""
+	}
+	return strings.SplitN(string(o), "-", 2)[0]
+}
+
+// MachineID: the runner's id of a machine object (a Fly machine id, an EC2 instance id)
+func (o Object) MachineID() string { return strings.SplitN(string(o), "-", 2)[1] }
 
 // Keys: an object's public keys
 type Keys struct {
@@ -109,7 +118,7 @@ func (c Cert) Check() error {
 		return errors.New("predecessor or successor isn't an object")
 	case (c.Succ.Kind() == "source") != (c.Source != nil):
 		return errors.New("a cert into a source carries the source, and only then")
-	case (c.Succ.Kind() == "fly" && c.Pred != c.Succ) != (c.Machine != nil):
+	case (c.Succ.Kind() == "machine" && c.Pred != c.Succ) != (c.Machine != nil):
 		return errors.New("a cert into another Fly machine names its keys, and only then")
 	}
 	if err := c.Pair.Valid(); err != nil {

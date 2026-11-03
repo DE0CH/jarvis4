@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path"
 	"strconv"
 	"strings"
 	"syscall"
@@ -44,6 +45,26 @@ func mGatewayCommand() {
 		log.Fatal("m-gateway: ", err)
 	}
 	log.Printf("m-gateway: the WireGuard peer from %s serves port 8081, passed on to %s", path, to)
+	var awsPeer *wgServer
+	if keys := os.Getenv("WG_AWS_KEYS"); keys != "" { // awsgw.go: the AWS machines' device
+		key, err := gatewayConfig(keys, os.Getenv("POD_NAME"))
+		if err != nil {
+			log.Fatal("m-gateway: WG_AWS_KEYS: ", err)
+		}
+		gws, err := awsGateways()
+		if err != nil {
+			log.Fatal("m-gateway: ", err)
+		}
+		i := strings.LastIndex(os.Getenv("POD_NAME"), "-")
+		n, _ := strconv.Atoi(os.Getenv("POD_NAME")[i+1:])
+		if n >= len(gws) {
+			log.Fatalf("m-gateway: WG_AWS_GATEWAYS has no address for gateway %d", n)
+		}
+		if awsPeer, err = serveAWSWG(key, gws[n].Address, 8081, mGatewayProxy(to), to.String()+"/gw/aws-peers"); err != nil {
+			log.Fatal("m-gateway: AWS WireGuard: ", err)
+		}
+		log.Printf("m-gateway: the AWS machines' WireGuard serves %s:8081", gws[n].Address)
+	}
 	h := http.NewServeMux()
 	h.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok\n")) })
 	go func() { log.Fatal(http.ListenAndServe(env("HEALTH_ADDR", ":8080"), h)) }()
@@ -54,7 +75,15 @@ func mGatewayCommand() {
 	log.Printf("m-gateway: stopping: no new connections, waiting up to %d s for the requests in flight", grace)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(grace)*time.Second)
 	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		if awsPeer != nil {
+			awsPeer.Shutdown(ctx)
+		}
+		close(done)
+	}()
 	peer.Shutdown(ctx)
+	<-done
 	log.Printf("m-gateway: stopped")
 }
 
@@ -66,7 +95,13 @@ func mGatewayProxy(to *url.URL) http.Handler {
 		log.Printf("m-gateway: %s %s: %v", req.Method, req.URL.Path, err)
 		writeJSON(w, 502, map[string]string{"error": "the router can't be reached from the gateway: try again"})
 	}
-	return proxy
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if strings.HasPrefix(path.Clean("/"+req.URL.Path), "/gw/") { // the gateways' own calls (awsrunner.go), never a machine's
+			http.NotFound(w, req)
+			return
+		}
+		proxy.ServeHTTP(w, req)
+	})
 }
 
 // gatewayConfig: the peer of this pod: the ordinal of POD_NAME (…-<n>) picks the n-th of WG_CONFIGS

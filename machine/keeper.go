@@ -46,6 +46,7 @@ package main
 // process group gets SIGTERM, then SIGKILL, every other process of user claude too, and the keeper exits.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -322,6 +323,9 @@ func keeper() error {
 		log.Printf("REFUSING TO START: the boot steps: %v", err)
 		select {}
 	}
+	if onAWS() && privileged() {
+		go k.announceKeys()
+	}
 	go k.coreLoop()
 	go k.normalLoop()
 	go func() {
@@ -353,7 +357,7 @@ func keeperDirs() error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	if os.Getenv("FLY_MACHINE_ID") != "" {
+	if machineID() != "" {
 		if err := memoryDir(dir); err != nil {
 			return fmt.Errorf("%s in memory: %w", dir, err)
 		}
@@ -395,7 +399,7 @@ func memoryDir(d string) error {
 // protectFromOOM: oom_score_adj -1000 (never chosen by the OOM killer) for the keeper; supervisor-core inherits it (supervisor-normal sets its own back to 0).
 // Only on a Fly machine.
 var protectFromOOM = func() {
-	if os.Getenv("FLY_MACHINE_ID") == "" {
+	if machineID() == "" {
 		return
 	}
 	if err := os.WriteFile("/proc/self/oom_score_adj", []byte(oomProtected+"\n"), 0o644); err != nil {
@@ -479,6 +483,37 @@ func (k *keeperT) normalLoop() {
 		return
 	}
 	k.childLoop("supervisor-normal", "--normal", time.Minute, nil, &k.normal)
+}
+
+// announceKeys: on an AWS instance nothing runs jarvis2-init: the spawner reads the keys from the serial console
+// (kernel/spawner/aws.go), so the keeper writes them there, and lets boot go on as init would, once boot has made
+// them; again every 20 s until the cert is in (the console's newest output must still hold the line when the
+// spawner looks).
+func (k *keeperT) announceKeys() {
+	for {
+		b, err := os.ReadFile(keysPath)
+		if err == nil {
+			if _, err := os.Stat(goPath); err != nil {
+				os.WriteFile(goPath, []byte(time.Now().UTC().Format(time.RFC3339)), 0o644)
+			}
+			if f, err := os.OpenFile(consolePath, os.O_WRONLY, 0); err == nil {
+				fmt.Fprintf(f, "\n%s%s\n", keysMark, bytes.TrimSpace(b))
+				f.Close()
+			} else {
+				log.Printf("keys to the console: %v", err)
+			}
+			if _, err := os.Stat(certPath); err == nil {
+				return
+			}
+			if !k.sleep(20 * time.Second) {
+				return
+			}
+			continue
+		}
+		if !k.sleep(time.Second) {
+			return
+		}
+	}
 }
 
 // waitInit: until init asked (false: the machine is stopping)

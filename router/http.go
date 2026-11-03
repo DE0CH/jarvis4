@@ -207,6 +207,22 @@ func (r *Router) buildHandlers() {
 		w.Write(b)
 	}))
 
+	// the spawner's AWS key, sealed to it the same way (infra/setup.py kernel-aws-credentials)
+	mux.Handle("POST /setup/kernel/spawner/aws-credentials", r.requireSetup(func(w http.ResponseWriter, req *http.Request) {
+		var in json.RawMessage
+		if r.kernel == nil || json.NewDecoder(io.LimitReader(req.Body, 1<<16)).Decode(&in) != nil {
+			writeJSON(w, 400, map[string]string{"error": "{sealed}, on a box with a kernel"})
+			return
+		}
+		b, err := r.kernel.call("spawner", "POST", "/aws-credentials", in)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(b)
+	}))
+
 	// ---- setting the core up: Reset and Recover (the app, with the master key) -----------------------------
 	app("GET /api/core/identity", func(w http.ResponseWriter, req *http.Request) { r.relayFor(w, req, "GET", "/identity", nil) })
 	// claim and wipe: signed by the master key and checked by the core, so any of Deyao's logins may relay them (the
@@ -314,7 +330,11 @@ func (r *Router) buildHandlers() {
 		for _, g := range sessionRegions {
 			regions = append(regions, map[string]string{"id": g.ID, "label": g.Label})
 		}
-		writeJSON(w, 200, map[string]any{"regions": regions, "default": r.cfg.Region})
+		runners := []map[string]string{}
+		for _, g := range sessionRunners {
+			runners = append(runners, map[string]string{"id": g.ID, "label": g.Label})
+		}
+		writeJSON(w, 200, map[string]any{"regions": regions, "default": r.cfg.Region, "runners": runners, "defaultRunner": defaultRunner()})
 	})
 	app("GET /api/records", func(w http.ResponseWriter, req *http.Request) {
 		var recs []*Record
@@ -436,6 +456,9 @@ func (r *Router) buildHandlers() {
 		args := map[string]any{"label": in.Label, "harness": in.Harness, "stores": in.Stores, "model": in.Model, "permissionMode": in.PermissionMode, "size": in.Size}
 		if in.Region != "" {
 			args["region"] = in.Region
+		}
+		if in.Runner != "" {
+			args["runner"] = in.Runner
 		}
 		if in.Repos != "" {
 			args["repos"] = in.Repos
@@ -604,6 +627,7 @@ func (r *Router) buildHandlers() {
 	})
 	// the snapshot streams to the volume (a session's workspace can be several GB; the router has 1 GiB of memory):
 	// hashed on the way, the machine's request signature checked against that hash, then put in place
+	r.registerAWSPeers(mmux)      // awsrunner.go: the m-gateways' list of AWS machines
 	r.registerSnapStream(mmux, m) // snapstream.go: the final snapshot streamed, committed, carried or failed
 	r.registerSnapProgress(m)     // snapprogress.go: the final snapshot's progress, into the session's waiting line
 	r.registerSnapDirect(m)       // snapdirect.go: the final snapshot and a boot's straight to and from the bucket

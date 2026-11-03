@@ -4,7 +4,8 @@ package main
 // Jarvis 2's "YYC news monitor 2" after a sync; Jarvis 2 showed it "started, busy" for a long time, then "failed" with
 // its machine still listed, and nothing said whether its work was lost).
 //
-//   - The leader looks at Fly every lostEvery with its read-only token (FLY_READ_TOKEN): a session that Jarvis has
+//   - The leader looks at Fly every lostEvery with its read-only token (FLY_READ_TOKEN), and at AWS with its read-only
+//     key (awsrunner.go): a session that Jarvis has
 //     running (started or initialising, no action of Jarvis's under way) whose machine Fly shows stopped, suspended,
 //     failed or destroyed, or no longer lists, on two looks in a row, is marked lost: state failed, Session.Lost, and an
 //     error saying plainly what happened (Fly's own stop or exit event, when), what is kept, and what Resume does. The
@@ -64,6 +65,14 @@ func (r *Router) lostTick(seen map[string]int) {
 	state := map[string]string{}
 	for _, m := range ms {
 		state[m.ID] = m.State
+	}
+	ins, err := listAWSMachines() // awsrunner.go: the AWS machines, in the same state words
+	if err != nil {
+		log.Printf("[lost] AWS: %v", err)
+		return
+	}
+	for _, i := range ins {
+		state[i.ID] = i.State
 	}
 	type cand struct{ sid, machine string }
 	var cands []cand

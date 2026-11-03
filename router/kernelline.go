@@ -203,10 +203,21 @@ func (r *Router) kernelSpawn(sid string) {
 	if gb == 0 {
 		gb = defaultDisk
 	}
+	runner := r.runnerOf(&s)
+	var wg *spawner.WireGuard
+	if runner == "aws" {
+		if wg, err = r.awsSpawnWG(sid); err != nil {
+			fail("start: " + err.Error())
+			return
+		}
+	}
 	id, vol := r.kernelAdopt(op, l.Source)
 	for try := 1; id == ""; try++ {
-		in := map[string]any{"cert": l.SourceCert, "notarized": l.SourceNz, "notarizer": nzID, "region": r.regionOf(&s), "size": size, "diskGb": gb}
-		op.note("", "asked the kernel's spawner to start a machine from "+string(l.Source)+" ("+size+")")
+		in := map[string]any{"cert": l.SourceCert, "notarized": l.SourceNz, "notarizer": nzID, "region": r.spawnRegion(&s), "size": size, "diskGb": gb}
+		if wg != nil { // only an AWS spawn names its runner: a spawner from before the AWS runner refuses fields it doesn't know
+			in["runner"], in["wireguard"] = runner, wg
+		}
+		op.note("", "asked the kernel's spawner to start a machine from "+string(l.Source)+" ("+size+", "+runner+" "+r.spawnRegion(&s)+")")
 		d, err := r.kernel.Doc("spawner", "/spawn", in)
 		if err == nil {
 			var created struct {
@@ -219,13 +230,16 @@ func (r *Router) kernelSpawn(sid string) {
 		}
 		var ke *KernelError
 		isKE := errors.As(err, &ke)
+		if isKE && ke.Reason == spawner.ReasonNoAWSKey && r.kernelTokenDMed.CompareAndSwap(false, true) {
+			r.DM("🔴 Jarvis 4 needs you — the kernel's spawner has no AWS key (it restarted), so no AWS session starts. Settings → Kernel → Recover gives it the key again (or the setup session: infra/setup.py kernel-aws-credentials).")
+		}
 		if isKE && ke.Reason == spawner.ReasonNoFlyToken && r.kernelTokenDMed.CompareAndSwap(false, true) {
 			// a restarted spawner: its token comes again with the app's Recover of the kernel, or from the setup session
 			r.DM("🔴 Jarvis 4 needs you — the kernel's spawner has no Fly token (it restarted), so no kernel session starts. Settings → Kernel → Recover gives it the token again (or the setup session: infra/setup.py kernel-fly-token).")
 		}
 		// Fly's host for the volume was full (the spawner deleted that volume: a new spawn is a new volume, on another
 		// host), Fly failed, or the answer was lost (the machine it made, if any, is found and adopted or destroyed)
-		again := !isKE || ke.Reason == spawner.ReasonHostFull || ke.Reason == spawner.ReasonFly
+		again := !isKE || ke.Reason == spawner.ReasonHostFull || ke.Reason == spawner.ReasonFly || ke.Reason == spawner.ReasonAWS
 		if !again || try >= kernelSpawnTries {
 			fail("start: " + err.Error())
 			return
@@ -236,12 +250,17 @@ func (r *Router) kernelSpawn(sid string) {
 	}
 	op.machine(id)
 	pred := ""
-	if sc, err := doc.PeekCert(*l.SourceCert); err == nil && sc.Pred.Kind() == "fly" {
-		pred = sc.Pred.FlyID()
+	if sc, err := doc.PeekCert(*l.SourceCert); err == nil && sc.Pred.Kind() == "machine" {
+		pred = sc.Pred.MachineID()
 	}
 	r.st.Do(func(d *persisted) {
 		d.Machines[id] = sid
 		d.Started[id] = &Started{ID: id, KernelPred: pred, Volume: &Volume{ID: vol, SizeGB: gb, Path: "/data"}}
+		if x := d.Sessions[sid]; wg != nil && x != nil && x.WG != nil {
+			// the gateways list it from now on; the private key stays only in the instance
+			d.Started[id].WG = &AWSWG{PublicKey: x.WG.PublicKey, Address: x.WG.Address}
+			x.WG = nil
+		}
 	})
 	var mcert sig.Doc
 	for deadline := time.Now().Add(kernelInitMax); ; {
@@ -250,7 +269,7 @@ func (r *Router) kernelSpawn(sid string) {
 			break
 		}
 		var ke *KernelError
-		if !(errors.As(err, &ke) && (ke.Reason == spawner.ReasonNotStarted || ke.Reason == spawner.ReasonFly)) || time.Now().After(deadline) {
+		if !(errors.As(err, &ke) && (ke.Reason == spawner.ReasonNotStarted || ke.Reason == spawner.ReasonFly || ke.Reason == spawner.ReasonAWS)) || time.Now().After(deadline) {
 			r.kernelKillUp(id, nil)
 			fail("start: " + err.Error())
 			return
@@ -285,36 +304,50 @@ func (r *Router) kernelSpawn(sid string) {
 const kernelSpawnTries = 3
 
 // kernelAdopt: the machine an earlier spawn from this source made whose answer was lost (a crash, a timeout, another
-// replica's start that died), found with the router's read-only Fly token by the source its Fly metadata names → its
-// id and volume ("" = none). One the spawner knows (its init answers anything but unknown-machine) is adopted; every
+// replica's start that died), found with the router's read-only Fly token by the source its Fly metadata names, or
+// with its read-only AWS key by the source tag → its id and volume ("" = none). One the spawner knows (its init answers anything but unknown-machine) is adopted; every
 // other one is destroyed through the spawner. Only one machine of a source can take the line either way: the
 // notarizer refuses a source's second successor.
 func (r *Router) kernelAdopt(op *lcHandle, source doc.Object) (string, string) {
+	type found struct{ id, vol string }
+	var cands []found
 	ms, err := listFlyMachines()
 	if err != nil {
-		log.Printf("[kernel] %s: no look for an earlier spawn's machine (%v)", source, err)
-		return "", ""
+		log.Printf("[kernel] %s: no look on Fly for an earlier spawn's machine (%v)", source, err)
 	}
-	id, vol := "", ""
 	for _, m := range ms {
 		if m.Config.Metadata[spawner.SourceMeta] != string(source) || m.State == "destroyed" || m.State == "destroying" {
 			continue
 		}
+		f := found{id: m.ID}
+		if len(m.Config.Mounts) > 0 {
+			f.vol = m.Config.Mounts[0].Volume
+		}
+		cands = append(cands, f)
+	}
+	ins, err := listAWSMachines() // awsrunner.go: tagged with their source as Fly machines carry it in their metadata
+	if err != nil {
+		log.Printf("[kernel] %s: no look on AWS for an earlier spawn's machine (%v)", source, err)
+	}
+	for _, i := range ins {
+		if i.Source == string(source) && i.State != "destroyed" && i.State != "destroying" {
+			cands = append(cands, found{id: i.ID})
+		}
+	}
+	id, vol := "", ""
+	for _, m := range cands {
 		if id == "" {
-			_, err := r.kernel.Doc("spawner", "/init", map[string]string{"id": m.ID})
+			_, err := r.kernel.Doc("spawner", "/init", map[string]string{"id": m.id})
 			var ke *KernelError
 			if err == nil || !(errors.As(err, &ke) && ke.Reason == spawner.ReasonUnknown) {
-				id = m.ID
-				if len(m.Config.Mounts) > 0 {
-					vol = m.Config.Mounts[0].Volume
-				}
-				op.note(m.ID, "machine "+m.ID+" from "+string(source)+" (an earlier spawn whose answer was lost) is the line's")
+				id, vol = m.id, m.vol
+				op.note(m.id, "machine "+m.id+" from "+string(source)+" (an earlier spawn whose answer was lost) is the line's")
 				continue
 			}
 		}
-		op.note(m.ID, "machine "+m.ID+" from "+string(source)+" is a stray of an earlier spawn: asked the spawner to destroy it")
-		if _, err := r.kernel.Doc("spawner", "/destroy", map[string]string{"id": m.ID}); err != nil {
-			log.Printf("[kernel] stray %s: destroy: %v", m.ID, err)
+		op.note(m.id, "machine "+m.id+" from "+string(source)+" is a stray of an earlier spawn: asked the spawner to destroy it")
+		if _, err := r.kernel.Doc("spawner", "/destroy", map[string]string{"id": m.id}); err != nil {
+			log.Printf("[kernel] stray %s: destroy: %v", m.id, err)
 		}
 	}
 	return id, vol

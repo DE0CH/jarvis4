@@ -51,6 +51,9 @@ both). Values never print.
   infra/setup.py kernel-fly-token FILE the kernel's spawner's Fly token (FILE: infra/fly-token.sh's), sealed to the
                                        spawner's key as the root key's current roster names it (checked against
                                        keys/root.pub); again after every spawner restart (and its new roster)
+  infra/setup.py kernel-aws-credentials  the spawner's AWS key (IAM user jarvis4-spawner, infra/aws/iam.tf) from
+                                       $JARVIS4_SPAWNER_AWS_ACCESS_KEY_ID / $JARVIS4_SPAWNER_AWS_SECRET_ACCESS_KEY,
+                                       sealed to it as kernel-fly-token seals the Fly token; again after every restart
   infra/setup.py backup-core FILE      the core's Fly token, FLY_API_TOKEN from FILE (infra/fly-token.sh):
                                        sent to the core sealed to its key, and backed up as the `core` store
   infra/setup.py claude-accounts       the router's Claude accounts (no secrets): per account its email, expiry,
@@ -529,6 +532,19 @@ def main():
         tok = {"FLY_API_TOKEN": open(os.path.expanduser(args[0])).read().strip()}
         call("POST", "/setup/kernel/spawner/fly-token", {"sealed": seal_to(ident["agreementKey"], json.dumps(tok).encode(), "jarvis2/fly-token")})
         print("ok: the kernel's spawner has its Fly token (send it again after the spawner restarts)")
+    elif cmd == "kernel-aws-credentials":
+        # the same check as kernel-fly-token, then the AWS key sealed to the spawner (kernel/spawner/aws.go)
+        d = call("GET", "/setup/kernel/spawner/identity")
+        ident = json.loads(d["payload"])
+        if not _verify(ident["signingKey"], d["payload"].encode(), d["sig"]):
+            raise SystemExit("the spawner's identity document isn't signed by the spawner")
+        member = roster_members(call("GET", "/setup/kernel/roster").get("current")).get("spawner")
+        if ident.get("role") != "spawner" or member != {k: ident.get(k) for k in ("role", "signingKey", "agreementKey")}:
+            raise SystemExit("the spawner's keys aren't the ones the root key's current roster names (a restart? sign a new roster)")
+        key = {"AWS_ACCESS_KEY_ID": os.environ["JARVIS4_SPAWNER_AWS_ACCESS_KEY_ID"],
+               "AWS_SECRET_ACCESS_KEY": os.environ["JARVIS4_SPAWNER_AWS_SECRET_ACCESS_KEY"]}
+        call("POST", "/setup/kernel/spawner/aws-credentials", {"sealed": seal_to(ident["agreementKey"], json.dumps(key).encode(), "jarvis4/aws-credentials")})
+        print("ok: the kernel's spawner has its AWS key (send it again after the spawner restarts)")
     elif cmd == "kernel-root-key":
         k = call("GET", "/setup/kernel/root-key")["rootKey"]
         try:

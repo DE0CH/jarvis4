@@ -13,7 +13,7 @@ import (
 // Identity: signs (M, M, P) for any P (the router picks P)
 func Identity(s *sig.Signer, machine doc.Object, p perm.Pair) (sig.Doc, error) {
 	c := doc.Cert{Kind: "succession", Pred: machine, Succ: machine, Pair: p, Signer: doc.ByIdentity, IssuedAt: doc.Now()}
-	if machine.Kind() != "fly" {
+	if machine.Kind() != "machine" {
 		return sig.Doc{}, serve.Fail(400, "the identity signer signs (M, M, P) for a Fly machine M")
 	}
 	if err := c.Check(); err != nil {
