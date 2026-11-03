@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { View } from "react-native";
 import { useStore, toast } from "../lib/store";
 import { canCopy, copyText } from "../lib/clipboard";
 import { useTheme } from "../theme";
@@ -56,4 +57,16 @@ export function CopyButton({ value, what, id, size = 1, label = "Copy" }: { valu
 // what a conversation ended on (a paused or previous session's card), clamped to three lines
 export function LastMessage({ last }: { last: { role: "user" | "assistant"; text: string } }) {
   return <Quote by={last.role === "user" ? "Last message (you)" : "Last message (Claude)"} lines={3}>{last.text}</Quote>;
+}
+// a Quote kept folded behind a Show button: for text of any length (a cron's prompt) that would otherwise grow the card
+export function FoldedQuote({ by, children, id, color, mt = 2 }: { by: string; children: string; id: string; color?: ColorName; mt?: 1 | 2 | 3 }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      {open && <Quote by={by} color={color} mt={mt} id={id}>{children}</Quote>}
+      <View style={{ flexDirection: "row", marginTop: open ? 4 : 8 }}>
+        <Button size={1} variant="ghost" color={color || "gray"} id={id + "-toggle"} onPress={() => setOpen(!open)}>{open ? "Hide " + by.toLowerCase() : "Show " + by.toLowerCase()}</Button>
+      </View>
+    </>
+  );
 }

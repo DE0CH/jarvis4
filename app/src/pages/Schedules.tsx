@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { api, cronEvery, sessionTitle, when, type Cron, type Wakeup } from "../lib/api";
 import { useStore, ask, exclusive, failed, pend, refresh } from "../lib/store";
 import { Card, Flex, Heading, Lbl, Muted, P, Pill, Quote, Row, Rows, Spinner } from "../ui/kit";
-import { PButton } from "../ui/bits";
+import { FoldedQuote, PButton } from "../ui/bits";
 import { Cards } from "../ui/cards";
 import { Page } from "../ui/page";
 
@@ -61,7 +61,7 @@ export function SchedulesPage({ spec }: { spec: SchedulesSpec }) {
                 {!!c.runs && <Row label="Runs">{String(c.runs)}</Row>}
                 {!!c.untilIso && <Row label="Until">{new Date(c.untilIso).toLocaleDateString()}</Row>}
               </Rows>
-              <Quote by="Prompt">{c.prompt}</Quote>
+              <FoldedQuote by="Prompt" id={"sch-prompt-c-" + c.name}>{c.prompt}</FoldedQuote>
               <Flex mt={3}><PButton pkey={"sch:cron:" + c.name} variant="soft" color="red" onPress={() => cancel("cron", c.name)} label="Cancel" id={"sch-cancel-c-" + c.name} /></Flex>
             </Card>))}
         </Cards>}

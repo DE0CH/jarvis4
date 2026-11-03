@@ -9,7 +9,7 @@ import { ACCOUNT_PHASE } from "../lib/accountswap";
 import { canCopy, copyText } from "../lib/clipboard";
 import { BadgeList, Box, Button, Callout, CalloutText, Card, Flex, Heading, Lbl, Muted, P, Pill, Quote, Row, Rows } from "../ui/kit";
 import type { AskRow } from "../lib/store";
-import { BusyButton, PButton, useCoolAfterShift } from "../ui/bits";
+import { BusyButton, FoldedQuote, PButton, useCoolAfterShift } from "../ui/bits";
 import { Cards } from "../ui/cards";
 import { Aligned } from "../ui/align";
 import { InboxNote } from "./Inbox";
@@ -279,7 +279,7 @@ function Schedules({ m }: { m: Session }) {
       </Box>)}
       {(m.crons || []).map((c) => <Box key={"c" + c.name}>
         <Rows><Row label="Cron">{c.name}</Row><Row label="Repeats">{cronEvery(c.everySeconds)}</Row><Row label="Next">{when(c.nextAt)}</Row></Rows>
-        <Quote by="Prompt" color="blue" lines={2}>{clip(c.prompt)}</Quote>
+        <FoldedQuote by="Prompt" color="blue" id={"cron-prompt-" + m.id + "-" + c.name}>{c.prompt}</FoldedQuote>
       </Box>)}
       {(m.watches || []).map((x) => <Box key={"x" + x.name}>
         <Rows><Row label="Watch">{x.name}</Row><Row label="Checks">{cronEvery(x.interval)}</Row>
