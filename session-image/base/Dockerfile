@@ -17,7 +17,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       psmisc lsof iproute2 sshpass pv zstd libzbar0 whois gawk \
       libreoffice-impress libreoffice-writer libreoffice-calc poppler-utils \
       xdotool xclip imagemagick python3-nacl \
+      postgresql-client zbar-tools bc xxd netcat-openbsd brotli icu-devtools libheif-examples bsdextrautils \
  && rm -rf /var/lib/apt/lists/*
+# postgresql-client (psql, pg_dump), zbar-tools (zbarimg), bc, xxd, nc, brotli, uconv (icu-devtools), heif-convert,
+# column (bsdextrautils): each was installed by hand in several sessions (transcript survey, 2026-11-03).
 # python3-nacl: sealed boxes for GitHub Actions secrets (the REST API's encrypted_value). Not postgresql: it took the
 # session image past Fly's unpack limit (lessons/72); the router's tests install it when needed (`apt-get install postgresql`)
 # libreoffice-writer/impress/calc + poppler-utils: open and convert Office documents (soffice --convert-to pdf, pdftoppm;
@@ -63,7 +66,8 @@ RUN mkdir -p -m 755 /etc/apt/keyrings \
 RUN curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz" \
   | tar -xz -C /usr/local/bin crane
 # fastlane (spaceship): App Store Connect / developer-portal steps the public API lacks
-RUN apt-get update && apt-get install -y --no-install-recommends ruby-full build-essential && rm -rf /var/lib/apt/lists/* \
+# /usr/share/ri: Ruby's offline API docs (62 MB), unused.
+RUN apt-get update && apt-get install -y --no-install-recommends ruby-full build-essential && rm -rf /var/lib/apt/lists/* /usr/share/ri \
  && gem install fastlane -N && fastlane --version >/dev/null
 # yt-dlp
 RUN curl -fsSL -o /usr/local/bin/yt-dlp "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp" \
@@ -84,8 +88,8 @@ RUN curl -fsSL https://github.com/hetznercloud/cli/releases/download/v1.70.1/hcl
 RUN curl -fsSL https://tailscale.com/install.sh | sh
 # Every `npm install -g` ends with `npm cache clean --force` in the SAME RUN: npm keeps a copy of each
 # tarball in /root/.npm, and that cache was 1.06 GB of the image.
-# vercel CLI
-RUN npm install -g vercel && npm cache clean --force
+# vercel CLI: fetched by npx on first use (installed it was 400 MB of the image), pinned here.
+RUN printf '#!/bin/sh\nexec npx -y vercel@65.10.0 "$@"\n' > /usr/local/bin/vercel && chmod 755 /usr/local/bin/vercel
 # wrangler: Cloudflare Workers
 RUN npm install -g wrangler && npm cache clean --force
 # Tencent CloudBase CLI (`tcb`)
@@ -105,6 +109,7 @@ RUN curl -fsSL https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mi
 # Browser tooling. Playwright for Node is GLOBAL (scripts `require('playwright')` via NODE_PATH); the Python
 # package is pinned to the same version so both share ONE Chromium build under /opt/pw-browsers.
 # WebKit too, so pages can be checked in Safari's engine (iPhone behaviour) without a Mac.
+# The Python package's own copy of Node (124 MB) becomes a link to the image's Node.
 # `--with-deps` pulls the browsers' system libs; CJK fonts so Chinese pages render in screenshots; `ws` for
 # WebSocket helpers; edge-tts for voice-over. Stable symlinks (/opt/pw-browsers/chromium, /opt/pw-browsers/headless_shell)
 # hide the revision-numbered dirs, and the build FAILS if either binary isn't where expected.
@@ -112,6 +117,8 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers NODE_PATH=/usr/lib/node_modules
 RUN npm install -g playwright@1.62.0 ws && npm cache clean --force \
  && playwright install --with-deps chromium chromium-headless-shell webkit \
  && pip3 install --no-cache-dir --break-system-packages playwright==1.62.0 edge-tts tronpy pyotp \
+ && ln -sf /usr/bin/node /usr/local/lib/python3.12/dist-packages/playwright/driver/node \
+ && python3 -c 'from playwright.sync_api import sync_playwright; p = sync_playwright().start(); p.stop()' \
  && apt-get update && apt-get install -y --no-install-recommends fonts-noto-cjk fonts-noto-color-emoji \
  && rm -rf /var/lib/apt/lists/* \
  && ln -s "$(find /opt/pw-browsers -path '*/chromium-*' -type f -name chrome | head -1)" /opt/pw-browsers/chromium \
@@ -121,9 +128,11 @@ RUN npm install -g playwright@1.62.0 ws && npm cache clean --force \
  && ln -s /opt/pw-browsers/chromium /usr/local/bin/chromium \
  && chmod -R a+rX /opt/pw-browsers
 # Real Google Chrome stable (`google-chrome`) next to Playwright's Chromium: some anti-bot layers reject "Chrome for Testing".
+# Only its English and Chinese UI locales are kept (the rest are 50 MB).
 RUN wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
  && apt-get update && apt-get install -y --no-install-recommends xdg-utils /tmp/chrome.deb \
  && rm -rf /var/lib/apt/lists/* /tmp/chrome.deb \
+ && find /opt/google/chrome/locales -name '*.pak' ! -name 'en-US.pak' ! -name 'en-GB.pak' ! -name 'zh-CN.pak' ! -name 'zh-TW.pak' -delete \
  && google-chrome --version
 # Git identity + GitHub auth for every session: commits as `claude <claude@selfhost>`; pushes read $GITHUB_TOKEN from
 # the environment at call time (nothing sensitive lands in .git/config).
@@ -136,17 +145,33 @@ RUN useradd -m -s /bin/bash claude \
  && echo 'claude ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-claude \
  && chmod 0440 /etc/sudoers.d/90-claude
 # iOS device control over a network link: wireguard-tools, and pymobiledevice3 in its own Python 3.13 venv via uv
-# (iOS 18.2+ tunnels are TCP-only and need 3.13+). No pairing record is in the image.
+# (iOS 18.2+ tunnels are TCP-only and need 3.13+). The venv (300 MB with its Python) is made on first use by
+# `ios-venv` (claude-env scripts/iphone.sh calls it), into /opt/ios. No pairing record is in the image.
 RUN apt-get update && apt-get install -y --no-install-recommends wireguard-tools && rm -rf /var/lib/apt/lists/* \
  && curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh \
- && UV_PYTHON_INSTALL_DIR=/opt/uv-python uv venv --python 3.13 /opt/ios \
- && uv pip install --no-cache --python /opt/ios/bin/python pymobiledevice3==11.19.4
+ && mkdir -p /opt/ios /opt/uv-python && chown claude:claude /opt/ios /opt/uv-python \
+ && printf '%s\n' '#!/bin/sh' 'set -e' '[ -x /opt/ios/bin/pymobiledevice3 ] && exit 0' \
+      'UV_PYTHON_INSTALL_DIR=/opt/uv-python uv venv -q --allow-existing --python 3.13 /opt/ios' \
+      'uv pip install -q --python /opt/ios/bin/python pymobiledevice3==11.19.4' > /usr/local/bin/ios-venv \
+ && chmod 755 /usr/local/bin/ios-venv
+# Rust (stable, minimal profile + rustfmt + clippy; 620 MB): rustup in /opt, owned by claude so sessions add targets
+# (`rustup target add wasm32-unknown-unknown`) and `cargo install` tools. Pinned so the image doesn't grow by itself.
+ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo
+RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path --profile minimal --default-toolchain 1.99.1 \
+      --component rustfmt,clippy \
+ && rm -rf /opt/rustup/downloads /opt/rustup/tmp /opt/cargo/registry \
+ && chown -R claude:claude /opt/rustup /opt/cargo && /opt/cargo/bin/cargo --version
 # VNC screenshots (asyncvnc), Camoufox with the GTK libs its Firefox build needs, xdotool/xclip for X windows.
 # rapidocr_onnxruntime: offline Chinese OCR.
 RUN pip3 install --no-cache-dir --break-system-packages rapidocr_onnxruntime
 RUN pip3 install --no-cache-dir --break-system-packages asyncvnc "camoufox[geoip]" \
  && apt-get update && apt-get install -y --no-install-recommends libgtk-3-0t64 libdbus-glib-1-2 libasound2t64 libx11-xcb1 xdotool xclip \
  && rm -rf /var/lib/apt/lists/*
+# Python libs sessions kept installing by hand (transcript survey, 2026-11-03): Postgres (psycopg + pool), Excel
+# (openpyxl), Chinese text (opencc, jieba), HEIC photos (pillow-heif), PDF writing (reportlab, weasyprint), Markdown,
+# Hugging Face tokenizers.
+RUN pip3 install --no-cache-dir --break-system-packages "psycopg[binary]" psycopg-pool openpyxl opencc jieba pillow-heif \
+      reportlab weasyprint markdown tokenizers
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY harness-claude.sh /usr/local/bin/harness-claude.sh
 COPY workspace-layer.sh /usr/local/bin/workspace-layer.sh
@@ -219,5 +244,5 @@ WORKDIR /home/claude
 # (the install.sh RUN is otherwise cached, so the CLI would never update).
 ARG CLAUDE_REFRESH=2026-10-30
 RUN echo "claude cli refresh ${CLAUDE_REFRESH}" && curl -fsSL https://claude.ai/install.sh | bash && ~/.local/bin/claude --version
-ENV PATH=/home/claude/.local/bin:/usr/local/bin:/usr/bin:/bin
+ENV PATH=/home/claude/.local/bin:/opt/cargo/bin:/usr/local/bin:/usr/bin:/bin
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
