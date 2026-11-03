@@ -35,7 +35,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: { name: notary-blue, namespace: jarvis4-kernel }
 spec:
-  replicas: 1
+  replicas: 0
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: notary, color: blue } }
   template:
@@ -75,7 +75,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: { name: notarizer-blue, namespace: jarvis4-kernel }
 spec:
-  replicas: 1
+  replicas: 0
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: notarizer, color: blue } }
   template:
@@ -107,7 +107,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: { name: mover-blue, namespace: jarvis4-kernel }
 spec:
-  replicas: 1
+  replicas: 0
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: mover, color: blue } }
   template:
@@ -139,7 +139,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: { name: merger-blue, namespace: jarvis4-kernel }
 spec:
-  replicas: 1
+  replicas: 0
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: merger, color: blue } }
   template:
@@ -179,7 +179,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: { name: spawner-blue, namespace: jarvis4-kernel }
 spec:
-  replicas: 1
+  replicas: 0
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: spawner, color: blue } }
   template:
@@ -211,7 +211,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: { name: identity-blue, namespace: jarvis4-kernel }
 spec:
-  replicas: 1
+  replicas: 0
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: identity, color: blue } }
   template:
@@ -243,7 +243,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: { name: gullible-blue, namespace: jarvis4-kernel }
 spec:
-  replicas: 1
+  replicas: 0
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: gullible, color: blue } }
   template:
@@ -275,7 +275,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: { name: minter-blue, namespace: jarvis4-kernel }
 spec:
-  replicas: 1
+  replicas: 0
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: minter, color: blue } }
   template:
@@ -307,7 +307,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: { name: secrets-blue, namespace: jarvis4-kernel }
 spec:
-  replicas: 1
+  replicas: 0
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: secrets, color: blue } }
   template:
@@ -345,7 +345,7 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: notary-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
+metadata: { name: notary-green, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
@@ -385,7 +385,7 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: notarizer-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
+metadata: { name: notarizer-green, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
@@ -417,7 +417,7 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: mover-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
+metadata: { name: mover-green, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
@@ -449,7 +449,7 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: merger-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
+metadata: { name: merger-green, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
@@ -489,7 +489,7 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: spawner-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
+metadata: { name: spawner-green, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
@@ -521,7 +521,7 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: identity-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
+metadata: { name: identity-green, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
@@ -553,7 +553,7 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: gullible-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
+metadata: { name: gullible-green, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
@@ -585,7 +585,7 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: minter-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
+metadata: { name: minter-green, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
@@ -617,7 +617,7 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: secrets-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
+metadata: { name: secrets-green, namespace: jarvis4-kernel }
 spec:
   replicas: 1
   strategy: { type: Recreate }
