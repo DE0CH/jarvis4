@@ -62,6 +62,10 @@ Goes through the machine's local proxy ($JARVIS_URL, machine/apiproxy.go), which
 import json, os, subprocess, sys, urllib.error, urllib.request
 
 BASE = os.environ.get("JARVIS_URL", "http://127.0.0.1:7171").rstrip("/")
+# a wrong call says what was wrong in one line instead of printing the manual (--help prints that)
+USAGE = {"add-repo": "add-repo OWNER/NAME [--sensitive] [--no-store]", "grant": "grant HOLDER [--minutes N | --days N]",
+         "unlock": "unlock", "new-session": "new-session --label TEXT --prompt-file FILE [...]",
+         "add-store": "add-store STORE (one store; several: one batch)"}
 
 
 def call(method, path, body=None):
@@ -197,8 +201,10 @@ def wait(ref, timeout):
 
 def main():
     args = sys.argv[1:]
-    if not args or args[0] in ("-h", "--help"):
+    if args and args[0] in ("-h", "--help"):
         raise SystemExit(__doc__)
+    if not args:
+        raise SystemExit("jarvis-request: no command (jarvis-request --help lists them). Nothing was filed.")
     if args[0] == "outcomes":
         for o in call("GET", "/api/requests/outcomes")["outcomes"]:
             show(o)
@@ -226,7 +232,7 @@ def main():
         while "--item-json" in rest:
             inline.append(json.loads(opt(rest, "--item-json")))
         if (not f and not inline) or not summary or rest:
-            raise SystemExit("batch (--file FILE | --item INTENT,key=value,… | --item-json JSON) --summary TEXT (see --help)")
+            raise SystemExit("batch (--file FILE | --item INTENT,key=value,… | --item-json JSON) --summary TEXT (see --help). Nothing was filed.")
         items = []
         if f:
             with open(f) as fh:
@@ -312,8 +318,11 @@ def main():
     elif kind == "add-store" and len(rest) == 1:
         out = call("POST", "/api/requests/add-store", {"store": rest[0], "explanation": why})
         start_await(rest[0])
+    elif kind in USAGE:
+        raise SystemExit(f"jarvis-request {kind}: wrong arguments {rest}; usage: jarvis-request {USAGE[kind]} --why TEXT. "
+                         "Nothing was filed.")
     else:
-        raise SystemExit(__doc__)
+        raise SystemExit(f"jarvis-request: unknown command {kind!r} (jarvis-request --help lists them). Nothing was filed.")
     print(json.dumps(out))
     ref = out.get("id") or os.environ.get("JARVIS2_SESSION_ID", "")
     print("Waiting in Deyao's Inbox (the Jarvis 4 app); nothing happens until he allows it. The outcome arrives in this "
