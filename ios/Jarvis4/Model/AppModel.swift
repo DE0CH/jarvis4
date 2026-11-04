@@ -60,6 +60,9 @@ final class AppModel {
   /// the Fly regions a session may run in (GET api/regions, router/regions.go) and the router's default
   var regions: [Choice] = []
   var defaultRegion = ""
+  /// where a session's machines run (GET api/regions `runners`, router/awsrunner.go): aws | fly, and the router's default
+  var runners: [Choice] = []
+  var defaultRunner = ""
   var models: [Choice] = []
   /// the stores each harness brings (GET api/policy): the router adds them, the pickers don't offer them
   var policy: [String: [String]] = [:]
@@ -207,7 +210,7 @@ final class AppModel {
   func loadLists() async {
     let r = RouterClient.shared
     if let j = try? await r.get("api/sizes") { sizes = j["sizes"].array.map(Choice.init) }
-    if let j = try? await r.get("api/regions") { regions = j["regions"].array.map(Choice.init); defaultRegion = j["default"].string ?? "" }
+    if let j = try? await r.get("api/regions") { regions = j["regions"].array.map(Choice.init); defaultRegion = j["default"].string ?? ""; runners = j["runners"].array.map(Choice.init); defaultRunner = j["defaultRunner"].string ?? "" }
     if let j = try? await r.get("api/models") { models = j["models"].array.map(Choice.init) }
     if let j = try? await r.get("api/policy") { policy = (j["harnesses"].object ?? [:]).mapValues { $0["stores"].strings } }
     await loadStores()

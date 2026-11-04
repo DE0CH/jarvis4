@@ -25,6 +25,8 @@ struct NewSessionView: View {
   @State private var size = "medium"
   /// "" = the router's default region
   @State private var region = ""
+  /// "" = the router's default runner (aws | fly), fixed for the session's life
+  @State private var runner = ""
   @State private var repos: Set<String> = []
   @State private var repoDefaulted = false
   @State private var autoPause = true
@@ -229,6 +231,12 @@ struct NewSessionView: View {
         Picker("Machine size", selection: $size) { ForEach(model.sizes) { s in Text("\(s.id.capitalized) · \(s.label ?? "")").tag(s.id) } }
           .accessibilityIdentifier("ns-size")
       }
+      if !model.runners.isEmpty {
+        Picker("Runner", selection: Binding(get: { runner.isEmpty ? model.defaultRunner : runner }, set: { runner = $0 })) {
+          ForEach(model.runners) { g in Text(g.label ?? g.id).tag(g.id) }
+        }
+        .accessibilityIdentifier("ns-runner")
+      }
       if !model.regions.isEmpty {
         Picker("Region", selection: Binding(get: { region.isEmpty ? model.defaultRegion : region }, set: { region = $0 })) {
           ForEach(model.regions) { g in Text("\(g.label ?? g.id) · \(g.id)").tag(g.id) }
@@ -320,6 +328,7 @@ struct NewSessionView: View {
       if !content.isEmpty { body["content"] = content.sorted() }
       if takesAccount && !account.isEmpty { body["account"] = account }
       if !region.isEmpty && region != model.defaultRegion { body["region"] = region }
+      if !runner.isEmpty && runner != model.defaultRunner { body["runner"] = runner }
       if !attached.isEmpty { body["attachments"] = ["uploadId": rid, "files": attached.map { ["name": $0.name] }] }
       busy = "Requesting…"
       try await RouterClient.shared.call("POST", "api/sessions", body)
