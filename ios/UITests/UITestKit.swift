@@ -161,6 +161,34 @@ class JarvisUITestCase: XCTestCase {
     }
     e.typeText(text)
   }
+  /// turn a CheckRow (a picked/unpicked row) on or off and confirm it took. A row under the keyboard (New session's
+  /// stores right after the title is typed) gets scrolled up by XCUITest's own tap, which then lands while the form
+  /// still moves and is lost: gmail was never picked in walkthrough runs 41759948902 (light) and 41810155475 (dark).
+  /// So: drag the row into the clear part of the screen, let it settle, tap, and tap again only if it did not take.
+  @discardableResult func setChecked(_ e: XCUIElement, _ on: Bool) -> Bool {
+    if !e.exists { scrolledUpTo(e, max: 3) }
+    for _ in 1...4 {
+      guard e.exists else { return false }
+      if e.isSelected == on { return true }
+      let kb = app.keyboards.firstMatch
+      let bottom = kb.exists ? kb.frame.minY : app.frame.maxY - 60
+      let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: app.frame.midX, dy: bottom - 40))
+      if e.frame.maxY > bottom - 20 {
+        // under the keyboard: drag the form up by just that much (a slow drag, no fling)
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -min(e.frame.maxY - bottom + 80, 300))))
+        sleep(1)
+      } else if e.frame.minY < 140 {
+        // under the navigation bar: drag the form down a little (a full swipe at the top pulls the sheet away)
+        let top = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: app.frame.midX, dy: 200))
+        top.press(forDuration: 0.1, thenDragTo: top.withOffset(CGVector(dx: 0, dy: min(160 - e.frame.minY, 300))))
+        sleep(1)
+      }
+      if e.isHittable && e.frame.maxY <= bottom && e.frame.minY >= 130 { e.tap() }
+      let until = Date().addingTimeInterval(3)
+      while e.exists && e.isSelected != on && Date() < until { usleep(300_000) }
+    }
+    return e.exists && e.isSelected == on
+  }
   func slowType(_ e: XCUIElement, _ text: String) { for ch in text { e.typeText(String(ch)); usleep(120_000) } }
   /// scroll the current list until `e` is there (a Form draws rows lazily), then back to the top
   @discardableResult func scrolledTo(_ e: XCUIElement, max: Int = 6) -> Bool {

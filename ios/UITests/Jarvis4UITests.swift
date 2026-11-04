@@ -302,10 +302,10 @@ final class Jarvis4UITests: JarvisUITestCase {
     focusAndType(el("ns-title"), "ci session")
     let image = attachImage()
     if el("secure-store-gmail").waitForExistence(timeout: 3) {
-      el("secure-store-gmail").tap(); sleep(1)
+      XCTAssertTrue(setChecked(el("secure-store-gmail"), true), "[\(tag)] gmail picked")
       XCTAssertTrue(scrolledTo(el("secure-sensitive-warning"), max: 3), "[\(tag)] sensitive warning")
       shot("new-session-sensitive")
-      el("secure-store-gmail").tap()
+      XCTAssertTrue(setChecked(el("secure-store-gmail"), false), "[\(tag)] gmail unpicked again")
     }
     el("secure-create").tap()
     let row = prefixed("srow-")
