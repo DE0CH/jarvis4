@@ -2885,3 +2885,12 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      stays the fallback (Init). Serial console access is on in each session region; the spawner may reach port 22.
      kernel/spawner/awsserial.go. *Not chosen*: Fast Snapshot Restore for the baked AMI's lazily loaded disk (about
      10-20 s, priced per hour per zone; Deyao: skip).
+247. **In bypass mode the supervisor allows the tool permission dialogs Claude Code still shows** (Deyao, 2026-11-04:
+     "the supervisor can see the terminal screen, just make it auto accept prompts like that", after a background
+     agent's `bash -c` command waited on "Allow once" in a bypass session). Every 2 s, while the live mode is bypass,
+     the supervisor reads its own tmux pane; when the pane ends in a tool permission dialog ("Do you want to
+     proceed?", "…make this edit to…?", "…create…?", "…allow Claude to fetch this content?") with "❯ 1. Yes"
+     focused, it presses Enter: allow once, never "always allow" or a mode switch. It re-reads the pane right before
+     pressing, presses the same dialog at most twice, and logs each one. Auto mode is untouched (its prompts are
+     Deyao's), and so are the trust dialog, the API key question, a plan's approval and AskUserQuestion.
+     machine/autoaccept.go.
