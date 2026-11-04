@@ -81,8 +81,9 @@ bake() {
   if [[ $have == ami-* ]]; then log "baked already: $have"; echo "$have"; return; fi
   flatcar=$(jq -r --arg r "$region" '.amis[$r]' "$here/flatcar.json")
   tmp=$(mktemp -d)
-  instances=()
-  trap 'for i in "${instances[@]}"; do aws ec2 terminate-instances --region "$region" --instance-ids "$i" >/dev/null 2>&1 || true; done; rm -rf "$tmp"' EXIT
+  instances=() ami="" tagged=""
+  # leaves nothing behind: its instances, and an AMI that didn't pass the test boot
+  trap 'for i in "${instances[@]}"; do aws ec2 terminate-instances --region "$region" --instance-ids "$i" >/dev/null 2>&1 || true; done; [ -n "$ami" ] && [ -z "$tagged" ] && drop_ami "$ami"; rm -rf "$tmp"' EXIT
 
   # 1. the builder
   ignition "#!/bin/bash
@@ -111,7 +112,7 @@ systemctl poweroff" >"$tmp/builder.ign"
     sleep 10
   done
   grep -q 'JARVIS4-BAKE FAILED' <<<"$seen" && { fail "the builder's pull failed: $(tail -25 <<<"$seen")"; exit 1; }
-  log "builder up to stopped: $(($(date +%s) - t0)) s; $(grep -o 'JARVIS4-BAKE [a-zA-Z0-9 ]*' <<<"$seen" | tr '\n' ';')"
+  log "builder up to stopped: $(($(date +%s) - t0)) s; $(grep -o 'JARVIS4-BAKE [a-zA-Z0-9 ]*' <<<"$seen" | tr '\n' ';' || true)"
 
   # 2. the AMI (no tofu tag yet)
   ami=$(aws ec2 create-image --region "$region" --instance-id "$b" --name "jarvis4-session-$(date -u +%Y%m%d-%H%M%S)" \
@@ -121,7 +122,7 @@ systemctl poweroff" >"$tmp/builder.ign"
   log "AMI $ami"
   t0=$(date +%s)
   until [ "$(aws ec2 describe-images --region "$region" --image-ids "$ami" --query 'Images[0].State' --output text)" = available ]; do
-    [ $(($(date +%s) - t0)) -lt 2400 ] || { fail "$ami not available in 40 min"; drop_ami "$ami"; exit 1; }
+    [ $(($(date +%s) - t0)) -lt 2400 ] || { fail "$ami not available in 40 min"; exit 1; }
     sleep 20
   done
   aws ec2 terminate-instances --region "$region" --instance-ids "$b" >/dev/null
@@ -143,21 +144,24 @@ systemctl poweroff" >"$tmp/test.ign"
     sleep 5
     out=$(console "$v")
     if [ -z "$report" ] && grep -q 'JARVIS4-TEST present=' <<<"$out"; then
-      report="$(grep -o 'JARVIS4-TEST unit at uptime [0-9.]*s' <<<"$out" | tail -1); $(grep -o 'JARVIS4-TEST present=.*' <<<"$out" | tail -1); seen $(($(date +%s) - launched)) s after launch"
+      u=$(grep -o 'JARVIS4-TEST unit at uptime [0-9.]*s' <<<"$out" | tail -1 || true)
+      p=$(grep -o 'JARVIS4-TEST present=.*' <<<"$out" | tail -1 || true)
+      report="$u; $p; seen $(($(date +%s) - launched)) s after launch"
     fi
-    last=$(grep -o 'JARVIS4-TEST tick [0-9]*' <<<"$out" | tail -1 | awk '{print $3}')
+    last=$(grep -o 'JARVIS4-TEST tick [0-9]*' <<<"$out" | tail -1 | awk '{print $3}' || true)
     if [ -n "$last" ]; then
       l=$(($(date +%s) - last))
       { [ -z "$lag" ] || [ "$l" -lt "$lag" ]; } && lag=$l
       [ -n "$report" ] && break
     fi
   done
-  [ -n "$report" ] || { fail "the test boot reported nothing (Ignition didn't run again?): $(tail -25 <<<"$out")"; drop_ami "$ami"; exit 1; }
+  [ -n "$report" ] || { fail "the test boot reported nothing (Ignition didn't run again?): $(tail -25 <<<"$out")"; exit 1; }
   log "test: $report; the console's newest output lags it by >= ${lag:-?} s"
   summary "- $region: $ami, $report; console lag >= ${lag:-?} s"
-  grep -q 'present=yes' <<<"$report" && grep -q 'exit=0' <<<"$report" || { fail "the image isn't usable on $ami: $report"; drop_ami "$ami"; exit 1; }
+  grep -q 'present=yes' <<<"$report" && grep -q 'exit=0' <<<"$report" || { fail "the image isn't usable on $ami: $report"; exit 1; }
 
   aws ec2 create-tags --region "$region" --resources "$ami" --tags "Key=$IMAGE_TAG,Value=$image"
+  tagged=1
   echo "$ami"
 }
 
