@@ -161,33 +161,37 @@ class JarvisUITestCase: XCTestCase {
     }
     e.typeText(text)
   }
-  /// turn a CheckRow (a picked/unpicked row) on or off and confirm it took. A row under the keyboard (New session's
-  /// stores right after the title is typed) gets scrolled up by XCUITest's own tap, which then lands while the form
-  /// still moves and is lost: gmail was never picked in walkthrough runs 41759948902 (light) and 41810155475 (dark).
-  /// So: drag the row into the clear part of the screen, let it settle, tap, and tap again only if it did not take.
+  /// turn a CheckRow (a picked/unpicked row) on or off and confirm it took. New session's stores sit under the
+  /// keyboard right after the title is typed, and a tap there never picked the row (gmail in walkthrough runs
+  /// 41759948902 light, 41810155475 dark and 41837091525 both: no sensitive warning, the row then scrolled away). So:
+  /// Return first (the keyboard goes), bring the row into the middle of the screen with a slow drag (a full swipe at
+  /// the top of a sheet pulls the sheet away), let it settle, tap, and tap again only if it did not take.
   @discardableResult func setChecked(_ e: XCUIElement, _ on: Bool) -> Bool {
+    if app.keyboards.firstMatch.exists {
+      app.typeText("\n")
+      if !gone(app.keyboards.firstMatch, 5) { note("keyboard-stays", app.debugDescription) }
+    }
     if !e.exists { scrolledUpTo(e, max: 3) }
-    for _ in 1...4 {
-      guard e.exists else { return false }
+    var log: [String] = []
+    for _ in 1...6 {
+      guard e.exists else { break }
       if e.isSelected == on { return true }
-      let kb = app.keyboards.firstMatch
-      let bottom = kb.exists ? kb.frame.minY : app.frame.maxY - 60
-      let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: app.frame.midX, dy: bottom - 40))
-      if e.frame.maxY > bottom - 20 {
-        // under the keyboard: drag the form up by just that much (a slow drag, no fling)
-        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -min(e.frame.maxY - bottom + 80, 300))))
+      let h = app.frame.height, f = e.frame
+      log.append("frame \(f) hittable \(e.isHittable) keyboard \(app.keyboards.firstMatch.exists)")
+      if f.midY > h * 0.7 || f.midY < h * 0.2 {
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        from.press(forDuration: 0.1, thenDragTo: from.withOffset(CGVector(dx: 0, dy: max(-300, min(300, h * 0.45 - f.midY)))))
         sleep(1)
-      } else if e.frame.minY < 140 {
-        // under the navigation bar: drag the form down a little (a full swipe at the top pulls the sheet away)
-        let top = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: app.frame.midX, dy: 200))
-        top.press(forDuration: 0.1, thenDragTo: top.withOffset(CGVector(dx: 0, dy: min(160 - e.frame.minY, 300))))
-        sleep(1)
+        continue
       }
-      if e.isHittable && e.frame.maxY <= bottom && e.frame.minY >= 130 { e.tap() }
+      // at its centre, settled: no scroll-to-visible of XCUITest's own, which moved the form again
+      e.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
       let until = Date().addingTimeInterval(3)
       while e.exists && e.isSelected != on && Date() < until { usleep(300_000) }
     }
-    return e.exists && e.isSelected == on
+    let ok = e.exists && e.isSelected == on
+    if !ok { note("set-checked", log.joined(separator: "\n") + "\n\n" + app.debugDescription) }
+    return ok
   }
   func slowType(_ e: XCUIElement, _ text: String) { for ch in text { e.typeText(String(ch)); usleep(120_000) } }
   /// scroll the current list until `e` is there (a Form draws rows lazily), then back to the top
