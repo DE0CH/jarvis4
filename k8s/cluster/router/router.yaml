@@ -55,7 +55,7 @@ spec:
             - { name: FLY_REGION, value: lhr }
             # the AWS runner (router/awsrunner.go, docs/PLAN-aws.md): the runner a new session gets when it names none,
             # and the m-gateways' WireGuard for the AWS machines (public keys; the private halves: Secret router-wg-aws)
-            - { name: DEFAULT_RUNNER, value: aws }
+            - { name: DEFAULT_RUNNER, value: fly }
             - { name: WG_AWS_GATEWAYS, value: "EEHeJdYheW1fsC/HSnqReGYMbkW9UUuh5QTMvwfEDmU=@10.99.0.1,w8kqS2AxSl8b5OxibyMWLf83GxMCjLEJel98M0vaykg=@10.99.0.2" }
             # the router's WireGuard peer in Fly org jarvis2-370 (fly wireguard create jarvis2-370 lhr jarvis4-box)
             - { name: MACHINE_URL, value: "http://jarvis4-box._peer.internal:8081,http://jarvis4-gw-b._peer.internal:8081" }

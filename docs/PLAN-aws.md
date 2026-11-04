@@ -72,7 +72,7 @@ credits). Account-wide: the IAM users above. State in R2 beside DE0CH/services'.
 ## Router
 
 - A session's runner (`Session.Runner`, `NewSession.runner`, `GET /api/regions` lists runners and the default),
-  fixed when made; `DEFAULT_RUNNER` (aws since 2026-11-04, when the first AWS session ran end to end). Its region stays a place
+  fixed when made; `DEFAULT_RUNNER` (fly: aws from the first AWS session's end-to-end run, back to fly 2026-11-04 by Deyao). Its region stays a place
   that each runner maps (lhr/sin/nrt → eu-west-2/ap-southeast-1/ap-northeast-1).
 - Lost machines and the adoption of a lost spawn answer look at AWS too (`listAWSMachines`).
 - To do: the budget (AWS spend), the lifecycle log's AWS events, the app's runner picker, shipping instance logs.
@@ -84,4 +84,5 @@ credits). Account-wide: the IAM users above. State in R2 beside DE0CH/services'.
 3. Spawner AWS backend, machine side, router and m-gateways: one push, a kernel release (Deyao's OK 2026-11-03: a new
    spawner signer in the roster), then `kernel-aws-credentials`.
 4. An AWS session end to end (runner aws named explicitly), then `DEFAULT_RUNNER=aws` (done 2026-11-04: the one-shot
-   "AWS runner test 2" booted, ran its prompt and was archived and destroyed by itself, after the MTU fix).
+   "AWS runner test 2" booted, ran its prompt and was archived and destroyed by itself, after the MTU fix; back to
+   `fly` the same day, Deyao's call).
