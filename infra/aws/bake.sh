@@ -65,7 +65,7 @@ run() {
   aws ec2 run-instances --region "$region" --launch-template "LaunchTemplateName=$TEMPLATE" --image-id "$1" \
     --instance-type "$2" --instance-initiated-shutdown-behavior "$3" --user-data "fileb://$4" \
     --block-device-mappings '[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":20,"VolumeType":"gp3","Encrypted":true,"DeleteOnTermination":true}}]' \
-    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$5},{Key=$BAKE_TAG,Value=$image}]" \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$5},{Key=$BAKE_TAG,Value=$image},{Key=app,Value=jarvis4}]" \
     --query 'Instances[0].InstanceId' --output text
 }
 
@@ -121,7 +121,7 @@ systemctl poweroff" >"$tmp/builder.ign"
   # 2. the AMI (no tofu tag yet)
   ami=$(aws ec2 create-image --region "$region" --instance-id "$b" --name "jarvis4-session-$(date -u +%Y%m%d-%H%M%S)" \
     --description "Flatcar $(jq -r .version "$here/flatcar.json") + $image" \
-    --tag-specifications "ResourceType=image,Tags=[{Key=$BAKE_TAG,Value=$image}]" "ResourceType=snapshot,Tags=[{Key=$BAKE_TAG,Value=$image}]" \
+    --tag-specifications "ResourceType=image,Tags=[{Key=$BAKE_TAG,Value=$image},{Key=app,Value=jarvis4}]" "ResourceType=snapshot,Tags=[{Key=$BAKE_TAG,Value=$image},{Key=app,Value=jarvis4}]" \
     --query ImageId --output text)
   log "AMI $ami"
   t0=$(date +%s)

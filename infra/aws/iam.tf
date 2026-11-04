@@ -74,7 +74,9 @@ resource "aws_iam_user_policy" "spawner" {
   })
 }
 
-# The router's read-only user: the instances (lost machines, the lifecycle log) and the costs (the budget)
+# The router's read-only user: the instances (lost machines, the lifecycle log) and the costs (the budget, router/
+# awsbudget.go: every instance, volume, snapshot and Elastic IP for the live estimate; Cost Explorer's billed figure
+# as the cross-check; the price list)
 resource "aws_iam_user" "router" {
   provider = aws.sin # IAM is global; any region's provider
   name     = "jarvis4-router-read"
@@ -89,7 +91,7 @@ resource "aws_iam_user_policy" "router" {
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = ["ec2:DescribeInstances", "ce:GetCostAndUsage", "pricing:GetProducts"]
+      Action   = ["ec2:DescribeInstances", "ec2:DescribeVolumes", "ec2:DescribeSnapshots", "ec2:DescribeAddresses", "ce:GetCostAndUsage", "pricing:GetProducts"]
       Resource = "*"
     }]
   })

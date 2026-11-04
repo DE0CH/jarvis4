@@ -40,6 +40,10 @@ variable "aws_secret_key" {
 # keep theirs. A region's template boots the AMI bake.sh baked for the pinned session image (SESSION_IMAGE in the
 # router's manifest) when there is one, else this Flatcar (the session unit then pulls the image, ~3 min).
 locals {
+  # every jarvis4 resource carries app=jarvis4, a cost allocation tag activated in Billing (2026-11-04), so AWS's own
+  # bill (Cost Explorer, tag app) tells jarvis4's spend apart from anything else in the account (docs/PLAN-aws.md
+  # "Billing"); the launch templates put it on the instances, volumes and network interfaces they launch
+  billing_tags  = { app = "jarvis4" }
   flatcar       = jsondecode(file("${path.module}/flatcar.json"))
   amis          = local.flatcar.amis
   session_image = regex("SESSION_IMAGE, value: \"([^\"]+)\"", file("${path.module}/../../k8s/cluster/router/router.yaml"))[0]
@@ -50,18 +54,21 @@ provider "aws" {
   alias      = "lon"
   access_key = var.aws_access_key
   secret_key = var.aws_secret_key
+  default_tags { tags = local.billing_tags }
 }
 provider "aws" {
   region     = "ap-southeast-1"
   alias      = "sin"
   access_key = var.aws_access_key
   secret_key = var.aws_secret_key
+  default_tags { tags = local.billing_tags }
 }
 provider "aws" {
   region     = "ap-northeast-1"
   alias      = "tyo"
   access_key = var.aws_access_key
   secret_key = var.aws_secret_key
+  default_tags { tags = local.billing_tags }
 }
 
 module "lon" {

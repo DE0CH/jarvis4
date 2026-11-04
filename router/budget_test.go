@@ -47,47 +47,47 @@ func TestCosts(t *testing.T) {
 
 func TestApplySample(t *testing.T) {
 	t0 := time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC)
-	s, a, _ := applySample(nil, t0, 1, 30, 25)
+	s, a, _ := applySample(nil, t0, spendSample{FlyRate: 1}, 30, 25)
 	if s.SpentUSD != 0 || a != (budgetActions{}) || s.Month != "2026-10" {
 		t.Fatalf("first sample %+v %+v", s, a)
 	}
 	// a gap longer than maxDeltaH bills only maxDeltaH
-	s, _, dh := applySample(&s, t0.Add(10*time.Hour), 1, 30, 25)
+	s, _, dh := applySample(&s, t0.Add(10*time.Hour), spendSample{FlyRate: 1}, 30, 25)
 	if dh != maxDeltaH || s.SpentUSD != 6 {
 		t.Fatalf("gap %v %+v", dh, s)
 	}
 	// clock going backwards bills nothing
-	s2, _, dh := applySample(&s, t0.Add(9*time.Hour), 1, 30, 25)
+	s2, _, dh := applySample(&s, t0.Add(9*time.Hour), spendSample{FlyRate: 1}, 30, 25)
 	if dh != 0 || s2.SpentUSD != 6 {
 		t.Fatalf("backwards %v %+v", dh, s2)
 	}
 	// warn once
 	s.SpentUSD = 24.5
-	s, a, _ = applySample(&s, s.LastSampleAt.Add(time.Hour), 1, 30, 25)
+	s, a, _ = applySample(&s, s.LastSampleAt.Add(time.Hour), spendSample{FlyRate: 1}, 30, 25)
 	if !a.WarnDM || a.Enforce || !s.Warned {
 		t.Fatalf("warn %+v %+v", s, a)
 	}
-	s, a, _ = applySample(&s, s.LastSampleAt.Add(time.Hour), 1, 30, 25)
+	s, a, _ = applySample(&s, s.LastSampleAt.Add(time.Hour), spendSample{FlyRate: 1}, 30, 25)
 	if a.WarnDM {
 		t.Fatal("warned twice")
 	}
 	// cap: DM once, enforce every tick
 	s.SpentUSD = 29.5
-	s, a, _ = applySample(&s, s.LastSampleAt.Add(time.Hour), 1, 30, 25)
+	s, a, _ = applySample(&s, s.LastSampleAt.Add(time.Hour), spendSample{FlyRate: 1}, 30, 25)
 	if !a.Enforce || !a.CapDM || !s.Capped || s.CappedAt == nil {
 		t.Fatalf("cap %+v %+v", s, a)
 	}
-	s, a, _ = applySample(&s, s.LastSampleAt.Add(time.Hour), 0, 30, 25)
+	s, a, _ = applySample(&s, s.LastSampleAt.Add(time.Hour), spendSample{FlyRate: 0}, 30, 25)
 	if !a.Enforce || a.CapDM {
 		t.Fatalf("still capped %+v", a)
 	}
 	// a new month starts from zero
-	s, a, _ = applySample(&s, time.Date(2026, 11, 1, 0, 1, 0, 0, time.UTC), 1, 30, 25)
+	s, a, _ = applySample(&s, time.Date(2026, 11, 1, 0, 1, 0, 0, time.UTC), spendSample{FlyRate: 1}, 30, 25)
 	if s.Month != "2026-11" || s.SpentUSD != 0 || s.Capped || s.Warned || a.Enforce {
 		t.Fatalf("new month %+v %+v", s, a)
 	}
 	// straight past both lines: the cap, without a warn DM
-	_, a, _ = applySample(&BudgetState{Month: "2026-11", SpentUSD: 20, LastSampleAt: s.LastSampleAt}, s.LastSampleAt.Add(5*time.Hour), 3, 30, 25)
+	_, a, _ = applySample(&BudgetState{Month: "2026-11", SpentUSD: 20, LastSampleAt: s.LastSampleAt}, s.LastSampleAt.Add(5*time.Hour), spendSample{FlyRate: 3}, 30, 25)
 	if !a.CapDM || a.WarnDM {
 		t.Fatalf("jump %+v", a)
 	}
@@ -96,20 +96,20 @@ func TestApplySample(t *testing.T) {
 // raising the lines mid-month re-arms them: warned at 25, the warn line moved to 35 → one DM at 35, one at 40
 func TestRaisedLinesRearm(t *testing.T) {
 	t0 := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
-	s, a, _ := applySample(&BudgetState{Month: "2026-10", SpentUSD: 28, Warned: true, LastSampleAt: &t0}, t0.Add(time.Hour), 1, 40, 35)
+	s, a, _ := applySample(&BudgetState{Month: "2026-10", SpentUSD: 28, Warned: true, LastSampleAt: &t0}, t0.Add(time.Hour), spendSample{FlyRate: 1}, 40, 35)
 	if s.Warned || a != (budgetActions{}) {
 		t.Fatalf("not re-armed %+v %+v", s, a)
 	}
-	s, a, _ = applySample(&s, t0.Add(8*time.Hour), 1, 40, 35)
+	s, a, _ = applySample(&s, t0.Add(8*time.Hour), spendSample{FlyRate: 1}, 40, 35)
 	if !a.WarnDM || !s.Warned {
 		t.Fatalf("no DM at 35 %+v %+v", s, a)
 	}
-	s, a, _ = applySample(&s, t0.Add(9*time.Hour), 1, 40, 35)
+	s, a, _ = applySample(&s, t0.Add(9*time.Hour), spendSample{FlyRate: 1}, 40, 35)
 	if a.WarnDM || a.CapDM {
 		t.Fatalf("DM twice %+v", a)
 	}
 	// capped at 30, the cap raised to 40: no longer capped until 40
-	s, a, _ = applySample(&BudgetState{Month: "2026-10", SpentUSD: 31, Warned: true, Capped: true, CappedAt: &t0, LastSampleAt: &t0}, t0.Add(time.Hour), 1, 40, 35)
+	s, a, _ = applySample(&BudgetState{Month: "2026-10", SpentUSD: 31, Warned: true, Capped: true, CappedAt: &t0, LastSampleAt: &t0}, t0.Add(time.Hour), spendSample{FlyRate: 1}, 40, 35)
 	if s.Capped || a.Enforce || s.Warned {
 		t.Fatalf("still capped %+v %+v", s, a)
 	}
@@ -170,7 +170,7 @@ func TestBudgetTick(t *testing.T) {
 	t0 := time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC)
 
 	// under the warn line: nothing happens; Also on Fly lists the strangers
-	a, _, err := r.budgetTick(fly, t0, 30, 25)
+	a, _, err := r.budgetTick(fly, nil, t0, 30, 25)
 	if err != nil || a != (budgetActions{}) || len(dms) != 0 {
 		t.Fatalf("%v %+v %v", err, a, dms)
 	}
@@ -185,7 +185,7 @@ func TestBudgetTick(t *testing.T) {
 
 	// over the cap: pause what can be paused, DM once with the strangers named
 	st.Do(func(d *persisted) { d.Budget.SpentUSD = 31 })
-	a, p, _ := r.budgetTick(fly, t0.Add(time.Minute), 30, 25)
+	a, p, _ := r.budgetTick(fly, nil, t0.Add(time.Minute), 30, 25)
 	if !a.Enforce || !a.CapDM || strings.Join(p, ",") != "one" || strings.Join(paused, ",") != "s1" {
 		t.Fatalf("%+v %v %v", a, p, paused)
 	}
@@ -198,17 +198,17 @@ func TestBudgetTick(t *testing.T) {
 	// next tick: s2 is free now and gets paused, with a DM naming it; nothing to pause → no DM
 	paused = nil
 	budgetPause = func(r *Router, sid string) error { paused = append(paused, sid); return nil }
-	r.budgetTick(fly, t0.Add(2*time.Minute), 30, 25)
+	r.budgetTick(fly, nil, t0.Add(2*time.Minute), 30, 25)
 	if strings.Join(paused, ",") != "s1,s2" || len(dms) != 2 {
 		t.Fatalf("%v %v", paused, dms)
 	}
-	r.budgetTick(&fakeFly{}, t0.Add(3*time.Minute), 30, 25)
+	r.budgetTick(&fakeFly{}, nil, t0.Add(3*time.Minute), 30, 25)
 	if len(dms) != 2 {
 		t.Fatalf("DM with nothing paused: %v", dms)
 	}
 
 	// Fly unreachable: the error shows, nothing else changes
-	if _, _, err := r.budgetTick(&fakeFly{err: errors.New("down")}, t0.Add(4*time.Minute), 30, 25); err == nil || budgetView.fly["error"] != "down" {
+	if _, _, err := r.budgetTick(&fakeFly{err: errors.New("down")}, nil, t0.Add(4*time.Minute), 30, 25); err == nil || budgetView.fly["error"] != "down" {
 		t.Fatal("no error shown")
 	}
 }
@@ -255,7 +255,7 @@ func TestTheBudgetCountsVolumeSnapshots(t *testing.T) {
 			"vol_live": {{ID: "vs_d1", Size: 6e9, Status: "created"}, {ID: "vs_x", Size: 9e9, Status: "failed"}},
 			"vol_rec":  {{ID: "vs_r", Size: 4e9, Status: "created"}, {ID: "vs_d1", Size: 6e9, Status: "created"}}, // listed twice: once
 		}}
-	if _, _, err := r.budgetTick(fly, now, 30, 25); err != nil {
+	if _, _, err := r.budgetTick(fly, nil, now, 30, 25); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Join(fly.asked, ",") != "vol_live,vol_rec" {
@@ -269,7 +269,7 @@ func TestTheBudgetCountsVolumeSnapshots(t *testing.T) {
 		t.Fatalf("view %v, want rate %v", v, want)
 	}
 	// listed at most every 30 min
-	r.budgetTick(fly, now.Add(2*time.Minute), 30, 25)
+	r.budgetTick(fly, nil, now.Add(2*time.Minute), 30, 25)
 	if len(fly.asked) != 2 {
 		t.Fatalf("listed again within 30 min: %v", fly.asked)
 	}
@@ -313,8 +313,8 @@ func TestBudgetViewOnEveryReplica(t *testing.T) {
 	leader, other := replica(), replica()
 	fly := &fakeFly{ms: []flyMachine{machine("m1", "started")}}
 	t0 := time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC)
-	leader.budgetTick(fly, t0, 30, 25)
-	leader.budgetTick(fly, t0.Add(time.Hour), 30, 25)
+	leader.budgetTick(fly, nil, t0, 30, 25)
+	leader.budgetTick(fly, nil, t0.Add(time.Hour), 30, 25)
 	leader.bbBudgetTick(nil, t0, 10, 8)
 	budgetView.Lock()
 	budgetView.budget, budgetView.fly = nil, nil // the other replica's own copy: it never ticked

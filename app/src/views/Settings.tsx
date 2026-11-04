@@ -1,5 +1,5 @@
 // Settings: the Claude accounts (the router holds each: status, usage, Refresh, Re-login, Make default, Remove, Add), the repos and their deploy
-// keys (Repos.tsx), the Fly spend against the cap, and whether Jarvis 4 runs, with
+// keys (Repos.tsx), the spend (Fly + AWS, one pool) against the cap, and whether Jarvis 4 runs, with
 // the way into the shell's Reset or recover page (the app only).
 import { Linking } from "react-native";
 import { useEffect, useRef, useState } from "react";
@@ -177,7 +177,7 @@ function FlyCard() {
   const pct = b && b.capUsd ? Math.min(100, Math.round((b.spentUsd / b.capUsd) * 100)) : 0;
   return (
     <Card data={{ settings: "fly" }}>
-      <Heading size={3} mb={1}>Fly spend</Heading>
+      <Heading size={3} mb={1}>Spend · Fly + AWS</Heading>
       {!b ? <Rows><Row label="Reading" color={fly?.error ? "red" : undefined}>{fly?.error || "None yet"}</Row></Rows>
         : <>
           <Flex justify="space-between" align="baseline" gap={2} mt={1}>
@@ -192,16 +192,37 @@ function FlyCard() {
             <Row label="Rate">{usd(b.ratePerHour) + " / h"}</Row>
             <Row label="At this rate">{usd(b.perMonth) + " / month"}</Row>
             <Row label="Running">{String(b.running)}</Row>
-            <Row label="Volumes">{String(b.volumes)}</Row>
             {b.capped && !!b.cappedAt && <Row label="Capped" color="red">{new Date(b.cappedAt).toLocaleString()}</Row>}
             {!!b.sampledAt && <Row label="Sampled">{new Date(b.sampledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</Row>}
           </Rows>
+          <Heading size={2} mt={3} mb={1}>Fly</Heading>
+          <Rows id="budget-fly">
+            <Row label="Spent">{usd(b.fly ? b.fly.spentUsd : b.spentUsd)}</Row>
+            {!!b.fly && <Row label="Rate">{usd(b.fly.perMonth) + " / month"}</Row>}
+            <Row label="Running">{String(b.fly ? b.fly.running : b.running)}</Row>
+            <Row label="Volumes">{String(b.fly ? b.fly.volumes : b.volumes)}</Row>
+          </Rows>
+          <Heading size={2} mt={3} mb={1}>AWS</Heading>
+          {!b.aws ? <Rows><Row label="Reading">Not in the budget (the router has no AWS key)</Row></Rows>
+            : <Rows id="budget-aws">
+              <Row label="Spent">{usd(b.aws.spentUsd)}</Row>
+              <Row label="Estimate">{usd(b.aws.estimateUsd)}</Row>
+              <Row label="Billed (Cost Explorer)" color={b.aws.billedError ? "red" : undefined}>{b.aws.billedError || (usd(b.aws.billedUsd) + (b.aws.billedAt ? " · " + new Date(b.aws.billedAt).toLocaleString() : ""))}</Row>
+              <Row label="Rate">{usd(b.aws.perMonth) + " / month"}</Row>
+              <Row label="Running">{String(b.aws.running)}</Row>
+              <Row label="Volumes">{`${b.aws.volumes} · ${b.aws.volumeGb} GB`}</Row>
+              <Row label="Snapshots">{`${b.aws.snapshots} · ${b.aws.snapshotGb} GB`}</Row>
+              <Row label="Public IPv4">{String(b.aws.publicIpv4)}</Row>
+              {!!b.aws.other?.length && <Row label="Not a session" color="amber">{b.aws.other.map((o) => `${o.name || o.id} (${o.type}, ${o.region}, ${o.state})`).join(", ")}</Row>}
+              {!!b.aws.account && <Row label="Account">{b.aws.account}</Row>}
+              {!!b.aws.error && <Row label="Error" color="red">{b.aws.error}</Row>}
+            </Rows>}
         </>}
       <Rows mt={2}>
         <Row label="Fly app">{app || "jarvis4-sessions"}</Row>
         <Row label="Org">jarvis2-370</Row>
       </Rows>
-      <Muted mt={2}>At the cap, every running session is paused. An estimate, not Fly's invoice.</Muted>
+      <Muted mt={2}>Fly and AWS fill one pool. At the cap, every running session on either is paused. Estimates from published prices, not the invoices; AWS counts the larger of the estimate and its own billed figure.</Muted>
     </Card>
   );
 }

@@ -27,7 +27,7 @@ every change. Fields of `persisted`:
 | `Machines` | `map[machine]session` | machine → session index |
 | `Grants` | `map[id]*StoredGrant` (grants.go:31) | phone-signed grants and standing rules |
 | `Schedules` | `map[session]*Schedule` (schedule.go:69) | wakeups, crons, resume prompt, watches (schedule.go:73) |
-| `Budget`, `BBBudget` | budget.go:220, bbbudget.go | this month's Fly spend estimate and DM flags; Browserbase DM flags |
+| `Budget`, `BBBudget` | budget.go, awsbudget.go, bbbudget.go | this month's Fly + AWS spend estimate (one pool; the AWS part and its Cost Explorer floor) and DM flags; Browserbase DM flags |
 | `Devices` | `map[id]*Device` (devices.go:53) | paired OpenClaw/Paseo apps |
 | `Uploads` | `map[id]*Upload` (uploads.go:43) | first-prompt attachment metadata (the bytes are files, 1.2) |
 | `Tasks` | `*TaskState` (tasks.go:572) | task instances, runs, daily schedules |

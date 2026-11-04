@@ -298,7 +298,8 @@ private struct UsageSection: View {
   }
 }
 
-/// the Fly spend against the cap (the router's own estimate from the machines' sizes and running time)
+/// the spend against the cap, Fly and AWS in one pool (the router's own estimate from what runs, priced at the providers'
+/// published rates; AWS counts the larger of that and its Cost Explorer figure)
 private struct FlySection: View {
   @Environment(AppModel.self) private var model
   var body: some View {
@@ -318,11 +319,22 @@ private struct FlySection: View {
         LabeledContent("Rate now", value: Fmt.usd(b["ratePerHour"].double ?? 0) + "/h")
         LabeledContent("A month at this rate", value: Fmt.usd(b["perMonth"].double ?? 0))
         LabeledContent("Running machines", value: "\(b["running"].int ?? 0)")
-        LabeledContent("Volumes", value: "\(b["volumes"].int ?? 0)")
+        let fly = b["fly"], aws = b["aws"]
+        LabeledContent("Fly", value: Fmt.usd(fly["spentUsd"].double ?? spent)).accessibilityIdentifier("budget-fly")
+        LabeledContent("Fly volumes", value: "\(fly["volumes"].int ?? b["volumes"].int ?? 0)")
+        if aws.isNull {
+          LabeledContent("AWS", value: "Not counted")
+        } else {
+          LabeledContent("AWS", value: Fmt.usd(aws["spentUsd"].double ?? 0)).accessibilityIdentifier("budget-aws")
+          LabeledContent("AWS estimate", value: Fmt.usd(aws["estimateUsd"].double ?? 0))
+          LabeledContent("AWS billed", value: Fmt.usd(aws["billedUsd"].double ?? 0))
+          LabeledContent("AWS running", value: "\(aws["running"].int ?? 0)")
+          if let e = aws["error"].text { ErrorRow(text: "AWS: \(e)") }
+        }
       }
       LabeledContent("Fly app") { Text(model.flyApp ?? "jarvis4-sessions").font(.footnote.monospaced()) }
-    } header: { Text("Fly spend") } footer: {
-      Text("An estimate, not Fly's invoice.")
+    } header: { Text("Spend · Fly + AWS") } footer: {
+      Text("One pool for both. An estimate, not the invoices.")
     }
   }
 }

@@ -38,8 +38,11 @@ function Banners() {
         <P size={1} color="red">If this stays: Settings → Claude account → Re-login.</P>
       </Callout>}
       {b?.capped || b?.warned ? <Callout color={b.capped ? "red" : "amber"} mb={3} id="banner-budget">
-        <P size={2} weight="bold" color={b.capped ? "red" : "amber"}>{b.capped ? "Fly spend cap reached" : "Fly spend warning"}</P>
-        <Rows><Row label="Spent">{usd(b.spentUsd)}</Row><Row label="Cap">{usd(b.capUsd)}</Row><Row label="Month">{b.month}</Row></Rows>
+        <P size={2} weight="bold" color={b.capped ? "red" : "amber"}>{b.capped ? "Spend cap reached (Fly + AWS)" : "Spend warning (Fly + AWS)"}</P>
+        <Rows><Row label="Spent">{usd(b.spentUsd)}</Row>
+          {!!b.fly && <Row label="Fly">{usd(b.fly.spentUsd)}</Row>}
+          {!!b.aws && <Row label="AWS">{usd(b.aws.spentUsd)}</Row>}
+          <Row label="Cap">{usd(b.capUsd)}</Row><Row label="Month">{b.month}</Row></Rows>
         <P size={1} color={b.capped ? "red" : "amber"}>{b.capped ? "Every running session was paused." : "At the cap, every running session is paused."}</P>
       </Callout> : null}
       {!!st.fly?.error && st.fly.error !== "FLY_READ_TOKEN not set" && <Callout color="red" mb={3}>{"Fly: " + st.fly.error}</Callout>}

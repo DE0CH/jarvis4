@@ -1,6 +1,10 @@
 package main
 
-// The Fly budget cap and "Also on Fly" (Jarvis 1 lib/budget.js, server.js budgetTick / scanFlyAccount).
+// The budget cap (Fly and AWS, one pool) and "Also on Fly" (Jarvis 1 lib/budget.js, server.js budgetTick / scanFlyAccount).
+//
+// AWS spend joins the same pool (awsbudget.go, Deyao 2026-11-04): the AWS rate is added to the Fly rate every tick,
+// the month's total is both, the cap pauses running sessions on either runner, and Cost Explorer's billed figure for
+// jarvis4's own AWS account is a floor under the AWS part.
 //
 // Fly has no spend cap and no billing alerts, so the router ESTIMATES this month's spend: every tick it sums
 // the $/hour of everything accruing in the sessions' app (started machines by their guest size and region, provisioned
@@ -242,6 +246,24 @@ type BudgetState struct {
 	Capped       bool       `json:"capped"`
 	CappedAt     *time.Time `json:"cappedAt,omitempty"`
 	RatePerHour  float64    `json:"ratePerHour"`
+	// the AWS part (awsbudget.go): AWSUSD of SpentUSD is the AWS estimate (the rest is Fly's); AWSBilledUSD is Cost
+	// Explorer's last figure for the month, which the pool counts when it is above the estimate
+	AWSUSD       float64    `json:"awsUsd,omitempty"`
+	AWSBilledUSD float64    `json:"awsBilledUsd,omitempty"`
+	AWSBilledAt  *time.Time `json:"awsBilledAt,omitempty"`
+}
+
+// pool: the month's spend against the cap: Fly's estimate + AWS's (the larger of the estimate and the billed figure)
+func (s BudgetState) pool() float64 { return s.SpentUSD + max(0, s.AWSBilledUSD-s.AWSUSD) }
+
+func (s BudgetState) flyPart() float64 { return s.SpentUSD - s.AWSUSD }
+
+func (s BudgetState) awsPart() float64 { return max(s.AWSUSD, s.AWSBilledUSD) }
+
+// spendSample: one tick's rates (USD an hour) and, when Cost Explorer was read, its figure
+type spendSample struct {
+	FlyRate, AWSRate float64
+	Billed           *awsBilled
 }
 
 type budgetActions struct{ Enforce, CapDM, WarnDM bool }
@@ -249,7 +271,7 @@ type budgetActions struct{ Enforce, CapDM, WarnDM bool }
 // applySample: fold one sample in. Enforce: the month is over the cap (every tick, so a session started
 // after the cap is caught too); CapDM: first crossing of the cap this month; WarnDM: first crossing of the
 // warn line (none once capped, or in the same tick)
-func applySample(prev *BudgetState, now time.Time, ratePerHour, capUSD, warnUSD float64) (BudgetState, budgetActions, float64) {
+func applySample(prev *BudgetState, now time.Time, smp spendSample, capUSD, warnUSD float64) (BudgetState, budgetActions, float64) {
 	month := now.UTC().Format("2006-01")
 	s := BudgetState{Month: month}
 	if prev != nil && prev.Month == month {
@@ -264,24 +286,30 @@ func applySample(prev *BudgetState, now time.Time, ratePerHour, capUSD, warnUSD 
 		deltaH = math.Min(deltaH, maxDeltaH)
 	}
 	t := now.UTC()
-	s.SpentUSD += ratePerHour * deltaH
-	s.LastSampleAt, s.RatePerHour = &t, ratePerHour
+	s.SpentUSD += (smp.FlyRate + smp.AWSRate) * deltaH
+	s.AWSUSD += smp.AWSRate * deltaH
+	s.LastSampleAt, s.RatePerHour = &t, smp.FlyRate+smp.AWSRate
+	if b := smp.Billed; b != nil && b.Month == month {
+		at := b.At
+		s.AWSBilledUSD, s.AWSBilledAt = b.USD, &at
+	}
+	spent := s.pool()
 	// a line raised above this month's spend re-arms its DM (Deyao moved 25/30 to 35/40 on 2026-10-20 at USD 28 spent)
-	if s.Capped && !(capUSD > 0 && s.SpentUSD >= capUSD) {
+	if s.Capped && !(capUSD > 0 && spent >= capUSD) {
 		s.Capped, s.CappedAt = false, nil
 	}
-	if s.Warned && !s.Capped && !(warnUSD > 0 && s.SpentUSD >= warnUSD) {
+	if s.Warned && !s.Capped && !(warnUSD > 0 && spent >= warnUSD) {
 		s.Warned = false
 	}
 	var a budgetActions
 	switch {
-	case capUSD > 0 && s.SpentUSD >= capUSD:
+	case capUSD > 0 && spent >= capUSD:
 		a.Enforce = true
 		if !s.Capped {
 			a.CapDM, s.Capped, s.CappedAt = true, true, &t
 		}
 		s.Warned = true
-	case warnUSD > 0 && s.SpentUSD >= warnUSD && !s.Warned:
+	case warnUSD > 0 && spent >= warnUSD && !s.Warned:
 		a.WarnDM, s.Warned = true, true
 	}
 	return s, a, deltaH
@@ -453,8 +481,8 @@ func (r *Router) alsoOnFly(ms []flyMachine, vs []flyVolume) []flyOther {
 	return out
 }
 
-// budgetTick: one sample. Returns what it did, for tests.
-func (r *Router) budgetTick(fly flyReader, now time.Time, capUSD, warnUSD float64) (budgetActions, []string, error) {
+// budgetTick: one sample (aws nil: no AWS key, Fly alone). Returns what it did, for tests.
+func (r *Router) budgetTick(fly flyReader, aws awsCoster, now time.Time, capUSD, warnUSD float64) (budgetActions, []string, error) {
 	ms, err := fly.Machines()
 	if err != nil {
 		r.setFlyView(map[string]any{"apps": 1, "machines": 0, "volumes": 0, "other": []flyOther{}, "error": err.Error(), "checkedAt": now.UTC()})
@@ -481,28 +509,65 @@ func (r *Router) budgetTick(fly flyReader, now time.Time, capUSD, warnUSD float6
 	if serr != nil {
 		log.Printf("[budget] %v (counted from the last list)", serr)
 	}
+	var prev *BudgetState
+	r.st.Do(func(d *persisted) {
+		if d.Budget != nil {
+			c := *d.Budget
+			prev = &c
+		}
+	})
+	ap := readAWS(aws, prev, now) // awsbudget.go; nil without a key
+	smp := spendSample{FlyRate: b.RatePerHour}
+	if ap != nil {
+		smp.AWSRate, smp.Billed = ap.burn.RatePerHour, ap.billed
+	}
 	var state BudgetState
 	var act budgetActions
 	r.st.Do(func(d *persisted) {
-		state, act, _ = applySample(d.Budget, now, b.RatePerHour, capUSD, warnUSD)
+		state, act, _ = applySample(d.Budget, now, smp, capUSD, warnUSD)
 		d.Budget = &state
 	})
+	spent, rate := state.pool(), smp.FlyRate+smp.AWSRate
+	flyPart := map[string]any{"spentUsd": state.flyPart(), "ratePerHour": b.RatePerHour, "perMonth": b.RatePerHour * hoursPerMonth,
+		"running": b.Running, "volumes": b.Volumes, "snapshots": b.Snapshots, "snapshotGb": float64(b.SnapshotBytes) / 1e9}
+	running := b.Running
+	var awsPart map[string]any
+	if ap != nil {
+		awsPart = ap.view(r, state)
+		running += ap.burn.Running
+	}
 	budgetView.Lock()
-	budgetView.budget = map[string]any{"month": state.Month, "spentUsd": state.SpentUSD, "capUsd": capUSD, "warnUsd": warnUSD,
-		"warned": state.Warned, "capped": state.Capped, "cappedAt": state.CappedAt, "ratePerHour": b.RatePerHour,
-		"perMonth": b.RatePerHour * hoursPerMonth, "running": b.Running, "volumes": b.Volumes,
-		"snapshots": b.Snapshots, "snapshotGb": float64(b.SnapshotBytes) / 1e9, "sampledAt": state.LastSampleAt}
+	budgetView.budget = map[string]any{"month": state.Month, "spentUsd": spent, "capUsd": capUSD, "warnUsd": warnUSD,
+		"warned": state.Warned, "capped": state.Capped, "cappedAt": state.CappedAt, "ratePerHour": rate,
+		"perMonth": rate * hoursPerMonth, "running": running, "volumes": b.Volumes,
+		"snapshots": b.Snapshots, "snapshotGb": float64(b.SnapshotBytes) / 1e9, "sampledAt": state.LastSampleAt,
+		"fly": flyPart, "aws": awsPart}
 	budgetView.Unlock()
 	r.saveBudgetView()
+	// what is running: Fly's started machines and AWS's running instances, each a session's or not
+	var up []string
+	for _, m := range ms {
+		if m.State == "started" {
+			up = append(up, m.ID)
+		}
+	}
+	if ap != nil {
+		for _, in := range ap.inv.Instances {
+			if in.State == "running" || in.State == "pending" {
+				up = append(up, in.ID)
+			}
+		}
+	}
+	split := ""
+	if ap != nil {
+		split = fmt.Sprintf(" (Fly %s, AWS %s)", usd(state.flyPart()), usd(state.awsPart()))
+	}
 	var paused, unknown []string
 	if act.Enforce {
-		for _, m := range ms {
-			if m.State != "started" {
-				continue
-			}
+		for _, id := range up {
 			var sid, name string
 			r.st.Do(func(d *persisted) {
-				if s := d.Sessions[d.Machines[m.ID]]; s != nil && s.MachineID == m.ID {
+				if s := d.Sessions[d.Machines[id]]; s != nil && s.MachineID == id {
 					sid, name = s.ID, s.Label
 					if name == "" {
 						name = s.Title
@@ -513,7 +578,7 @@ func (r *Router) budgetTick(fly flyReader, now time.Time, capUSD, warnUSD float6
 				}
 			})
 			if sid == "" {
-				unknown = append(unknown, m.ID)
+				unknown = append(unknown, id)
 				continue
 			}
 			// a session another action holds (starting, being destroyed…) is skipped; the next tick tries again
@@ -521,25 +586,25 @@ func (r *Router) budgetTick(fly flyReader, now time.Time, capUSD, warnUSD float6
 				log.Printf("[budget] pause %s: %v", sid, err)
 				continue
 			}
-			log.Printf("[budget] paused %s (%s): month over the cap", sid, m.ID)
+			log.Printf("[budget] paused %s (%s): month over the cap", sid, id)
 			paused = append(paused, name)
 		}
 		if act.CapDM || len(paused) > 0 {
-			msg := fmt.Sprintf("Fly budget cap (Jarvis 4): an estimated %s of %s spent in %s. ", usd(state.SpentUSD), usd(capUSD), state.Month)
+			msg := fmt.Sprintf("Budget cap (Jarvis 4, Fly + AWS): an estimated %s%s of %s spent in %s. ", usd(spent), split, usd(capUSD), state.Month)
 			if len(paused) > 0 {
 				msg += fmt.Sprintf("Paused %d running session(s): %s. They resume from the app. ", len(paused), strings.Join(paused, ", "))
 			} else {
 				msg += "No running sessions to pause. "
 			}
 			if len(unknown) > 0 {
-				msg += fmt.Sprintf("%d machine(s) on Fly that are no session of the router's are still running (%s); the router can't stop them. ", len(unknown), strings.Join(unknown, ", "))
+				msg += fmt.Sprintf("%d machine(s) on Fly or AWS that are no session of the router's are still running (%s); the router can't stop them. ", len(unknown), strings.Join(unknown, ", "))
 			}
-			msg += fmt.Sprintf("Anything started before the month ends is paused again. The burn rate was %s a month.", usd(b.RatePerHour*hoursPerMonth))
+			msg += fmt.Sprintf("Anything started before the month ends is paused again. The burn rate was %s a month.", usd(rate*hoursPerMonth))
 			budgetDM(r, msg)
 		}
 	} else if act.WarnDM {
-		budgetDM(r, fmt.Sprintf("Fly spend (Jarvis 4): an estimated %s of %s in %s (%d%%), %d session(s) running at %s a month. At %s running sessions are paused.",
-			usd(state.SpentUSD), usd(capUSD), state.Month, int(state.SpentUSD/capUSD*100), b.Running, usd(b.RatePerHour*hoursPerMonth), usd(capUSD)))
+		budgetDM(r, fmt.Sprintf("Spend (Jarvis 4, Fly + AWS): an estimated %s%s of %s in %s (%d%%), %d session machine(s) running at %s a month. At %s running sessions are paused.",
+			usd(spent), split, usd(capUSD), state.Month, int(spent/capUSD*100), running, usd(rate*hoursPerMonth), usd(capUSD)))
 	}
 	return act, paused, nil
 }
@@ -560,9 +625,13 @@ func (r *Router) budgetLoop() {
 	}
 	fly := &flyAPI{base: "https://api.machines.dev", app: sessionsApp, token: token, http: &http.Client{Timeout: 30 * time.Second}}
 	capUSD, warnUSD := budgetThresholds(os.Getenv)
+	aws := awsCosterFromEnv() // awsbudget.go: AWS in the same pool (nil without the router's AWS key)
+	if aws == nil {
+		log.Printf("[budget] AWS_READ_ACCESS_KEY_ID unset: AWS is not in the budget")
+	}
 	for {
 		awaitLead() // leaderlease.go
-		if _, _, err := r.budgetTick(fly, time.Now(), capUSD, warnUSD); err != nil {
+		if _, _, err := r.budgetTick(fly, aws, time.Now(), capUSD, warnUSD); err != nil {
 			log.Printf("[budget] %v", err)
 		}
 		time.Sleep(budgetTickDur)

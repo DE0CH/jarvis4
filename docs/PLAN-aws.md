@@ -91,7 +91,37 @@ credits). Account-wide: the IAM users above. State in R2 beside DE0CH/services'.
   fixed when made; `DEFAULT_RUNNER` (fly: aws from the first AWS session's end-to-end run, back to fly 2026-11-04 by Deyao). Its region stays a place
   that each runner maps (lhr/sin/nrt → eu-west-2/ap-southeast-1/ap-northeast-1).
 - Lost machines and the adoption of a lost spawn answer look at AWS too (`listAWSMachines`).
-- To do: the budget (AWS spend), the lifecycle log's AWS events, the app's runner picker, shipping instance logs.
+- To do: the lifecycle log's AWS events, the app's runner picker, shipping instance logs.
+
+## Budget (AWS spend, `router/awsbudget.go`)
+
+AWS and Fly fill one pool, the existing cap (`FLY_BUDGET_USD`, default USD 50; DM at `FLY_BUDGET_WARN_USD`, 45; Deyao,
+2026-11-04: "they contribute to the same pool of 50 usd"). Every budget tick (2 min) the router lists, with its read-only
+key in the three session regions, every instance, EBS volume, snapshot (`Owner self`: the baked AMIs' snapshots) and
+Elastic IP, and prices them at AWS's published on-demand rates (Price List API, read 2026-11-04, the tables in
+awsbudget.go): running instances by type and region, gp3 GB-months, snapshots by their full stored size, USD 0.005 an
+hour for each public IPv4. That rate is added to Fly's and summed over time like Fly's. At the cap the router pauses
+every running session on either runner (an AWS session by its instance id, as a Fly one by its machine id); instances
+that are no session's (a bake's builder, an experiment) are named in the DM, not stopped.
+
+Cross-check: every 6 h Cost Explorer's month-to-date usage cost (`ce:GetCostAndUsage`, filtered to the key's own account
+and record type Usage: no tax, no credits; USD 0.01 a request). It lags about a day but sees what the estimate doesn't
+(data transfer, t3 surplus credits, other regions, the days before tracking), so the pool counts AWS as the larger of
+the estimate and the billed figure. `GET /api/state` `budget`: the pool's totals, `budget.fly` and `budget.aws` (spent,
+estimate, billed, rate, running, volumes, snapshots, public IPv4, instances that are no session's, account); the web
+page's Settings and the app's Settings show the split.
+
+## Billing: separate from YYC
+
+Checked 2026-11-04 (`sts get-caller-identity` with every key): jarvis4's AWS (the `infra/aws` OpenTofu, the
+`jarvis4-infra`, `jarvis4-spawner` and `jarvis4-router-read` keys, every session instance, the baked AMIs) is in
+account 795109470764 (`deyaochen`, Deyao's own), the organisation's management account. YYC's AWS is the member
+account 551897326524 (`yyc`). Consolidated billing puts both on one invoice, but every charge is under its account
+(Cost Explorer / the bill by linked account), so jarvis4's spend never lands in YYC's figures, and the router's Cost
+Explorer query filters on its own account. To tell jarvis4 apart from anything else Deyao runs in 795109470764, every
+jarvis4 resource carries `app=jarvis4` (tofu's `default_tags`; the launch templates tag each instance, volume and
+network interface; bake.sh its builders, AMIs and snapshots), and `app` is an active cost allocation tag in Billing
+(activated 2026-11-04; it applies from then on).
 
 ## Order
 

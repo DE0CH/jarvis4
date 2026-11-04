@@ -2894,3 +2894,18 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      pressing, presses the same dialog at most twice, and logs each one. Auto mode is untouched (its prompts are
      Deyao's), and so are the trust dialog, the API key question, a plan's approval and AskUserQuestion.
      machine/autoaccept.go.
+248. **AWS spend is in the budget, one pool with Fly's** (Deyao, 2026-11-04: "aws spend tracking just like fly's spend
+     tracking. they contribute to the same pool of 50 usd, make sure the billing is recorded separately from yyc").
+     Each budget tick the router lists every instance, EBS volume, snapshot and Elastic IP in the three session regions
+     with its read-only key (now with `ec2:DescribeVolumes`, `DescribeSnapshots`, `DescribeAddresses`) and prices them
+     at AWS's published on-demand rates (Price List API, read 2026-11-04); that rate joins Fly's in the same month's total
+     against `FLY_BUDGET_USD` (50, DM at 45), and the cap pauses running sessions on both runners. Cost Explorer's
+     month-to-date usage for the router's own account, read every 6 h, is a floor under the AWS part (it lags a day but
+     includes data transfer, t3 surplus credits and anything the estimate doesn't list). router/awsbudget.go,
+     docs/PLAN-aws.md "Budget". Billing: jarvis4 runs in Deyao's own account 795109470764 (the organisation's
+     management account), YYC in its member account 551897326524, so the bill separates them by account; every
+     jarvis4 resource is also tagged `app=jarvis4`, an active cost allocation tag. *Not chosen*: Cost Explorer alone
+     (a day late: a cap on it would let a day's spend through, and each request costs USD 0.01); AWS Budgets actions
+     (they stop instances by IAM/SCP policy, outside the router's pause, which snapshots first); a separate AWS cap (Deyao:
+     one pool); moving jarvis4 into its own member account (the account split from YYC already holds; it would be an
+     account-level move of every resource for no billing gain).

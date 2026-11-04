@@ -117,9 +117,9 @@ private struct Banners: View {
           .accessibilityElement(children: .combine).accessibilityIdentifier("banner-creds")
         }
         if b["capped"].bool == true {
-          BudgetBanner(title: "Fly cap reached · sessions paused", spent: b["spentUsd"].double ?? 0, cap: b["capUsd"].double ?? 0, color: .red)
+          BudgetBanner(title: "Spend cap reached · sessions paused", spent: b["spentUsd"].double ?? 0, cap: b["capUsd"].double ?? 0, color: .red)
         } else if b["warned"].bool == true {
-          BudgetBanner(title: "Fly spend near the cap", spent: b["spentUsd"].double ?? 0, cap: b["capUsd"].double ?? 0, color: .orange)
+          BudgetBanner(title: "Spend near the cap (Fly + AWS)", spent: b["spentUsd"].double ?? 0, cap: b["capUsd"].double ?? 0, color: .orange)
         }
         if let e = model.fly["error"].text, e != "FLY_READ_TOKEN not set" { ErrorRow(text: "Fly: \(e)") }
       }

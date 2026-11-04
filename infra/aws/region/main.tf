@@ -112,4 +112,13 @@ resource "aws_launch_template" "session" {
   monitoring {
     enabled = false
   }
+  # merged with the spawner's own tags (jarvis4_source, Name): the cost allocation tag on everything a launch makes
+  # (checked 2026-11-04: a RunInstances with its own instance and volume tags kept the template's app tag on both)
+  dynamic "tag_specifications" {
+    for_each = ["instance", "volume", "network-interface"]
+    content {
+      resource_type = tag_specifications.value
+      tags          = { app = "jarvis4" }
+    }
+  }
 }
