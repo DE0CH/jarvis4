@@ -712,7 +712,7 @@ func (r *Router) kernelContinue(sid string, unlock func()) {
 	case s.State == "initialising" || s.State == "started":
 		unlock()
 		go r.lcAwaitBoot(op, sid, s.MachineID)
-	case s.State == "resuming" && s.MachineID != "" && (s.Kernel.MachineCert == nil || doc.Object("fly-"+s.MachineID) != mustSucc(s.Kernel.MachineCert)):
+	case s.State == "resuming" && s.MachineID != "" && (s.Kernel.MachineCert == nil || kernelObject(&s, s.MachineID, defaultRunner()) != mustSucc(s.Kernel.MachineCert)):
 		r.kernelResume(s, false, unlock, op)
 	default:
 		go func() {
@@ -725,6 +725,37 @@ func (r *Router) kernelContinue(sid string, unlock func()) {
 func mustSucc(d *sig.Doc) doc.Object {
 	c, _ := doc.PeekCert(*d)
 	return c.Succ
+}
+
+// kernelObject: a kernel line's machine as the kernel names it, "<runner>-<id>" (kernel/doc Object; the machine
+// checks the same name, machine/main.go machineObject): the spawner's cert onto it when that names it, else by the
+// session's runner (fallback: the router's default, for a session from before runners were recorded)
+func kernelObject(s *Session, machine, fallback string) doc.Object {
+	if s != nil && s.Kernel != nil && s.Kernel.MachineCert != nil {
+		if o := mustSucc(s.Kernel.MachineCert); o.Kind() == "machine" && o.MachineID() == machine {
+			return o
+		}
+	}
+	runner := fallback
+	if s != nil && validRunner(s.Runner) {
+		runner = s.Runner
+	}
+	if runner == "aws" {
+		return doc.Object("aws-" + machine)
+	}
+	return doc.Object("fly-" + machine)
+}
+
+// machineObject: kernelObject for a running machine, by its session
+func (r *Router) machineObject(machine string) doc.Object {
+	var s *Session
+	r.st.Do(func(d *persisted) {
+		if x := d.Sessions[d.Machines[machine]]; x != nil {
+			c := *x
+			s = &c
+		}
+	})
+	return kernelObject(s, machine, defaultRunner())
 }
 
 // registerKernel: the app's side of the kernel
@@ -870,7 +901,7 @@ func (r *Router) attestInput(machine, kind, origin, sum string) (*Doc, error) {
 		}
 		return a, err
 	}
-	h := sha256.Sum256([]byte("jarvis2-input\n" + "fly-" + machine + "\n" + kind + "\n" + sum))
+	h := sha256.Sum256([]byte("jarvis2-input\n" + string(r.machineObject(machine)) + "\n" + kind + "\n" + sum))
 	d, err := r.kernel.Doc("notary", "/challenge", map[string]string{"subject": hex.EncodeToString(h[:]), "about": "input"})
 	if err != nil {
 		return nil, err
@@ -887,7 +918,7 @@ func sessionLine(s *Session) string {
 	return certField(s.Cert, "line")
 }
 
-// kernelDowngrade: the machine keeps only these stores: the identity signer's (fly-M, fly-M, P), P the kept stores
+// kernelDowngrade: the machine keeps only these stores: the identity signer's (M, M, P), M its kernelObject, P the kept stores
 // for the session, notarized; the main grant moves along it (a move only narrows); the machine pulls again
 func (r *Router) kernelDowngrade(machine string, keep []string) error {
 	var s Session
@@ -904,7 +935,7 @@ func (r *Router) kernelDowngrade(machine string, keep []string) error {
 		allowed = append(allowed, "store:"+st)
 	}
 	p := perm.Pair{Allowed: perm.Only(allowed...), Conditions: []string{"session:" + s.ID}}
-	c, err := r.kernel.Doc("identity", "/sign", map[string]any{"machine": "fly-" + machine, "pair": p})
+	c, err := r.kernel.Doc("identity", "/sign", map[string]any{"machine": r.machineObject(machine), "pair": p})
 	if err != nil {
 		return err
 	}
