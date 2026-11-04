@@ -21,6 +21,11 @@ git("init", "-q", "-b", "main")
 git("add", "-A")
 git("commit", "-qm", "base")
 yaml_src = open(os.path.join(ROOT, "k8s", "cluster", "kernel", "kernel.yaml")).read()
+# the steps below start from blue serving, green idle and no release in flight, whatever the live file holds now (a
+# release waiting for Deyao's signature leaves the hold on one copy)
+yaml_src = yaml_src.replace(f", annotations: {{ {M.HOLD} }}", "")
+yaml_src = "\n---\n".join(re.sub(r"(?m)^  replicas: \d+$", "  replicas: " + ("1" if "color: blue" in part else "0"), part)
+                            if "kind: Deployment" in part else part for part in yaml_src.split("\n---\n"))
 KF = os.path.join(d, "kernel.yaml")
 
 
