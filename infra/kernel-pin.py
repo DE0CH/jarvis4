@@ -177,6 +177,17 @@ def plan(kf, active, sha):
               "else revert the change. No kernel Deployment was pinned; the router and session pins went ahead.",
               file=sys.stderr)
         return 1
+    if held(text, other(active)):
+        # the release in flight already gave the held copy this build's inputs (a later build changed nothing it is made
+        # from): nothing new to release, so this build passes instead of waiting on the flip
+        spin = {d[0]: d[3] for d in deployments(text) if d[2] == other(active)}
+        role_of = {v: k for k, v in standby.items()}
+
+        def same(name):
+            full = git("rev-parse", "-q", "--verify", f"{spin.get(name)}^{{commit}}", check=False).stdout.strip() if spin.get(name) else ""
+            return bool(full) and git("merge-base", "--is-ancestor", full, sha, check=False).returncode == 0 \
+                and not changed(full, sha, ins[role_of[name]])
+        move = [m for m in move if m not in role_of or not same(m)]
     if set(move) & set(standby.values()) and held(text, other(active)):
         print(f"::error::a kernel release is in flight on the {other(active)} copy ({HOLD}): it may serve already, so "
               f"this release waits until that flip is done and committed (infra/setup.py kernel-flipped; docs/RUNBOOK.md "

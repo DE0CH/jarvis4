@@ -110,6 +110,16 @@ assert [parts()[i] for n, (_, cp, _, i) in ds().items() if cp == "blue"] == blue
 git("commit", "-q", "--allow-empty", "-m", "release 3\n\nKernel-Release: more (Deyao, 2026-10-24)")
 rc, out, err = plan(git("rev-parse", "HEAD"))
 assert rc == 1 and out == [] and "in flight on the green copy" in err, (rc, out, err)
+# ...but a build that changes nothing the held copy was built from passes with nothing to move (the release in flight
+# already has it): only an input change past the held build waits on the flip
+held_src = open(KF).read()
+prev = git("rev-parse", "HEAD~1")
+open(KF, "w").write("\n---\n".join(re.sub(r"ghcr.io/de0ch/jarvis4-kernel:sha-[0-9a-f]{12}(@sha256:[0-9a-f]{64})?",
+                                           "ghcr.io/de0ch/jarvis4-kernel:sha-" + prev[:12], part) if "color: green" in part else part
+                                    for part in held_src.split("\n---\n")))
+rc, out, err = plan(git("rev-parse", "HEAD"))
+assert rc == 0 and out == [], (rc, out, err)
+open(KF, "w").write(held_src)
 
 # 8. flipped: green's holds go, blue goes to replicas 0; with green serving, the next release lands on blue
 subprocess.run([sys.executable, PIN, "flipped", KF, "green"], check=True)
