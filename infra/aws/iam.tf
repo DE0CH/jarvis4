@@ -1,5 +1,6 @@
 # The spawner's IAM user: instances from the session launch templates only, tagged with their source; it reads,
-# reads the console of and terminates only instances that carry that tag.
+# reads the console of (GetConsoleOutput, and live over the EC2 Serial Console: kernel/spawner/awsserial.go) and
+# terminates only instances that carry that tag.
 resource "aws_iam_user" "spawner" {
   provider = aws.sin # IAM is global; any region's provider
   name     = "jarvis4-spawner"
@@ -58,6 +59,14 @@ resource "aws_iam_user_policy" "spawner" {
         Sid       = "OnlyItsInstances"
         Effect    = "Allow"
         Action    = ["ec2:GetConsoleOutput", "ec2:TerminateInstances", "ec2:DescribeInstanceAttribute"]
+        Resource  = "arn:aws:ec2:*:${data.aws_caller_identity.me.account_id}:instance/*"
+        Condition = { Null = { "aws:ResourceTag/jarvis4_source" = "false" } }
+      },
+      {
+        # a one-off key for one serial console session (the keys line, read live)
+        Sid       = "ReadItsSerialConsoles"
+        Effect    = "Allow"
+        Action    = "ec2-instance-connect:SendSerialConsoleSSHPublicKey"
         Resource  = "arn:aws:ec2:*:${data.aws_caller_identity.me.account_id}:instance/*"
         Condition = { Null = { "aws:ResourceTag/jarvis4_source" = "false" } }
       },

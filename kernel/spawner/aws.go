@@ -4,8 +4,9 @@ package spawner
 // /aws-credentials). One session machine = one EC2 instance (docs/PLAN-aws.md): Flatcar Container Linux from the
 // region's launch template `jarvis4-session` (infra/aws), whose Ignition user-data, written here, runs the session
 // image pinned by digest as the instance's one container (privileged, the host's network, /data bound in).
-// The machine's keys reach the spawner through the instance's serial console (GetConsoleOutput), so their link to the
-// instance is AWS's word, not the machine's or the router's. The instance has one EBS volume (Flatcar's root grows to
+// The machine's keys reach the spawner through the instance's serial console, read live over the EC2 Serial Console
+// (awsserial.go) or else from GetConsoleOutput, so their link to the instance is AWS's word, not the machine's or the
+// router's. The instance has one EBS volume (Flatcar's root grows to
 // fill it at first boot): the image's room plus the session's diskGb, /data a directory on it, deleted with the
 // instance, so there is no volume to delete afterwards. (A second volume for /data would need its device name, which
 // NVMe doesn't keep: on the prototype the root disk itself was nvme1n1.)
@@ -123,11 +124,14 @@ type AWSAPI struct {
 	// endpoint: the region's EC2 endpoint (a var: tests point it at a fake)
 	endpoint func(region string) string
 	now      func() time.Time
+	serialEP serialEndpoints         // awsserial.go
+	serial   map[string]*serialWatch // by instance id: the live serial console readers (awsserial.go)
 }
 
 func NewAWSAPI() *AWSAPI {
 	return &AWSAPI{http: &http.Client{Timeout: 60 * time.Second},
-		endpoint: func(region string) string { return "https://ec2." + region + ".amazonaws.com/" }, now: time.Now}
+		endpoint: func(region string) string { return "https://ec2." + region + ".amazonaws.com/" }, now: time.Now,
+		serialEP: defaultSerialEndpoints()}
 }
 
 func (a *AWSAPI) Configure(c AWSCredentials) {
@@ -205,6 +209,9 @@ func sign(req *http.Request, body []byte, c AWSCredentials, region, service stri
 	req.Header.Set("X-Amz-Content-Sha256", payload)
 	host := req.URL.Host
 	headers := map[string]string{"content-type": req.Header.Get("Content-Type"), "host": host, "x-amz-content-sha256": payload, "x-amz-date": amzDate}
+	if t := req.Header.Get("X-Amz-Target"); t != "" { // a JSON API's action (EC2 Instance Connect)
+		headers["x-amz-target"] = t
+	}
 	names := make([]string, 0, len(headers))
 	for k := range headers {
 		names = append(names, k)
@@ -415,6 +422,7 @@ func (a *AWSAPI) Create(in CreateInput) (string, string, error) {
 	if len(out.Instances) != 1 || out.Instances[0].ID == "" {
 		return "", "", fmt.Errorf("RunInstances made no instance")
 	}
+	a.watchSerial(in.Region, out.Instances[0].ID) // its keys line, live, as soon as it is written (awsserial.go)
 	return out.Instances[0].ID, "", nil
 }
 
@@ -503,10 +511,14 @@ func (a *AWSAPI) Inspect(id string) (FlyMachine, error) {
 	return m, nil
 }
 
-// Init: the machine's keys line from the instance's serial console (the newest output: GetConsoleOutput Latest). The
-// machine writes it until its cert arrives; until then this is a not-started (the router asks again).
+// Init: the machine's keys line from the instance's serial console: as the live reader read it (awsserial.go), else the
+// newest output EC2 keeps (GetConsoleOutput Latest, refreshed every 30-40 s). The machine writes it until its cert
+// arrives; until then this is a not-started (the router asks again).
 func (a *AWSAPI) Init(id string) (MachineKeys, error) {
 	var k MachineKeys
+	if sk, _ := a.serialKeys(id); sk != nil {
+		return *sk, nil
+	}
 	region, inst, err := a.find(id)
 	if err != nil {
 		return k, err
@@ -514,6 +526,7 @@ func (a *AWSAPI) Init(id string) (MachineKeys, error) {
 	if inst == nil {
 		return k, fmt.Errorf("instance %s is gone", id)
 	}
+	a.watchSerial(region, id) // none yet: this spawner didn't create it (a restart, a copy flip)
 	p := url.Values{}
 	p.Set("Action", "GetConsoleOutput")
 	p.Set("InstanceId", id)
@@ -527,17 +540,15 @@ func (a *AWSAPI) Init(id string) (MachineKeys, error) {
 	b, _ := base64.StdEncoding.DecodeString(out.Output)
 	found := ""
 	for _, line := range strings.Split(string(b), "\n") {
-		if i := strings.Index(line, keysMark); i >= 0 {
-			found = strings.TrimSpace(line[i+len(keysMark):])
+		if strings.Contains(line, keysMark) {
+			found = line
 		}
 	}
 	if found == "" {
 		return k, errNotYet
 	}
-	if json.Unmarshal([]byte(found), &k) != nil || k.EncryptionKey == "" || k.SigningKey == "" {
-		return k, fmt.Errorf("the console's keys line has no keys")
-	}
-	return k, nil
+	k, _, err = keysFromLine(found)
+	return k, err
 }
 
 // errNotYet: the machine hasn't written its keys line yet (its image is still being pulled)
@@ -545,6 +556,7 @@ var errNotYet = errors.New("no keys on the console yet")
 
 // Destroy: TerminateInstances (its volume goes with it)
 func (a *AWSAPI) Destroy(id string) error {
+	a.stopSerial(id)
 	region, inst, err := a.find(id)
 	if err != nil || inst == nil {
 		return err

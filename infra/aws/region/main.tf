@@ -27,6 +27,12 @@ data "aws_ami_ids" "baked" {
 
 data "aws_availability_zones" "up" { state = "available" }
 
+# the account's EC2 Serial Console in this region: the spawner reads a new machine's keys line live through it
+# (kernel/spawner/awsserial.go; only with a key it pushes for one of its tagged instances, iam.tf)
+resource "aws_ec2_serial_console_access" "on" {
+  enabled = true
+}
+
 resource "aws_vpc" "sessions" {
   cidr_block           = "10.40.0.0/16"
   enable_dns_hostnames = true
