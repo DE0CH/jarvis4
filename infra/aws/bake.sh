@@ -22,6 +22,12 @@ BAKE_TAG=jarvis4_bake
 IMAGE_TAG=jarvis4_session_image
 
 log() { echo "[$region] $*" >&2; }
+# a failure is an annotation too (a public repo's annotations read without a login; its logs don't)
+errf=$(mktemp)
+aws() { command aws "$@" 2> >(tee -a "$errf" >&2); }
+fail() { log "$*"; echo "::error::[${region:-}] $*" | tr '\n' ' '; echo; }
+set -E
+trap 'sleep 1; fail "line $LINENO: $BASH_COMMAND failed: $(tail -c 600 "$errf" | tr "\n" " ")"' ERR
 summary() { [ -n "${GITHUB_STEP_SUMMARY:-}" ] && echo "$*" >>"$GITHUB_STEP_SUMMARY" || true; }
 
 # ignition <unit script>: an Ignition config running the script once at boot as root (update-engine masked, as the
@@ -70,7 +76,7 @@ drop_ami() {
 
 bake() {
   region=$1 image=$2
-  [[ $image =~ ^ghcr\.io/de0ch/jarvis4-session(:[a-z0-9.-]+)?@sha256:[0-9a-f]{64}$ ]] || { log "not a pinned session image: $image"; exit 1; }
+  [[ $image =~ ^ghcr\.io/de0ch/jarvis4-session(:[a-z0-9.-]+)?@sha256:[0-9a-f]{64}$ ]] || { fail "not a pinned session image: $image"; exit 1; }
   have=$(aws ec2 describe-images --region "$region" --owners self --filters "Name=tag:$IMAGE_TAG,Values=$image" Name=state,Values=available --query 'Images[0].ImageId' --output text)
   if [[ $have == ami-* ]]; then log "baked already: $have"; echo "$have"; return; fi
   flatcar=$(jq -r --arg r "$region" '.amis[$r]' "$here/flatcar.json")
@@ -98,11 +104,11 @@ systemctl poweroff" >"$tmp/builder.ign"
   log "builder $b from Flatcar $flatcar"
   t0=$(date +%s)
   until [ "$(state "$b")" = stopped ]; do
-    [ $(($(date +%s) - t0)) -lt 1800 ] || { log "the builder didn't stop in 30 min"; console "$b" | tail -40 >&2; exit 1; }
+    [ $(($(date +%s) - t0)) -lt 1800 ] || { fail "the builder didn't stop in 30 min: $(console "$b" | tail -25)"; exit 1; }
     sleep 15
   done
   out=$(console "$b")
-  grep -q 'JARVIS4-BAKE OK' <<<"$out" || { log "the builder didn't bake"; tail -60 <<<"$out" >&2; exit 1; }
+  grep -q 'JARVIS4-BAKE OK' <<<"$out" || { fail "the builder didn't bake: $(tail -25 <<<"$out")"; exit 1; }
   log "$(grep -o 'JARVIS4-BAKE pulled in [0-9]*s' <<<"$out" | tail -1) (builder up to stopped: $(($(date +%s) - t0)) s)"
 
   # 2. the AMI (no tofu tag yet)
@@ -113,7 +119,7 @@ systemctl poweroff" >"$tmp/builder.ign"
   log "AMI $ami"
   t0=$(date +%s)
   until [ "$(aws ec2 describe-images --region "$region" --image-ids "$ami" --query 'Images[0].State' --output text)" = available ]; do
-    [ $(($(date +%s) - t0)) -lt 2400 ] || { log "$ami not available in 40 min"; drop_ami "$ami"; exit 1; }
+    [ $(($(date +%s) - t0)) -lt 2400 ] || { fail "$ami not available in 40 min"; drop_ami "$ami"; exit 1; }
     sleep 20
   done
   aws ec2 terminate-instances --region "$region" --instance-ids "$b" >/dev/null
@@ -144,10 +150,10 @@ systemctl poweroff" >"$tmp/test.ign"
       [ -n "$report" ] && break
     fi
   done
-  [ -n "$report" ] || { log "the test boot reported nothing (Ignition didn't run again?)"; tail -60 <<<"$out" >&2; drop_ami "$ami"; exit 1; }
+  [ -n "$report" ] || { fail "the test boot reported nothing (Ignition didn't run again?): $(tail -25 <<<"$out")"; drop_ami "$ami"; exit 1; }
   log "test: $report; the console's newest output lags it by >= ${lag:-?} s"
   summary "- $region: $ami, $report; console lag >= ${lag:-?} s"
-  grep -q 'present=yes' <<<"$report" && grep -q 'exit=0' <<<"$report" || { log "the image isn't usable on $ami"; drop_ami "$ami"; exit 1; }
+  grep -q 'present=yes' <<<"$report" && grep -q 'exit=0' <<<"$report" || { fail "the image isn't usable on $ami: $report"; drop_ami "$ami"; exit 1; }
 
   aws ec2 create-tags --region "$region" --resources "$ami" --tags "Key=$IMAGE_TAG,Value=$image"
   echo "$ami"
