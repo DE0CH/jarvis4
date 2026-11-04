@@ -479,3 +479,99 @@ func TestAnOperationEndsOnceItsRecordIsWritten(t *testing.T) {
 		t.Fatalf("%v", o)
 	}
 }
+
+// an AWS machine's operation: one entry per change of the instance's state as EC2 describes it (launched, running,
+// shutting-down and terminated with EC2's reasons, then gone), each once though every poll sees it; nothing of Fly
+func TestLifecycleAWSEvents(t *testing.T) {
+	r := newTestRouter(t)
+	r.lc.pollEvery = time.Hour // polled by hand
+	r.lc.flyOn = func() bool { return true }
+	flyCalls := 0
+	r.lc.flyEvents = func(string) ([]flyEvent, error) { flyCalls++; return nil, nil }
+	r.lc.flyLogs = func(_, n string) ([]flyLogLine, string, error) { flyCalls++; return nil, n, nil }
+	var mu sync.Mutex
+	var cur *awsInstanceView
+	r.lc.awsOn = func() bool { return true }
+	r.lc.awsDescribe = func(m string) (*awsInstanceView, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if m != "i-0abc" || cur == nil {
+			return nil, nil
+		}
+		c := *cur
+		return &c, nil
+	}
+	set := func(v *awsInstanceView) { mu.Lock(); cur = v; mu.Unlock() }
+	addSession(r, "sA", "started", "i-0abc", false)
+	h := r.lcBegin("sA", "boot")
+	h.machine("i-0abc")
+	launched := time.Now().UTC()
+	base := awsInstanceView{ID: "i-0abc", Region: "eu-west-2", Type: "t3.medium", Zone: "eu-west-2a", Launched: launched}
+	v := base
+	v.State = "pending"
+	set(&v)
+	r.lcPollOnce(h.run)
+	r.lcPollOnce(h.run)
+	v2 := base
+	v2.State, v2.PublicIP = "running", "18.130.1.2"
+	set(&v2)
+	r.lcPollOnce(h.run)
+	r.lcPollOnce(h.run)
+	v3 := base
+	v3.State, v3.ReasonCode, v3.ReasonMsg, v3.Transition = "shutting-down", "Client.InstanceInitiatedShutdown",
+		"Client.InstanceInitiatedShutdown: Instance initiated shutdown", "User initiated"
+	set(&v3)
+	r.lcPollOnce(h.run)
+	v4 := v3
+	v4.State = "terminated"
+	set(&v4)
+	r.lcPollOnce(h.run)
+	r.lcPollOnce(h.run)
+	set(nil)
+	r.lcPollOnce(h.run)
+	r.lcPollOnce(h.run)
+	_, entries := r.lcRead("sA")
+	var got []string
+	for _, e := range entries[h.run.op.ID] {
+		if e.Source != "aws" || e.Machine != "i-0abc" {
+			t.Fatalf("%+v", e)
+		}
+		got = append(got, e.Text)
+	}
+	want := []string{"AWS: instance launched (t3.medium in eu-west-2a)", "AWS: instance running (public IPv4 18.130.1.2)",
+		"AWS: instance shutting-down: Client.InstanceInitiatedShutdown: Instance initiated shutdown; User initiated",
+		"AWS: instance terminated: Client.InstanceInitiatedShutdown: Instance initiated shutdown; User initiated",
+		"AWS: EC2 no longer lists instance i-0abc"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("got\n%s", strings.Join(got, "\n"))
+	}
+	if flyCalls != 0 {
+		t.Fatalf("Fly asked %d times about an EC2 instance", flyCalls)
+	}
+	if !parseAt(entries[h.run.op.ID][0].At).Equal(launched) {
+		t.Fatal("launched isn't at EC2's launch time")
+	}
+}
+
+// an instance already up when the operation began (a pause): only its changes from then on; a stop's time is EC2's
+func TestLifecycleAWSRunningBefore(t *testing.T) {
+	r := newTestRouter(t)
+	r.lc.pollEvery = time.Hour
+	r.lc.awsOn = func() bool { return true }
+	stopAt := time.Now().UTC().Add(-3 * time.Second).Truncate(time.Second)
+	v := &awsInstanceView{ID: "i-0def", Region: "ap-southeast-1", State: "running", Launched: time.Now().Add(-time.Hour)}
+	r.lc.awsDescribe = func(string) (*awsInstanceView, error) { c := *v; return &c, nil }
+	addSession(r, "sB", "started", "i-0def", false)
+	h := r.lcBegin("sB", "pause")
+	h.machine("i-0def")
+	r.lcPollOnce(h.run)
+	v = &awsInstanceView{ID: "i-0def", State: "shutting-down", Launched: v.Launched,
+		Transition: "User initiated (" + stopAt.Format("2006-01-02 15:04:05") + " GMT)"}
+	r.lcPollOnce(h.run)
+	_, entries := r.lcRead("sB")
+	es := entries[h.run.op.ID]
+	if len(es) != 1 || es[0].Text != "AWS: instance shutting-down: User initiated ("+stopAt.Format("2006-01-02 15:04:05")+" GMT)" ||
+		!parseAt(es[0].At).Equal(stopAt) {
+		t.Fatalf("%+v", es)
+	}
+}

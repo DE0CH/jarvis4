@@ -249,6 +249,12 @@ func (r *Router) kernelSpawn(sid string) {
 		id, vol = r.kernelAdopt(op, l.Source)
 	}
 	op.machine(id)
+	spawned := time.Now()
+	if isAWSMachine(id) {
+		op.note(id, "the spawner launched EC2 instance "+id+" ("+r.spawnRegion(&s)+"); waiting for its keys (the machine writes them to the instance's serial console once the session image runs)")
+	} else {
+		op.note(id, "the spawner made Fly machine "+id+"; waiting for its keys")
+	}
 	pred := ""
 	if sc, err := doc.PeekCert(*l.SourceCert); err == nil && sc.Pred.Kind() == "machine" {
 		pred = sc.Pred.MachineID()
@@ -266,6 +272,7 @@ func (r *Router) kernelSpawn(sid string) {
 	for deadline := time.Now().Add(kernelInitMax); ; {
 		mcert, err = r.kernel.Doc("spawner", "/init", map[string]string{"id": id})
 		if err == nil {
+			op.note(id, fmt.Sprintf("the spawner has the machine's keys and its cert (%.0f s after the spawn)", time.Since(spawned).Seconds()))
 			break
 		}
 		var ke *KernelError
@@ -620,7 +627,7 @@ func (r *Router) kernelKillDone(id, machine string, destroying bool, serr error,
 			s.NoSnapshot = ""
 		}
 	})
-	r.lcNote(id, machine, "the spawner confirmed the machine destroyed on Fly")
+	r.lcNote(id, machine, "the spawner confirmed the machine destroyed on "+runnerName(machine))
 	*ok = true
 	return true
 }
@@ -1054,4 +1061,12 @@ func (r *Router) respondKernelAdd(a *Approval, signatures string) (*Doc, string,
 	})
 	r.send(a.Machine, "refresh-secrets")
 	return &Doc{Payload: md.Payload, Sig: md.Sig}, a.Session, nil
+}
+
+// runnerName: where a machine runs, by its id (an EC2 instance's is i-…)
+func runnerName(machine string) string {
+	if isAWSMachine(machine) {
+		return "AWS"
+	}
+	return "Fly"
 }

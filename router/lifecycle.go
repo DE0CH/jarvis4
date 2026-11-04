@@ -12,6 +12,12 @@ package main
 //     exit code), polled every 2 s while the operation runs and for 30 s after it (Fly keeps only a few
 //     events per machine, so each is kept the first time it is seen), and Fly's own platform log lines for the machine
 //     (image pull, "Machine started in …", the VM's exit), from Fly's logs API (the app's stdout is left out);
+//   - what AWS did (source "aws") to an AWS machine (an EC2 instance, id i-…), read with the router's READ-ONLY AWS
+//     key (AWS_READ_*, awsread.go): DescribeInstances every 2 s while the operation runs and for 30 s after it, one
+//     entry per change of the instance's state (launched, pending, running, stopping, shutting-down, terminated) with
+//     its type, zone, public address and EC2's reasons (stateReason, e.g. Client.InstanceInitiatedShutdown or
+//     Server.InsufficientInstanceCapacity, and stateTransitionReason), and one when EC2 no longer knows it; and the
+//     instance's notable serial console lines (an OOM kill, a panic, Ignition failing: awslogs.go consoleTick);
 //   - the supervisor's lines (source "supervisor", supervisorlog.go) of the operation's machines from 5 s before it
 //     began until 30 s after it ended (until now while it runs), merged in when read.
 //
@@ -28,6 +34,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -55,7 +62,7 @@ type LcOp struct {
 // LcEntry: one line of an operation's log
 type LcEntry struct {
 	At      string `json:"at"`
-	Source  string `json:"source"` // router | fly | supervisor
+	Source  string `json:"source"` // router | fly | aws | supervisor
 	Machine string `json:"machine,omitempty"`
 	Text    string `json:"text"`
 }
@@ -73,6 +80,7 @@ type lcRun struct {
 	seen     map[string]bool   // Fly events and log lines already kept
 	logNext  map[string]string // machine → Fly logs' next_token
 	logsOff  bool              // Fly's logs API refused: events only
+	awsLast  map[string]string // AWS machine → the state (and reason) its last entry showed
 	stop     chan struct{}
 	stopOnce sync.Once
 	job      bool // an upgrade or restart: its pause and resume join it
@@ -95,6 +103,9 @@ type lifecycle struct {
 	flyEvents       func(machine string) ([]flyEvent, error)
 	flyLogs         func(machine, next string) ([]flyLogLine, string, error)
 	flyOn           func() bool // a read token is there
+	// AWS, read only (awsread.go): an instance as EC2 describes it now (nil: EC2 doesn't know it)
+	awsDescribe func(machine string) (*awsInstanceView, error)
+	awsOn       func() bool // the read key is there
 
 	mu   sync.Mutex
 	cur  map[string]*lcRun // session → its latest operation (running, or in its tail)
@@ -104,7 +115,8 @@ type lifecycle struct {
 
 func newLifecycle() *lifecycle {
 	return &lifecycle{cur: map[string]*lcRun{}, gone: map[string]bool{}, pollEvery: 2 * time.Second, tail: 30 * time.Second,
-		flyEvents: lcFlyEvents, flyLogs: lcFlyLogs, flyOn: func() bool { return machinesFly() != nil }}
+		flyEvents: lcFlyEvents, flyLogs: lcFlyLogs, flyOn: func() bool { return machinesFly() != nil },
+		awsDescribe: awsDescribe, awsOn: awsReadOn}
 }
 
 func (l *lifecycle) dropped(session string) bool {
@@ -161,7 +173,7 @@ func (r *Router) lcStart(session, kind string, job bool) *lcHandle {
 		prev.stopOnce.Do(func() { close(prev.stop) })
 	}
 	run := &lcRun{op: LcOp{ID: randID(), Session: session, Kind: kind, Started: nowText(), State: "running", Machines: []string{}},
-		seen: map[string]bool{}, logNext: map[string]string{}, stop: make(chan struct{}), job: job}
+		seen: map[string]bool{}, logNext: map[string]string{}, awsLast: map[string]string{}, stop: make(chan struct{}), job: job}
 	r.lc.cur[session] = run
 	r.lc.mu.Unlock()
 	op := run.op
@@ -448,6 +460,15 @@ func (r *Router) lcPollOnce(run *lcRun) {
 	run.mu.Unlock()
 	h := &lcHandle{r: r, run: run}
 	for _, m := range machines {
+		if isAWSMachine(m) {
+			if r.lc.awsOn() {
+				r.lcPollAWS(run, m, started)
+			}
+			continue
+		}
+		if !r.lc.flyOn() {
+			continue
+		}
 		if evs, err := r.lc.flyEvents(m); err == nil {
 			sort.Slice(evs, func(i, j int) bool { return evs[i].Timestamp < evs[j].Timestamp })
 			for _, e := range evs {
@@ -506,10 +527,99 @@ func (r *Router) lcPollOnce(run *lcRun) {
 	}
 }
 
-// lcPoll: Fly read while the operation runs and for lifecycle.tail after; a drain cuts the tail short
+// ---- AWS, read only ------------------------------------------------------------------------------------------
+
+// lcPollAWS: one DescribeInstances of an AWS machine; an entry when its state or EC2's reason for it changed since
+// the operation's last one (the first look also says when and how it was launched)
+func (r *Router) lcPollAWS(run *lcRun, m string, started time.Time) {
+	v, err := r.lc.awsDescribe(m)
+	if err != nil {
+		return // the next poll asks again (EC2 throttled, the network)
+	}
+	h := &lcHandle{r: r, run: run}
+	key := "gone"
+	if v != nil {
+		key = v.State + "|" + v.ReasonCode + "|" + v.Transition
+	}
+	run.mu.Lock()
+	last, seen := run.awsLast[m]
+	run.awsLast[m] = key
+	run.mu.Unlock()
+	if seen && last == key {
+		return
+	}
+	now := time.Now().UTC()
+	add := func(at time.Time, text string) {
+		h.add(LcEntry{At: at.UTC().Format(time.RFC3339Nano), Source: "aws", Machine: m, Text: text})
+	}
+	if v == nil {
+		if seen {
+			add(now, "AWS: EC2 no longer lists instance "+m)
+		}
+		return
+	}
+	before := v.Launched.IsZero() || v.Launched.Before(started.Add(-lcLead))
+	if !seen && before && v.State == "running" {
+		return // up before the operation began, as the router knew it: only what changes from here is its log
+	}
+	if !seen && !before {
+		where := v.Type
+		if v.Zone != "" {
+			where += " in " + v.Zone
+		}
+		add(v.Launched, "AWS: instance launched ("+where+")")
+		if v.State == "pending" {
+			return // launched is pending: one entry
+		}
+	}
+	add(awsStateAt(v, now), awsStateText(v))
+}
+
+// awsStateText: "AWS: instance running (public IPv4 …)", "AWS: instance terminated: Client.InstanceInitiatedShutdown: …"
+func awsStateText(v *awsInstanceView) string {
+	t := "AWS: instance " + v.State
+	switch v.State {
+	case "pending", "running":
+		if v.PublicIP != "" {
+			t += " (public IPv4 " + v.PublicIP + ")"
+		}
+	default:
+		var why []string
+		if v.ReasonMsg != "" {
+			why = append(why, v.ReasonMsg)
+		} else if v.ReasonCode != "" {
+			why = append(why, v.ReasonCode)
+		}
+		if v.Transition != "" {
+			why = append(why, v.Transition)
+		}
+		if len(why) > 0 {
+			t += ": " + strings.Join(why, "; ")
+		}
+	}
+	return t
+}
+
+var awsTransitionAtRE = regexp.MustCompile(`\((\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) GMT\)`)
+
+// awsStateAt: when a stop or terminate began, if EC2 says (its transition reason carries the time it was asked for),
+// else now
+func awsStateAt(v *awsInstanceView, now time.Time) time.Time {
+	if v.State != "stopping" && v.State != "shutting-down" {
+		return now
+	}
+	if m := awsTransitionAtRE.FindStringSubmatch(v.Transition); m != nil {
+		if t, err := time.Parse("2006-01-02 15:04:05", m[1]); err == nil && !t.After(now) && now.Sub(t) < time.Hour {
+			return t
+		}
+	}
+	return now
+}
+
+// lcPoll: Fly and AWS read while the operation runs and for lifecycle.tail after; a drain cuts the tail short
 func (r *Router) lcPoll(run *lcRun) {
-	if !r.lc.flyOn() {
-		return // no read token (a test router, a dev box): router and supervisor entries only
+	if !r.lc.flyOn() && !r.lc.awsOn() {
+		return // no read token or key (a test router, a dev box): router and supervisor entries only
 	}
 	for {
 		select {
