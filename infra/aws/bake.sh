@@ -28,7 +28,11 @@ aws() { command aws "$@" 2> >(tee -a "$errf" >&2); }
 fail() { log "$*"; echo "::error::[${region:-}] $*" | tr '\n' ' '; echo; }
 set -E
 trap 'sleep 1; fail "line $LINENO: $BASH_COMMAND failed: $(tail -c 600 "$errf" | tr "\n" " ")"' ERR
-summary() { [ -n "${GITHUB_STEP_SUMMARY:-}" ] && echo "$*" >>"$GITHUB_STEP_SUMMARY" || true; }
+# the run's summary, and a notice (annotations read without a login; summaries don't)
+summary() {
+  echo "::notice::$*"
+  [ -n "${GITHUB_STEP_SUMMARY:-}" ] && echo "$*" >>"$GITHUB_STEP_SUMMARY" || true
+}
 
 # ignition <unit script>: an Ignition config running the script once at boot as root (update-engine masked, as the
 # session's own config does)
