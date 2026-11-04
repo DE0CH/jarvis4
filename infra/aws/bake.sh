@@ -102,14 +102,16 @@ systemctl poweroff" >"$tmp/builder.ign"
   b=$(run "$flatcar" t3.large stop "$tmp/builder.ign" jarvis4-bake)
   instances+=("$b")
   log "builder $b from Flatcar $flatcar"
-  t0=$(date +%s)
+  # its console is read while it runs (a stopped instance's came back empty); the test boot below is what decides
+  t0=$(date +%s) seen=""
   until [ "$(state "$b")" = stopped ]; do
     [ $(($(date +%s) - t0)) -lt 1800 ] || { fail "the builder didn't stop in 30 min: $(console "$b" | tail -25)"; exit 1; }
-    sleep 15
+    o=$(console "$b")
+    [ -n "$o" ] && seen=$o
+    sleep 10
   done
-  out=$(console "$b")
-  grep -q 'JARVIS4-BAKE OK' <<<"$out" || { fail "the builder didn't bake: $(tail -25 <<<"$out")"; exit 1; }
-  log "$(grep -o 'JARVIS4-BAKE pulled in [0-9]*s' <<<"$out" | tail -1) (builder up to stopped: $(($(date +%s) - t0)) s)"
+  grep -q 'JARVIS4-BAKE FAILED' <<<"$seen" && { fail "the builder's pull failed: $(tail -25 <<<"$seen")"; exit 1; }
+  log "builder up to stopped: $(($(date +%s) - t0)) s; $(grep -o 'JARVIS4-BAKE [a-zA-Z0-9 ]*' <<<"$seen" | tr '\n' ';')"
 
   # 2. the AMI (no tofu tag yet)
   ami=$(aws ec2 create-image --region "$region" --instance-id "$b" --name "jarvis4-session-$(date -u +%Y%m%d-%H%M%S)" \
