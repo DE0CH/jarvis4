@@ -116,7 +116,11 @@ assert r.returncode == 0 and r.stdout.split() and all(o.endswith("-blue") for o 
 
 # 9. the bootstrap (the first rollout): blue serves unpinned (:latest), green idle; a release pins blue itself onto the
 # build in place, no hold, green untouched (replicas 0, :latest); without the trailer nothing moves
-open(KF, "w").write(re.sub(r"ghcr.io/de0ch/jarvis4-kernel:(latest|sha-[0-9a-f]{12}(@sha256:[0-9a-f]{64})?)", "ghcr.io/de0ch/jarvis4-kernel:latest", yaml_src))
+# (the live file's copies are set to that state first: which copy serves in git right now doesn't matter here)
+boot_src = re.sub(r"ghcr.io/de0ch/jarvis4-kernel:(latest|sha-[0-9a-f]{12}(@sha256:[0-9a-f]{64})?)", "ghcr.io/de0ch/jarvis4-kernel:latest", yaml_src)
+boot_src = "\n---\n".join(re.sub(r"(?m)^  replicas: \d+$", "  replicas: " + ("1" if "color: blue" in part else "0"), part)
+                            if "kind: Deployment" in part else part for part in boot_src.split("\n---\n"))
+open(KF, "w").write(boot_src)
 d2 = tempfile.mkdtemp()
 git2 = lambda *a: subprocess.run(["git", *a], cwd=d2, env=env, check=True, capture_output=True, text=True).stdout.strip()
 subprocess.run(["tar", "-x", "-C", d2], input=arch, check=True)
