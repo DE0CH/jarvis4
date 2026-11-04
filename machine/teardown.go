@@ -41,6 +41,7 @@ func teardown(c *client) {
 	runCommand(c, "snapshot")
 	log.Printf("teardown done in %s", time.Since(start).Round(time.Millisecond))
 	pushLogOnce(c)
+	pushOutputsOnce(c) // output.go
 }
 
 // snapshotCommitted: the router took this machine's final snapshot

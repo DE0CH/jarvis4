@@ -112,8 +112,14 @@ func readOffset() int64 {
 
 func writeOffset(n int64) { os.WriteFile(supervisorLogSent, []byte(strconv.FormatInt(n, 10)), 0o600) }
 
-// pushFrom: the complete lines of path after off, pushed; returns the bytes pushed
+// pushFrom: the complete lines of path after off, pushed to the supervisor log; returns the bytes pushed
 func pushFrom(c *client, path string, off int64) (int64, error) {
+	return pushLinesFrom(c, path, off, "/m/supervisor-log", nil)
+}
+
+// pushLinesFrom: the complete {"at","text"} lines of path after off, pushed to endpoint in batches (body: extra and
+// "lines"); returns the bytes pushed
+func pushLinesFrom(c *client, path string, off int64, endpoint string, extra map[string]any) (int64, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return 0, nil
@@ -148,11 +154,15 @@ func pushFrom(c *client, path string, off int64) (int64, error) {
 			return done, nil
 		}
 		if len(batch) > 0 {
-			_, _, status, err := c.raw("POST", "/m/supervisor-log", mustJSON(map[string]any{"lines": batch}))
+			body := map[string]any{"lines": batch}
+			for k, v := range extra {
+				body[k] = v
+			}
+			_, _, status, err := c.raw("POST", endpoint, mustJSON(body))
 			if err != nil {
 				return done, err
 			}
-			if status == 404 || status == 405 { // a router without the supervisor log: try again later
+			if status == 404 || status == 405 { // a router without this endpoint: try again later
 				time.Sleep(time.Minute)
 				return done, nil
 			}

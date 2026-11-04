@@ -1,0 +1,100 @@
+# aws-log-shipper: the AWS session machines' logs to Grafana Cloud (docs/DESIGN.md "Logs and metrics", docs/PLAN-aws.md
+# "Logs"), as the Fly app jarvis2-log-shipper ships the Fly machines'. The router (router/awslogs.go) is its only
+# client: it pushes each machine's output and host journal (which the machine sends it, signed: machine/output.go) and
+# each instance's serial console (which it reads with its read-only AWS key), labelled instance, aws_region, session
+# and source, to Loki's push API here. Alloy sets box="aws" on every line (whatever the router sent), replaces the
+# same secret shapes as the boxes and the Fly shipper, and writes to Grafana with the Secret jarvis2-obs/alloy (the
+# same stack and token as the boxes: the same retention and the same read token). Nothing else may reach it
+# (NetworkPolicy), and it reaches only DNS and Grafana (443); Alloy's own UI stays on 127.0.0.1.
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: aws-log-shipper, namespace: jarvis2-obs }
+data:
+  config.alloy: |
+    loki.source.api "router" {
+      http {
+        listen_address = "0.0.0.0"
+        listen_port    = 3100
+      }
+      forward_to             = [loki.process.aws.receiver]
+      use_incoming_timestamp = true
+    }
+
+    loki.process "aws" {
+      forward_to = [loki.write.grafana.receiver]
+      stage.static_labels {
+        values = { box = "aws" }
+      }
+      stage.replace {
+        expression = "(?i)bearer\\s+([A-Za-z0-9._~+/=-]{8,})"
+        replace    = "<redacted>"
+      }
+      stage.replace {
+        expression = "(sk-ant-[A-Za-z0-9_-]{8,}|sk-or-v1-[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AGE-SECRET-KEY-[A-Z0-9]{20,}|jarvis2-kit:[A-Za-z0-9:+/=_-]{8,}|glc_[A-Za-z0-9+/=]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)"
+        replace    = "<redacted>"
+      }
+    }
+
+    loki.write "grafana" {
+      endpoint {
+        url = sys.env("GRAFANA_LOGS_URL")
+        basic_auth {
+          username = sys.env("GRAFANA_LOGS_USER")
+          password = sys.env("GRAFANA_WRITE_TOKEN")
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: aws-log-shipper, namespace: jarvis2-obs }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: aws-log-shipper } }
+  template:
+    metadata: { labels: { app: aws-log-shipper } }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext: { runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: alloy
+          image: grafana/alloy:v1.20.1@sha256:2aa2099af76c0098d4af7a4d6e48f86cb66dc1a000222ad927a1c67c6542d13f
+          args:
+            - run
+            - /etc/alloy/config.alloy
+            - --storage.path=/var/lib/alloy/data
+            - --server.http.listen-addr=127.0.0.1:12345
+          envFrom: [{ secretRef: { name: alloy } }]
+          ports: [{ name: push, containerPort: 3100 }]
+          readinessProbe: { tcpSocket: { port: 3100 }, periodSeconds: 10 }
+          volumeMounts:
+            - { name: cfg, mountPath: /etc/alloy, readOnly: true }
+            - { name: data, mountPath: /var/lib/alloy/data }
+          resources: { requests: { cpu: 10m, memory: 64Mi }, limits: { memory: 256Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+      volumes:
+        - { name: cfg, configMap: { name: aws-log-shipper } }
+        - { name: data, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: aws-log-shipper, namespace: jarvis2-obs }
+spec:
+  selector: { app: aws-log-shipper }
+  ports: [{ name: push, port: 3100, targetPort: 3100 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: aws-log-shipper, namespace: jarvis2-obs }
+spec:
+  podSelector: { matchLabels: { app: aws-log-shipper } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis4-router } }, podSelector: { matchLabels: { app: router } } }]
+      ports: [{ port: 3100 }]
+  egress:
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }, podSelector: { matchLabels: { k8s-app: kube-dns } } }]
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+    - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16] } }]
+      ports: [{ port: 443 }]

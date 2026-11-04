@@ -91,7 +91,15 @@ credits). Account-wide: the IAM users above. State in R2 beside DE0CH/services'.
   fixed when made; `DEFAULT_RUNNER` (fly: aws from the first AWS session's end-to-end run, back to fly 2026-11-04 by Deyao). Its region stays a place
   that each runner maps (lhr/sin/nrt → eu-west-2/ap-southeast-1/ap-northeast-1).
 - Lost machines and the adoption of a lost spawn answer look at AWS too (`listAWSMachines`).
-- To do: the lifecycle log's AWS events, the app's runner picker, shipping instance logs.
+- The lifecycle log's AWS events (router/lifecycle.go, awsread.go; 2026-11-04): while an operation runs and for 30 s
+  after, the router describes each of its AWS machines every 2 s with its read-only key and writes an entry (source
+  `aws`) for each change: launched (type, zone, at EC2's launch time), pending, running (public IPv4), stopping,
+  shutting-down, terminated (with EC2's `stateReason`, e.g. `Client.InstanceInitiatedShutdown`, and
+  `stateTransitionReason`), and "EC2 no longer lists" it; an instance already running when the operation began shows
+  only its changes. The router's own steps say when the spawner launched the instance and when its keys arrived (and
+  how long after the spawn), and the console's notable lines (an OOM kill, a panic, Ignition failing) join the running
+  operation (awslogs.go). A launch EC2 refuses is the spawn's error, as before ("the spawn failed (…): try 2 of 3").
+- Logs to Grafana: "Logs" below. The runner picker is in New session in the web page and the iPhone app (2469018).
 
 ## Budget (AWS spend, `router/awsbudget.go`)
 
@@ -122,6 +130,64 @@ Explorer query filters on its own account. To tell jarvis4 apart from anything e
 jarvis4 resource carries `app=jarvis4` (tofu's `default_tags`; the launch templates tag each instance, volume and
 network interface; bake.sh its builders, AMIs and snapshots), and `app` is an active cost allocation tag in Billing
 (activated 2026-11-04; it applies from then on).
+
+## Logs (2026-11-04)
+
+Fly's platform reads a Fly machine's output and the Fly app `jarvis2-log-shipper` takes it to Grafana (`box="fly"`).
+Nothing reads an EC2 instance's: the unit's `docker run` writes the container's output to the instance's journal
+(and docker's json-file log), and both go with the instance. So the AWS machines' logs reach the same Grafana stack
+(the same 14 days, the same read token) through the router, `box="aws"`:
+
+| source | what | how |
+|---|---|---|
+| `machine` | the container's stdout and stderr (the keeper's, the boot steps', both supervisors', the harness's console lines: what Fly ships as the app's lines) | the keeper (PID 1) makes fd 1 and 2 a pipe and tees each line on to the journal and into `/run/jarvis/output.log`; supervisor-core pushes it every 2 s to `POST /m/machine-output` (machine/output.go) |
+| `journal` | the instance's systemd units: the session unit's image pull and start, docker, networkd's WireGuard, journald (not the kernel's: the console has those; not the unit's docker client after the keeper started: that is `machine`) | the keeper mounts the host's ROOT partition read only (privileged, as the container is; under a 0700 directory) and follows `journalctl -D … -b -f -o json` from the boot's start; pushed as above |
+| `console` | the serial console: the kernel from its first second, the initrd's systemd, Ignition, getty, an OOM kill, a panic; also for a machine whose container never started | the leader reads `GetConsoleOutput --latest` of each live session instance every 15 s with the router's read key (`ec2:GetConsoleOutput` on tagged instances, infra/aws/iam.tf) and ships what follows the last line it shipped (router/awslogs.go) |
+
+The machine's pushes are signed with its certified key like every `/m` request, so the router, not the machine, puts
+the instance id, region and session on the lines. The machine holds no Grafana credential: the router pushes to the
+Deployment `jarvis2-obs/aws-log-shipper` (Alloy, `loki.source.api`, only the router may reach it), which sets
+`box="aws"`, replaces the same secret shapes as the boxes and the Fly shipper, and writes with the existing Secret
+`jarvis2-obs/alloy`. The machine replaces every value the supervisor holds first (as for the supervisor log).
+Labels: `instance`, `aws_region`, `session`, `source`. RUNBOOK "Logs and metrics".
+
+Checked on instances from the session template (London, the baked AMI, 2026-11-04): docker's log driver on Flatcar is
+json-file (the container's output reaches the journal only through the unit's `docker run`); the session image has
+journalctl; a read-only mount of the ROOT partition is refused (EBUSY, the host has it read-write), a mount as the host
+has it then `remount,bind,ro` works and refuses writes; `journalctl -D <mount>/var/log/journal -b` read the boot's
+1894 entries with the unit's image pull, and `-f` followed new ones. The console holds no file contents (Ignition logs
+paths only; the machine writes only its public keys there). EC2 keeps no console output of a terminated instance
+(GetConsoleOutput, latest or not, came back empty within seconds of `terminated`), and its newest output lags by
+7-47 s, so a line written in the last seconds before the power-off is not read.
+
+What none of this sends: what the instance writes after the container has ended (the unit's exit status, the
+power-off), since no machine is left to sign it, and the keeper's own crash trace (it reaches the journal, through
+`debug.SetCrashOutput`, but the container ends with it). The lifecycle log has EC2's word instead
+(`shutting-down: Client.InstanceInitiatedShutdown`: the instance powered itself off, i.e. the container ended).
+
+**Kernel proposal (not committed; needs Deyao's OK and a kernel release):** two lines of the session unit in
+`kernel/spawner/aws.go` (`ignition`), each optional:
+
+```diff
+-ExecStart=/usr/bin/docker run --name session --network host --privileged --cgroupns host --env-file /etc/jarvis4/session.env --env-file /etc/jarvis4/id.env -v /data:/data ${IMAGE}
+-ExecStopPost=/usr/bin/systemctl poweroff
++ExecStart=/usr/bin/docker run --name session --network host --privileged --cgroupns host --env-file /etc/jarvis4/session.env --env-file /etc/jarvis4/id.env -v /data:/data -v /var/log/journal:/run/jarvis-host/journal:ro ${IMAGE}
++ExecStopPost=/bin/sh -c 'echo "JARVIS4-SESSION-END result=$SERVICE_RESULT code=$EXIT_CODE status=$EXIT_STATUS" > /dev/ttyS0; [ "$SERVICE_RESULT" = success ] || sleep 50'
++ExecStopPost=/usr/bin/systemctl poweroff
+```
+
+1. The journal bound read only into the container: the keeper reads it there (machine/output.go already looks for
+   `/run/jarvis-host/journal` first) and no longer mounts the host's disk. Same lines, a tidier way in.
+2. The container's end on the console: the unit's result and exit status (what Fly's "Main child exited with code"
+   gives), and, when the container didn't end cleanly, 50 s before the power-off so the router's console read sees
+   it (the console's newest output lags 7-47 s); the router already ships that line and puts it into the running
+   operation's lifecycle log (`JARVIS4-SESSION-END`, router/awslogs.go). Tried on a test instance from the session
+   template (2026-11-04: a container exiting 3): `JARVIS4-SESSION-END result=exit-code code=exited status=3` was in
+   GetConsoleOutput 28 s after it was written, before the power-off. The cost: an instance whose container failed runs
+   50 s longer (USD 0.0006 on a t3.medium); a clean end (status 0, the teardown's) powers off at once.
+
+Neither changes what the spawner checks, signs or reads (the keys line, Inspect's image), and the user-data grows by
+about 200 bytes. Without them everything above works as described.
 
 ## Order
 

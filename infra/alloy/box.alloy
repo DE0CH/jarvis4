@@ -44,7 +44,7 @@ declare "main" {
 
   loki.process "redact" {
     forward_to = [loki.write.grafana.receiver]
-    // stage.replace replaces each capture group, so the group is the token itself (DECISIONS 248)
+    // stage.replace replaces each capture group, so the group is the token itself (DECISIONS 250)
     stage.replace {
       expression = "(?i)bearer\\s+([A-Za-z0-9._~+/=-]{8,})"
       replace    = "<redacted>"

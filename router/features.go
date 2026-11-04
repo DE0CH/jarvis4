@@ -43,6 +43,7 @@ func (r *Router) registerFeatures(app appRoute, m machineRoute, public publicRou
 	r.registerClaudeLogin(app, m, public)   // claudelogin.go: the Claude login, its refresh, Re-login, the usage quota
 	r.registerDevices(app, public)          // devices.go: pairing Deyao's OpenClaw/Paseo apps, /api/remotes, Start
 	r.registerSupervisorLog(m)              // supervisorlog.go: the machines' supervisor logs
+	r.registerMachineOutput(m)              // awslogs.go: the AWS machines' output, to Grafana
 	r.registerSessionEvents(app)            // sessionevents.go: a session's one event stream (supervisor + lifecycle)
 	r.registerLifecycle(app)                // lifecycle.go: each boot/pause/resume/destroy's log, the harness pause
 }
@@ -69,6 +70,8 @@ func (r *Router) startFeatures() {
 	go r.loginLoop()         // claudelogin.go: refresh the Claude login (own) or mirror Jarvis 1's (follow)
 	go r.volSweepLoop()      // volsweep.go: delete leftover session volumes (DECISIONS 195)
 	go r.awsListLoop()       // awsrunner.go: the AWS machines, for the gateways' peers
+	go r.awsLogLoop()        // awslogs.go: the AWS machines' log lines to the shipper
+	go r.consoleLoop()       // awslogs.go: the AWS instances' serial consoles (the leader)
 	go r.lostLoop()          // lostmachine.go: machines that stopped without Jarvis doing it
 	go r.kernelVolumesLoop() // kernelline.go: a killed kernel machine's volume left, killed again until it is gone
 }

@@ -903,6 +903,15 @@ metric series, 14 days). The account logs in **with GitHub as DE0CH** (no Grafan
   `ACCESS_TOKEN` (`flyctl tokens create readonly jarvis2-370 --from-existing` with the org token), `LOKI_URL=https://logs-prod-012.grafana.net`,
   `LOKI_USERNAME=1833850`, `LOKI_PASSWORD` = `GRAFANA_WRITE_TOKEN`. One shared-cpu-1x 256 MB machine (USD 2.52/month at the budget's lhr rates, in
   the Fly budget; the Machines tab labels the app with what it is and this cost, `jarvisOwnApps` in `router/flyorgs.go`).
+- **AWS session machines** (docs/PLAN-aws.md "Logs"): `{box="aws"}`, labels `instance` (i-…), `aws_region`,
+  `session`, `source` = `machine` (the container's stdout and stderr), `journal` (the instance's systemd units: the
+  image pull, docker, networkd) or `console` (the serial console: the kernel, the boot); e.g.
+  `{box="aws",instance="i-0abc…",source="console"} |= "Out of memory"`. The router sends them (router/awslogs.go,
+  `AWS_LOG_SHIPPER_URL`) to the Deployment `jarvis2-obs/aws-log-shipper` (Alloy, k8s/cluster/obs/aws-log-shipper.yaml,
+  Secret `jarvis2-obs/alloy`: a new Grafana write token goes there as for the cluster's nodes). Nothing in Grafana from
+  an AWS machine: the router's own log says why (`{box="cluster",container="router"} |= "[aws-logs]"`: the shipper
+  refused, or the read key may not GetConsoleOutput); a machine whose router lacks `/m/machine-output` keeps its lines
+  in memory (32 MB per file) and tries again every minute.
 - **No alerts (Deyao, 2026-10-24):** Grafana sends nothing; the alert rules, contact points, the Synthetic
   Monitoring probe and Discord #jarvis2-alerts are gone (DECISIONS 237). Logs and metrics are for looking things up.
 - **Re-minting** (each credential, when lost or leaked; then write it into `jarvis2-ops` with `infra/setup.py write`,

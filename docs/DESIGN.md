@@ -413,6 +413,14 @@ PEM private keys, the kit's prefix), as a second layer under "the core logs noth
 - **The session machines:** the Fly app `jarvis2-log-shipper` in org jarvis2-370 (`services/log-shipper`: Fly's log
   shipper with only the Loki sink, the same redaction, and no listening port: Vector's API would let any machine on the
   org's network tap every session's log), label `box="fly"`.
+- **The AWS session machines** (docs/PLAN-aws.md "Logs"): no platform reads an EC2 instance's output, so they go
+  through the router: the machine's own output (the keeper tees its stdout and stderr, machine/output.go) and the
+  host's journal (the keeper reads it from the instance's disk, mounted read only), pushed by the machine on its signed
+  `/m` channel (`POST /m/machine-output`), and the instance's serial console (kernel messages from the first second),
+  read by the router with its read-only AWS key. The router labels each line with the instance, region, session and
+  source (`machine` | `journal` | `console`) and pushes them to the Deployment `jarvis2-obs/aws-log-shipper`
+  (k8s/cluster/obs/aws-log-shipper.yaml: Alloy, the same redaction, the existing `alloy` Secret), which sets
+  `box="aws"`. The machines hold no Grafana credential; only the router can reach the shipper.
 - **No alerts** (Deyao, 2026-10-24; DECISIONS 237): nothing pages; logs and metrics are looked up when needed.
 
 - **The metadata address** (169.254.169.254, which keeps serving the user-data with the box key): NetworkPolicies keep
@@ -849,7 +857,9 @@ terminal: one stream with the lifecycle log below (`GET /api/sessions/:id/events
 **The lifecycle log** (router, `router/lifecycle.go`). Each boot, pause, resume, Upgrade and destroy is an operation
 with its own log: the router's own steps, what Fly is doing (the machine's Fly events and Fly's platform log lines:
 create, image pull, start, stop, destroy, with times), read by the router with its read-only Fly token while the
-operation runs, and the supervisor log lines of the operation's machines in that window, merged in time order. The
+operation runs; for an AWS machine, what EC2 is doing (each change of the instance's state with EC2's reasons:
+launched, running, shutting-down, terminated; and the notable serial console lines: an OOM kill, a panic), read with
+the router's read-only AWS key; and the supervisor log lines of the operation's machines in that window, merged in time order. The
 app shows the operations in the session's Log, one stream with every supervisor line (each entry with its time and a
 source tag), live while it runs; kept for the session's life and archived on Destroy.
 The core takes no part.

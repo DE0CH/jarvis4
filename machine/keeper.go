@@ -308,6 +308,11 @@ func keeper() error {
 			log.Printf("REFUSING TO START: %v", err)
 			select {}
 		}
+		if onAWS() {
+			if err := teeOutput(); err != nil { // output.go: the machine's output to Grafana, through the router
+				log.Printf("the output's tee: %v (it goes to the instance's journal only)", err)
+			}
+		}
 		protectFromOOM()
 		makeCgroups()        // oomguard.go: the session's and the rescue memory limits, before the boot steps start
 		lockMemory("keeper") // oomguard.go
@@ -325,6 +330,7 @@ func keeper() error {
 	}
 	if onAWS() && privileged() {
 		go k.announceKeys()
+		go k.shipHostJournal() // output.go
 	}
 	go k.coreLoop()
 	go k.normalLoop()
@@ -807,4 +813,8 @@ func pushKeeperLog() {
 		return
 	}
 	pushLogOnce(c)
+	if onAWS() {
+		time.Sleep(200 * time.Millisecond) // the tee's last lines into the file (output.go)
+		pushOutputsOnce(c)
+	}
 }

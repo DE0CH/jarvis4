@@ -74,9 +74,10 @@ resource "aws_iam_user_policy" "spawner" {
   })
 }
 
-# The router's read-only user: the instances (lost machines, the lifecycle log) and the costs (the budget, router/
+# The router's read-only user: the instances (lost machines, the lifecycle log), the costs (the budget, router/
 # awsbudget.go: every instance, volume, snapshot and Elastic IP for the live estimate; Cost Explorer's billed figure
-# as the cross-check; the price list)
+# as the cross-check; the price list) and the session instances' serial consoles (their logs to Grafana,
+# router/awslogs.go; the console carries no secret: the machine writes only its public keys there)
 resource "aws_iam_user" "router" {
   provider = aws.sin # IAM is global; any region's provider
   name     = "jarvis4-router-read"
@@ -89,10 +90,19 @@ resource "aws_iam_user_policy" "router" {
   user     = aws_iam_user.router.name
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["ec2:DescribeInstances", "ec2:DescribeVolumes", "ec2:DescribeSnapshots", "ec2:DescribeAddresses", "ce:GetCostAndUsage", "pricing:GetProducts"]
-      Resource = "*"
-    }]
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ec2:DescribeInstances", "ec2:DescribeVolumes", "ec2:DescribeSnapshots", "ec2:DescribeAddresses", "ce:GetCostAndUsage", "pricing:GetProducts"]
+        Resource = "*"
+      },
+      {
+        Sid       = "ConsolesOfSessionInstances"
+        Effect    = "Allow"
+        Action    = "ec2:GetConsoleOutput"
+        Resource  = "arn:aws:ec2:*:${data.aws_caller_identity.me.account_id}:instance/*"
+        Condition = { Null = { "aws:ResourceTag/jarvis4_source" = "false" } }
+      },
+    ]
   })
 }

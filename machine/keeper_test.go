@@ -360,7 +360,7 @@ func TestTheTeardownAfterAPauseUploadsNothing(t *testing.T) {
 // keeper's own starts and sudo run otherwise
 func TestEveryCommandGoesThroughSessionCommand(t *testing.T) {
 	files, _ := filepath.Glob("*.go")
-	allowed := map[string]int{"keeper.go": 6, "main.go": 2, "volume.go": 1}
+	allowed := map[string]int{"keeper.go": 6, "main.go": 2, "volume.go": 1, "output.go": 1 /* the keeper's journal reader, as root */}
 	for _, f := range files {
 		if strings.HasSuffix(f, "_test.go") {
 			continue

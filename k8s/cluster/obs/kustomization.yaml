@@ -1,4 +1,5 @@
-# Logs and metrics from every node but the server (the server's host runs Alloy itself: infra/cloud-init.sh).
+# Logs and metrics from every node but the server (the server's host runs Alloy itself: infra/cloud-init.sh), and the
+# AWS session machines' log shipper (the router pushes to it).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-resources: [alloy.yaml]
+resources: [alloy.yaml, aws-log-shipper.yaml]

@@ -2909,3 +2909,35 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      (they stop instances by IAM/SCP policy, outside the router's pause, which snapshots first); a separate AWS cap (Deyao:
      one pool); moving jarvis4 into its own member account (the account split from YYC already holds; it would be an
      account-level move of every resource for no billing gain).
+249. **The lifecycle log shows what EC2 did to an AWS machine, as it shows Fly's events for a Fly machine** (task from
+     docs/PLAN-aws.md's To do, 2026-11-04). While an operation runs and for its 30 s tail the router describes each of
+     its AWS machines every 2 s with its read-only key and writes one entry (source `aws`) per change of the instance's
+     state, with EC2's `stateReason` and `stateTransitionReason`: launched (at EC2's launch time), running (its public
+     IPv4), shutting-down, terminated, gone. The router's steps add when the spawner launched the instance and when its
+     keys arrived. Claude's choices: *a router-side DescribeInstances of its own* (router/awsread.go, its own SigV4):
+     the spawner package's listing reads no reasons, and kernel/ changes only with a kernel release; *no entry for the
+     state an instance already had when the operation began* (a pause of a running machine starts with its
+     shutting-down), as Fly's events from before the operation are left out. *Not chosen*: EventBridge or CloudTrail
+     for the state changes (a new AWS service and a queue to read, for what a 2 s describe already gives while an
+     operation runs).
+250. **The AWS machines' logs go to Grafana through the router; the machines hold no Grafana credential** (task from
+     docs/PLAN-aws.md's To do, 2026-11-04). Three sources, `box="aws"`: the container's output (the keeper tees fd 1
+     and 2), the instance's journal (the keeper mounts the host's ROOT partition read only and follows journalctl), both
+     pushed by the machine on its signed `/m` channel, and the serial console, which the leader reads with the router's
+     read key (now also `ec2:GetConsoleOutput` on tagged instances). The router labels every line with the instance,
+     region, session and source and pushes to `jarvis2-obs/aws-log-shipper` (Alloy with the shared redaction and the
+     existing `alloy` Secret), the only holder of the token, as `jarvis2-log-shipper` is for Fly. docs/PLAN-aws.md "Logs".
+     Claude's choices: *the router names the machine*: a machine signs its pushes, so its lines can't claim another
+     instance, as Fly's labels are Fly's; *no token on the instances*: a write token in the user-data or the session's
+     stores would let any session write as any box (`box="control"`) and would be a secret the kernel's Ignition
+     carries; *the disk mount, not a kernel change*: the container is privileged (root on the instance, as the
+     session's sudo already is), so reading the journal adds no access, and the kernel release stays as it is; the
+     kernel's bind of the journal, if Deyao takes it (PLAN-aws "Kernel proposal"), replaces the mount; *the console
+     read by the router*: it is the one source that also covers an instance whose container never started (Ignition,
+     the image pull failing, the kernel). Measured: EC2 keeps no console of a terminated instance and lags 7-47 s, so
+     the last seconds before a power-off are not read; what the instance writes after the container ends isn't sent.
+     *Not chosen*: CloudWatch Logs with an instance role (a second log store and an AWS role on boxes that hold
+     nothing of AWS today; Grafana is where every other log is), a Grafana token pushed to each machine.
+     Also found: `infra/alloy/box.alloy`'s Bearer pattern captured only the word `Bearer ` (Alloy's stage.replace
+     replaces the capture group), so the boxes shipped the token itself; it now captures the token (checked with Alloy
+     v1.20.1's loki.echo).

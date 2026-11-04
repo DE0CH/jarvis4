@@ -101,6 +101,9 @@ func superviseCore() error {
 	go serveSecrets(c)      // secrets.go: the session's secrets, RAM only
 	go serveSSHAgent()      // deploykeys.go: the deploy keys, RAM only
 	go pushSupervisorLog(c) // supervisorlog.go
+	if onAWS() {
+		go pushOutputs(c) // output.go: the machine's output and the host's journal
+	}
 	log.Printf("supervisor-core up (pid %d)", os.Getpid())
 	for {
 		var out struct {
