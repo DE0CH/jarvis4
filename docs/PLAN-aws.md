@@ -19,7 +19,7 @@ The same calls the Fly backend makes, single calls, no waiting (the router retri
 |---|---|
 | CreateVolume + Create | `RunInstances` from the region's launch template `jarvis4-session` (Flatcar Container Linux, pinned AMI): the size's instance type, one gp3 volume of 30 GB + the session's `diskGb` (Flatcar's root grows to fill it; `/data` is a directory on it), tag `jarvis4_source`, user-data = an Ignition config that runs `ghcr.io/de0ch/jarvis4-session@sha256:…` privileged with host networking, `/data` bound in, the env the core sets, and the machine's WireGuard |
 | Inspect | `DescribeInstances` (pending → created, running → started, shutting-down → destroying, terminated → destroyed), the tag; the image = the `IMAGE=` line of the user-data's `/etc/jarvis4/image.env` (`DescribeInstanceAttribute userData`), which the session unit runs |
-| Init (exec jarvis2-init) | `GetConsoleOutput --latest`: the machine's keeper writes `JARVIS2-KEYS {…}` to the serial console every 20 s until its cert is in; AWS's word that the line came from that instance |
+| Init (exec jarvis2-init) | the machine's keeper writes `JARVIS2-KEYS {…}` to the serial console every 20 s until its cert is in; the spawner reads it live over the EC2 Serial Console (`kernel/spawner/awsserial.go`: from Create on, a one-off key pushed with `SendSerialConsoleSSHPublicKey`, SSH to the region's endpoint with AWS's published host key pinned, read until the line, closed), else from `GetConsoleOutput --latest`; either way AWS's word that the line came from that instance |
 | Destroy | `TerminateInstances` (the volume goes with it) |
 | DeleteVolume | nothing to do |
 
@@ -37,6 +37,11 @@ docker up at 31-53 s of uptime (the slow, varying part: first reads of a disk re
 after launch. GetConsoleOutput --latest refreshes in batches about every 30-40 s, so a line shows 7-47 s after it is
 written (33 s and 43 s in these boots); the spawner sees the keys 74-119 s after launch (the router asks every 2 s).
 That batching plus `docker run` and keygen is the ~65 s between the pull's end and the keys line on 2026-11-03.
+Read live over the EC2 Serial Console the same line arrived 0.2 s after it was written (2026-11-04, London, a reader on
+another instance), so the spawner reads it that way and keeps GetConsoleOutput as the fallback: a region without
+serial console access, a refused key or a wrong host key stops the live reader and costs only that wait again. The
+serial console allows one session per instance, and a pushed key opens one within 60 s; the reader never writes
+(the console is also Flatcar's getty, which asks for a login; the core user has no password).
 
 The container gets the whole VM, as a Fly machine does (privileged, host network, the host's cgroup), so the session
 image runs unchanged; the machine reads `JARVIS2_RUNNER=aws` and `JARVIS2_MACHINE_ID` (the unit reads the instance id
@@ -48,8 +53,9 @@ Sizes → instance types (`instanceType`): small → `t3.medium` (2 vCPU, 4 GB),
 `r7i.8xlarge`; past that, refused.
 
 The spawner's AWS key: IAM user `jarvis4-spawner` (infra/aws/iam.tf): RunInstances only from a launch template and
-with the source tag, Describe, and GetConsoleOutput / DescribeInstanceAttribute / TerminateInstances only on tagged
-instances. Sealed to the spawner like the Fly token (`infra/setup.py kernel-aws-credentials`), memory only, handed
+with the source tag, Describe, and GetConsoleOutput / DescribeInstanceAttribute / TerminateInstances /
+SendSerialConsoleSSHPublicKey only on tagged instances (serial console access is on in each session region,
+`aws_ec2_serial_console_access`; the kernel-spawner NetworkPolicy lets port 22 out for it). Sealed to the spawner like the Fly token (`infra/setup.py kernel-aws-credentials`), memory only, handed
 over in the copy flip. The router's read-only key (`jarvis4-router-read`: DescribeInstances, costs) is Secret
 router-secrets-aws.
 

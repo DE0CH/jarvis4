@@ -2875,3 +2875,13 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      between the spawner and the instance, for nothing the EC2 API doesn't give), a second EBS volume for /data (NVMe
      keeps no device names), Tailscale for the way back (Deyao: the tunnel needs neither its auth nor its NAT
      traversal), Cloudflare in front of /m (100 MB request limit against snapshot streams), spot instances.
+246. **An AWS machine's keys line is read live from the EC2 Serial Console** (Deyao, 2026-11-04: chose "build it" for
+     the console's refresh delay). GetConsoleOutput's newest output is refreshed every 30-40 s, so the keys line
+     reached the spawner 7-47 s after the machine wrote it; over the serial console it arrived in 0.2 s. From Create on
+     the spawner pushes a one-off ed25519 key for that instance (`SendSerialConsoleSSHPublicKey`, its own AWS key, its
+     tagged instances only), connects to the region's endpoint, accepts only the host key AWS publishes for the region,
+     reads until the keys line and closes; it never writes. It stays AWS's word that the line came from that instance:
+     only AWS's service holds the host key, and it serves only that instance's ttyS0 for that key. GetConsoleOutput
+     stays the fallback (Init). Serial console access is on in each session region; the spawner may reach port 22.
+     kernel/spawner/awsserial.go. *Not chosen*: Fast Snapshot Restore for the baked AMI's lazily loaded disk (about
+     10-20 s, priced per hour per zone; Deyao: skip).
