@@ -54,7 +54,13 @@ them to the spawner, which writes `wg0` into the instance (systemd-networkd, lis
 to the instance's public IPv4 (the pods' IPv4 goes out through WARP, as their handshakes to Fly's gateway do), so the
 boxes take nothing inbound; the security group lets in UDP 51820 only. The machines know the gateways as
 `KERNEL_AWS_MACHINE_URL` = `http://10.99.0.1:8081,http://10.99.0.2:8081`. Nothing about the tunnel is a trust element:
-every /m request is signed by the machine's certified key.
+every /m request is signed by the machine's certified key. The gateways' AWS device runs at MTU 1200
+(router/awsgw.go awsWGMTU): its UDP goes through WARP's 1280-byte tunnel, and at 1420 every full-size segment from an
+instance was lost, so a machine's first small requests went through and nothing bigger did (2026-11-04: both AWS test
+sessions failed "the harness didn't come up").
+
+Flatcar has cgroup v2, Fly's guest cgroup v1: the session's and rescue memory cgroups are /sys/fs/cgroup/jarvis-session
+and jarvis-rescue there, limited by memory.max (machine/oomguard.go cgroupDir).
 
 ## Infra (`infra/aws/`, OpenTofu, `.github/workflows/aws.yml`)
 

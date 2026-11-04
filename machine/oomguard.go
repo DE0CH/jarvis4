@@ -24,7 +24,13 @@ package main
 //
 // What neither cgroup may take (sessionReserve - rescueLimit, 256 MB) is for the supervisor (27 MB measured: keeper
 // 11, supervisor-core 16, before supervisor-normal was split off), Fly's init and hallpass, and the kernel (the network stack the reports go out on, the page cache of
-// a snapshot). Only on a Fly machine as root, like protectFromOOM; a failure is logged and the machine boots without.
+// a snapshot). Only on a session machine as root, like protectFromOOM; a failure is logged and the machine boots without.
+//
+// Fly's guest kernel has cgroup v1 (the memory hierarchy at /sys/fs/cgroup/memory); an AWS instance runs Flatcar, whose
+// /sys/fs/cgroup is the unified cgroup v2 hierarchy, which the session container sees whole (--cgroupns host). There the
+// two cgroups are /sys/fs/cgroup/jarvis-session and jarvis-rescue, the limit is memory.max, and the root's
+// cgroup.subtree_control gets +memory first (cgroupDir). Measured 2026-11-04: on v2 the v1 paths made two plain
+// cgroups whose memory.limit_in_bytes can't be written, so the AWS machines ran with no session limit at all.
 
 import (
 	"fmt"
@@ -32,6 +38,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -69,19 +76,50 @@ var makeCgroups = func() {
 	}
 }
 
+// cgroupV2Root: where the unified hierarchy is mounted on an AWS (Flatcar) instance
+var cgroupV2Root = "/sys/fs/cgroup"
+
+// isCgroupV2: /sys/fs/cgroup is the unified hierarchy (CGROUP2_SUPER_MAGIC)
+func isCgroupV2(root string) bool {
+	var fs syscall.Statfs_t
+	return syscall.Statfs(root, &fs) == nil && fs.Type == 0x63677270
+}
+
+// cgroupDir: dir (a v1 memory cgroup path) where it is on this machine: on the unified hierarchy (cgroup v2) the same
+// name at its root
+func cgroupDir(dir string) string {
+	if rel, ok := strings.CutPrefix(dir, cgroupV2Root+"/memory/"); ok && isCgroupV2(cgroupV2Root) {
+		return filepath.Join(cgroupV2Root, rel)
+	}
+	return dir
+}
+
+// limitFile: the memory limit's file in a cgroup dir (as cgroupDir gives it), v1 or v2
+func limitFile(dir string) string {
+	if strings.HasPrefix(dir, cgroupV2Root+"/memory/") || !isCgroupV2(cgroupV2Root) {
+		return filepath.Join(dir, "memory.limit_in_bytes")
+	}
+	return filepath.Join(dir, "memory.max")
+}
+
 func setupCgroups() error {
 	s, err := readMemory()
 	if err != nil {
 		return err
 	}
+	if cgroupDir(sessionCgroup) != sessionCgroup { // v2: the memory controller for the root's children first
+		if err := os.WriteFile(filepath.Join(cgroupV2Root, "cgroup.subtree_control"), []byte("+memory"), 0o644); err != nil {
+			return fmt.Errorf("enabling the memory controller: %w", err)
+		}
+	}
 	for _, g := range []struct {
 		dir   string
 		limit int64
-	}{{sessionCgroup, sessionLimit(s.TotalKb)}, {rescueCgroup, rescueLimit(s.TotalKb)}} {
+	}{{cgroupDir(sessionCgroup), sessionLimit(s.TotalKb)}, {cgroupDir(rescueCgroup), rescueLimit(s.TotalKb)}} {
 		if err := os.MkdirAll(g.dir, 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(g.dir, "memory.limit_in_bytes"), []byte(strconv.FormatInt(g.limit, 10)), 0o644); err != nil {
+		if err := os.WriteFile(limitFile(g.dir), []byte(strconv.FormatInt(g.limit, 10)), 0o644); err != nil {
 			return fmt.Errorf("%s: %w", g.dir, err)
 		}
 		log.Printf("memory limit %d MB of %d MB for %s", g.limit>>20, s.TotalKb>>10, g.dir)
@@ -92,6 +130,7 @@ func setupCgroups() error {
 // joinCgroup: `unprotected`, as root before it drops: this process (and so everything it execs and starts) into
 // the cgroup dir. No cgroup (not a Fly machine, a failed setup) = nothing to join.
 func joinCgroup(dir string) {
+	dir = cgroupDir(dir)
 	procs := filepath.Join(dir, "cgroup.procs")
 	if _, err := os.Stat(procs); err != nil {
 		return

@@ -22,6 +22,15 @@ import (
 	"golang.zx2c4.com/wireguard/tun/netstack"
 )
 
+// awsWGMTU: the AWS device's MTU. Its packets to and from the instances go through the pod's IPv4, which is Cloudflare
+// WARP, whose own tunnel carries at most 1280 bytes; a WireGuard packet adds 60 (IPv4 20, UDP 8, WireGuard 32). At
+// 1420 a full-size TCP segment from an instance arrived as a 1480-byte datagram, fragmented on the way, and never
+// arrived: the machine's first small requests went through and every bigger one (the supervisor log, a status with
+// Claude's registry) hung, so AWS sessions failed "the harness didn't come up" (2026-11-03/04). 1200 + 60 fits in
+// 1280 with room; the TCP MSS the device advertises (1160) keeps the instances' segments under it too, so the
+// instance's own wg0 MTU doesn't matter.
+const awsWGMTU = 1200
+
 // serveAWSWG: the AWS machines' device with privKey (base64) at addr, serving h on port; peers from peersURL
 func serveAWSWG(privKey, addr string, port int, h http.Handler, peersURL string) (*wgServer, error) {
 	a, err := netip.ParseAddr(addr)
@@ -32,7 +41,7 @@ func serveAWSWG(privKey, addr string, port int, h http.Handler, peersURL string)
 	if err != nil {
 		return nil, err
 	}
-	tdev, tnet, err := netstack.CreateNetTUN([]netip.Addr{a}, nil, 1420)
+	tdev, tnet, err := netstack.CreateNetTUN([]netip.Addr{a}, nil, awsWGMTU)
 	if err != nil {
 		return nil, err
 	}
