@@ -29,9 +29,14 @@ doesn't keep device names (the root disk itself was `nvme1n1`). Each region's te
 (`infra/aws/bake.sh`, run by `.github/workflows/aws.yml` after every images run; 2026-11-04): the unit's
 `docker pull <digest>` finds it on disk. Each bake's test boot reports, in the run's summary, Ignition running again,
 `docker run`'s time and GetConsoleOutput's lag. A region whose bake failed boots plain Flatcar and pulls as before.
-Not measured yet: the ~65 s between the pull's end (~3.7 min) and the keys line (4.8 min) on 2026-11-03; by the code
-the container start, keygen and the keeper's first console line are seconds, so the test boot's figures (and the
-lifecycle log of the next AWS session) are what account for it.
+Measured 2026-11-04 (London, t3.medium, the baked AMI, its own image; three timed boots with the session's unit
+steps on the host and the console read every 2 s): the kernel 15 s after launch; network-online at 23-32 s and
+docker up at 31-53 s of uptime (the slow, varying part: first reads of a disk restored from a snapshot load lazily);
+`docker pull` of the image on disk 1.3 s (9-12 s when the pin had moved past the AMI's image: the changed layers);
+`docker run` 7.7 s (5.6-8.8 s in the bakes' test boots); the keys file 4.7 s later; the keys line written 61-85 s
+after launch. GetConsoleOutput --latest refreshes in batches about every 30-40 s, so a line shows 7-47 s after it is
+written (33 s and 43 s in these boots); the spawner sees the keys 74-119 s after launch (the router asks every 2 s).
+That batching plus `docker run` and keygen is the ~65 s between the pull's end and the keys line on 2026-11-03.
 
 The container gets the whole VM, as a Fly machine does (privileged, host network, the host's cgroup), so the session
 image runs unchanged; the machine reads `JARVIS2_RUNNER=aws` and `JARVIS2_MACHINE_ID` (the unit reads the instance id
