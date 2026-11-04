@@ -1,0 +1,8 @@
+{
+  "version": "4757.2.3",
+  "amis": {
+    "eu-west-2": "ami-00ad783931676ef90",
+    "ap-southeast-1": "ami-0b033f21410ef992f",
+    "ap-northeast-1": "ami-04c41a20ea1b07bf9"
+  }
+}

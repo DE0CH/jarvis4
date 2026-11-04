@@ -1,6 +1,11 @@
 # The session machines' AWS (infra/aws: per region the VPC, the security group and the launch template; the IAM users
 # of the spawner and the router): OpenTofu plans and applies on every push that touches it, and daily to revert hand
-# edits. State in R2 (backend in infra/aws/main.tf), locked with a lockfile; runs never overlap.
+# edits. State in R2 (backend in infra/aws/main.tf), locked with a lockfile; runs never overlap. Before tofu, the bake
+# job makes each region's AMI hold the pinned session image (infra/aws/bake.sh; ~20 min when the pin moved, seconds
+# when it didn't): after every images run (its pin job moves SESSION_IMAGE in k8s/cluster/router/router.yaml, in a
+# [skip ci] commit, so a push doesn't start this), on a push here and daily. A failed bake leaves that region on the
+# Flatcar AMI (its sessions pull the image) and fails the run; tofu still applies. After tofu, the AMIs no template
+# boots are deregistered.
 # Secrets: AWS_INFRA_ACCESS_KEY_ID / AWS_INFRA_SECRET_ACCESS_KEY (IAM user jarvis4-infra: EC2 and the /jarvis4/ IAM
 # users only), DEYAO_TOFU_R2_ACCESS_KEY_ID / _SECRET_ACCESS_KEY (the state bucket).
 name: aws
@@ -8,13 +13,33 @@ on:
   push:
     branches: [main]
     paths: [infra/aws/**, .github/workflows/aws.yml]
+  workflow_run:
+    workflows: [images]
+    types: [completed]
   schedule:
     - cron: "17 4 * * *"
   workflow_dispatch:
 concurrency: { group: aws, cancel-in-progress: false }
 permissions: { contents: read }
 jobs:
+  bake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        region: [eu-west-2, ap-southeast-1, ap-northeast-1]
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_INFRA_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_INFRA_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v4  # workflow_run, schedule: main's newest commit, the pin included
+      - run: |
+          image=$(grep -oE 'SESSION_IMAGE, value: "[^"]+"' k8s/cluster/router/router.yaml | cut -d'"' -f2)
+          infra/aws/bake.sh bake ${{ matrix.region }} "$image"
   apply:
+    needs: bake
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults: { run: { working-directory: infra/aws } }
@@ -44,3 +69,13 @@ jobs:
       - name: plan failed
         if: steps.plan.outputs.code == '1'
         run: exit 1
+  prune:
+    needs: apply
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_INFRA_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_INFRA_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: for r in eu-west-2 ap-southeast-1 ap-northeast-1; do infra/aws/bake.sh prune "$r"; done

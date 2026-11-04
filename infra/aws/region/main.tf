@@ -8,7 +8,22 @@ terraform {
   }
 }
 
-variable "ami" { type = string }
+variable "ami" { type = string } # Flatcar
+variable "session_image" { type = string }
+
+# bake.sh's AMI for the pinned session image: Flatcar with the image already pulled, tagged once its test boot found
+# the image there and Ignition ran again (none yet: plain Flatcar)
+data "aws_ami_ids" "baked" {
+  owners = ["self"]
+  filter {
+    name   = "tag:jarvis4_session_image"
+    values = [var.session_image]
+  }
+  filter {
+    name   = "state"
+    values = ["available"]
+  }
+}
 
 data "aws_availability_zones" "up" { state = "available" }
 
@@ -70,7 +85,7 @@ resource "aws_security_group" "session" {
 resource "aws_launch_template" "session" {
   name                                 = "jarvis4-session"
   description                          = "Jarvis 4 session machine (kernel/spawner/aws.go sets type, disk, tags, user-data)"
-  image_id                             = var.ami
+  image_id                             = length(data.aws_ami_ids.baked.ids) > 0 ? data.aws_ami_ids.baked.ids[0] : var.ami
   instance_initiated_shutdown_behavior = "terminate"
   update_default_version               = true
   network_interfaces {

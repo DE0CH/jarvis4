@@ -25,8 +25,13 @@ The same calls the Fly backend makes, single calls, no waiting (the router retri
 
 Measured 2026-11-03 (Singapore, t3.medium): running after 21 s, the session unit at 40 s, the 7.5 GB image pulled in
 3 min, the keys line on the console 4.8 min after launch. A second volume for `/data` was tried and dropped: NVMe
-doesn't keep device names (the root disk itself was `nvme1n1`). An AMI with the image pre-pulled would cut the start
-to about a minute (later).
+doesn't keep device names (the root disk itself was `nvme1n1`). Each region's template now boots an AMI with the pinned image pre-pulled
+(`infra/aws/bake.sh`, run by `.github/workflows/aws.yml` after every images run; 2026-11-04): the unit's
+`docker pull <digest>` finds it on disk. Each bake's test boot reports, in the run's summary, Ignition running again,
+`docker run`'s time and GetConsoleOutput's lag. A region whose bake failed boots plain Flatcar and pulls as before.
+Not measured yet: the ~65 s between the pull's end (~3.7 min) and the keys line (4.8 min) on 2026-11-03; by the code
+the container start, keygen and the keeper's first console line are seconds, so the test boot's figures (and the
+lifecycle log of the next AWS session) are what account for it.
 
 The container gets the whole VM, as a Fly machine does (privileged, host network, the host's cgroup), so the session
 image runs unchanged; the machine reads `JARVIS2_RUNNER=aws` and `JARVIS2_MACHINE_ID` (the unit reads the instance id

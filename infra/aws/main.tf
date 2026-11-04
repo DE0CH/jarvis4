@@ -35,15 +35,14 @@ variable "aws_secret_key" {
   sensitive = true
 }
 
-# Flatcar stable, pinned per region (a bump is a commit: `aws ec2 describe-images --owners 075585003325 --filters
-# Name=name,Values=Flatcar-stable-<version>-hvm` in each region). Instances that are up keep theirs.
+# Flatcar stable, pinned per region in flatcar.json (bake.sh reads it too; a bump is a commit: `aws ec2 describe-images
+# --owners 075585003325 --filters Name=name,Values=Flatcar-stable-<version>-hvm` in each region). Instances that are up
+# keep theirs. A region's template boots the AMI bake.sh baked for the pinned session image (SESSION_IMAGE in the
+# router's manifest) when there is one, else this Flatcar (the session unit then pulls the image, ~3 min).
 locals {
-  flatcar = "4757.2.3"
-  amis = {
-    "eu-west-2"      = "ami-00ad783931676ef90"
-    "ap-southeast-1" = "ami-0b033f21410ef992f"
-    "ap-northeast-1" = "ami-04c41a20ea1b07bf9"
-  }
+  flatcar       = jsondecode(file("${path.module}/flatcar.json"))
+  amis          = local.flatcar.amis
+  session_image = regex("SESSION_IMAGE, value: \"([^\"]+)\"", file("${path.module}/../../k8s/cluster/router/router.yaml"))[0]
 }
 
 provider "aws" {
@@ -66,17 +65,20 @@ provider "aws" {
 }
 
 module "lon" {
-  source    = "./region"
-  providers = { aws = aws.lon }
-  ami       = local.amis["eu-west-2"]
+  source        = "./region"
+  providers     = { aws = aws.lon }
+  ami           = local.amis["eu-west-2"]
+  session_image = local.session_image
 }
 module "sin" {
-  source    = "./region"
-  providers = { aws = aws.sin }
-  ami       = local.amis["ap-southeast-1"]
+  source        = "./region"
+  providers     = { aws = aws.sin }
+  ami           = local.amis["ap-southeast-1"]
+  session_image = local.session_image
 }
 module "tyo" {
-  source    = "./region"
-  providers = { aws = aws.tyo }
-  ami       = local.amis["ap-northeast-1"]
+  source        = "./region"
+  providers     = { aws = aws.tyo }
+  ami           = local.amis["ap-northeast-1"]
+  session_image = local.session_image
 }
