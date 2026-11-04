@@ -363,8 +363,11 @@ final class ReplicaUITests: JarvisUITestCase {
       openStores()
       // the unlock is for this one session and ends once its machine has pulled the store (carried secrets): when the
       // machine was faster than this page, rh-secret is Locked already and the session runs — nothing to strand
-      if !el("lock-rh-secret").waitForExistence(timeout: 20) {
-        XCTAssertTrue(el("unlock-rh-secret").exists, "rh-secret locked again once the new session's machine pulled it")
+      // …and that can happen between seeing Lock and tapping it (replica run 41865626251 attempt 2: "Failed to tap
+      // lock-rh-secret … No matches found"), so the choice is made on a fresh look right before the tap
+      let lock = el("lock-rh-secret")
+      if !(lock.waitForExistence(timeout: 20) && lock.exists && lock.isHittable) {
+        XCTAssertTrue(el("unlock-rh-secret").waitForExistence(timeout: 20), "rh-secret locked again once the new session's machine pulled it")
         shot("stores-relocked-after-pull")
         back()
         sessionsList()
@@ -379,7 +382,7 @@ final class ReplicaUITests: JarvisUITestCase {
           }
         }
       } else {
-      el("lock-rh-secret").tap(); _ = gone(el("lock-rh-secret"), 30)
+      lock.tap(); _ = gone(lock, 30)
       back()
       sessionsList()
       sleep(150)
