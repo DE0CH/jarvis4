@@ -1,23 +1,20 @@
 package main
 
-// The router's own EC2 reads with its read-only key (AWS_READ_*: IAM user jarvis4-router-read, infra/aws/iam.tf):
+// The router's own EC2 reads with its read-only key (AWS_READ_*: IAM user jarvis4-router-read, infra/aws/iam.tf;
+// signed by awsbudget.go's awsSignV4):
 // one instance as EC2 describes it now, with its state's reasons (the lifecycle log's AWS events, lifecycle.go), and
 // the newest serial console output of a session instance (the AWS machines' log shipping, awslogs.go). The listing
 // for lost machines and the gateways stays the spawner package's (awsrunner.go listAWSMachines); these need fields
 // it doesn't read, and kernel/ stays as the kernel release left it.
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -58,7 +55,7 @@ func ec2Read(region string, params url.Values, out any) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
-	awsSigV4(req, []byte(body), id, secret, region, "ec2", time.Now())
+	awsSignV4(req, []byte(body), id, secret, region, "ec2", time.Now()) // awsbudget.go
 	resp, err := awsReadHTTP.Do(req)
 	if err != nil {
 		return err
@@ -80,44 +77,6 @@ func ec2Read(region string, params url.Values, out any) error {
 		return re
 	}
 	return xml.Unmarshal(b, out)
-}
-
-// awsSigV4: AWS Signature Version 4 on req, whose body is body
-func awsSigV4(req *http.Request, body []byte, keyID, secret, region, service string, now time.Time) {
-	t := now.UTC()
-	amzDate, day := t.Format("20060102T150405Z"), t.Format("20060102")
-	sum := sha256.Sum256(body)
-	payload := hex.EncodeToString(sum[:])
-	req.Header.Set("X-Amz-Date", amzDate)
-	req.Header.Set("X-Amz-Content-Sha256", payload)
-	headers := map[string]string{"content-type": req.Header.Get("Content-Type"), "host": req.URL.Host,
-		"x-amz-content-sha256": payload, "x-amz-date": amzDate}
-	names := make([]string, 0, len(headers))
-	for k := range headers {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	var canon strings.Builder
-	for _, k := range names {
-		canon.WriteString(k + ":" + strings.TrimSpace(headers[k]) + "\n")
-	}
-	signed := strings.Join(names, ";")
-	path := req.URL.EscapedPath()
-	if path == "" {
-		path = "/"
-	}
-	creq := strings.Join([]string{req.Method, path, req.URL.RawQuery, canon.String(), signed, payload}, "\n")
-	scope := day + "/" + region + "/" + service + "/aws4_request"
-	ch := sha256.Sum256([]byte(creq))
-	toSign := "AWS4-HMAC-SHA256\n" + amzDate + "\n" + scope + "\n" + hex.EncodeToString(ch[:])
-	mac := func(key []byte, s string) []byte {
-		h := hmac.New(sha256.New, key)
-		h.Write([]byte(s))
-		return h.Sum(nil)
-	}
-	k := mac(mac(mac(mac([]byte("AWS4"+secret), day), region), service), "aws4_request")
-	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+keyID+"/"+scope+", SignedHeaders="+signed+
-		", Signature="+hex.EncodeToString(mac(k, toSign)))
 }
 
 // awsInstanceView: one instance as DescribeInstances gives it, with the reasons for its state
