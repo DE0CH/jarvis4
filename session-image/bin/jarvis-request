@@ -153,6 +153,15 @@ def repo_store(repo):
     return "github-" + "".join(c if c.isalnum() and c.isascii() else "-" for c in slug).strip("-")
 
 
+def no_store_on_aws(what):
+    """an AWS session can't take a store: the router attests a kernel machine's inputs as fly-<id> (router/kernelline.go
+    attestInput) while the machine checks aws-<id> (machine/main.go machineObject), so the phone signs and the machine
+    then refuses it ("the notary's challenge is for another input or machine"). One line, before anything is filed."""
+    if os.environ.get("JARVIS2_RUNNER") == "aws":
+        raise SystemExit(f"jarvis-request: {what} can't reach this session: it runs on AWS, where the machine refuses an "
+                         "added store (router attestInput names fly-<id>). Nothing was filed.")
+
+
 def start_await(store):
     """the approval only lands in the cert: a detached waiter pulls the store's secrets once it does (no second ask; a
     foreground wait would outlive a tool call's timeout)"""
@@ -240,6 +249,11 @@ def main():
         if not isinstance(items, list):
             raise SystemExit("FILE must hold a JSON list of items")
         items = items + inline
+        for x in items:
+            if "why" in x:
+                raise SystemExit(f"item {items.index(x)}: a batch item's reason is \"explanation\", not \"why\". Nothing was filed.")
+            if x.get("intent") == "add-store" or (x.get("intent") == "repo/add" and not x.get("noStore")):
+                no_store_on_aws(f"item {items.index(x)} ({x.get('store') or x.get('repo')})")
         # a new-session item's "attach": every item checked here first, then each one's files uploaded
         for x in items:
             if x.get("intent") == "new-session" and "attach" in x:
@@ -294,6 +308,8 @@ def main():
         raise SystemExit("--why TEXT is required: say why this is needed")
     kind, rest = args[0], args[1:]
     if kind == "add-repo" and len(rest) == 1:
+        if not no_store:
+            no_store_on_aws(f"add-repo {rest[0]} (its store)")
         body = {"repo": rest[0], "explanation": why}
         if sensitive:
             body["sensitive"] = True
@@ -316,6 +332,7 @@ def main():
             new_session["attachments"] = upload(attach)
         out = call("POST", "/api/sessions", dict(new_session, explanation=why))
     elif kind == "add-store" and len(rest) == 1:
+        no_store_on_aws(f"add-store {rest[0]}")
         out = call("POST", "/api/requests/add-store", {"store": rest[0], "explanation": why})
         start_await(rest[0])
     elif kind in USAGE:
