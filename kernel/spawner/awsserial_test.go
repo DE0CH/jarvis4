@@ -124,6 +124,7 @@ func (f *fakeSerial) serve(c net.Conn, cfg *ssh.ServerConfig) {
 				r.Reply(r.Type == "pty-req" || r.Type == "shell", nil)
 				if r.Type == "shell" {
 					go func() {
+						time.Sleep(50 * time.Millisecond)
 						for _, part := range splitEvery(f.console(), 7) { // the stream arrives in pieces
 							ch.Write([]byte(part))
 						}
@@ -131,7 +132,11 @@ func (f *fakeSerial) serve(c net.Conn, cfg *ssh.ServerConfig) {
 				}
 			}
 		}()
-		go func() { n, _ := io.Copy(io.Discard, ch); f.written.Add(n) }()
+		go func() { // as AWS's: the client's EOF ends the session
+			n, _ := io.Copy(io.Discard, ch)
+			f.written.Add(n)
+			ch.Close()
+		}()
 	}
 }
 

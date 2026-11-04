@@ -214,6 +214,11 @@ func (a *AWSAPI) readSerialWith(region, id string, signer ssh.Signer, cancel <-c
 	if err != nil {
 		return nil, err
 	}
+	// stdin stays open and empty: with none the session sends EOF at once, and the serial console ends a session on
+	// its client's EOF (seen on AWS 2026-11-04)
+	idle, hold := io.Pipe()
+	defer hold.Close()
+	sess.Stdin = idle
 	if err := sess.RequestPty("vt100", 40, 200, ssh.TerminalModes{ssh.ECHO: 0}); err != nil {
 		return nil, err
 	}
