@@ -12,7 +12,7 @@ package main
 //     only (the container is privileged: it is root on the instance, as on Fly; the mount adds no access the session's
 //     sudo doesn't have, and sits under a directory only root can enter). The kernel's messages are left out: the
 //     router reads them from the serial console, also for a machine that never got this far. With a kernel that
-//     binds the journal into the container (/run/jarvis-host/journal: docs/PLAN-aws.md, a proposal) that is read
+//     binds the journal into the container (/run/jarvis-host/journal: docs/PLAN-aws.md "Logs") that is read
 //     instead of the disk.
 //
 // supervisor-core pushes both files (pushOutputs), like the supervisor log, to POST /m/machine-output, signed with
@@ -42,7 +42,7 @@ import (
 var (
 	outputLogPath   = dir + "/output.log"
 	journalLogPath  = dir + "/journal.log"
-	hostJournalBind = "/run/jarvis-host/journal" // a kernel's bind of the host's journal (a proposal)
+	hostJournalBind = "/run/jarvis-host/journal" // the spawner's bind of the host's journal (docs/PLAN-aws.md "Logs")
 	hostRootDir     = keeperDir + "/host"        // 0700: only root goes in
 	hostRootMount   = hostRootDir + "/root"      // the host's ROOT partition, read only
 	sysBlock        = "/sys/class/block"         // where the ROOT partition is looked for

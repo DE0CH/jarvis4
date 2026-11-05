@@ -2941,3 +2941,10 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      Also found: `infra/alloy/box.alloy`'s Bearer pattern captured only the word `Bearer ` (Alloy's stage.replace
      replaces the capture group), so the boxes shipped the token itself; it now captures the token (checked with Alloy
      v1.20.1's loki.echo).
+251. **The AWS session unit binds the host's journal read only and writes the container's end to the console**
+     (Deyao, 2026-11-05: "release the logs change"). Two lines of the unit in kernel/spawner/aws.go: `-v
+     /var/log/journal:/run/jarvis-host/journal:ro`, so the keeper reads the journal there instead of mounting the
+     host's disk; and an ExecStopPost writing `JARVIS4-SESSION-END result=… code=… status=…` to ttyS0, then 50 s before
+     the power-off unless the unit succeeded, so the router's console read (7-47 s behind) ships it and puts it in the
+     lifecycle log. A failed container's instance runs 50 s longer (about USD 0.0006 on a t3.medium). A spawner-only
+     kernel release, merged once the serial console release (246) had flipped.

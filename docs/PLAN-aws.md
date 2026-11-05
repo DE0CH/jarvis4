@@ -165,8 +165,8 @@ power-off), since no machine is left to sign it, and the keeper's own crash trac
 `debug.SetCrashOutput`, but the container ends with it). The lifecycle log has EC2's word instead
 (`shutting-down: Client.InstanceInitiatedShutdown`: the instance powered itself off, i.e. the container ended).
 
-**Kernel proposal (not committed; needs Deyao's OK and a kernel release):** two lines of the session unit in
-`kernel/spawner/aws.go` (`ignition`), each optional:
+**In the kernel (Deyao, 2026-11-05: "release the logs change"; a spawner release after the serial console's):** two
+lines of the session unit in `kernel/spawner/aws.go` (`ignition`):
 
 ```diff
 -ExecStart=/usr/bin/docker run --name session --network host --privileged --cgroupns host --env-file /etc/jarvis4/session.env --env-file /etc/jarvis4/id.env -v /data:/data ${IMAGE}
@@ -187,7 +187,7 @@ power-off), since no machine is left to sign it, and the keeper's own crash trac
    50 s longer (USD 0.0006 on a t3.medium); a clean end (status 0, the teardown's) powers off at once.
 
 Neither changes what the spawner checks, signs or reads (the keys line, Inspect's image), and the user-data grows by
-about 200 bytes. Without them everything above works as described.
+about 200 bytes. A machine started by an older spawner has neither and works as described above.
 
 ## Order
 

@@ -31,6 +31,15 @@ func TestIgnitionNamesItsImage(t *testing.T) {
 			t.Fatalf("no %s in %s", want, ud)
 		}
 	}
+	// the logs (docs/PLAN-aws.md "Logs"): the host's journal read only in the container, and the container's end on the
+	// console with 50 s before the power-off when it didn't end cleanly
+	for _, want := range []string{"-v /var/log/journal:/run/jarvis-host/journal:ro ${IMAGE}",
+		`echo "JARVIS4-SESSION-END result=$SERVICE_RESULT code=$EXIT_CODE status=$EXIT_STATUS" > /dev/ttyS0; [ "$SERVICE_RESULT" = success ] || sleep 50`} {
+		j, _ := json.Marshal(want) // the unit sits in the JSON as a string (escaped as json.Marshal escapes it)
+		if !strings.Contains(string(ud), strings.Trim(string(j), `"`)) {
+			t.Fatalf("no %s in %s", want, ud)
+		}
+	}
 	if _, err := ignition(img+" ; rm", nil, testWG); err == nil {
 		t.Fatal("an image with a space")
 	}

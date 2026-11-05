@@ -299,7 +299,8 @@ EnvironmentFile=` + imageEnv + `
 ExecStartPre=/bin/sh -c 'T=$(curl -sf -X PUT -H "X-aws-ec2-metadata-token-ttl-seconds: 60" http://169.254.169.254/latest/api/token) && echo JARVIS2_MACHINE_ID=$(curl -sf -H "X-aws-ec2-metadata-token: $T" http://169.254.169.254/latest/meta-data/instance-id) > /etc/jarvis4/id.env'
 ExecStartPre=/usr/sbin/iptables -I OUTPUT -d 169.254.169.254 -j DROP
 ExecStartPre=/usr/bin/docker pull ${IMAGE}
-ExecStart=/usr/bin/docker run --name session --network host --privileged --cgroupns host --env-file /etc/jarvis4/session.env --env-file /etc/jarvis4/id.env -v /data:/data ${IMAGE}
+ExecStart=/usr/bin/docker run --name session --network host --privileged --cgroupns host --env-file /etc/jarvis4/session.env --env-file /etc/jarvis4/id.env -v /data:/data -v /var/log/journal:/run/jarvis-host/journal:ro ${IMAGE}
+ExecStopPost=/bin/sh -c 'echo "JARVIS4-SESSION-END result=$SERVICE_RESULT code=$EXIT_CODE status=$EXIT_STATUS" > /dev/ttyS0; [ "$SERVICE_RESULT" = success ] || sleep 50'
 ExecStopPost=/usr/bin/systemctl poweroff
 [Install]
 WantedBy=multi-user.target
