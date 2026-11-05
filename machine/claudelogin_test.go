@@ -377,3 +377,19 @@ func TestCredsSyncStartsWhenTheMarkerComesLate(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 }
+
+// the router's pair (no refresh token: forMachine) is never pushed back, even on the first step after boot
+func TestCredsSyncNoPushWithoutRefreshToken(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	f, c := newFakeLoginRouter(t)
+	os.MkdirAll(home(t)+"/.claude", 0o700)
+	os.WriteFile(credsPath(), []byte(`{"claudeAiOauth":{"accessToken":"a1","expiresAt":1000}}`), 0o600)
+	s := &syncer{c: c}
+	f.answers = []routerLogin{{ExpiresAt: 1000}}
+	if err := s.step(); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.pushes) != 0 {
+		t.Fatal("the router's pair was pushed back", f.pushes)
+	}
+}

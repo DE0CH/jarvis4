@@ -65,6 +65,17 @@ func expiresAt(raw []byte) int64 {
 	return d.O.ExpiresAt
 }
 
+// hasRefreshToken: the pair carries its refresh token (only a pair this machine's claude got by itself does)
+func hasRefreshToken(raw []byte) bool {
+	var d struct {
+		O struct {
+			RefreshToken string `json:"refreshToken"`
+		} `json:"claudeAiOauth"`
+	}
+	json.Unmarshal(raw, &d)
+	return d.O.RefreshToken != ""
+}
+
 func accessToken(raw []byte) string {
 	var d struct {
 		O struct {
@@ -336,7 +347,9 @@ func (s *syncer) step() error {
 		log.Printf("claude login: no pair %s after the refresh notice: lock released", lockHoldMax)
 		s.release()
 	}
-	if len(local) > 0 && !bytes.Equal(local, s.pushed) && s.lockGen == 0 {
+	// a pair with no refresh token is the router's own (forMachine strips it): this machine's claude can't have refreshed
+	// it, so there is nothing to push (the router refuses it: every boot logged a 400 for it)
+	if len(local) > 0 && !bytes.Equal(local, s.pushed) && s.lockGen == 0 && hasRefreshToken(local) {
 		var out map[string]any
 		if err := s.c.json("POST", "/m/claude-login", map[string]string{"credentials": string(local)}, &out); err != nil {
 			log.Printf("claude login: push: %v", err)
