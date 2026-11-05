@@ -345,9 +345,9 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: notary-green, namespace: jarvis4-kernel }
+metadata: { name: notary-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
 spec:
-  replicas: 0
+  replicas: 1
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: notary, color: green } }
   template:
@@ -357,7 +357,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: notary
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-823aca16f15a@sha256:3ecc8094533ec7448f1cd68f5c897a67791ccecdf8e024282bdcbeec730e6a7f
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-8b31c61e0072@sha256:7816ebe03d9b687962fda7f4b001f3575575047f38f20b24f94b1058282912cf
           command: ["/kernel/notary"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_DATA, value: /data }]
@@ -385,9 +385,9 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: notarizer-green, namespace: jarvis4-kernel }
+metadata: { name: notarizer-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
 spec:
-  replicas: 0
+  replicas: 1
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: notarizer, color: green } }
   template:
@@ -397,7 +397,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: notarizer
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-823aca16f15a@sha256:3ecc8094533ec7448f1cd68f5c897a67791ccecdf8e024282bdcbeec730e6a7f
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-8b31c61e0072@sha256:7816ebe03d9b687962fda7f4b001f3575575047f38f20b24f94b1058282912cf
           command: ["/kernel/notarizer"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_DATA, value: /data }]
@@ -417,9 +417,9 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: mover-green, namespace: jarvis4-kernel }
+metadata: { name: mover-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
 spec:
-  replicas: 0
+  replicas: 1
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: mover, color: green } }
   template:
@@ -429,7 +429,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: mover
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-823aca16f15a@sha256:3ecc8094533ec7448f1cd68f5c897a67791ccecdf8e024282bdcbeec730e6a7f
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-8b31c61e0072@sha256:7816ebe03d9b687962fda7f4b001f3575575047f38f20b24f94b1058282912cf
           command: ["/kernel/mover"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -449,9 +449,9 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: merger-green, namespace: jarvis4-kernel }
+metadata: { name: merger-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
 spec:
-  replicas: 0
+  replicas: 1
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: merger, color: green } }
   template:
@@ -461,7 +461,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: merger
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-823aca16f15a@sha256:3ecc8094533ec7448f1cd68f5c897a67791ccecdf8e024282bdcbeec730e6a7f
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-8b31c61e0072@sha256:7816ebe03d9b687962fda7f4b001f3575575047f38f20b24f94b1058282912cf
           command: ["/kernel/merger"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -489,9 +489,9 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: spawner-green, namespace: jarvis4-kernel }
+metadata: { name: spawner-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
 spec:
-  replicas: 0
+  replicas: 1
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: spawner, color: green } }
   template:
@@ -501,7 +501,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: spawner
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-823aca16f15a@sha256:3ecc8094533ec7448f1cd68f5c897a67791ccecdf8e024282bdcbeec730e6a7f
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-ed1123d29c28@sha256:b68defd5841e7d7f3aac3caee799178307871804c724a5a4116b125274dd26d0
           command: ["/kernel/spawner"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_DATA, value: /data }, { name: KERNEL_MACHINE_URL, value: "http://jarvis4-box._peer.internal:8081,http://jarvis4-gw-b._peer.internal:8081" }, { name: KERNEL_AWS_MACHINE_URL, value: "http://10.99.0.1:8081,http://10.99.0.2:8081" }]
@@ -521,9 +521,9 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: identity-green, namespace: jarvis4-kernel }
+metadata: { name: identity-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
 spec:
-  replicas: 0
+  replicas: 1
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: identity, color: green } }
   template:
@@ -533,7 +533,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: identity
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-823aca16f15a@sha256:3ecc8094533ec7448f1cd68f5c897a67791ccecdf8e024282bdcbeec730e6a7f
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-8b31c61e0072@sha256:7816ebe03d9b687962fda7f4b001f3575575047f38f20b24f94b1058282912cf
           command: ["/kernel/identity"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -553,9 +553,9 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: gullible-green, namespace: jarvis4-kernel }
+metadata: { name: gullible-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
 spec:
-  replicas: 0
+  replicas: 1
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: gullible, color: green } }
   template:
@@ -565,7 +565,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: gullible
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-823aca16f15a@sha256:3ecc8094533ec7448f1cd68f5c897a67791ccecdf8e024282bdcbeec730e6a7f
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-8b31c61e0072@sha256:7816ebe03d9b687962fda7f4b001f3575575047f38f20b24f94b1058282912cf
           command: ["/kernel/gullible"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -585,9 +585,9 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: minter-green, namespace: jarvis4-kernel }
+metadata: { name: minter-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
 spec:
-  replicas: 0
+  replicas: 1
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: minter, color: green } }
   template:
@@ -597,7 +597,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: minter
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-d295bee65b13@sha256:b8b358e35e88fbb0f3ec0198eb4ac2370f9df4de9adcf6e27e1c246d14c9f0a9
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-8b31c61e0072@sha256:7816ebe03d9b687962fda7f4b001f3575575047f38f20b24f94b1058282912cf
           command: ["/kernel/minter"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }]
@@ -617,9 +617,9 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: secrets-green, namespace: jarvis4-kernel }
+metadata: { name: secrets-green, namespace: jarvis4-kernel, annotations: { jarvis2/kernel-release: pending } }
 spec:
-  replicas: 0
+  replicas: 1
   strategy: { type: Recreate }
   selector: { matchLabels: { app: kernel, role: secrets, color: green } }
   template:
@@ -629,7 +629,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: secrets
-          image: ghcr.io/de0ch/jarvis4-kernel:sha-823aca16f15a@sha256:3ecc8094533ec7448f1cd68f5c897a67791ccecdf8e024282bdcbeec730e6a7f
+          image: ghcr.io/de0ch/jarvis4-kernel:sha-8b31c61e0072@sha256:7816ebe03d9b687962fda7f4b001f3575575047f38f20b24f94b1058282912cf
           command: ["/kernel/secrets"]
           ports: [{ containerPort: 8080 }]
           env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_MINTER_URL, value: "http://minter-green:8080" }]
