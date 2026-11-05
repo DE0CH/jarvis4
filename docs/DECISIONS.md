@@ -2948,3 +2948,11 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      the power-off unless the unit succeeded, so the router's console read (7-47 s behind) ships it and puts it in the
      lifecycle log. A failed container's instance runs 50 s longer (about USD 0.0006 on a t3.medium). A spawner-only
      kernel release, merged once the serial console release (246) had flipped.
+252. **A kernel line's start restores the snapshot its source names, wherever that source came from** (2026-11-05:
+     the WeChat warm-up session's restart onto the newest image came up "REFUSING TO START: snapshot: GET /m/snapshot:
+     HTTP 404 no predecessor"). A resume-upgrade's source is phone-signed from the sink and names the last snapshot's
+     hash, but the router served a snapshot only to a machine whose source came from a machine. The spawn now records,
+     as the new machine's predecessor, the line's machine whose committed snapshot has that hash (the machine still
+     checks the hash). A machine that never got past boot is killed without a snapshot when the line's newest snapshot
+     is still the one its source named, and a start from a source naming no snapshot while the line holds one goes
+     through the phone (a new source naming it), so no start comes up empty. Router only; no kernel change.

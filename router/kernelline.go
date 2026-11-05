@@ -258,6 +258,11 @@ func (r *Router) kernelSpawn(sid string) {
 	pred := ""
 	if sc, err := doc.PeekCert(*l.SourceCert); err == nil && sc.Pred.Kind() == "machine" {
 		pred = sc.Pred.MachineID()
+	} else if err == nil && sc.Source != nil && sc.Source.Snapshot != "" && s.RestoreCert == nil {
+		// a phone-signed source on a new image (a resume-upgrade) names the hash of the line's last snapshot: the
+		// machine of this line that left it is the one whose snapshot the new machine restores (the machine checks the
+		// hash, kernelboot.go kernelRestore). A restoring line's first machine keeps its archived one (restore.go).
+		pred = r.snapMachineWith(sid, sc.Source.Snapshot)
 	}
 	r.st.Do(func(d *persisted) {
 		d.Machines[id] = sid
@@ -602,10 +607,34 @@ func (r *Router) isKernelMachine(machine string) bool {
 	return k
 }
 
+// neverBootedStateKept: the machine never got past boot (it has no state of its own), and the snapshot its source
+// named, if any, is still the line's newest: killing it without one loses nothing, because the next start names that
+// snapshot again (kernelResume). E.g. a resume-upgrade's machine that couldn't restore (2026-11-05).
+func (r *Router) neverBootedStateKept(id, machine string) bool {
+	var booted bool
+	var src *sig.Doc
+	r.st.Do(func(d *persisted) {
+		if x := d.Sessions[id]; x != nil {
+			booted = x.Booted == machine
+			if x.Kernel != nil {
+				src = x.Kernel.SourceCert
+			}
+		}
+	})
+	if booted || src == nil {
+		return false
+	}
+	c, err := doc.PeekCert(*src)
+	if err != nil || c.Source == nil {
+		return false
+	}
+	return c.Source.Snapshot == "" || r.newestSnapSum(id) == c.Source.Snapshot
+}
+
 // kernelKillDone: snapsafe.go's kill for a kernel machine (after its final snapshot, or past a failed one with force)
 func (r *Router) kernelKillDone(id, machine string, destroying bool, serr error, ok *bool) bool {
 	r.lcNote(id, machine, "asked the kernel's spawner to kill the machine into the line's next source")
-	snap, err := r.kernelKill(id, machine, !destroying && serr == nil, destroying)
+	snap, err := r.kernelKill(id, machine, !destroying && serr == nil && !r.neverBootedStateKept(id, machine), destroying)
 	if err != nil {
 		r.lcNote(id, machine, "the kill failed: "+err.Error())
 		r.killFailed(id, machine, true, destroying, err)
@@ -667,6 +696,14 @@ func (r *Router) kernelResume(s Session, upgrade bool, unlock func(), op *lcHand
 			})
 		}
 		l := s.Kernel
+		if !upgrade && l.SourceCert != nil {
+			// a source that names no snapshot while the line holds one (its last machine never got past boot): a start
+			// from it would come up empty, so the phone signs a source naming the newest snapshot instead
+			if c, err := doc.PeekCert(*l.SourceCert); err == nil && c.Source != nil && c.Source.Snapshot == "" && r.newestSnapSum(id) != "" {
+				op.note("", "the line's source names no snapshot but the line holds one: a new source naming it, for Deyao's approval")
+				upgrade = true
+			}
+		}
 		if l.SourceCert == nil || upgrade {
 			config, err := r.sessionConfig(&s)
 			if err != nil {
@@ -678,6 +715,11 @@ func (r *Router) kernelResume(s Session, upgrade bool, unlock func(), op *lcHand
 				if c, err := doc.PeekCert(*l.SourceCert); err == nil {
 					snap = c.Source.Snapshot
 				}
+			}
+			if snap == "" && l.SourceCert != nil {
+				// the last machine left none (it never got past boot, e.g. an upgrade that couldn't restore): the new
+				// source names the line's newest committed snapshot, so the state isn't dropped (the phone signs the hash)
+				snap = r.newestSnapSum(id)
 			}
 			draft, err := r.kernelSourceDraft(&s, config, r.cfg.SessionImage, snap)
 			if err != nil {

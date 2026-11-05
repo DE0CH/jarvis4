@@ -527,3 +527,96 @@ func TestAStrandedApprovalSessionIsSettled(t *testing.T) {
 		t.Fatalf("fresh: %s", s.State)
 	}
 }
+
+// a resume on the newest image (the phone signs a new source from the sink naming the last snapshot's hash) restores
+// that snapshot: its first machine's GET /m/snapshot was refused "no predecessor" (2026-11-05, the WeChat warm-up
+// session). An upgrade after a machine that never got past boot still names the line's newest snapshot.
+func TestAnUpgradeResumeRestoresTheLastSnapshot(t *testing.T) {
+	rg, k := kernelRig(t)
+	sid, err := rg.r.CreateSession(NewSession{Label: "upgraded", Harness: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approval := func(what string) *Approval {
+		var a *Approval
+		waitFor(t, what, func() bool {
+			a = nil
+			rg.r.st.Do(func(d *persisted) {
+				for _, x := range d.Approvals {
+					if x.Session == sid && x.Kind == kernelApprovalKind {
+						a = x
+					}
+				}
+			})
+			return a != nil
+		})
+		return a
+	}
+	sign := func(a *Approval) {
+		s, _ := k.Phone.Sign([]byte(a.Challenge.Payload))
+		if _, _, err := rg.r.Respond(a.ID, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sign(approval("the approval"))
+	waitFor(t, "the machine", func() bool { s := kernelSession(rg, sid); return s.MachineID != "" && s.Kernel.MachineCert != nil })
+	m1 := k.Fly.Machine(kernelSession(rg, sid).MachineID)
+	h := rg.r.MachineHandler()
+	if code, body := kdo(t, h, m1, "GET", "/m/kernel/boot", ""); code != 200 {
+		t.Fatal(code, string(body))
+	}
+	tarball := makeTar(t, rg.files)
+	sum := sha256.Sum256(tarball)
+	want := hex.EncodeToString(sum[:])
+	snapSig, _ := m1.Sig.Sign([]byte(want))
+	putSnap(t, rg.r, m1.ID, tarball, snapSig)
+	if err := rg.r.Pause(sid); err != nil {
+		t.Fatal(err)
+	}
+	if err := rg.r.waitActionEnd(sid, "paused"); err != nil {
+		t.Fatal(err, kernelSession(rg, sid).Error)
+	}
+	if err := rg.r.Resume(sid, true); err != nil {
+		t.Fatal(err)
+	}
+	a := approval("the upgrade's approval")
+	var c doc.Cert
+	if json.Unmarshal([]byte(a.Challenge.Payload), &c) != nil || c.Pred != doc.Sink || c.Source.Snapshot != want {
+		t.Fatalf("%s", a.Challenge.Payload)
+	}
+	sign(a)
+	waitFor(t, "the upgraded machine", func() bool {
+		s := kernelSession(rg, sid)
+		return s.MachineID != "" && s.MachineID != m1.ID && s.Kernel.MachineCert != nil
+	})
+	m2 := k.Fly.Machine(kernelSession(rg, sid).MachineID)
+	if code, body := kdo(t, h, m2, "GET", "/m/snapshot", ""); code != 200 || string(body) != string(tarball) {
+		t.Fatalf("the upgraded machine's snapshot: %d %s", code, body)
+	}
+	// m2 never gets past boot; the app's Restart on the newest image: its kill names no snapshot, the new source still
+	// names m1's
+	if _, err := rg.r.Restart(sid, RestartRequest{Upgrade: true}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the second upgrade's approval", func() bool {
+		var a *Approval
+		rg.r.st.Do(func(d *persisted) {
+			for _, x := range d.Approvals {
+				if x.Session == sid && x.Kind == kernelApprovalKind {
+					a = x
+				}
+			}
+		})
+		var c doc.Cert
+		return a != nil && json.Unmarshal([]byte(a.Challenge.Payload), &c) == nil && c.Source.Snapshot == want
+	})
+	sign(approval("the second upgrade's approval"))
+	waitFor(t, "the third machine", func() bool {
+		s := kernelSession(rg, sid)
+		return s.MachineID != "" && s.MachineID != m2.ID && s.Kernel.MachineCert != nil
+	})
+	m3 := k.Fly.Machine(kernelSession(rg, sid).MachineID)
+	if code, body := kdo(t, h, m3, "GET", "/m/snapshot", ""); code != 200 || string(body) != string(tarball) {
+		t.Fatalf("the third machine's snapshot: %d %s", code, body)
+	}
+}

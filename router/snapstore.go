@@ -19,6 +19,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/DE0CH/jarvis4/kernel/sig"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -57,6 +58,43 @@ func (r *Router) snap(machine string) *Snap {
 		json.Unmarshal(facts, s.Facts)
 	}
 	return &s
+}
+
+// snapMachineWith: the session's machine whose committed snapshot has this sha256 ("" when none)
+func (r *Router) snapMachineWith(sessionID, sum string) string {
+	var machines []string
+	r.st.Do(func(d *persisted) {
+		for m, sid := range d.Machines {
+			if sid == sessionID {
+				machines = append(machines, m)
+			}
+		}
+	})
+	for _, m := range machines {
+		if s := r.snap(m); s != nil && s.State == "committed" && s.Sha256 == sum {
+			return m
+		}
+	}
+	return ""
+}
+
+// newestSnapSum: the sha256 of the session's newest committed snapshot that its machine's key signed ("" when none)
+func (r *Router) newestSnapSum(sessionID string) string {
+	m, cert, _ := r.latestSnapshot(sessionID) // archive.go
+	if m == "" || cert == nil {
+		return ""
+	}
+	s := r.snap(m)
+	var key string
+	r.st.Do(func(d *persisted) {
+		if st := d.Started[m]; st != nil {
+			key = st.SigningKey
+		}
+	})
+	if s == nil || key == "" || !sig.Verify(key, []byte(s.Sha256), s.Sig) {
+		return ""
+	}
+	return s.Sha256
 }
 
 // haveSnap: the machine has a committed (signed) snapshot
