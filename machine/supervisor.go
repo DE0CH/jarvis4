@@ -220,7 +220,17 @@ func harnessPID() int {
 }
 
 // keeperPID: the keeper (the supervisors' parent), never stopped or killed by the supervisor itself
-func keeperPID() int { return os.Getppid() }
+var keeperPID = func() int { return os.Getppid() }
+
+// keeperIsInit: the keeper is pid 1 of this pid namespace. On an AWS instance it is: docker runs the image's
+// entrypoint (`jarvis-machine boot`, the keeper) as the container's init, so the supervisors' parent is pid 1. On Fly,
+// pid 1 is Fly's own init, and a supervisor sees ppid 1 only once its keeper died and it was re-parented there: that
+// pid 1 is not the keeper. Told apart by pid 1's executable: the keeper is this very binary.
+var keeperIsInit = func() bool {
+	one, err1 := os.Stat(filepath.Join(procRoot, "1", "exe"))
+	self, err2 := os.Stat(filepath.Join(procRoot, "self", "exe"))
+	return err1 == nil && err2 == nil && os.SameFile(one, self)
+}
 
 // children: pid → its children, from /proc
 var children = func() map[int][]int {

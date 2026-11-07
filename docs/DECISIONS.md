@@ -2956,3 +2956,11 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      checks the hash). A machine that never got past boot is killed without a snapshot when the line's newest snapshot
      is still the one its source named, and a start from a source naming no snapshot while the line holds one goes
      through the phone (a new source naming it), so no start comes up empty. Router only; no kernel change.
+253. **On an AWS instance the keeper is the container's pid 1, and it gets the harness's env like on Fly** (Deyao,
+     2026-11-07: "the previous session on aws failed with no secret set, fix it"). The AWS session unit runs the image
+     with `docker run` and no init, so `jarvis-machine boot` (the keeper) is pid 1 of the container; the supervisor's
+     boot-env check took a parent of pid 1 for an orphan re-parented to Fly's init and refused it, so every AWS
+     session's Claude started with none of its stores' keys in its env (`session-secret` still worked). The check now
+     also takes a pid-1 parent whose executable is this binary (`keeperIsInit`, machine/supervisor.go); Fly's init is
+     another binary, so an orphaned supervisor there still gets nothing. Machine side only; no kernel change (the
+     unit's `docker run` stays as the kernel released it).

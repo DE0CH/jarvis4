@@ -107,6 +107,52 @@ func TestBootEnvForTheKeeper(t *testing.T) {
 	}
 }
 
+// TestBootEnvForAKeeperThatIsInit: on an AWS instance the keeper is the container's pid 1 (docker runs the image's
+// entrypoint as init), so supervisor-core's parent is pid 1; the harness's env must still get the secrets. On Fly a
+// pid 1 that isn't the keeper's binary (Fly's init, after the keeper died) gets nothing.
+func TestBootEnvForAKeeperThatIsInit(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "gitconfig"))
+	held.set(map[string]string{"API_KEY": "v1"})
+	defer held.set(map[string]string{})
+	oldPID, oldBooted, oldInit, oldKeeper := harnessPIDPath, booted, keeperIsInit, keeperPID
+	defer func() { harnessPIDPath, booted, keeperIsInit, keeperPID = oldPID, oldBooted, oldInit, oldKeeper }()
+	harnessPIDPath = filepath.Join(t.TempDir(), "harness.pid")
+	os.WriteFile(harnessPIDPath, []byte("4242"), 0o644)
+	booted = func() bool { return true }
+	keeperPID = func() int { return 1 } // supervisor-core's parent is the container's init
+	keeperIsInit = func() bool { return true }
+	if r := answerSecrets(nil, secretsReq{Op: "boot-env"}, 1, 0, "the keeper as init"); !r.OK || r.Secrets["API_KEY"] != "v1" {
+		t.Fatalf("the keeper as pid 1: %+v", r)
+	}
+	keeperIsInit = func() bool { return false }
+	if r := answerSecrets(nil, secretsReq{Op: "boot-env"}, 1, 0, "Fly's init"); r.OK {
+		t.Fatalf("a pid 1 that isn't the keeper: %+v", r)
+	}
+}
+
+func TestKeeperIsInitReadsPid1sExecutable(t *testing.T) {
+	old := procRoot
+	defer func() { procRoot = old }()
+	root := t.TempDir()
+	bin, other := filepath.Join(root, "jarvis-machine"), filepath.Join(root, "init")
+	os.WriteFile(bin, []byte("a"), 0o755)
+	os.WriteFile(other, []byte("b"), 0o755)
+	os.MkdirAll(filepath.Join(root, "1"), 0o755)
+	os.MkdirAll(filepath.Join(root, "self"), 0o755)
+	os.Symlink(bin, filepath.Join(root, "self", "exe"))
+	procRoot = root
+	os.Symlink(other, filepath.Join(root, "1", "exe"))
+	if keeperIsInit() {
+		t.Fatal("pid 1 runs another binary (Fly's init): not the keeper")
+	}
+	os.Remove(filepath.Join(root, "1", "exe"))
+	os.Symlink(bin, filepath.Join(root, "1", "exe"))
+	if !keeperIsInit() {
+		t.Fatal("pid 1 runs this binary (the AWS container's keeper): the keeper")
+	}
+}
+
 func TestExitHow(t *testing.T) {
 	c := exec.Command("sh", "-c", "kill -TERM $$")
 	err := c.Run()

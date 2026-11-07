@@ -283,7 +283,7 @@ func answerSecrets(c *client, req secretsReq, pid, uid int, caller string) secre
 	case "get":
 		return answerGet(req.Keys, caller)
 	case "boot-env":
-		keeper := uid == 0 && pid == keeperPID() && pid > 1
+		keeper := uid == 0 && pid == keeperPID() && (pid > 1 || keeperIsInit())
 		if !keeper && booted() {
 			log.Printf("secrets: refused boot-env for %s: the machine has booted", caller)
 			return secretsResp{Error: "boot-env is only for the boot, before the harness starts; ask for the keys a command needs (session-secret --keys K1,K2 …)"}
