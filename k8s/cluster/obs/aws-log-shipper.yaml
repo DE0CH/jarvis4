@@ -63,14 +63,15 @@ spec:
           args:
             - run
             - /etc/alloy/config.alloy
-            - --storage.path=/var/lib/alloy/data
+            - --storage.path=/alloy-data # not under /var/lib/alloy: the image keeps that dir to its own alloy user, so uid
+            #   65534 can't reach a mount inside it ("mkdir /var/lib/alloy/data: permission denied", CrashLoopBackOff)
             - --server.http.listen-addr=127.0.0.1:12345
           envFrom: [{ secretRef: { name: alloy } }]
           ports: [{ name: push, containerPort: 3100 }]
           readinessProbe: { tcpSocket: { port: 3100 }, periodSeconds: 10 }
           volumeMounts:
             - { name: cfg, mountPath: /etc/alloy, readOnly: true }
-            - { name: data, mountPath: /var/lib/alloy/data }
+            - { name: data, mountPath: /alloy-data }
           resources: { requests: { cpu: 10m, memory: 64Mi }, limits: { memory: 256Mi } }
           securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
       volumes:
