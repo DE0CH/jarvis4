@@ -18,6 +18,14 @@ metadata: { name: services, namespace: services }
 spec:
   hard: { limits.memory: 9Gi, requests.memory: 5Gi, limits.cpu: "8", persistentvolumeclaims: "4", requests.storage: 40Gi }
 ---
+# the quota counts limits.cpu, so a container without one is refused; operators' own pods (CloudNativePG's initdb and
+# join Jobs, whose spec is fixed once created) get this default instead of being refused
+apiVersion: v1
+kind: LimitRange
+metadata: { name: services, namespace: services }
+spec:
+  limits: [{ type: Container, default: { cpu: 500m }, defaultRequest: { cpu: 50m } }]
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata: { name: flux-services, namespace: flux-system }
