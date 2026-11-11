@@ -65,7 +65,7 @@ run_supervisor() {
   done
   [ "$n" -ge 120 ] && echo "[aviary] the sandbox booted"
   ( while [ ! -e "$STATE/.one-shot-done" ]; do
-      sudo -n /usr/local/bin/aviary-sandbox "$BOOT"
+      sudo -n /usr/local/bin/aviary-sandbox "$BOOT" "$WD"
       echo "[aviary] supervisor-keeper exited ($?); restarting in 3 s"; sleep 3
     done ) 2>&1 | logs supervisor &
 }
