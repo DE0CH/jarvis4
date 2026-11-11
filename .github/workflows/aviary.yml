@@ -58,6 +58,7 @@ jobs:
         with:
           context: aviary
           push: true
+          build-args: AVIARY_REVISION=${{ github.sha }}
           platforms: linux/amd64
           provenance: false
           labels: |
