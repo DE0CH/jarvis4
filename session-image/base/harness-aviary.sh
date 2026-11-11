@@ -40,6 +40,10 @@ case "${FLY_IMAGE_REF:-}" in *@sha256:*) IMAGE="sha256:${FLY_IMAGE_REF##*@sha256
 
 gw_up() { curl -s -o /dev/null -m 3 --noproxy '*' "$GW/jarvis/state" 2>/dev/null; }
 
+# A component's output: its file under ~/artifacts/aviary (the Terminal panel) and the machine's log (Fly → Grafana,
+# `{box="fly"} |= "[aviary-gateway]"`); neither component logs a secret's value
+logs() { tee -a "$A/$1.out" | sed -u "s/^/[aviary-$1] /"; }
+
 # The machine's half of the gateway, in a restart loop (a restart keeps the sandbox: hermit knows the machine)
 run_gateway() {
   [ -n "${AVIARY_GW_ACCESS_ID:-}" ] && [ -n "${AVIARY_GW_ACCESS_SECRET:-}" ] || {
@@ -48,7 +52,7 @@ run_gateway() {
       env AVIARY_GW_URL="${AVIARY_GW_URL:-https://chat-gw.deyaochen.com}" AVIARY_BOOT_FILE="$BOOT" AVIARY_IMAGE="$IMAGE" \
         SESSION_MODEL="$MODEL" /usr/local/bin/aviary-gateway
       echo "[aviary] gateway exited ($?); restarting in 2 s"; sleep 2
-    done ) >> "$A/gateway.out" 2>&1 &
+    done ) 2>&1 | logs gateway &
 }
 
 # The supervisor, in a restart loop (its keeper restarts the supervisor itself; this restarts the keeper)
@@ -58,7 +62,7 @@ run_supervisor() {
   ( while [ ! -e "$STATE/.one-shot-done" ]; do
       sudo -n /usr/local/bin/aviary-sandbox "$BOOT"
       echo "[aviary] supervisor-keeper exited ($?); restarting in 3 s"; sleep 3
-    done ) >> "$A/supervisor.out" 2>&1 &
+    done ) 2>&1 | logs supervisor &
 }
 
 keeper_pid() { pgrep -o -x supervisor-kee 2>/dev/null || pgrep -o -f '^/usr/local/bin/supervisor-keeper$' 2>/dev/null; }
