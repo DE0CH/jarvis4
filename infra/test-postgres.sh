@@ -14,6 +14,8 @@
 set -euo pipefail
 D="${TEST_PG_DIR:-${TMPDIR:-/tmp}/jarvis4-test-pg}"
 PORT="${TEST_PG_PORT:-55439}"
+LISTEN="${TEST_PG_LISTEN:-127.0.0.1}"  # e.g. "127.0.0.1,10.88.0.1": a network namespace's clients too (infra/e2e-aviary.sh)
+TRUST="${TEST_PG_TRUST:-}"             # a CIDR trusted besides loopback (the e2e's namespaces), added to pg_hba.conf once
 BASE="postgres://postgres@127.0.0.1:$PORT"
 
 bindir() {
@@ -33,11 +35,12 @@ start() {
     mkdir -p "$D"
     "$B/initdb" -D "$D" -U postgres -A trust > "$D.initdb.log"
   fi
+  if [ -n "$TRUST" ] && ! grep -q " $TRUST " "$D/pg_hba.conf"; then echo "host all all $TRUST trust" >> "$D/pg_hba.conf"; fi
   # TLS with a self-signed certificate: aviary's services (the e2e's magpie, hermit-jarvis) require it and verify nothing
   [ -f "$D/server.key" ] || openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 -subj /CN=test-postgres \
     -keyout "$D/server.key" -out "$D/server.crt" 2>/dev/null
   chmod 600 "$D/server.key"
-  "$B/pg_ctl" -D "$D" -w -l "$D.log" -o "-p $PORT -c listen_addresses=127.0.0.1 -k $D -c fsync=off -c ssl=on" start > /dev/null
+  "$B/pg_ctl" -D "$D" -w -l "$D.log" -o "-p $PORT -c listen_addresses=$LISTEN -k $D -c fsync=off -c ssl=on" start > /dev/null
 }
 
 B="$(bindir)" || {
