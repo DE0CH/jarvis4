@@ -15,7 +15,9 @@ permissions:
   packages: write
   attestations: write
   id-token: write
-concurrency: { group: aviary-${{ github.ref }}, cancel-in-progress: false }
+concurrency:
+  group: aviary-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   test:
     runs-on: ubuntu-latest
