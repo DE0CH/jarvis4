@@ -9,7 +9,8 @@
 #
 # The server: a cluster under ${TEST_PG_DIR:-${TMPDIR:-/tmp}/jarvis4-test-pg} on 127.0.0.1:${TEST_PG_PORT:-55439}, trust auth,
 # from whatever Postgres binaries are here (pg_config, Homebrew's postgresql@18/17/16, Debian's /usr/lib/postgresql),
-# installed with Homebrew or apt when there are none.
+# installed with Homebrew or apt when there are none. TLS on (a self-signed certificate) for aviary's services; the router's
+# URL says sslmode=disable.
 set -euo pipefail
 D="${TEST_PG_DIR:-${TMPDIR:-/tmp}/jarvis4-test-pg}"
 PORT="${TEST_PG_PORT:-55439}"
@@ -32,7 +33,11 @@ start() {
     mkdir -p "$D"
     "$B/initdb" -D "$D" -U postgres -A trust > "$D.initdb.log"
   fi
-  "$B/pg_ctl" -D "$D" -w -l "$D.log" -o "-p $PORT -c listen_addresses=127.0.0.1 -k $D -c fsync=off" start > /dev/null
+  # TLS with a self-signed certificate: aviary's services (the e2e's magpie, hermit-jarvis) require it and verify nothing
+  [ -f "$D/server.key" ] || openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 -subj /CN=test-postgres \
+    -keyout "$D/server.key" -out "$D/server.crt" 2>/dev/null
+  chmod 600 "$D/server.key"
+  "$B/pg_ctl" -D "$D" -w -l "$D.log" -o "-p $PORT -c listen_addresses=127.0.0.1 -k $D -c fsync=off -c ssl=on" start > /dev/null
 }
 
 B="$(bindir)" || {
