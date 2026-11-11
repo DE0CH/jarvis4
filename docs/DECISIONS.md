@@ -2964,3 +2964,18 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      also takes a pid-1 parent whose executable is this binary (`keeperIsInit`, machine/supervisor.go); Fly's init is
      another binary, so an orphaned supervisor there still gets nothing. Machine side only; no kernel change (the
      unit's `docker run` stays as the kernel released it).
+254. **The aviary harness replaces cloudcli: Jarvis 4 dogfoods YYC AI's stack** (Deyao, 2026-11-11: "dogfood of YYC
+     AI … as one of the harness options"; aviary/README.md). A session with harness `aviary` runs DE0CH/aviary's
+     supervisor (YYC AI's build, unmodified) and its conversation lives in Jarvis 4's own pigeon + magpie (a DE0CH/services
+     tenant, chat.deyaochen.com); hermit-jarvis and aviary-gateway (aviary/, Rust) are the deployment-specific parts,
+     behind aviary's contracts. Deyao's choices: sessions start only in the Jarvis 4 app (no New chat in the chat app);
+     the contract gains a starting folder rather than Jarvis configuring the supervisor (descriptor
+     `claude.projectSettings`; YYC leaves it off); the session's Claude subscription; hermit and gateway in Rust here,
+     the gateway's sandbox half on each machine; `claude` becomes uid 1000; hermit learns a machine's session from the
+     router (`POST /api/machine-signatures/verify` over a signature the machine makes with `jarvis-machine sign-request`),
+     never from the machine; no iOS app; a clean cut of cloudcli and the Jarvis 4 Chat app. hermit-jarvis reaches the
+     device routes with its own service token, admitted by client id in router.yaml (`HERMIT_CLIENT_ID`), as the health
+     probe is. *Not chosen*: pairing hermit-jarvis as a device (a pairing needs Deyao's Access login in a browser, which
+     sessions are kept from on purpose: `GET /api/devices/pair` is callNo); the router forwarding machines' calls to the
+     tenant (the router would depend on a tenant service); hermit calling into machines (releases ride on the
+     supervisor's activity reply instead, readiness comes from the machine's own health reports).

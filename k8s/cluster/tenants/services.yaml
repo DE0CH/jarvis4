@@ -9,12 +9,14 @@ metadata:
   name: services
   labels: { pod-security.kubernetes.io/enforce: restricted }
 ---
-# search 2 × 1 Gi + cloudflared 2 × 128 Mi + dsh-web 2 × 128 Mi, rolling surges included (+1 of each)
+# search 2 × 1 Gi + cloudflared 2 × 128 Mi + dsh-web 2 × 128 Mi, rolling surges included (+1 of each); the chat stack
+# (Jarvis 4's aviary harness, DE0CH/jarvis4 aviary/README.md): pigeon, magpie, hermit-jarvis 2 × 256 Mi each (+1 surge),
+# its Postgres chat-db 2 × 512 Mi (+ their Barman sidecars) on 2 × 10 Gi volumes
 apiVersion: v1
 kind: ResourceQuota
 metadata: { name: services, namespace: services }
 spec:
-  hard: { limits.memory: 4Gi, requests.memory: 2Gi, limits.cpu: "3", persistentvolumeclaims: "2", requests.storage: 20Gi }
+  hard: { limits.memory: 9Gi, requests.memory: 5Gi, limits.cpu: "8", persistentvolumeclaims: "4", requests.storage: 40Gi }
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -37,6 +39,25 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata: { name: flux-services-rbac, namespace: services }
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: flux-services-rbac }
+subjects: [{ kind: ServiceAccount, name: flux-services, namespace: flux-system }]
+---
+# the tenant's own Postgres (CloudNativePG, the cluster's operator): its Cluster, Database and Barman ObjectStore objects
+# in `services` only (the operator's CRDs ship no role that aggregates to admin)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: flux-services-postgres, namespace: services }
+rules:
+  - apiGroups: [postgresql.cnpg.io]
+    resources: [clusters, databases, backups, scheduledbackups, poolers]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [barmancloud.cnpg.io]
+    resources: [objectstores]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: flux-services-postgres, namespace: services }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: flux-services-postgres }
 subjects: [{ kind: ServiceAccount, name: flux-services, namespace: flux-system }]
 ---
 apiVersion: source.toolkit.fluxcd.io/v1

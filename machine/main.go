@@ -119,7 +119,7 @@ func main() {
 	log.SetFlags(0)
 	log.SetPrefix("[jarvis] ")
 	if len(os.Args) < 2 {
-		log.Fatal("usage: jarvis-machine boot | init | stores [--json] | put-key <store> <key> [--explain <text>] < value | delete-key <store> <key> | add-store <name> | await-store <name> | downgrade --keep <store>… | --drop <store>… | --none | allow [<holder> <duration> | --remove <holder>] | supervisor")
+		log.Fatal("usage: jarvis-machine boot | init | stores [--json] | put-key <store> <key> [--explain <text>] < value | delete-key <store> <key> | add-store <name> | await-store <name> | downgrade --keep <store>… | --drop <store>… | --none | allow [<holder> <duration> | --remove <holder>] | sign-request <METHOD> <path> < body | supervisor")
 	}
 	var err error
 	switch os.Args[1] {
@@ -168,6 +168,8 @@ func main() {
 		return
 	case "allow":
 		err = allowCmd(os.Args[2:])
+	case "sign-request": // signrequest.go: a request for a service outside Jarvis 4, signed with the machine key
+		err = signRequestCmd(os.Args[2:])
 	default:
 		err = fmt.Errorf("unknown command %s", os.Args[1])
 	}
@@ -577,7 +579,7 @@ func cloneRepos(repos []string) {
 
 // what a snapshot holds (relative to $HOME): the conversation, the work, the artefacts, and the OpenCode/Paseo and
 // OpenClaw harnesses' own state (Paseo's daemon identity and pairings, OpenCode's sessions, the OpenClaw gateway's
-// state and device pairings; the CloudCLI harness's chat pictures in ~/.claude/cloudcli-assets), so their apps stay
+// state and device pairings), so their apps stay
 // paired across a pause, as in Jarvis 1 (its lib/archive.js)
 //
 // In the order of what matters most (Deyao, 2026-10-21: the teardown uploads the most important first): the
@@ -585,7 +587,7 @@ func cloneRepos(repos []string) {
 // artifacts last. The stream (snapstream.go) sends them in this order.
 var snapshotPaths = []string{".claude/projects", ".claude.json", ".claude/.first-prompt-sent", ".claude/.paseo-agent",
 	allowFile, changesFile, lineKeysFile, deliveredFile,
-	".paseo", ".local/share/opencode", ".openclaw", ".claude/cloudcli-assets", ".dsh", ".claude/.dsh-session", "workspace", "artifacts"}
+	".paseo", ".local/share/opencode", ".openclaw", ".dsh", ".claude/.dsh-session", "workspace", "artifacts"}
 
 // snapshotFiles: which of snapshotPaths are single files, not directories: the volume mirrors them instead of
 // bind-mounting them (volume.go; 2026-10-26: .claude/.dsh-session left out of the volume's own list became an empty

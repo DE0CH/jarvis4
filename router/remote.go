@@ -9,8 +9,8 @@ package main
 //             token (~/.openclaw/jarvis-remote.json, written by harness-openclaw.sh) is the secret
 //   dsh       DeepSeek Harness web (harness-dsh.sh): its web UI on the same origin; Cloudflare Access is its only
 //             gate (dsh-front.js hands dsh's launch token to a request Access admitted; nothing for the router to read)
-//   cloudcli  the CloudCLI server (harness-cloudcli.sh): its chat web UI and the API + WebSocket the Jarvis 4 Chat app
-//             uses, on the same origin; Cloudflare Access is its only gate (no secret of its own, nothing to read)
+//   aviary    no front end of its own: its conversation is in Jarvis 4's chat web app at chat.deyaochen.com (aviary's
+//             pigeon and magpie, DE0CH/services), so its remote is that address (nothing to read)
 // The router reads those secrets on demand through a grant for holder "remote" (grants.go): its own key, so
 // Deyao can let the router read a session's remote without giving it the terminal. Never in /api/state.
 //
@@ -21,7 +21,7 @@ package main
 // sent by agent.js as x-agent-secret), so one session can't take over another's tunnel id: proof = hex
 // HMAC-SHA256(key, "jarvis2-tunnel:" + id).
 //
-// GET /api/remotes also admits Deyao's paired OpenClaw, Paseo and Jarvis 4 Chat apps (devices.go).
+// GET /api/remotes also admits Deyao's paired OpenClaw and Paseo apps and hermit-jarvis (devices.go).
 
 import (
 	"crypto/hmac"
@@ -39,7 +39,7 @@ import (
 
 const remoteHolder = "remote"
 
-var remoteHarnesses = map[string]bool{"opencode": true, "openclaw": true, "paseo-claude": true, "cloudcli": true, "dsh": true}
+var remoteHarnesses = map[string]bool{"opencode": true, "openclaw": true, "paseo-claude": true, "aviary": true, "dsh": true}
 
 // webOriginHarness: the remote is only the session's origin, Cloudflare Access its gate (nothing to read)
 //
@@ -47,7 +47,10 @@ var remoteHarnesses = map[string]bool{"opencode": true, "openclaw": true, "paseo
 // own service token and stays up while the machine is paused
 func dshWebURL(id string) string { return "https://dsh.deyaochen.com/s/" + id + "/" }
 
-func webOriginHarness(h string) bool { return h == "cloudcli" || h == "dsh" }
+func webOriginHarness(h string) bool { return h == "dsh" }
+
+// chatURL: where an aviary session's conversation is (Jarvis 4's chat web app; aviary/README.md)
+const chatURL = "https://chat.deyaochen.com/"
 
 // the commands the remote holder runs (bash -lc as the session user)
 const (
@@ -108,9 +111,12 @@ func parseRemote(harness, id, stdout string) RemoteInfo {
 	return info
 }
 
-// RemoteInfo: a started Paseo/OpenClaw session's remote, read through the remote holder (a CloudCLI session's is
-// only its origin: nothing to read)
+// RemoteInfo: a started Paseo/OpenClaw session's remote, read through the remote holder (a dsh or aviary session's is
+// only an address: nothing to read)
 func (r *Router) RemoteInfo(s Session) RemoteInfo {
+	if s.Harness == "aviary" {
+		return RemoteInfo{WebURL: chatURL, Harness: s.Harness}
+	}
 	if s.Harness == "dsh" {
 		return RemoteInfo{WebURL: dshWebURL(s.ID), Harness: s.Harness}
 	}
@@ -157,7 +163,7 @@ func (r *Router) registerRemote(app appRoute, m machineRoute, public publicRoute
 			writeJSON(w, 404, map[string]string{"error": "no such session"})
 			return
 		case !remoteHarnesses[s.Harness]:
-			writeJSON(w, 400, map[string]string{"error": "only Paseo, OpenClaw and CloudCLI sessions have a remote here — a Claude session is in the Claude app"})
+			writeJSON(w, 400, map[string]string{"error": "only Paseo, OpenClaw, dsh and aviary sessions have a remote here — a Claude session is in the Claude app"})
 			return
 		case s.State != "started" || s.MachineID == "":
 			writeJSON(w, 409, map[string]string{"error": "session is " + s.State})
@@ -199,14 +205,14 @@ func tunnelProof(key, id string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// GET /api/remotes?harness=openclaw|opencode|paseo-claude|paseo|cloudcli|dsh → {sessions: [{id, title, state, model,
-// harness, + url, token, webUrl (openclaw) | pairUrl (a Paseo harness) | webUrl (cloudcli, dsh) — only on a started session
+// GET /api/remotes?harness=openclaw|opencode|paseo-claude|paseo|aviary|dsh → {sessions: [{id, title, state, model,
+// harness, + url, token, webUrl (openclaw) | pairUrl (a Paseo harness) | webUrl (aviary, dsh) — only on a started session
 // whose front end is up, else error}]}. harness=paseo: every session a Paseo daemon fronts (opencode and paseo-claude),
-// what the Paseo app lists; harness=cloudcli: what the Jarvis 4 Chat app lists.
+// what the Paseo app lists; harness=aviary: what hermit-jarvis lists (paused ones too).
 func (r *Router) remotes(w http.ResponseWriter, req *http.Request) {
 	harness := req.URL.Query().Get("harness")
 	if !remoteHarnesses[harness] && harness != "paseo" {
-		writeJSON(w, 400, map[string]string{"error": "harness must be openclaw, opencode, paseo-claude, paseo, cloudcli or dsh"})
+		writeJSON(w, 400, map[string]string{"error": "harness must be openclaw, opencode, paseo-claude, paseo, aviary or dsh"})
 		return
 	}
 	match := func(h string) bool { return h == harness || harness == "paseo" && paseoHarness(h) }
@@ -239,7 +245,7 @@ func (r *Router) remotes(w http.ResponseWriter, req *http.Request) {
 				switch harness {
 				case "openclaw":
 					o["url"], o["token"] = nil, nil
-				case "cloudcli", "dsh":
+				case "aviary", "dsh":
 					o["webUrl"] = nil
 				default:
 					o["pairUrl"] = nil
@@ -249,7 +255,7 @@ func (r *Router) remotes(w http.ResponseWriter, req *http.Request) {
 			switch harness {
 			case "openclaw":
 				o["url"], o["token"], o["webUrl"] = info.URL, info.Token, info.WebURL
-			case "cloudcli", "dsh":
+			case "aviary", "dsh":
 				o["webUrl"] = info.WebURL
 			default:
 				o["pairUrl"] = info.PairURL

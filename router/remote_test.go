@@ -210,15 +210,15 @@ func TestRemotePage(t *testing.T) {
 	}
 }
 
-// Claude Code · CloudCLI: its remote is its origin (Access is the gate), read from nothing on the machine; the
-// Jarvis 4 Chat app lists the sessions with harness=cloudcli
-func TestCloudCLIRemote(t *testing.T) {
+// Claude Code · aviary: its remote is Jarvis 4's chat web app, read from nothing on the machine; hermit-jarvis lists the
+// sessions (paused ones too) with harness=aviary
+func TestAviaryRemote(t *testing.T) {
 	r := newTestRouter(t)
-	addHarnessSession(r, "sCC", "cloudcli", "started", "mCC")
-	addHarnessSession(r, "sCP", "cloudcli", "paused", "")
+	addHarnessSession(r, "sAV", "aviary", "started", "mAV")
+	addHarnessSession(r, "sAP", "aviary", "paused", "")
 	addHarnessSession(r, "sPC", "paseo-claude", "started", "mPC")
-	defer fakeMachine(t, r, "mCC", func(holder, cmd string) ExecResult {
-		return ExecResult{Error: "the router ran " + holder + ": " + cmd + " on a cloudcli session"}
+	defer fakeMachine(t, r, "mAV", func(holder, cmd string) ExecResult {
+		return ExecResult{Error: "the router ran " + holder + ": " + cmd + " on an aviary session"}
 	})()
 	h := r.Handler()
 	get := func(path string) (int, map[string]any) {
@@ -228,10 +228,10 @@ func TestCloudCLIRemote(t *testing.T) {
 		json.Unmarshal(w.Body.Bytes(), &out)
 		return w.Code, out
 	}
-	if code, out := get("/api/sessions/sCC/remote"); code != 200 || out["webUrl"] != "https://sCC-s.deyaochen.com/" || out["harness"] != "cloudcli" || out["token"] != nil || out["pairUrl"] != nil {
+	if code, out := get("/api/sessions/sAV/remote"); code != 200 || out["webUrl"] != chatURL || out["harness"] != "aviary" || out["token"] != nil || out["pairUrl"] != nil {
 		t.Fatalf("%d %v", code, out)
 	}
-	code, out := get("/api/remotes?harness=cloudcli")
+	code, out := get("/api/remotes?harness=aviary")
 	ss := out["sessions"].([]any)
 	if code != 200 || len(ss) != 2 {
 		t.Fatalf("%d %v", code, out)
@@ -240,14 +240,17 @@ func TestCloudCLIRemote(t *testing.T) {
 	for _, s := range ss {
 		byID[s.(map[string]any)["id"].(string)] = s.(map[string]any)
 	}
-	if s := byID["sCC"]; s["webUrl"] != "https://sCC-s.deyaochen.com/" || s["model"] != "cloudcli/claude-opus-5-5" || s["error"] != nil {
+	if s := byID["sAV"]; s["webUrl"] != chatURL || s["model"] != "aviary/claude-opus-5-5" || s["error"] != nil {
 		t.Fatalf("%v", s)
 	}
-	if s := byID["sCP"]; s["state"] != "paused" || s["webUrl"] != nil {
+	if s := byID["sAP"]; s["state"] != "paused" || s["webUrl"] != nil {
 		t.Fatalf("%v", s)
 	}
-	if !proxyLoginHarness("cloudcli") || !harnessSend["cloudcli"] || deviceSchemes["jarvis4chat"] != "dev.de0ch.jarvis4chat" {
-		t.Fatal("cloudcli: an account switch through the API proxy, harness-send and the Jarvis 4 Chat app's pairing")
+	if !proxyLoginHarness("aviary") || !harnessSend["aviary"] || deviceSchemes["hermit"] != "" {
+		t.Fatal("aviary: an account switch through its gateway, harness-send and hermit-jarvis's pairing")
+	}
+	if _, ok := deviceSchemes["jarvis4chat"]; ok || proxyLoginHarness("cloudcli") {
+		t.Fatal("cloudcli and the Jarvis 4 Chat app are gone")
 	}
 }
 

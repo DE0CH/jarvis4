@@ -1,0 +1,42 @@
+#!/bin/bash
+# aviary-sandbox BOOT_ENV_FILE (as root, by harness-aviary.sh through sudo): runs DE0CH/aviary's supervisor for this
+# session the way an aviary sandbox runs it (DE0CH/aviary docs/CONTRACTS.md "Boot"): supervisor-keeper as PID 1 of its
+# own PID namespace, with only the gateway's boot environment, `/workspace` the conversation's workspace,
+# `/home/sandbox/.claude` an empty directory, `/dev/fuse` there. The supervisor is the same build as YYC AI's; only
+# what is mounted where differs, and that is this script:
+#
+#   /home/sandbox            a bind of /home/claude, so the agent (uid 1000 = claude) keeps Jarvis's home: ~/workspace,
+#                            ~/artifacts, ~/.ssh's deploy keys, ~/.local/bin; /run/jarvis (session-secret, the ssh agent)
+#                            is the machine's own
+#   /home/sandbox/.claude    an empty tmpfs the supervisor mounts magpie's FUSE on (Claude Code's state lives in magpie)
+#   /workspace               a bind of /home/claude/workspace (Jarvis's merged CLAUDE.md, skills and settings there:
+#                            workspace-layer.sh), loaded as the project's (the descriptor's claude.projectSettings)
+#   /etc/claude-code         a tmpfs: the supervisor's managed files stay out of the machine's own /etc/claude-code
+#   /opt/claude-code/bin/claude  the image's Claude Code (a symlink in the image)
+#   /proc                    the namespace's own: the supervisor's memory guard sees (and kills) only the agent's tree
+#
+# The network namespace is the machine's: the agent reaches $JARVIS_URL and the gateway on 127.0.0.1.
+set -euo pipefail
+boot=$1
+[ "$(id -u)" = 0 ] || { echo "aviary-sandbox: run as root" >&2; exit 1; }
+[ -s "$boot" ] || { echo "aviary-sandbox: no boot environment at $boot" >&2; exit 1; }
+
+if [ "${AVIARY_SANDBOX_INNER:-}" != 1 ]; then
+  # a PID namespace (keeper = PID 1, `/proc` remounted) and a private mount namespace
+  exec env AVIARY_SANDBOX_INNER=1 unshare --pid --fork --mount --propagation private --mount-proc "$0" "$boot"
+fi
+
+mkdir -p /home/sandbox /workspace /run/supervisor /var/lib/supervisor
+mount --bind /home/claude /home/sandbox
+mount -t tmpfs -o mode=0700,uid=1000,gid=1000,size=64m tmpfs /home/sandbox/.claude
+mount --bind /home/claude/workspace /workspace
+mount -t tmpfs -o mode=0755 tmpfs /etc/claude-code
+
+# exactly the boot environment (supervisor 6.2: nothing else of ours is passed on), plus the image's PATH and locale
+envs=(PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8)
+while IFS= read -r line; do
+  case "$line" in
+    [A-Za-z_]*=*) envs+=("$line") ;;
+  esac
+done < "$boot"
+exec env -i "${envs[@]}" /usr/local/bin/supervisor-keeper

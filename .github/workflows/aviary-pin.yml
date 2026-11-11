@@ -1,0 +1,55 @@
+name: aviary-pin
+# Dogfooding (Deyao, 2026-11-11): Jarvis 4's aviary sessions follow DE0CH/aviary's main as soon as its CI publishes a
+# release (aviary-<sha12>, only made when every check passed). This pins the newest release, never an older one than
+# the current pin:
+#   session-image/aviary.json      {release, supervisor, supervisor-keeper}: the sha256 of each binary (its SHA256SUMS)
+#   aviary/Cargo.toml + Cargo.lock the contract crates' rev (the release's commit)
+# and pushes to main with the pin deploy key (environment `release`), which starts images.yml (the session image) and
+# aviary.yml (hermit-jarvis). DE0CH/services' chat-pin.yml pins pigeon and magpie of the same releases.
+on:
+  schedule: [{ cron: "*/15 * * * *" }]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency: { group: aviary-pin, cancel-in-progress: false }
+jobs:
+  pin:
+    if: github.ref == 'refs/heads/main'
+    environment: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ssh-key: "${{ secrets.PIN_DEPLOY_KEY }}" }
+      - name: the newest release, if newer than the pin
+        id: rel
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          set -euo pipefail
+          tag="$(gh release list -R DE0CH/aviary --limit 50 --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | startswith("aviary-"))] | sort_by(.createdAt) | last | .tagName // ""')"
+          [ -n "$tag" ] || { echo "no release"; exit 0; }
+          cur="$(python3 -c 'import json;print(json.load(open("session-image/aviary.json"))["release"])')"
+          [ "$tag" != "$cur" ] || { echo "pinned already: $tag"; exit 0; }
+          sha="$(gh api "repos/DE0CH/aviary/commits/$tag" --jq .sha)"
+          old="$(gh api "repos/DE0CH/aviary/commits/$cur" --jq .sha 2>/dev/null || true)"
+          if [ -n "$old" ]; then
+            st="$(gh api "repos/DE0CH/aviary/compare/$old...$sha" --jq .status)"
+            case "$st" in ahead) ;; *) echo "$tag is not ahead of $cur ($st): nothing pinned"; exit 0 ;; esac
+          fi
+          gh release download "$tag" -R DE0CH/aviary -p SHA256SUMS -O /tmp/SUMS
+          sup="$(awk '$2=="supervisor"{print $1}' /tmp/SUMS)"; kee="$(awk '$2=="supervisor-keeper"{print $1}' /tmp/SUMS)"
+          [[ "$sup" =~ ^[0-9a-f]{64}$ && "$kee" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::no sums for the supervisor in $tag"; exit 1; }
+          printf '{\n  "release": "%s",\n  "supervisor": "%s",\n  "supervisor-keeper": "%s"\n}\n' "$tag" "$sup" "$kee" > session-image/aviary.json
+          sed -i -E "s#(git = \"https://github.com/DE0CH/aviary\", rev = \")[0-9a-f]{40}#\1$sha#" aviary/Cargo.toml
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - if: steps.rel.outputs.tag != ''
+        name: Cargo.lock
+        working-directory: aviary
+        run: cargo update -p aviary-core -p aviary-pg -p hermit-api -p gateway-api -p magpie-api -p supervisor-api -p aviary-fakes
+      - if: steps.rel.outputs.tag != ''
+        name: push
+        run: |
+          git config user.name "jarvis4-ci"; git config user.email "ci@jarvis4.invalid"
+          git commit -qam "aviary-pin: ${{ steps.rel.outputs.tag }}"
+          for attempt in 1 2 3; do git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0; sleep 5; done
+          exit 1

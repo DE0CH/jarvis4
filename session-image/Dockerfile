@@ -11,8 +11,22 @@ COPY kernel/ /src/kernel/
 COPY machine/ ./
 RUN CGO_ENABLED=0 go build -trimpath -o /out/jarvis-machine .
 
+# the aviary harness (aviary/README.md): aviary-gateway from this repo, and DE0CH/aviary's supervisor and keeper from
+# the release session-image/aviary.json pins (by sha256: the code that runs is fixed by this image's digest)
+FROM rust:1.99.1-bookworm AS aviary
+WORKDIR /src/aviary
+COPY aviary/ ./
+RUN cargo build --release --locked --bin aviary-gateway && install -D target/release/aviary-gateway /out/aviary-gateway
+COPY session-image/aviary.json /tmp/aviary.json
+RUN set -e; rel="$(python3 -c 'import json;print(json.load(open("/tmp/aviary.json"))["release"])')"; \
+    for b in supervisor supervisor-keeper; do \
+      sum="$(python3 -c "import json;print(json.load(open('/tmp/aviary.json'))['$b'])")"; \
+      curl -fsSL --retry 3 -o "/out/$b" "https://github.com/DE0CH/aviary/releases/download/$rel/$b"; \
+      echo "$sum  /out/$b" | sha256sum -c -; chmod 755 "/out/$b"; done
+
 FROM ${BASE}
 COPY --from=build /out/jarvis-machine /usr/local/bin/jarvis-machine
+COPY --from=aviary /out/aviary-gateway /out/supervisor /out/supervisor-keeper /usr/local/bin/
 # task templates (tasks/<name>/, router/tasks.go): a task line's machine runs one of these instead of a harness;
 # the image digest in the line's cert fixes which code that is
 COPY tasks/ /opt/jarvis/tasks/
@@ -26,13 +40,11 @@ USER root
 # Only vouched inputs shape a machine (docs/DESIGN.md "Inputs to a machine"):
 #  - the image's own ENV, recorded here, is the env jarvis-machine keeps (everything the machine's config adds
 #    besides the core's key and the router's address is dropped at boot: machine/vouch.go cleanEnv);
-#  - the OpenClaw, CloudCLI and dsh runtime bundles are pinned by sha256, not only by URL.
+#  - the OpenClaw and dsh runtime bundles, and the aviary supervisor (aviary.json), are pinned by sha256, not only by URL.
 RUN mkdir -p /opt/jarvis && env | grep -Ev '^(HOSTNAME|HOME|PWD|OLDPWD|SHLVL|_|TERM|USER|LOGNAME|SHELL)=' | sort > /opt/jarvis/image.env
 COPY session-image/openclaw-runtime.json /opt/jarvis/openclaw-runtime.json
 COPY --chmod=755 session-image/bin/openclaw /usr/local/bin/openclaw
 COPY --chmod=755 session-image/bin/tofu /usr/local/bin/tofu
-COPY session-image/cloudcli-runtime.json /opt/jarvis/cloudcli-runtime.json
-COPY --chmod=755 session-image/bin/cloudcli-runtime /usr/local/bin/cloudcli-runtime
 COPY session-image/dsh-runtime.json /opt/jarvis/dsh-runtime.json
 COPY --chmod=755 session-image/bin/dsh-runtime /usr/local/bin/dsh-runtime
 # Claude Code's managed settings (crossSessionInbound refuse) and the Jarvis channel's MCP config. The directory is made

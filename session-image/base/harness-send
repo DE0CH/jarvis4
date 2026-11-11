@@ -11,9 +11,8 @@
 #                                       it answers "started" at once, the turn runs in the gateway.
 #   dsh         (harness-dsh.sh)        dsh-send.py: a prompt (mode queue) into the main DeepSeek Harness
 #                                       conversation (~/.claude/.dsh-session; made by the first prompt).
-#   cloudcli    (harness-cloudcli.sh)   the CloudCLI server's POST /api/jarvis/deliver: a turn of its main
-#                                       conversation (made by the first prompt), run with no client attached;
-#                                       the server answers at once, 409 while a turn runs (→ 75).
+#   aviary      (harness-aviary.sh)     the machine's aviary-gateway POST /jarvis/deliver: a turn of the session's
+#                                       conversation in magpie, as Deyao; 409 while a turn runs (→ 75).
 #   harness-send [--images <file with space-separated image paths>] < prompt.txt
 #   claude      (harness-claude.sh)     --queue only: Deyao's resume prompt, which the launcher's typing loop types
 #                                       into the host's input box as his prompt (Jarvis's own messages go through
@@ -30,7 +29,7 @@ INBOX="$HOME/.claude/harness-inbox"
 if pgrep -u "$(id -u)" -f harness-opencode.sh >/dev/null; then HARNESS=opencode
 elif pgrep -u "$(id -u)" -f harness-paseo-claude.sh >/dev/null; then HARNESS=paseo-claude
 elif pgrep -u "$(id -u)" -f harness-openclaw.sh >/dev/null; then HARNESS=openclaw
-elif pgrep -u "$(id -u)" -f harness-cloudcli.sh >/dev/null; then HARNESS=cloudcli
+elif pgrep -u "$(id -u)" -f harness-aviary.sh >/dev/null; then HARNESS=aviary
 elif pgrep -u "$(id -u)" -f harness-dsh.sh >/dev/null; then HARNESS=dsh
 elif pgrep -u "$(id -u)" -f harness-claude.sh >/dev/null; then HARNESS=claude
 else HARNESS=""; fi
@@ -64,18 +63,20 @@ if [ "$HARNESS" = dsh ]; then
   printf '%s' "$TEXT" | python3 /usr/local/bin/dsh-send.py "${WD:-$HOME/workspace}" "${IMGS[@]}"; exit $?
 fi
 
-# ---------------------------------------------------------------- cloudcli (CloudCLI server) -----
-if [ "$HARNESS" = cloudcli ]; then
-  # images: the server takes uploads from its own store only; these go in as paths Claude Code can read
+# ---------------------------------------------------------------- aviary (aviary-gateway) --------
+if [ "$HARNESS" = aviary ]; then
+  # images: these go in as paths Claude Code can read (the machine's files are the agent's)
   for i in "${IMGS[@]:-}"; do [ -n "$i" ] && TEXT="$TEXT
 [attached image: $i]"; done
-  body="$(python3 -c 'import json,sys; print(json.dumps({"content": sys.stdin.read()}))' <<< "$TEXT")"
-  out="$(curl -s -m 30 -w '\n%{http_code}' -H 'content-type: application/json' --data-binary "$body" http://127.0.0.1:3001/api/jarvis/deliver)"
+  # the id makes a repeat the same turn: the delivery's own (HARNESS_SEND_ID: the inbox file, the first prompt), so a
+  # retried delivery is never a second turn while a cron's same text each day is a new one
+  body="$(HARNESS_SEND_ID="${HARNESS_SEND_ID:-}" python3 -c 'import json,os,sys,uuid; print(json.dumps({"id": "jarvis-" + (os.environ["HARNESS_SEND_ID"] or uuid.uuid4().hex), "text": sys.stdin.read()}))' <<< "$TEXT")"
+  out="$(curl -s -m 40 --noproxy '*' -w '\n%{http_code}' -H 'content-type: application/json' --data-binary "$body" http://127.0.0.1:3128/jarvis/deliver)"
   code="${out##*$'\n'}"; out="${out%$'\n'*}"
   case "$code" in
-    202) echo "$out"; exit 0 ;;
-    409) echo "harness-cloudcli: the main conversation is running a turn; the message waits for it to end" >&2; exit 75 ;;
-    *) echo "harness-send: the CloudCLI server answered ${code:-nothing}: $out" >&2; exit 1 ;;
+    200|202) echo "$out"; exit 0 ;;
+    409) echo "harness-aviary: the conversation is running a turn; the message waits for it to end" >&2; exit 75 ;;
+    *) echo "harness-send: aviary-gateway answered ${code:-nothing}: $out" >&2; exit 1 ;;
   esac
 fi
 

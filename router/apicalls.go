@@ -451,7 +451,8 @@ var callRules = map[string]callRule{
 	"POST /api/core/unlocked":                     callBody,
 	"POST /api/core/wipe":                         callNo, // the iPhone app's Reset, signed by the master key
 	"GET /api/devices":                            callBody,
-	"GET /api/devices/pair":                       callNo, // mints a device service token: a login of its own
+	"GET /api/devices/pair":                       callNo,   // mints a device service token: a login of its own
+	"POST /api/machine-signatures/verify":         callBody, // whose machine signed a request (machinesig.go): a yes/no
 	"DELETE /api/devices/{id}":                    callBody,
 	"GET /api/github/repos":                       callBody,
 	"DELETE /api/grants/{gid}":                    callBody,

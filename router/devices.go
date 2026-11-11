@@ -1,10 +1,10 @@
 package main
 
-// Paired devices for Deyao's builds of the OpenClaw and Paseo apps and the Jarvis 4 Chat app (Jarvis 1's lib/devices.js, PARITY "Device
+// Paired devices for Deyao's builds of the OpenClaw and Paseo apps (Jarvis 1's lib/devices.js, PARITY "Device
 // pairing"): each app pairs ONCE and then lists the sessions it can drive (GET /api/remotes) and starts a paused one
 // (POST /api/sessions/:id/start), with no Access login of its own.
 //
-//   - Pairing: the app opens GET /api/devices/pair?state=…&name=…&model=…&app=openclaw|paseo|jarvis4chat in the system sign-in
+//   - Pairing: the app opens GET /api/devices/pair?state=…&name=…&model=…&app=openclaw|paseo in the system sign-in
 //     sheet, where Access logs Deyao in (the Jarvis 4 app's own Access app: his email only). The router mints a
 //     Cloudflare Access service token for that one device (CF_DEVICE_TOKENS_API: a Cloudflare token that can manage
 //     Access service tokens and nothing else) and hands its credentials back through the app's own URL scheme
@@ -18,7 +18,7 @@ package main
 //   - Revoke: DELETE /api/devices/:id deletes the service token at Cloudflare and forgets the device.
 //
 // The apps' server URL is a constant in each fork (DE0CH/openclaw JarvisConfig.baseURL, DE0CH/paseo app.config.js
-// jarvis.url) or a build input (DE0CH/pwa-shell-ios PWA_SITE_URL of the Jarvis 4 Chat build); it must name this host
+// jarvis.url); it must name this host
 // (docs/RUNBOOK.md "Device pairing").
 
 import (
@@ -41,7 +41,7 @@ import (
 )
 
 // deviceSchemes: the apps that pair, each with the URL scheme its pairing answer goes to
-var deviceSchemes = map[string]string{"openclaw": "openclaw-de0ch", "paseo": "paseo-de0ch", "jarvis4chat": "dev.de0ch.jarvis4chat"}
+var deviceSchemes = map[string]string{"openclaw": "openclaw-de0ch", "paseo": "paseo-de0ch"}
 
 var (
 	pairStateRE   = regexp.MustCompile(`^[A-Za-z0-9_-]{16,64}$`)
@@ -249,10 +249,15 @@ func (r *Router) deyaoOrDevice(tok string) bool {
 	return false
 }
 
-// admitClaims: Deyao's email, or no email and a paired device's client id
+// admitClaims: Deyao's email, or no email and a paired device's client id, or hermit-jarvis's (HERMIT_CLIENT_ID: the
+// aviary harness's hermit, a server in the services tenant; its own Access service token hermit-jarvis, named in
+// k8s/cluster/router/router.yaml as the health probe's is; aviary/README.md "Its credential")
 func (r *Router) admitClaims(c *accessClaims, now time.Time) bool {
 	if c.Email != "" {
 		return strings.EqualFold(c.Email, r.cfg.AllowedEmail)
+	}
+	if h := os.Getenv("HERMIT_CLIENT_ID"); h != "" && c.CommonName == h {
+		return true
 	}
 	return r.deviceOfClient(c.CommonName, now) != nil
 }
@@ -316,6 +321,9 @@ func (r *Router) registerDevices(app appRoute, public publicRoute) {
 	// the apps: their sessions, and Start for a paused one (a resume on the same image: no phone step)
 	r.appPatterns["GET /api/remotes"], r.appPatterns["POST /api/sessions/{id}/start"] = true, true // Deyao's too (apicalls.go)
 	public("GET /api/remotes", r.requireDeyaoOrDevice(r.remotes))
+	// whose machine signed a request for a service outside Jarvis 4 (machinesig.go; hermit-jarvis)
+	r.appPatterns["POST /api/machine-signatures/verify"] = true
+	public("POST /api/machine-signatures/verify", r.requireDeyaoOrDevice(r.verifyMachineSignature))
 	public("POST /api/sessions/{id}/start", r.requireDeyaoOrDevice(func(w http.ResponseWriter, req *http.Request) {
 		if err := r.resumeWithPrompt(req.PathValue("id"), false, ""); err != nil {
 			scheduleErr(w, err)

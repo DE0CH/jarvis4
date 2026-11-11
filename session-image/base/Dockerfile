@@ -140,8 +140,9 @@ RUN git config --system user.name claude \
  && git config --system user.email claude@selfhost \
  && git config --system credential.https://github.com.helper '!f() { echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f'
 # Non-root user with passwordless sudo. claude refuses --dangerously-skip-permissions
-# as root, and per-session tool installs want sudo.
-RUN useradd -m -s /bin/bash claude \
+# as root, and per-session tool installs want sudo. uid 1000 (Ubuntu's unused `ubuntu` goes): DE0CH/aviary's supervisor
+# runs the agent as uid 1000 (harness aviary), and every harness is the same user (Deyao, 2026-11-11).
+RUN userdel -r ubuntu 2>/dev/null; useradd -m -u 1000 -s /bin/bash claude \
  && echo 'claude ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-claude \
  && chmod 0440 /etc/sudoers.d/90-claude
 # iOS device control over a network link: wireguard-tools, and pymobiledevice3 in its own Python 3.13 venv via uv
@@ -222,12 +223,16 @@ COPY openclaw-claw-harness /usr/local/lib/openclaw-claw-harness
 COPY harness-openclaw.sh /usr/local/bin/harness-openclaw.sh
 COPY openclaw-transcript /usr/local/bin/openclaw-transcript
 RUN chmod +x /usr/local/bin/harness-openclaw.sh /usr/local/bin/openclaw-transcript
-# Claude Code · CloudCLI (harness cloudcli): Deyao's CloudCLI fork (DE0CH/claudecodeui) drives the image's own claude,
-# behind api-proxy.js; the Jarvis 4 Chat app and the web UI are its front end. The fork, its Node and a portable
-# PostgreSQL are NOT in the image: session-image/Dockerfile adds /usr/local/bin/cloudcli-runtime, which fetches the
-# runtime bundle pinned by sha256 in session-image/cloudcli-runtime.json on first use.
-COPY harness-cloudcli.sh /usr/local/bin/harness-cloudcli.sh
-RUN chmod +x /usr/local/bin/harness-cloudcli.sh
+# Claude Code · aviary (harness aviary, DE0CH/jarvis4 aviary/README.md): DE0CH/aviary's supervisor drives the image's
+# own claude in its own PID + mount namespace (aviary-sandbox, as root), with aviary-gateway as its proxy; the chat web
+# app at chat.deyaochen.com is its front end. The supervisor, its keeper and aviary-gateway are added by
+# session-image/Dockerfile (pinned release assets and this repo's own build). /home/sandbox and /workspace are the
+# mount points aviary-sandbox binds; /opt/claude-code/bin/claude is where the supervisor runs Claude Code from.
+COPY harness-aviary.sh /usr/local/bin/harness-aviary.sh
+COPY aviary-sandbox /usr/local/bin/aviary-sandbox
+RUN chmod 755 /usr/local/bin/harness-aviary.sh /usr/local/bin/aviary-sandbox \
+ && mkdir -p /home/sandbox /workspace /opt/claude-code/bin \
+ && ln -s /home/claude/.local/bin/claude /opt/claude-code/bin/claude
 # DeepSeek Harness (harness dsh): Deyao's fork DE0CH/deepseek-harness serves its agent loop and web UI on the session;
 # OpenRouter routed to DeepSeek's own endpoint. The fork and its Node (24) are NOT in the image: session-image/Dockerfile
 # adds /usr/local/bin/dsh-runtime, which fetches the bundle pinned by sha256 in session-image/dsh-runtime.json on first

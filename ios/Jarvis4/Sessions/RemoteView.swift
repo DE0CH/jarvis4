@@ -29,13 +29,14 @@ struct RemoteView: View {
       } else if let info {
         let web = info["webUrl"].string ?? ""
         let openclaw = info["harness"].string == "openclaw"
+        let aviary = info["harness"].string == "aviary"
         Section {
           if let u = URL(string: web) {
-            Button(openclaw ? "Open the Control UI" : "Open the web UI", systemImage: "safari") { openURL(u) }.accessibilityIdentifier("rm-web")
+            Button(openclaw ? "Open the Control UI" : aviary ? "Open the chat" : "Open the web UI", systemImage: "safari") { openURL(u) }.accessibilityIdentifier("rm-web")
           }
           Button("Copy link", systemImage: "doc.on.doc") { model.copy(web, "Link") }.accessibilityIdentifier("rm-copy-web")
         } header: { Text("Web UI") } footer: {
-          Text(info["harness"].string == "cloudcli" ? "Also in the Jarvis 4 Chat app." : "Carries the session's key: don't share it.")
+          Text(aviary ? "The conversation in Jarvis 4's chat web app (every aviary session is listed there)." : "Carries the session's key: don't share it.")
         }
         if let pair = info["pairUrl"].text {
           let appUrl = pair.contains("#offer=") ? "paseo:///" + String(pair[pair.range(of: "#offer=")!.lowerBound...]) : pair

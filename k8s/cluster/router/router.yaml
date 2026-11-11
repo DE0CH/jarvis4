@@ -68,6 +68,9 @@ spec:
             - { name: ACCESS_DEVICES_AUD, value: 39f8523fae2ff6ce36bc9e8d59804205cd635f392efc8d2a42e49114768a467f }
             - { name: ACCESS_HEALTH_AUD, value: 855266d6e0f83f5d5db551c615ce18e1d148a45d58d7e40cf09ad411200b7552 }
             - { name: HEALTH_CLIENT_ID, value: "f8d3af1465028cfa370fdf13bd9d4cea.access" }
+            # hermit-jarvis (the aviary harness's hermit, DE0CH/services k8s/chat): its own Access service token hermit-jarvis,
+            # admitted on the device routes (router/devices.go admitClaims; aviary/README.md "Its credential")
+            - { name: HERMIT_CLIENT_ID, value: "88b0572a2b74d062bde8e7ff1d7fde61.access" }
             # the setup session's PUBLIC key (keys/setup.pub): the router checks it on every /setup call
             - { name: SETUP_KEY, value: "BEhYIkmGeCkg7D8vdKhRe8b00asMI8a9EyXNW41eBbIphkf6lZmy/c9FsRlqoXLD5JyRZgVOxLzM7OBv47Uy2Ms=" }
             # each session's channel goes under the Discord category "Jarvis 4" (guild 1482150592414486748)

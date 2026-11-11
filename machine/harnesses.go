@@ -7,25 +7,26 @@ package main
 //   openclaw      claw-code inside an OpenClaw gateway (harness-openclaw.sh)
 //   paseo-claude  Claude Code driven by a Paseo daemon (harness-paseo-claude.sh), its Claude calls through
 //                 api-proxy.js with the session's current Claude login
-//   cloudcli      Claude Code driven by the CloudCLI fork (harness-cloudcli.sh), through api-proxy.js the same way
+//   aviary        Claude Code driven by DE0CH/aviary's supervisor (harness-aviary.sh), its Claude calls through the
+//                 machine's aviary-gateway with the session's current Claude login (aviary/README.md)
 //   dsh           DeepSeek Harness web (harness-dsh.sh): its own agent loop on OpenRouter, its web UI
 // The last five take prompts through /usr/local/bin/harness-send and publish their own front end through the
 // session's tunnel (so they take CF_ACCESS_* as "publish it").
 
 // viaHarnessSend: the harness takes Jarvis's messages through harness-send (not a Claude host's channel)
 func viaHarnessSend(h string) bool {
-	return h == "opencode" || h == "openclaw" || h == "paseo-claude" || h == "cloudcli" || h == "dsh"
+	return h == "opencode" || h == "openclaw" || h == "paseo-claude" || h == "aviary" || h == "dsh"
 }
 
 // runsClaudeCode: Claude Code is the agent, so its hooks (the worker count, workers.go) run
 func runsClaudeCode(h string) bool {
-	return h == "" || h == "claude" || h == "paseo-claude" || h == "cloudcli"
+	return h == "" || h == "claude" || h == "paseo-claude" || h == "aviary"
 }
 
 // proxyLogin: Claude Code holds no login of its own (a placeholder token, no refresh token) and api-proxy.js sends
 // ~/.claude/.credentials.json's access token per request, so a new account's pair takes effect at the next request
 // with nothing restarted (claudelogin.go)
-func proxyLogin(h string) bool { return h == "paseo-claude" || h == "cloudcli" }
+func proxyLogin(h string) bool { return h == "paseo-claude" || h == "aviary" }
 
 // certHarness: this machine's harness from its cert ("" when it can't be read)
 var certHarness = func() string {

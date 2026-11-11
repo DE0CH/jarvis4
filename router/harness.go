@@ -9,8 +9,9 @@ package main
 //             OpenClaw app + Control UI
 //   paseo-claude  Claude Code driven by a Paseo daemon (`paseo/<Claude model id>`), Claude subscription through
 //             api-proxy.js (so an account switch needs no restart, accountswap.go): the Paseo app + web UI
-//   cloudcli  Claude Code driven by Deyao's CloudCLI fork (`cloudcli/<Claude model id>`), Claude subscription through
-//             api-proxy.js like paseo-claude: the Jarvis 4 Chat app (the YYC AI app's code) + the chat web UI
+//   aviary    Claude Code driven by DE0CH/aviary's supervisor (`aviary/<Claude model id>`), the same supervisor YYC AI's
+//             sandboxes run, with Jarvis 4's own pigeon, magpie and hermit (aviary/README.md); Claude subscription
+//             through the machine's aviary-gateway: the chat web app at chat.deyaochen.com
 //   dsh       DeepSeek Harness (Deyao's fork DE0CH/deepseek-harness) on OpenRouter, routed only to DeepSeek's own
 //             endpoint (`dsh/<OpenRouter slug>`; only the dated slugs have one): its web UI on the session's origin
 // The OpenCode list is Jarvis 1's curated one (every slug checked for tool calling on OpenRouter; prices are $/M
@@ -40,8 +41,8 @@ var modelCatalog = []ModelChoice{
 	{"openclaw/claude-fable-5-1", "Fable 5.1", "openclaw"},
 	{"paseo/claude-opus-5-5", "Opus 5.5", "paseo-claude"},
 	{"paseo/claude-fable-5-1", "Fable 5.1", "paseo-claude"},
-	{"cloudcli/claude-opus-5-5", "Opus 5.5", "cloudcli"},
-	{"cloudcli/claude-fable-5-1", "Fable 5.1", "cloudcli"},
+	{"aviary/claude-opus-5-5", "Opus 5.5", "aviary"},
+	{"aviary/claude-fable-5-1", "Fable 5.1", "aviary"},
 	{"dsh/deepseek/deepseek-v4-pro-0813", "DeepSeek V4 Pro — $0.66 / $1.98", "dsh"},
 	{"dsh/deepseek/deepseek-v4.1-flash-1017", "DeepSeek V4.1 Flash — $0.15 / $0.60", "dsh"},
 }
@@ -52,7 +53,7 @@ var harnessInfo = map[string]map[string]string{
 	"opencode":     {"label": "OpenCode · OpenRouter", "detail": "Paseo app + web UI"},
 	"openclaw":     {"label": "claw-code · OpenClaw", "detail": "Claude subscription · OpenClaw app + Control UI"},
 	"paseo-claude": {"label": "Claude Code · Paseo", "detail": "Claude subscription · Paseo app + web UI"},
-	"cloudcli":     {"label": "Claude Code · CloudCLI", "detail": "Claude subscription · Jarvis 4 Chat app + web UI"},
+	"aviary":       {"label": "Claude Code · aviary", "detail": "Claude subscription · YYC AI's stack · chat.deyaochen.com"},
 	"dsh":          {"label": "DeepSeek Harness · OpenRouter", "detail": "DeepSeek V4 on DeepSeek's endpoint · web UI"},
 }
 
@@ -61,9 +62,9 @@ var harnessInfo = map[string]map[string]string{
 func paseoHarness(h string) bool { return h == "opencode" || h == "paseo-claude" }
 
 // proxyLoginHarness: Claude Code reaches the API only through api-proxy.js, which sends the session's current Claude
-// login per request (session-image harness-paseo-claude.sh, harness-cloudcli.sh): a running session switches accounts
+// login per request (session-image harness-paseo-claude.sh; harness-aviary.sh's aviary-gateway): a running session switches accounts
 // with no restart
-func proxyLoginHarness(h string) bool { return h == "paseo-claude" || h == "cloudcli" }
+func proxyLoginHarness(h string) bool { return h == "paseo-claude" || h == "aviary" }
 
 func defaultModel(harness string) string {
 	for _, m := range modelCatalog {

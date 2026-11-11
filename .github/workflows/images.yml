@@ -7,7 +7,7 @@ name: images
 on:
   push:
     branches: [main]
-    paths: [kernel/**, router/**, machine/**, session-image/**, policy/**, tasks/**, app/**, infra/setup.py, infra/setup_trust_test.py, infra/setup_write_test.py, infra/setup_roster_test.py, infra/kernel-pin.py, infra/kernel_pin_test.py, ios/interop/rostervec/**, infra/image-unpacked-size.py, .github/workflows/images.yml]
+    paths: [kernel/**, router/**, machine/**, session-image/**, aviary/**, policy/**, tasks/**, app/**, infra/setup.py, infra/setup_trust_test.py, infra/setup_write_test.py, infra/setup_roster_test.py, infra/kernel-pin.py, infra/kernel_pin_test.py, ios/interop/rostervec/**, infra/image-unpacked-size.py, .github/workflows/images.yml]
   workflow_dispatch:
     inputs:
       base:
