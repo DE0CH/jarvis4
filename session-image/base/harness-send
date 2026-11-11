@@ -103,7 +103,7 @@ if [ "$HARNESS" = paseo-claude ]; then
   # the permission mode as harness-paseo-claude.sh maps it (the in-place file wins over the boot env)
   PERM="$(cat "$HOME/.claude/.permission-mode" 2>/dev/null || envof SESSION_PERMISSION_MODE paseo-claude)"
   MODE=auto; [ "$PERM" = bypass ] && MODE=bypassPermissions
-  MODEL="${MODEL:-paseo/claude-opus-5-5}"
+  MODEL="${MODEL:-paseo/claude-fable-5-2}"
   RUN=(--provider claude --model "${MODEL#paseo/}" --mode "$MODE")
 else
   RUN=(--provider opencode --model "${MODEL:-openrouter/z-ai/glm-5.3}" --mode build)

@@ -16,7 +16,7 @@
 #                           first message (images become inline [Image #N]); see harness-claude.sh
 #   SESSION_ONE_SHOT        "1" = one-shot: claude exits once SESSION_PROMPT is done and Jarvis
 #                           archives + destroys the machine (see one_shot_watch in harness-claude.sh)
-#   SESSION_MODEL           model id (default claude-opus-5-5, see harness-claude.sh)
+#   SESSION_MODEL           model id (default claude-fable-5-2, see harness-claude.sh)
 #   JARVIS_HARNESS_START   which start of the harness this is on this machine (1, 2, …): the keeper starts it again
 #                           whenever it ends; a restart (> 1) skips the one-time steps below (the Claude login and
 #                           account, which the supervisor keeps current; the content stores, which may hold unpushed

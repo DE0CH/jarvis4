@@ -37,14 +37,14 @@ func TestLoadTaskSpecAndCommand(t *testing.T) {
 			t.Errorf("%s: %v", f, a)
 		}
 	}
-	p := writeTemplate(t, root, "p", `{"title":"P","model":"claude-fable-5-1"}`, map[string]string{"prompt.md": "Summarise {{topic}} for {{ who }}; keep {{unknown}}."})
+	p := writeTemplate(t, root, "p", `{"title":"P","model":"claude-fable-5-2"}`, map[string]string{"prompt.md": "Summarise {{topic}} for {{ who }}; keep {{unknown}}."})
 	s, timeout, err = loadTaskSpec(p)
 	if err != nil || s.Prompt != "prompt.md" || timeout != 600*time.Second {
 		t.Fatalf("%+v %v", s, err)
 	}
 	args, stdin, err = taskCommand(p, s, "bypass", `{"topic":"the news","who":["a","b"]}`)
 	if err != nil || stdin != "Summarise the news for a,b; keep {{unknown}}." ||
-		strings.Join(args, " ") != "claude -p --output-format text --dangerously-skip-permissions --model claude-fable-5-1" {
+		strings.Join(args, " ") != "claude -p --output-format text --dangerously-skip-permissions --model claude-fable-5-2" {
 		t.Fatalf("%v %q %v", args, stdin, err)
 	}
 	args, _, _ = taskCommand(p, s, "auto", "")

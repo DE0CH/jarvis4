@@ -10,16 +10,16 @@ import (
 
 func TestSessionModel(t *testing.T) {
 	cases := []struct{ harness, in, want string }{
-		{"claude", "", "claude-opus-5-5"},
-		{"claude", "claude-fable-5-1", "claude-fable-5-1"},
+		{"claude", "", "claude-fable-5-2"},
+		{"claude", "claude-opus-5-5", "claude-opus-5-5"},
 		{"opencode", "", "openrouter/z-ai/glm-5.3"},
 		{"opencode", "openrouter/moonshotai/kimi-k3", "openrouter/moonshotai/kimi-k3"},
 		{"opencode", "claude-opus-5-5", "openrouter/z-ai/glm-5.3"}, // the shell picked another harness than the form's model
-		{"openclaw", "claude-fable-5-1", "openclaw/claude-opus-5-5"},
-		{"openclaw", "openclaw/claude-fable-5-1", "openclaw/claude-fable-5-1"},
-		{"paseo-claude", "", "paseo/claude-opus-5-5"},
-		{"paseo-claude", "paseo/claude-fable-5-1", "paseo/claude-fable-5-1"},
-		{"paseo-claude", "claude-fable-5-1", "paseo/claude-opus-5-5"},
+		{"openclaw", "claude-opus-5-5", "openclaw/claude-fable-5-2"},
+		{"openclaw", "openclaw/claude-opus-5-5", "openclaw/claude-opus-5-5"},
+		{"paseo-claude", "", "paseo/claude-fable-5-2"},
+		{"paseo-claude", "paseo/claude-opus-5-5", "paseo/claude-opus-5-5"},
+		{"paseo-claude", "claude-opus-5-5", "paseo/claude-fable-5-2"},
 	}
 	for _, c := range cases {
 		if got, err := sessionModel(c.harness, c.in); err != nil || got != c.want {
@@ -47,7 +47,7 @@ func TestModelsList(t *testing.T) {
 			t.Fatal("a harness outside the policy is listed")
 		}
 	}
-	if _, ok := all["harnesses"].(map[string]any)["openclaw"]; ok || all["default"] != "claude-opus-5-5" {
+	if _, ok := all["harnesses"].(map[string]any)["openclaw"]; ok || all["default"] != "claude-fable-5-2" {
 		t.Fatalf("%v", all)
 	}
 	oc := get("?harness=opencode")
@@ -240,7 +240,7 @@ func TestAviaryRemote(t *testing.T) {
 	for _, s := range ss {
 		byID[s.(map[string]any)["id"].(string)] = s.(map[string]any)
 	}
-	if s := byID["sAV"]; s["webUrl"] != chatURL || s["model"] != "aviary/claude-opus-5-5" || s["error"] != nil {
+	if s := byID["sAV"]; s["webUrl"] != chatURL || s["model"] != "aviary/claude-fable-5-2" || s["error"] != nil {
 		t.Fatalf("%v", s)
 	}
 	if s := byID["sAP"]; s["state"] != "paused" || s["webUrl"] != nil {

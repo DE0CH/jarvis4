@@ -268,7 +268,7 @@ func TestResumeWithSizeAndModel(t *testing.T) {
 	if code, _ := appDo(t, r, "POST", "/api/sessions/s1/resume", `{"model":"gpt-9"}`); code != 400 {
 		t.Fatal("an unknown model was accepted")
 	}
-	code, out := appDo(t, r, "POST", "/api/sessions/s1/resume", `{"size":"small","model":"claude-fable-5-1"}`)
+	code, out := appDo(t, r, "POST", "/api/sessions/s1/resume", `{"size":"small","model":"claude-fable-5-2"}`)
 	if code != 200 {
 		t.Fatalf("%d %v", code, out)
 	}
@@ -276,7 +276,7 @@ func TestResumeWithSizeAndModel(t *testing.T) {
 	st := sc.lastStart()
 	var s0 Session
 	r.st.Do(func(d *persisted) { s0 = *d.Sessions["s1"] })
-	if _, has := st["env"]; st["size"] != "small" || has || r.machineEnv(&s0)["SESSION_MODEL"] != "claude-fable-5-1" {
+	if _, has := st["env"]; st["size"] != "small" || has || r.machineEnv(&s0)["SESSION_MODEL"] != "claude-fable-5-2" {
 		t.Fatalf("%v", st)
 	}
 	// the core saw a plain dead-machine resume (size and model aren't in its options)

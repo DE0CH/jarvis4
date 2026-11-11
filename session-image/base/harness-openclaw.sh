@@ -27,7 +27,7 @@ MACHINE="${SESSION_ID:-${FLY_MACHINE_ID:-$(hostname)}}"
 WEB_HOST="$MACHINE-s.deyaochen.com"
 STATE="$HOME/.claude"; mkdir -p "$STATE/sessions"
 export OPENCLAW_STATE_DIR="$HOME/.openclaw"; mkdir -p "$OPENCLAW_STATE_DIR"; chmod 700 "$OPENCLAW_STATE_DIR"
-MODEL="${SESSION_MODEL:-openclaw/claude-opus-5-5}"; MODEL="${MODEL#openclaw/}"
+MODEL="${SESSION_MODEL:-openclaw/claude-fable-5-2}"; MODEL="${MODEL#openclaw/}"
 PORT=18789 PROXY_PORT=8788
 REMOTE="$OPENCLAW_STATE_DIR/jarvis-remote.json"
 LOG="$OPENCLAW_STATE_DIR"
@@ -52,7 +52,7 @@ def merge(a, b):
         if isinstance(v, dict) and isinstance(a.get(k), dict): merge(a[k], v)
         else: a[k] = v
     return a
-claude_models = ["claude-opus-5-5", "claude-fable-5-1"]
+claude_models = ["claude-fable-5-2", "claude-opus-5-5"]
 merge(cfg, {
   "agents": {"defaults": {"workspace": wd, "model": {"primary": "anthropic/" + model},
                           "models": {"anthropic/" + m: {"agentRuntime": {"id": "claw-code"}} for m in set(claude_models + [model])}}},

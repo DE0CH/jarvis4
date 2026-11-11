@@ -67,8 +67,8 @@ start() {
   # same name as the dashboard (instead of the auto "<hostname>-random-words").
   # SESSION_LABEL is in the machine env; the inner shell expands it (single quotes here).
   export SESSION_LABEL="${SESSION_LABEL:-}"
-  # Model: default to Opus 5.5 (overridable via the machine env).
-  export SESSION_MODEL="${SESSION_MODEL:-claude-opus-5-5}"
+  # Model: default to Fable 5.2 (overridable via the machine env).
+  export SESSION_MODEL="${SESSION_MODEL:-claude-fable-5-2}"
   # Permission mode: "auto" (default classifier auto-approve) or "bypass"
   # (--dangerously-skip-permissions). Defaults to auto.
   # ASSERT the mode explicitly on EVERY launch, including --resume. Passing nothing for

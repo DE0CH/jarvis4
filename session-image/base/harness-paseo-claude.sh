@@ -39,7 +39,7 @@ export PASEO_HOME="$HOME/.paseo"
 MACHINE="${SESSION_ID:-${FLY_MACHINE_ID:-$(hostname)}}"
 WEB_HOST="$MACHINE-s.deyaochen.com"   # the tunnel's own origin (cf-tunnel/worker.js)
 STATE="$HOME/.claude"; mkdir -p "$STATE/sessions" "$PASEO_HOME"
-MODEL="${SESSION_MODEL:-paseo/claude-opus-5-5}"; MODEL="${MODEL#paseo/}"
+MODEL="${SESSION_MODEL:-paseo/claude-fable-5-2}"; MODEL="${MODEL#paseo/}"
 LABEL="${SESSION_LABEL:-}"
 PROXY_PORT=8788
 CREDS="$STATE/.credentials.json"
