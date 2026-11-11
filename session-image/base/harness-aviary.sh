@@ -57,8 +57,13 @@ run_gateway() {
 
 # The supervisor, in a restart loop (its keeper restarts the supervisor itself; this restarts the keeper)
 run_supervisor() {
-  for _ in $(seq 1 300); do [ -s "$BOOT" ] && break; sleep 1; done
-  [ -s "$BOOT" ] || { echo "[aviary] the sandbox never booted (see $A/gateway.out)"; return 1; }
+  # the boot can come late (chat-gw or hermit down, the gateway retrying): wait for it however long it takes
+  local n=0
+  until [ -s "$BOOT" ]; do
+    n=$((n + 1)); [ "$n" = 120 ] && echo "[aviary] the sandbox has not booted after 2 min; still waiting (see $A/gateway.out)"
+    sleep 1
+  done
+  [ "$n" -ge 120 ] && echo "[aviary] the sandbox booted"
   ( while [ ! -e "$STATE/.one-shot-done" ]; do
       sudo -n /usr/local/bin/aviary-sandbox "$BOOT"
       echo "[aviary] supervisor-keeper exited ($?); restarting in 3 s"; sleep 3
@@ -114,9 +119,8 @@ send_first_prompt() {
   local marker="$STATE/.first-prompt-sent" f="$STATE/first-prompt.txt" imgf="$STATE/first-prompt-images.txt"
   [ -n "${SESSION_PROMPT:-}" ] || [ -n "${SESSION_ATTACHMENTS_JSON:-}" ] || return 0
   [ -e "$marker" ] && return 0
-  for _ in $(seq 1 150); do
-    curl -s -m 3 --noproxy '*' "$GW/jarvis/state" 2>/dev/null | grep -q '"ready":true' && break; sleep 2
-  done
+  # wait for the supervisor however long the boot takes (the same reasons as run_supervisor)
+  until curl -s -m 3 --noproxy '*' "$GW/jarvis/state" 2>/dev/null | grep -q '"ready":true'; do sleep 2; done
   if [ -n "${SESSION_ATTACHMENTS_JSON:-}" ]; then
     (umask 077; /usr/local/bin/session-attachments "$f" "$imgf")
   else
@@ -124,13 +128,13 @@ send_first_prompt() {
   fi
   [ -s "$f" ] || [ -s "$imgf" ] || { echo "[aviary] first prompt NOT sent (nothing to send)"; return 0; }
   [ -s "$f" ] || printf 'See the attached image(s).' > "$f"
-  for _ in $(seq 1 30); do
-    if HARNESS_SEND_ID="first-prompt-$MACHINE" /usr/local/bin/harness-send --images "$imgf" < "$f" >> "$A/inbox.out" 2>&1; then
-      touch "$marker"; echo "[aviary] first prompt sent ($(wc -c < "$f") bytes)"; return 0
-    fi
+  # retried until it lands: HARNESS_SEND_ID makes a repeat the same turn (magpie's idempotency key)
+  local tries=0
+  until HARNESS_SEND_ID="first-prompt-$MACHINE" /usr/local/bin/harness-send --images "$imgf" < "$f" >> "$A/inbox.out" 2>&1; do
+    tries=$((tries + 1)); [ "$tries" = 30 ] && echo "[aviary] first prompt not sent after 30 tries; still trying (see $A/inbox.out)"
     sleep 10
   done
-  echo "[aviary] first prompt NOT sent (see $A/inbox.out)"
+  touch "$marker"; echo "[aviary] first prompt sent ($(wc -c < "$f") bytes)"
 }
 
 # Prompts Jarvis queued with `harness-send --queue`: oldest first, each once the conversation is idle (75 = busy, not a
