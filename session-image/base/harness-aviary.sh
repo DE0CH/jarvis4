@@ -49,7 +49,7 @@ run_gateway() {
   [ -n "${AVIARY_GW_ACCESS_ID:-}" ] && [ -n "${AVIARY_GW_ACCESS_SECRET:-}" ] || {
     echo "[aviary] no AVIARY_GW_ACCESS_* in the secrets (store aviary): the gateway cannot start"; return 1; }
   ( while true; do
-      env AVIARY_GW_URL="${AVIARY_GW_URL:-https://chat-gw.deyaochen.com}" AVIARY_BOOT_FILE="$BOOT" AVIARY_IMAGE="$IMAGE" \
+      env POD_NAME="$MACHINE" AVIARY_GW_URL="${AVIARY_GW_URL:-https://chat-gw.deyaochen.com}" AVIARY_BOOT_FILE="$BOOT" AVIARY_IMAGE="$IMAGE" \
         SESSION_MODEL="$MODEL" /usr/local/bin/aviary-gateway
       echo "[aviary] gateway exited ($?); restarting in 2 s"; sleep 2
     done ) 2>&1 | logs gateway &
