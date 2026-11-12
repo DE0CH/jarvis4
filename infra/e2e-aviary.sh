@@ -17,7 +17,7 @@
 #   magpie 10.88.0.2:8080 (as `http://magpie` to hermit-jarvis), hermit-jarvis 0.0.0.0:8080/8081/8082/9090 (as
 #   `http://hermit` to magpie), the stand-in model + the gateway listener's front 127.0.0.1:${PP}085 (e2e/aviary).
 #   Machines: http://<peer>._peer.internal:8081 → the router; http://<peer>-chat._peer.internal:8081 → hermit-jarvis's
-#   gateway listener, /model/… → the stand-in model (the test store `aviary` names both: AVIARY_GW_URL,
+#   gateway listener, /model/… → the stand-in model (the test store `aviary-gw` names both: AVIARY_GW_URL,
 #   AVIARY_MODEL_URL).
 #
 #   JARVIS2_FLY_TOKEN   the jarvis2-370 org token (the spawner's, the sweep's, the WireGuard peers')
@@ -207,7 +207,7 @@ openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$W/box-key.
 # the root key (the app's, in production): the components check their roster against it; e2e/aviary signs with it
 openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$W/root-key.pem" 2>/dev/null
 KERNEL_ROOT="$(openssl pkey -in "$W/root-key.pem" -pubout -outform DER 2>/dev/null | tail -c 65 | base64 -w0)"
-echo '{"harnesses":{"aviary":{"stores":["aviary"],"claudeAccount":true}}}' > "$W/policy.json"
+echo '{"harnesses":{"aviary":{"stores":["aviary-gw"],"claudeAccount":true}}}' > "$W/policy.json"
 if [ -z "$HOST6" ]; then
   for p in "$PEER" "$CPEER"; do FLY_API_TOKEN="$JARVIS2_FLY_TOKEN" flyctl wireguard remove jarvis2-370 "$p" >/dev/null 2>&1 || true; done
   (umask 077; FLY_API_TOKEN="$JARVIS2_FLY_TOKEN" flyctl wireguard create jarvis2-370 lhr "$PEER" "$W/wg.conf" >/dev/null)

@@ -3,7 +3,7 @@
 // model and the machines' front to hermit-jarvis's gateway listener, and checks every step through the router's
 // records and magpie's admin API:
 //
-//   - the kernel set up from the TEST master key, with the store `aviary` (the gateway's Access pair as dummies, and
+//   - the kernel set up from the TEST master key, with the store `aviary-gw` (the gateway's Access pair as dummies, and
 //     AVIARY_GW_URL / AVIARY_MODEL_URL naming this run's chat peer);
 //
 //   - a Claude account with a fake login (the machine's gateway sends its token to the stand-in model only);
@@ -439,7 +439,7 @@ func main() {
 	must("POST", router+"/api/kernel/roster", map[string]string{"payload": string(rp), "rootSig": rsig}, &rres)
 	log.Printf("roster: %v", rres)
 
-	step("the kernel's secrets: a Reset with the test master key; the store aviary (this run's chat peer)")
+	step("the kernel's secrets: a Reset with the test master key; the store aviary-gw (this run's chat peer)")
 	var id struct{ SigningKey, AgreementKey string }
 	must("GET", router+"/api/kernel/secrets/identity", nil, &id)
 	ka, _ := b64.DecodeString(id.AgreementKey)
@@ -451,10 +451,10 @@ func main() {
 	for k, v := range map[string]string{"AVIARY_GW_ACCESS_ID": "e2e", "AVIARY_GW_ACCESS_SECRET": "e2e",
 		"AVIARY_GW_URL": chat, "AVIARY_MODEL_URL": chat + "/model",
 		"AVIARY_OPENROUTER_URL": chat + "/openrouter", "OPENROUTER_API": openRouterKey} {
-		keys = append(keys, wrapKey(combined, "aviary", k, v))
+		keys = append(keys, wrapKey(combined, "aviary-gw", k, v))
 	}
-	bundle, _ := json.Marshal(map[string]any{"format": "keys", "stores": []string{"aviary"}, "keys": keys,
-		"notSensitive": []string{"aviary"}})
+	bundle, _ := json.Marshal(map[string]any{"format": "keys", "stores": []string{"aviary-gw"}, "keys": keys,
+		"notSensitive": []string{"aviary-gw"}})
 	sum := sha256.Sum256(bundle)
 	st, _ := json.Marshal(map[string]any{"kind": "kernel-claim", "master": master.PublicKey(),
 		"secrets": map[string]string{"signingKey": id.SigningKey, "agreementKey": id.AgreementKey},
@@ -487,7 +487,7 @@ func main() {
 
 	step("a standing unlock of aviary (the Stores page): the phone's share of each key, sealed to secrets' one-off key")
 	var ubd sig.Doc
-	must("POST", router+"/api/kernel/secrets/unlock/begin", map[string]string{"store": "aviary"}, &ubd)
+	must("POST", router+"/api/kernel/secrets/unlock/begin", map[string]string{"store": "aviary-gw"}, &ubd)
 	var ub struct {
 		Pending, T string
 		Keys       []struct{ Key, E string }

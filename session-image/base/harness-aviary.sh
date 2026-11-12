@@ -48,7 +48,7 @@ logs() { tee -a "$A/$1.out" | sed -u "s/^/[aviary-$1] /"; }
 # The machine's half of the gateway, in a restart loop (a restart keeps the sandbox: hermit knows the machine)
 run_gateway() {
   [ -n "${AVIARY_GW_ACCESS_ID:-}" ] && [ -n "${AVIARY_GW_ACCESS_SECRET:-}" ] || {
-    echo "[aviary] no AVIARY_GW_ACCESS_* in the secrets (store aviary): the gateway cannot start"; return 1; }
+    echo "[aviary] no AVIARY_GW_ACCESS_* in the secrets (store aviary-gw): the gateway cannot start"; return 1; }
   ( while true; do
       env POD_NAME="$MACHINE" AVIARY_GW_URL="${AVIARY_GW_URL:-https://chat-gw.deyaochen.com}" AVIARY_BOOT_FILE="$BOOT" AVIARY_IMAGE="$IMAGE" \
         SESSION_MODEL="$MODEL" /usr/local/bin/aviary-gateway

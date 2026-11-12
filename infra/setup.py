@@ -359,7 +359,7 @@ def key_write(store, key, value, me, explanation=""):
 # the stores this writer means to be NOT sensitive (created first); every other store it writes is sensitive. The
 # core's open create_store lets anyone (the router) create a name first, so the writer checks the core's word against
 # this list and marks a store sensitive before it writes into it (R1 audit). A change here is a visible commit.
-NOT_SENSITIVE = ("default", "openrouter", "tunnel", "shopping") + tuple(
+NOT_SENSITIVE = ("default", "openrouter", "tunnel", "shopping", "aviary-gw") + tuple(
     n for n in os.environ.get("JARVIS_NOT_SENSITIVE", "").split(",") if n)  # test boxes add their own (rehearsals)
 
 
