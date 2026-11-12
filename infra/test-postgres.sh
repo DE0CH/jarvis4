@@ -44,7 +44,7 @@ start() {
 }
 
 B="$(bindir)" || {
-  if command -v brew > /dev/null; then brew install -q postgresql@17 >&2; else sudo apt-get install -y -qq postgresql >&2; fi
+  if command -v brew > /dev/null; then brew install -q postgresql@17 >&2; else sudo apt-get update -qq >&2 && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql >&2; fi
   B="$(bindir)"
 }
 case "${1:-}" in
