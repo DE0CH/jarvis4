@@ -100,7 +100,9 @@ if entry != prev:
 title = (s.get("title") or "").strip()
 if title:
     tpath = os.path.join(sys.argv[3], "aviary-title.jsonl")
-    line = json.dumps({"type": "ai-title", "aiTitle": title, "sessionId": entry["sessionId"]}) + "\n"
+    # compact, as Claude Code writes its lines: the status reader matches the text "type":"ai-title"
+    line = json.dumps({"type": "ai-title", "aiTitle": title, "sessionId": entry["sessionId"]},
+                      separators=(",", ":"), ensure_ascii=False) + "\n"
     try: old = open(tpath).read()
     except Exception: old = ""
     if old != line:
