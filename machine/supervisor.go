@@ -36,6 +36,8 @@ package main
 //	                                                      notifications (a count, never a command)
 //	screen                     screen.go         no       the harness's pane for the read-only terminal (output only)
 //	stall watchdog             stall.go          no       a nudge into its harness after 15 idle minutes with jobs
+//	pressure watchdog          pressure.go       no       memory or disk pressure told to its harness: do not upgrade,
+//	                                                      Discord Deyao when one is needed
 //	status, memory, disk       status.go,        no       the reports the router's card and watches read (output only)
 //	                           memory.go, disk.go
 //	API proxy                  apiproxy.go       —        $JARVIS_URL for the session's scripts, signed as this machine
@@ -154,6 +156,7 @@ func superviseNormal() error {
 	go diskReporter(c)          // disk.go: the root disk and the volume, for the router's low-disk warning
 	go screenReporter(c)        // screen.go: the pane for the read-only terminal
 	go stallWatch()             // stall.go: the 15-minute watchdog on its own harness
+	go pressureWatchLoop()      // pressure.go: memory or disk pressure told to its own harness (do not upgrade)
 	go autoAccept()             // autoaccept.go: in bypass, tool permission dialogs on its own pane allowed once
 	go rcWatch()                // rcwatch.go: Remote Control brought back when it drops
 	go serveAPIProxy(c)         // apiproxy.go: $JARVIS_URL for the session scripts

@@ -2979,3 +2979,14 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      sessions are kept from on purpose: `GET /api/devices/pair` is callNo); the router forwarding machines' calls to the
      tenant (the router would depend on a tenant service); hermit calling into machines (releases ride on the
      supervisor's activity reply instead, readiness comes from the machine's own health reports).
+255. **The session is told of memory or disk pressure by its own supervisor, and told not to upgrade** (Deyao,
+     2026-11-12: "add a jarvis watcher (similar to the idle/stall watcher) that says disk pressure/memory pressure, do
+     not upgrade. discord Deyao if upgrade is necessary or recommended"). `machine/pressure.go` reads its own
+     machine's memory and disk every 30 s and decides by the router's rules (router/memory.go, router/disk.go), so the
+     session hears of the episode Deyao is DMed about: the message goes into the harness through the Jarvis channel
+     at the start of an episode and every 15 min while it lasts, with the numbers and the biggest processes. A memory
+     episode ends after 15 healthy minutes, a disk one once 20 % and 2 GB are free again. The text tells the session
+     to free what it safely can and not to upgrade by itself; a bigger machine or disk is Deyao's decision, asked for
+     over Discord. Machine side only, state in the supervisor's memory as the stall watch (235); no router or kernel
+     change. *Not chosen*: the router sending it with its DM (a delivery kind and replica state for something the
+     machine reads from its own /proc).
