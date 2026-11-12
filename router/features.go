@@ -54,6 +54,7 @@ func (r *Router) startFeatures() {
 	r.lcCutOff()  // lifecycle.go: an operation log a restart left open is closed as cut off
 	r.startDiscord()
 	r.startAutopilot()
+	r.startLivePush()        // livepush.go: the live dashboard's Jarvis 4 panel
 	go r.scheduleLoop()      // schedule.go: wakeups, crons, resume prompts
 	go r.leaseLoop()         // leases.go: expire silent holders, wake promoted ones
 	go r.watchLoop()         // watches.go: run due checks on the watch runner, deliver met / given-up watches
