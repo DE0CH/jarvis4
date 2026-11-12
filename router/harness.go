@@ -53,7 +53,7 @@ var harnessInfo = map[string]map[string]string{
 	"opencode":     {"label": "OpenCode · OpenRouter", "detail": "Paseo app + web UI"},
 	"openclaw":     {"label": "claw-code · OpenClaw", "detail": "Claude subscription · OpenClaw app + Control UI"},
 	"paseo-claude": {"label": "Claude Code · Paseo", "detail": "Claude subscription · Paseo app + web UI"},
-	"aviary":       {"label": "Claude Code · aviary", "detail": "Claude subscription · YYC AI's stack · chat.deyaochen.com"},
+	"aviary":       {"label": "Claude Code · aviary", "detail": "Claude subscription · chat.deyaochen.com"},
 	"dsh":          {"label": "DeepSeek Harness · OpenRouter", "detail": "DeepSeek V4 on DeepSeek's endpoint · web UI"},
 }
 

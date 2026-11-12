@@ -67,7 +67,7 @@ const HARNESSES = [
   { value: "opencode", title: "OpenCode · OpenRouter", sub: "Paseo app + web UI" },
   { value: "openclaw", title: "claw-code · OpenClaw", sub: "Claude subscription · OpenClaw app + Control UI" },
   { value: "paseo-claude", title: "Claude Code · Paseo", sub: "Claude subscription · Paseo app + web UI" },
-  { value: "aviary", title: "Claude Code · aviary", sub: "Claude subscription · YYC AI's stack · chat.deyaochen.com" },
+  { value: "aviary", title: "Claude Code · aviary", sub: "Claude subscription · chat.deyaochen.com" },
 ];
 const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 // what each runner means for the session (docs/PLAN-aws.md)
