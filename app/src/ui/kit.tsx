@@ -172,16 +172,16 @@ export function Progress({ value, color = "blue", size = 2, mt }: { value: numbe
 }
 
 // ---- inputs ---------------------------------------------------------------------------------
-type FieldProps = Omit<TextInputProps, "style" | "onChange"> & { size?: 2 | 3; id?: string; mono?: boolean; style?: StyleProp<TextStyle>; rows?: number; disabled?: boolean };
+type FieldProps = Omit<TextInputProps, "style" | "onChange"> & { size?: 2 | 3; id?: string; mono?: boolean; style?: StyleProp<TextStyle>; rows?: number; disabled?: boolean; data?: Record<string, string> };
 function useField() {
   const [focus, setFocus] = useState(false);
   return { focus, onFocus: () => setFocus(true), onBlur: () => setFocus(false) };
 }
 // Text is 16 px everywhere (iOS Safari zooms into any smaller field).
-export function TextField({ size = 2, id, mono: m, style, disabled, onFocus, onBlur, ...rest }: FieldProps) {
+export function TextField({ size = 2, id, mono: m, style, disabled, data, onFocus, onBlur, ...rest }: FieldProps) {
   const t = useTheme(), f = useField();
   return (
-    <TextInput {...ids(id)} {...rest} editable={!disabled && rest.editable !== false}
+    <TextInput {...ids(id, data)} {...rest} editable={!disabled && rest.editable !== false}
       onFocus={(e) => { f.onFocus(); onFocus?.(e); }} onBlur={(e) => { f.onBlur(); onBlur?.(e); }}
       placeholderTextColor={t.gray.a[10]}
       style={[{
@@ -263,6 +263,83 @@ export function Segmented({ value, onChange, items, style, id }: { value: string
 }
 // the Radix underline tab list, horizontally scrollable on a narrow screen
 /** a count on a tab (the Inbox): a small solid pill after its name, nothing at 0 */
+// ---- compact choices (New session; Deyao, 2026-11-12) -------------------------------------------
+// A setting is one row showing what is chosen; a press opens it in place (one open at a time), so a form with many
+// settings fits a screen. Inside, options are small tiles in a grid instead of a full-width card each.
+export function Grid({ children, min = 200, max = 3, id, mt }: { children: ReactNode; min?: number; max?: number; id?: string; mt?: Sp }) {
+  const [w, setW] = useState(0);
+  const cols = w ? Math.max(1, Math.min(max, Math.floor((w + 6) / (min + 6)))) : 1;
+  const cw = cols > 1 ? Math.floor(((w - 6 * (cols - 1)) / cols) * 100) / 100 : undefined;
+  const items = (Array.isArray(children) ? children.flat() : [children]).filter(Boolean) as any[];
+  return (
+    <View {...ids(id)} onLayout={(e) => setW(e.nativeEvent.layout.width)} style={{ flexDirection: cols > 1 ? "row" : "column", flexWrap: cols > 1 ? "wrap" : undefined, gap: 6, marginTop: sp(mt) }}>
+      {items.map((c, i) => <View key={c?.key ?? i} style={{ width: cw }}>{c}</View>)}
+    </View>
+  );
+}
+function Tile({ on, onPress, title, sub, right, check, id, data }: { on: boolean; onPress: () => void; title: ReactNode; sub?: ReactNode; right?: ReactNode; check?: boolean; id?: string; data?: Record<string, string> }) {
+  const t = useTheme();
+  const ring = !check && on;
+  return (
+    <Pressable {...ids(id, { ...data, state: on ? "checked" : "unchecked" })} accessibilityRole={check ? "checkbox" : "radio"} accessibilityState={check ? { checked: on } : { selected: on }} onPress={onPress}
+      style={({ pressed }) => [{ flexDirection: "row", alignItems: "center", gap: 8, minHeight: sub ? 44 : 36, borderRadius: radius[2],
+        backgroundColor: check && on ? t.accent.a[3] : pressed ? t.gray.a[2] : t.surface, borderWidth: ring ? 2 : 1, borderColor: on ? t.accent[9] : t.gray.a[6],
+        paddingVertical: ring ? 4 : 5, paddingHorizontal: ring ? 9 : 10 }, Platform.OS === "web" ? ({ cursor: "pointer" } as any) : null]}>
+      {check && <View style={{ width: 16, height: 16, borderRadius: 4, backgroundColor: on ? t.accent[9] : t.surface, borderWidth: on ? 0 : 1, borderColor: t.gray.a[7], alignItems: "center", justifyContent: "center" }}>
+        {on && <RNText style={{ color: "#fff", fontSize: 11, lineHeight: 14, fontWeight: "700" }}>✓</RNText>}
+      </View>}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <RNText numberOfLines={1} style={{ color: t.gray[12], fontSize: 14, lineHeight: 20, fontWeight: on || !check ? "500" : "400" }}>{title}</RNText>
+        {sub ? <RNText numberOfLines={1} style={{ color: t.gray.a[11], fontSize: 12, lineHeight: 16 }}>{sub}</RNText> : null}
+      </View>
+      {right ? <View style={{ flexDirection: "row", gap: 4, flexShrink: 0 }}>{right}</View> : null}
+    </Pressable>
+  );
+}
+export type TileChoice = { value: string; title: ReactNode; sub?: ReactNode; right?: ReactNode };
+/** pick one: `<id>-<value>` each, like RadioCards */
+export function RadioTiles({ value, onChange, options, id, min, max }: { value: string; onChange: (v: string) => void; options: TileChoice[]; id?: string; min?: number; max?: number }) {
+  return <Grid id={id} min={min} max={max}>{options.map((o) => <Tile key={o.value} id={id ? id + "-" + o.value : undefined} data={{ value: o.value }} on={o.value === value} onPress={() => onChange(o.value)} title={o.title} sub={o.sub} right={o.right} />)}</Grid>;
+}
+/** pick any */
+export function CheckTiles({ value, onChange, options, id, min, max, mt }: { value: string[]; onChange: (v: string[]) => void; options: TileChoice[]; id?: string; min?: number; max?: number; mt?: Sp }) {
+  const flip = (v: string) => onChange(value.includes(v) ? value.filter((x) => x !== v) : [...value, v]);
+  return <Grid id={id} min={min} max={max} mt={mt}>{options.map((o) => <Tile key={o.value} check id={id ? id + "-" + o.value : undefined} data={{ value: o.value }} on={value.includes(o.value)} onPress={() => flip(o.value)} title={o.title} sub={o.sub} right={o.right} />)}</Grid>;
+}
+function Chevron({ open }: { open: boolean }) {
+  const t = useTheme();
+  return <RNText style={{ color: t.gray.a[9], fontSize: 18, lineHeight: 20, width: 12, textAlign: "center", transform: [{ rotate: open ? "90deg" : "0deg" }] }}>›</RNText>;
+}
+export function Settings({ children, mt = 4, id }: { children: ReactNode; mt?: Sp; id?: string }) {
+  const t = useTheme();
+  return <View {...ids(id)} style={{ marginTop: sp(mt), borderWidth: 1, borderColor: t.gray.a[6], borderRadius: radius[3], overflow: "hidden" }}>{children}</View>;
+}
+/** one row of Settings: `summary` is what is chosen now; `children` are the choices, shown while open */
+export function Setting({ id, label, summary, open, onToggle, first, children }: { id?: string; label: string; summary: ReactNode; open: boolean; onToggle: () => void; first?: boolean; children: ReactNode }) {
+  const t = useTheme();
+  const plain = typeof summary === "string";
+  return (
+    <View style={{ borderTopWidth: first ? 0 : 1, borderTopColor: t.gray.a[5], backgroundColor: open ? t.gray.a[2] : undefined }}>
+      <Pressable {...ids(id, { open: open ? "true" : "false" })} accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={onToggle}
+        style={({ pressed }) => [{ flexDirection: "row", alignItems: "center", gap: 12, minHeight: 44, paddingVertical: 8, paddingHorizontal: 12, backgroundColor: pressed ? t.gray.a[2] : undefined }, Platform.OS === "web" ? ({ cursor: "pointer" } as any) : null]}>
+        <RNText style={{ width: 80, flexShrink: 0, color: t.gray.a[11], fontSize: 13, lineHeight: 20 }}>{label}</RNText>
+        {plain ? <RNText numberOfLines={1} style={{ flex: 1, minWidth: 0, color: t.gray[12], fontSize: 14, lineHeight: 20 }}>{summary}</RNText>
+          : <View style={{ flex: 1, minWidth: 0, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 4 }}>{summary}</View>}
+        <Chevron open={open} />
+      </Pressable>
+      {open && <View {...ids(id ? id + "-pane" : undefined)} style={{ paddingHorizontal: 12, paddingBottom: 12 }}>{children}</View>}
+    </View>
+  );
+}
+/** a text button that shows or hides what follows it */
+export function FoldLine({ open, onToggle, children, id }: { open: boolean; onToggle: () => void; children: string; id?: string }) {
+  const t = useTheme();
+  return (
+    <Pressable {...ids(id)} accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={onToggle} style={[{ flexDirection: "row", alignItems: "center", gap: 6, minHeight: 36, alignSelf: "flex-start" }, Platform.OS === "web" ? ({ cursor: "pointer" } as any) : null]}>
+      <Chevron open={open} /><RNText style={{ color: t.accent.a[11], fontSize: 14, lineHeight: 20 }}>{children}</RNText>
+    </Pressable>
+  );
+}
 export function CountBadge({ n, id }: { n: number; id?: string }) {
   const t = useTheme();
   if (!n) return null;

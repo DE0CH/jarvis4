@@ -453,3 +453,12 @@ fixes, 34–40 carried over from the old app and still true, 41–43 the web pag
     snapshot, so the router's session has no `backups`: the web card's "Volume backups" list and the iPhone's "Volume
     backups" section are gone, and a line that won't resume (`noSnapshot`) says only that Destroy archives its newest
     signed snapshot. Disk, More disk and kept machines are as in 72.
+
+81. **The web page's New session is one row per setting** (Deyao, 2026-11-12: "choose settings without scrolling so far
+    and getting lost"; he picked it from rendered mocks). With a full-width card per option the form ran to eight
+    screens (35 stores, 23 repos). Now each setting is a row showing what is chosen (Stores, Repos, Harness, Model,
+    Machine, More), opened in place, one at a time; inside, options are small tiles in a grid (`ui/kit.tsx` `Settings`,
+    `Setting`, `RadioTiles`, `CheckTiles`), stores and repos with a filter box. Repo deploy-key stores sit folded under
+    the other stores (a picked repo brings its own; the filter searches both). More holds the rarely changed ones:
+    Claude account, runner, region, content stores, auto-pause, API proxy. The request sent is unchanged. A filter box
+    carries `data-nosubmit`, so Enter in it is not the page's Start (`ui/page.tsx`).

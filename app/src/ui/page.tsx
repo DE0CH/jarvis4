@@ -65,6 +65,7 @@ export function Page({ title, right, onSubmit, children, scrollRef, onContentSiz
       if (e.key === "Escape" && !e.defaultPrevented && !overlay) { closePage(); return; }
       if (e.key !== "Enter" || !submit.current || (e as any).isComposing || overlay) return;
       const tag = (e.target as HTMLElement)?.tagName;
+      if ((e.target as HTMLElement)?.dataset?.nosubmit) return; // a filter box: Enter is not the page's action
       if (tag === "INPUT" || (tag === "TEXTAREA" && (e.metaKey || e.ctrlKey))) { e.preventDefault(); submit.current(); }
     };
     // capture: react-native-web's TextInput stops its key events from bubbling
