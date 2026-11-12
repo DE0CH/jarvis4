@@ -181,10 +181,11 @@ export type Rec = Session & { destroyedAt: string; archive?: ArchiveInfo | null;
 export type Grant = { id: string; session: string; holder: string; kind: "grant" | "rule"; ends: string };
 // the month's spend, Fly and AWS in one pool (router/budget.go, awsbudget.go): the totals, then each provider's part
 export type BudgetFly = { spentUsd: number; ratePerHour: number; perMonth: number; running: number; volumes: number; snapshots: number; snapshotGb: number };
-export type BudgetAWSOther = { id: string; region: string; type: string; state: string; name?: string };
+// owner: what the tag jarvis4_owner resolved to (router/awsowner.go); in `owned` the owner is still at work
+export type BudgetAWSOther = { id: string; region: string; type: string; state: string; name?: string; owner?: string };
 export type BudgetAWS = { spentUsd: number; estimateUsd: number; billedUsd: number; billedAt?: string | null; ratePerHour: number; perMonth: number;
   running: number; volumes: number; volumeGb: number; snapshots: number; snapshotGb: number; publicIpv4: number; account?: string;
-  regions?: string[]; other?: BudgetAWSOther[]; error?: string | null; billedError?: string | null };
+  regions?: string[]; other?: BudgetAWSOther[]; owned?: BudgetAWSOther[]; error?: string | null; billedError?: string | null };
 export type Budget = { month: string; spentUsd: number; capUsd: number; warnUsd: number; warned: boolean; capped: boolean; cappedAt?: string | null; ratePerHour: number; perMonth: number; running: number; volumes: number; sampledAt?: string | null;
   fly?: BudgetFly | null; aws?: BudgetAWS | null };
 export type FlyOther = { kind: string; app: string; id: string; name?: string; state?: string; region?: string; created?: string; detail?: string };

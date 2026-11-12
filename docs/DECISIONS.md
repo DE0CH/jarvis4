@@ -2990,3 +2990,14 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      over Discord. Machine side only, state in the supervisor's memory as the stall watch (235); no router or kernel
      change. *Not chosen*: the router sending it with its DM (a delivery kind and replica state for something the
      machine reads from its own /proc).
+256. **An AWS instance that is no session's names its owner, and the budget view warns only when the owner is gone**
+     (Deyao, 2026-11-12: "there should be an ownership or something tracked by jarvis 4 for it's not warning me about
+     random false positives": the three bake builders showed as "Not a session" on every image pin). Whatever starts
+     an instance outside the spawner tags it `jarvis4_owner`; one kind today, `github-run:<run id>` (a run of a workflow
+     of this repo: `infra/aws/bake.sh`'s builder and test instances). `router/awsowner.go` asks GitHub for the run each
+     budget tick: while it is queued or in progress the instance is in the view's `owned` ("Owned by a job", with the
+     workflow and run); once the run is over, an instance it left is back in `other` ("No owner", amber) naming the run
+     that left it. No tag, an unknown kind, or a run GitHub can't show is a warning with the reason. A finished run is
+     looked up once. The tag is no credential (who can tag can already start instances); it only picks the row. *Not
+     chosen*: hiding instances named `jarvis4-bake` (a builder a failed run left would be hidden too); the bake job
+     registering with the router (a router credential in CI for a row of a view).

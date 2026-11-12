@@ -213,7 +213,8 @@ function FlyCard() {
               <Row label="Volumes">{`${b.aws.volumes} · ${b.aws.volumeGb} GB`}</Row>
               <Row label="Snapshots">{`${b.aws.snapshots} · ${b.aws.snapshotGb} GB`}</Row>
               <Row label="Public IPv4">{String(b.aws.publicIpv4)}</Row>
-              {!!b.aws.other?.length && <Row label="Not a session" color="amber">{b.aws.other.map((o) => `${o.name || o.id} (${o.type}, ${o.region}, ${o.state})`).join(", ")}</Row>}
+              {!!b.aws.owned?.length && <Row label="Owned by a job">{b.aws.owned.map((o) => `${o.name || o.id} (${o.type}, ${o.region}, ${o.state}): ${o.owner}`).join("; ")}</Row>}
+              {!!b.aws.other?.length && <Row label="No owner" color="amber">{b.aws.other.map((o) => `${o.name || o.id} (${o.type}, ${o.region}, ${o.state}${o.owner ? ", " + o.owner : ""})`).join("; ")}</Row>}
               {!!b.aws.account && <Row label="Account">{b.aws.account}</Row>}
               {!!b.aws.error && <Row label="Error" color="red">{b.aws.error}</Row>}
             </Rows>}

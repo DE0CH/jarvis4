@@ -60,12 +60,16 @@ console() {
 }
 
 # run <ami> <type> <shutdown> <user-data file> <name>: an instance from the session template (its network, IMDSv2), no
-# jarvis4_source tag (the spawner and the router see only tagged instances); prints its id
+# jarvis4_source tag (the spawner sees only tagged instances); prints its id. jarvis4_owner names the workflow run that
+# owns it (router/awsowner.go): while the run is at work the budget view lists the instance as that run's, not as a
+# stray; run by hand there is no owner and it shows as a warning.
 run() {
+  local owner=""
+  [ -n "${GITHUB_RUN_ID:-}" ] && owner=",{Key=jarvis4_owner,Value=github-run:$GITHUB_RUN_ID}"
   aws ec2 run-instances --region "$region" --launch-template "LaunchTemplateName=$TEMPLATE" --image-id "$1" \
     --instance-type "$2" --instance-initiated-shutdown-behavior "$3" --user-data "fileb://$4" \
     --block-device-mappings '[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":20,"VolumeType":"gp3","Encrypted":true,"DeleteOnTermination":true}}]' \
-    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$5},{Key=$BAKE_TAG,Value=$image},{Key=app,Value=jarvis4}]" \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$5},{Key=$BAKE_TAG,Value=$image},{Key=app,Value=jarvis4}$owner]" \
     --query 'Instances[0].InstanceId' --output text
 }
 

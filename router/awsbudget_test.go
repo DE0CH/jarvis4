@@ -117,7 +117,7 @@ func TestBudgetTickPausesAWSSessions(t *testing.T) {
 	if aws.calls != 1 || ap["billedUsd"] != 1.5 || v["spentUsd"] != 1.5 || ap["running"] != 2 || v["running"] != 3 || ap["account"] != "795109470764" {
 		t.Fatalf("%v", v)
 	}
-	if o := ap["other"].([]map[string]string); len(o) != 1 || o[0]["id"] != "i-bake" {
+	if o := ap["other"].([]map[string]string); len(o) != 1 || o[0]["id"] != "i-bake" || len(ap["owned"].([]map[string]string)) != 0 {
 		t.Fatalf("other %v", o)
 	}
 	// Cost Explorer is read again only after awsBilledEvery

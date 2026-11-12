@@ -97,6 +97,7 @@ func awsStorageRate(region string) (gp3, snap float64) {
 
 type awsInstance struct {
 	ID, Region, Type, State, PublicIP, Name, Source string
+	Owner                                           string // the tag jarvis4_owner (awsowner.go)
 }
 
 type awsVolume struct {
@@ -336,6 +337,8 @@ func (a *awsCostAPI) instances(region string) ([]awsInstance, error) {
 						in.Name = t.Value
 					case "jarvis4_source":
 						in.Source = t.Value
+					case "jarvis4_owner":
+						in.Owner = t.Value
 					}
 				}
 				out = append(out, in)
@@ -540,6 +543,7 @@ func awsCosterFromEnv() awsCoster {
 // awsBudgetPart: what one tick read from AWS
 type awsBudgetPart struct {
 	inv     awsInventory
+	owners  map[string]awsOwner // by instance id: who owns the ones that carry jarvis4_owner (awsowner.go)
 	burn    awsBurn
 	billed  *awsBilled // a fresh Cost Explorer reading, else nil
 	acct    string
@@ -560,6 +564,7 @@ func readAWS(aws awsCoster, prev *BudgetState, now time.Time) *awsBudgetPart {
 	p := &awsBudgetPart{}
 	inv, err := aws.Inventory(now)
 	p.inv, p.burn = inv, awsBurnRate(inv)
+	p.owners = awsOwners(inv.Instances)
 	if err != nil {
 		p.err = err.Error()
 		log.Printf("[budget] AWS: %v (counted from the last list)", err)
@@ -593,7 +598,8 @@ func readAWS(aws awsCoster, prev *BudgetState, now time.Time) *awsBudgetPart {
 
 // view: the AWS half of the budget view
 func (p *awsBudgetPart) view(r *Router, s BudgetState) map[string]any {
-	other := []map[string]string{}
+	// other: instances nobody owns (a warning); owned: no session's, but their owner is still at work
+	other, owned := []map[string]string{}, []map[string]string{}
 	r.st.Do(func(d *persisted) {
 		for _, in := range p.inv.Instances {
 			if in.State == "terminated" || in.State == "shutting-down" {
@@ -602,15 +608,22 @@ func (p *awsBudgetPart) view(r *Router, s BudgetState) map[string]any {
 			if ss := d.Sessions[d.Machines[in.ID]]; ss != nil && ss.MachineID == in.ID {
 				continue
 			}
-			other = append(other, map[string]string{"id": in.ID, "region": in.Region, "type": in.Type, "state": in.State, "name": in.Name})
+			o := p.owners[in.ID]
+			row := map[string]string{"id": in.ID, "region": in.Region, "type": in.Type, "state": in.State, "name": in.Name, "owner": o.Text}
+			if o.Live {
+				owned = append(owned, row)
+			} else {
+				other = append(other, row)
+			}
 		}
 	})
 	sort.Slice(other, func(i, j int) bool { return other[i]["id"] < other[j]["id"] })
+	sort.Slice(owned, func(i, j int) bool { return owned[i]["id"] < owned[j]["id"] })
 	v := map[string]any{"spentUsd": s.awsPart(), "estimateUsd": s.AWSUSD, "billedUsd": s.AWSBilledUSD, "billedAt": s.AWSBilledAt,
 		"ratePerHour": p.burn.RatePerHour, "perMonth": p.burn.RatePerHour * hoursPerMonth, "running": p.burn.Running,
 		"volumes": p.burn.Volumes, "volumeGb": p.burn.VolumeGB, "snapshots": p.burn.Snapshots,
 		"snapshotGb": math.Round(p.burn.SnapshotGB*10) / 10, "publicIpv4": p.burn.IPv4, "account": p.acct,
-		"regions": awsBudgetRegions, "other": other, "error": nil, "billedError": nil}
+		"regions": awsBudgetRegions, "other": other, "owned": owned, "error": nil, "billedError": nil}
 	if p.err != "" {
 		v["error"] = p.err
 	}
