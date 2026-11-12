@@ -175,6 +175,8 @@ func wrapKey(combined []byte, store, key, value string) secrets.KeyEntry {
 type modelLog struct {
 	sync.Mutex
 	calls []string // one line per call: what it answered
+	// CLAUDE_CODE_MAX_CONTEXT_TOKENS in the sandbox ("none": unset), from the tool call's output
+	context string
 }
 
 var models modelLog
@@ -220,11 +222,19 @@ func reply(req map[string]any) (kind string, content []map[string]any) {
 	}
 	switch {
 	case strings.Contains(last, "tool_result") && strings.Contains(last, "E2E-OUT-"+token):
+		if i := strings.Index(last, "E2E-CTX="); i >= 0 { // Claude Code's context window, as the sandbox's shell saw it
+			ctx := last[i+len("E2E-CTX="):]
+			if j := strings.Index(ctx, "."); j >= 0 {
+				models.Lock()
+				models.context = ctx[:j]
+				models.Unlock()
+			}
+		}
 		return "answer", []map[string]any{{"type": "text", "text": "E2E-DONE " + token + ": the command printed E2E-OUT-" + token}}
 	case strings.Contains(last, "E2E-WAKEUP "+token):
 		return "wakeup", []map[string]any{{"type": "text", "text": "E2E-WOKE " + token}}
 	case strings.Contains(last, "E2E-RUN "+token):
-		cmd := "echo E2E-OUT-" + token + " | tee ~/artifacts/e2e-aviary.txt && curl -sS -H 'Content-Type: application/json' " +
+		cmd := "echo E2E-OUT-" + token + " | tee ~/artifacts/e2e-aviary.txt && echo E2E-CTX=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-none}. && curl -sS -H 'Content-Type: application/json' " +
 			"-d '{\"delaySeconds\":60,\"prompt\":\"E2E-WAKEUP " + token + "\"}' \"$JARVIS_URL/api/sessions/$SESSION_ID/wakeup\""
 		return "tool", []map[string]any{{"type": "tool_use", "id": "toolu_e2e_" + token, "name": "Bash",
 			"input": map[string]any{"command": cmd, "description": "e2e: write the marker and arm the wakeup"}}}
@@ -576,6 +586,15 @@ func main() {
 	// the agent's turns went where the session's model lives: an OpenRouter model's to OpenRouter, a Claude model's
 	// to Anthropic; never the other
 	wantOpenRouter := strings.Contains(strings.TrimPrefix(sessionModel(), "aviary/"), "/")
+	// the model's own context window reaches Claude Code (the models route's per-model contextTokens → the
+	// supervisor): GLM 5.3's 1M; a Claude model names none, so Claude Code keeps its own
+	wantContext := "none"
+	if wantOpenRouter {
+		wantContext = "1000000"
+	}
+	if models.context != wantContext {
+		log.Fatalf("FAIL: Claude Code's context window for %s is %q, want %q", sessionModel(), models.context, wantContext)
+	}
 	for _, c := range models.calls {
 		kind := strings.TrimPrefix(c, "openrouter:")
 		if kind != "tool" && kind != "answer" && kind != "wakeup" {
