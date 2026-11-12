@@ -116,6 +116,7 @@ type session struct {
 	MachineID string `json:"machineId"`
 	Booted    string `json:"booted"`
 	Error     string `json:"error"`
+	AiTitle   string `json:"aiTitle"`
 }
 
 func readSession(id string) (*session, bool) {
@@ -178,8 +179,27 @@ type modelLog struct {
 
 var models modelLog
 
+// systemText: a request's system prompt as one string (a string, or text blocks).
+func systemText(req map[string]any) string {
+	switch s := req["system"].(type) {
+	case string:
+		return s
+	case []any:
+		var out []string
+		for _, b := range s {
+			if m, _ := b.(map[string]any); m != nil {
+				t, _ := m["text"].(string)
+				out = append(out, t)
+			}
+		}
+		return strings.Join(out, "\n")
+	}
+	return ""
+}
+
 // reply: what the stand-in answers. The first prompt (E2E-RUN) gets a Bash tool call; the turn with its result gets an
-// answer quoting the result; the wakeup (E2E-WAKEUP) gets its own answer; anything else (titles, summaries) "ok".
+// answer quoting the result; the wakeup (E2E-WAKEUP) gets its own answer; magpie's title call (hermit-jarvis's title
+// instructions) gets the title; anything else (summaries) "ok".
 func reply(req map[string]any) (kind string, content []map[string]any) {
 	msgs, _ := req["messages"].([]any)
 	text := func(m any) string { b, _ := json.Marshal(m); return string(b) }
@@ -193,6 +213,9 @@ func reply(req map[string]any) (kind string, content []map[string]any) {
 	}
 	_ = lastUser
 	if tools, _ := req["tools"].([]any); len(tools) == 0 { // a side call (a title, a summary): never the agent's turn
+		if strings.Contains(systemText(req), "Write a short title") {
+			return "title", []map[string]any{{"type": "text", "text": "E2E-TITLE " + token}}
+		}
 		return "other", []map[string]any{{"type": "text", "text": "ok"}}
 	}
 	switch {
@@ -227,6 +250,15 @@ func serveModel(w http.ResponseWriter, req *http.Request) {
 	var in map[string]any
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
 		http.Error(w, err.Error(), 400)
+		return
+	}
+	// As Anthropic treats a subscription login: a call whose system prompt does not begin with Claude Code's identity
+	// is refused 429 (2026-11-12: every title call, so no conversation had a title). Claude Code's own calls carry it;
+	// the gateway puts it first on any other (the supervisor's title call).
+	if sys := systemText(in); !strings.HasPrefix(req.UserAgent(), "claude-cli/") &&
+		!strings.HasPrefix(sys, "You are Claude Code") && !strings.HasPrefix(sys, "You are a Claude agent") {
+		log.Printf("model: refused, no Claude Code identity (user agent %q)", req.UserAgent())
+		http.Error(w, `{"type":"error","error":{"type":"rate_limit_error","message":"Error"}}`, 429)
 		return
 	}
 	kind, content := reply(in)
@@ -488,6 +520,14 @@ func main() {
 	waitFor("the answer in magpie", 10*time.Minute, func() bool {
 		t := magpieText()
 		return strings.Contains(t, "E2E-DONE "+token) && strings.Contains(t, "E2E-OUT-"+token)
+	})
+	step("the conversation has its title, which the session's card gets")
+	waitFor("the title in magpie", 3*time.Minute, func() bool {
+		return strings.Contains(magpieText(), `"title":"E2E-TITLE `+token+`"`)
+	})
+	waitFor("the title on the session (the router's aiTitle)", 4*time.Minute, func() bool {
+		s, _ := readSession(created.ID)
+		return s != nil && s.AiTitle == "E2E-TITLE "+token
 	})
 	step("the wakeup the tool armed arrives as a later turn")
 	waitFor("the wakeup's answer in magpie", 5*time.Minute, func() bool { return strings.Contains(magpieText(), "E2E-WOKE "+token) })
