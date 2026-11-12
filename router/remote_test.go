@@ -20,6 +20,8 @@ func TestSessionModel(t *testing.T) {
 		{"paseo-claude", "", "paseo/claude-fable-5-2"},
 		{"paseo-claude", "paseo/claude-opus-5-5", "paseo/claude-opus-5-5"},
 		{"paseo-claude", "claude-opus-5-5", "paseo/claude-fable-5-2"},
+		{"aviary", "", "aviary/claude-fable-5-2"},
+		{"aviary", "aviary/z-ai/glm-5.3", "aviary/z-ai/glm-5.3"}, // GLM 5.3 on OpenRouter beside the Claude models (Deyao, 2026-11-12)
 	}
 	for _, c := range cases {
 		if got, err := sessionModel(c.harness, c.in); err != nil || got != c.want {

@@ -4,7 +4,8 @@
 #
 #   Claude Code    the agent: the image's own claude, driven by DE0CH/aviary's supervisor (the same build YYC AI's
 #                  sandboxes run), in the session's workspace with its CLAUDE.md, skills, settings and hooks (the
-#                  descriptor's claude.projectSettings). Model = SESSION_MODEL ("aviary/<Claude model id>").
+#                  descriptor's claude.projectSettings). Model = SESSION_MODEL ("aviary/<model id>": a Claude model, or
+#                  an OpenRouter one such as z-ai/glm-5.3, which needs OPENROUTER_API from the store `openrouter`).
 #   supervisor     supervisor-keeper as PID 1 of its own PID + mount namespace (aviary-sandbox, as root): ~/.claude is
 #                  magpie's (FUSE), so the conversation lives in magpie and a resume picks it up from there.
 #   aviary-gateway the machine's half of the sandbox gateway on 127.0.0.1:3128: boots the sandbox with hermit-jarvis

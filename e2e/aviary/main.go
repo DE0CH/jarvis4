@@ -237,8 +237,25 @@ func sse(w io.Writer, typ string, data any) {
 	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", typ, b)
 }
 
+// sessionModel: the model the run's session starts on (E2E_MODEL): a Claude model by default; an OpenRouter one
+// (aviary/z-ai/glm-5.3) sends the agent's turns to the stand-in OpenRouter, the title call still to the Claude one.
+func sessionModel() string {
+	if m := os.Getenv("E2E_MODEL"); m != "" {
+		return m
+	}
+	return "aviary/claude-opus-5-5"
+}
+
+// openRouterKey: the OPENROUTER_API of the run's store, which only the stand-in OpenRouter takes.
+const openRouterKey = "e2e-openrouter"
+
 func serveModel(w http.ResponseWriter, req *http.Request) {
-	p := strings.TrimPrefix(req.URL.Path, "/model")
+	openRouter := strings.HasPrefix(req.URL.Path, "/openrouter/")
+	p := strings.TrimPrefix(strings.TrimPrefix(req.URL.Path, "/openrouter"), "/model")
+	if openRouter && strings.HasSuffix(p, "/count_tokens") { // OpenRouter has no count_tokens (404, 2026-11-12)
+		http.Error(w, `{"error":{"message":"Not Found","code":404}}`, 404)
+		return
+	}
 	if strings.HasSuffix(p, "/count_tokens") {
 		json.NewEncoder(w).Encode(map[string]int{"input_tokens": 10})
 		return
@@ -252,10 +269,27 @@ func serveModel(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
+	model, _ := in["model"].(string)
+	if openRouter {
+		// As OpenRouter: its own key (never the Claude login), an OpenRouter model id, the model's hosts named
+		// (aviary/src/machine.rs for_openrouter), and no thinking switched off (its hosts answer that 400).
+		provider, _ := in["provider"].(map[string]any)
+		order, _ := provider["order"].([]any)
+		thinking, _ := in["thinking"].(map[string]any)
+		if req.Header.Get("Authorization") != "Bearer "+openRouterKey || !strings.Contains(model, "/") || len(order) == 0 || thinking["type"] == "disabled" {
+			log.Printf("openrouter: refused (auth %q, model %q, provider %v, thinking %v)", req.Header.Get("Authorization"), model, provider, thinking)
+			http.Error(w, `{"type":"error","error":{"type":"invalid_request_error","message":"e2e stand-in OpenRouter"}}`, 400)
+			return
+		}
+	} else if strings.Contains(model, "/") || req.Header.Get("Authorization") == "Bearer "+openRouterKey {
+		log.Printf("model: refused, an OpenRouter call reached the Claude stand-in (model %q)", model)
+		http.Error(w, `{"type":"error","error":{"type":"invalid_request_error","message":"e2e: not a Claude call"}}`, 400)
+		return
+	}
 	// As Anthropic treats a subscription login: a call whose system prompt does not begin with Claude Code's identity
 	// is refused 429 (2026-11-12: every title call, so no conversation had a title). Claude Code's own calls carry it;
 	// the gateway puts it first on any other (the supervisor's title call).
-	if sys := systemText(in); !strings.HasPrefix(req.UserAgent(), "claude-cli/") &&
+	if sys := systemText(in); !openRouter && !strings.HasPrefix(req.UserAgent(), "claude-cli/") &&
 		!strings.HasPrefix(sys, "You are Claude Code") && !strings.HasPrefix(sys, "You are a Claude agent") {
 		log.Printf("model: refused, no Claude Code identity (user agent %q)", req.UserAgent())
 		http.Error(w, `{"type":"error","error":{"type":"rate_limit_error","message":"Error"}}`, 429)
@@ -267,9 +301,13 @@ func serveModel(w http.ResponseWriter, req *http.Request) {
 		stop = "tool_use"
 	}
 	models.Lock()
-	models.calls = append(models.calls, kind)
+	if openRouter {
+		models.calls = append(models.calls, "openrouter:"+kind)
+	} else {
+		models.calls = append(models.calls, kind)
+	}
 	models.Unlock()
-	log.Printf("model: %s (auth %q)", kind, req.Header.Get("Authorization"))
+	log.Printf("model: %s (openrouter %v, auth %q)", kind, openRouter, req.Header.Get("Authorization"))
 	id := "msg_e2e_" + hex.EncodeToString(randBytes(6))
 	usage := map[string]int{"input_tokens": 10, "output_tokens": 5}
 	if s, _ := in["stream"].(bool); !s {
@@ -311,6 +349,7 @@ func serveFront() {
 	proxy.FlushInterval = -1
 	mux := http.NewServeMux()
 	mux.HandleFunc("/model/", serveModel)
+	mux.HandleFunc("/openrouter/", serveModel)
 	mux.Handle("/", proxy)
 	go func() { log.Fatal(http.ListenAndServe(os.Getenv("E2E_FRONT_ADDR"), mux)) }()
 }
@@ -410,7 +449,8 @@ func main() {
 	}
 	keys := []secrets.KeyEntry{}
 	for k, v := range map[string]string{"AVIARY_GW_ACCESS_ID": "e2e", "AVIARY_GW_ACCESS_SECRET": "e2e",
-		"AVIARY_GW_URL": chat, "AVIARY_MODEL_URL": chat + "/model"} {
+		"AVIARY_GW_URL": chat, "AVIARY_MODEL_URL": chat + "/model",
+		"AVIARY_OPENROUTER_URL": chat + "/openrouter", "OPENROUTER_API": openRouterKey} {
 		keys = append(keys, wrapKey(combined, "aviary", k, v))
 	}
 	bundle, _ := json.Marshal(map[string]any{"format": "keys", "stores": []string{"aviary"}, "keys": keys,
@@ -475,7 +515,7 @@ func main() {
 	step("a session with the harness aviary and a first prompt; the phone signs its source")
 	var created struct{ ID string }
 	must("POST", router+"/api/sessions", map[string]any{"label": "e2e aviary", "harness": "aviary", "size": "small",
-		"model": "aviary/claude-opus-5-5", "prompt": "E2E-RUN " + token}, &created)
+		"model": sessionModel(), "prompt": "E2E-RUN " + token}, &created)
 	var aID, aKind string
 	var challenge sig.Doc
 	waitFor("the approval", time.Minute, func() bool {
@@ -533,6 +573,18 @@ func main() {
 	waitFor("the wakeup's answer in magpie", 5*time.Minute, func() bool { return strings.Contains(magpieText(), "E2E-WOKE "+token) })
 	models.Lock()
 	log.Printf("the stand-in model answered %d calls: %v", len(models.calls), models.calls)
+	// the agent's turns went where the session's model lives: an OpenRouter model's to OpenRouter, a Claude model's
+	// to Anthropic; never the other
+	wantOpenRouter := strings.Contains(strings.TrimPrefix(sessionModel(), "aviary/"), "/")
+	for _, c := range models.calls {
+		kind := strings.TrimPrefix(c, "openrouter:")
+		if kind != "tool" && kind != "answer" && kind != "wakeup" {
+			continue
+		}
+		if strings.HasPrefix(c, "openrouter:") != wantOpenRouter {
+			log.Fatalf("FAIL: the session's model is %s, but a turn (%s) went to the other model stand-in", sessionModel(), c)
+		}
+	}
 	models.Unlock()
 
 	step("destroy: archived, its source burned")

@@ -1,5 +1,5 @@
 {
-  "comment": "Which stores each harness brings (the router adds them to a session; the app hides them), and whether it runs on a Claude account (`claudeAccount`: the account picked at New session, else the default; router/claudeaccounts.go, DECISIONS 185). Sensitivity and the Fly store live in the core, not here. `tunnel` holds CF_ACCESS_CLIENT_ID/SECRET = the Access service token jarvis2-tunnel, which the cf-tunnel Worker confines to registering Jarvis 4 session tunnels (the web UI of OpenCode/Paseo, OpenClaw and dsh; tunnel pages and drops in Claude sessions, TUNNEL_ID = the session id). openclaw, paseo-claude (Claude Code driven by Paseo) and aviary (Claude Code driven by aviary's supervisor) run on the Claude subscription, hence a Claude account. `aviary` holds AVIARY_GW_ACCESS_ID/SECRET = the Access service token aviary-gateway, which admits a session machine's aviary-gateway to chat-gw.deyaochen.com (hermit-jarvis's gateway listener; aviary/README.md); the sandbox token, not this, says which session it is.",
+  "comment": "Which stores each harness brings (the router adds them to a session; the app hides them), and whether it runs on a Claude account (`claudeAccount`: the account picked at New session, else the default; router/claudeaccounts.go, DECISIONS 185). Sensitivity and the Fly store live in the core, not here. `tunnel` holds CF_ACCESS_CLIENT_ID/SECRET = the Access service token jarvis2-tunnel, which the cf-tunnel Worker confines to registering Jarvis 4 session tunnels (the web UI of OpenCode/Paseo, OpenClaw and dsh; tunnel pages and drops in Claude sessions, TUNNEL_ID = the session id). openclaw, paseo-claude (Claude Code driven by Paseo) and aviary (Claude Code driven by aviary's supervisor) run on the Claude subscription, hence a Claude account. `aviary` holds AVIARY_GW_ACCESS_ID/SECRET = the Access service token aviary-gateway, which admits a session machine's aviary-gateway to chat-gw.deyaochen.com (hermit-jarvis's gateway listener; aviary/README.md); the sandbox token, not this, says which session it is. aviary also brings `openrouter` (OPENROUTER_API): its gateway sends the calls of an OpenRouter model on the chat's menu (GLM 5.3) there; the key stays with the gateway, outside the sandbox.",
   "harnesses": {
     "claude": {
       "stores": [
@@ -33,6 +33,7 @@
     },
     "aviary": {
       "stores": [
+        "openrouter",
         "tunnel",
         "aviary"
       ],

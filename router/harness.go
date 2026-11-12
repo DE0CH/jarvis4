@@ -9,9 +9,10 @@ package main
 //             OpenClaw app + Control UI
 //   paseo-claude  Claude Code driven by a Paseo daemon (`paseo/<Claude model id>`), Claude subscription through
 //             api-proxy.js (so an account switch needs no restart, accountswap.go): the Paseo app + web UI
-//   aviary    Claude Code driven by DE0CH/aviary's supervisor (`aviary/<Claude model id>`), the same supervisor YYC AI's
-//             sandboxes run, with Jarvis 4's own pigeon, magpie and hermit (aviary/README.md); Claude subscription
-//             through the machine's aviary-gateway: the chat web app at chat.deyaochen.com
+//   aviary    Claude Code driven by DE0CH/aviary's supervisor (`aviary/<model id>`), the same supervisor YYC AI's
+//             sandboxes run, with Jarvis 4's own pigeon, magpie and hermit (aviary/README.md); Claude subscription,
+//             or GLM 5.3 on OpenRouter (z.ai's own host), through the machine's aviary-gateway: the chat web app at
+//             chat.deyaochen.com
 //   dsh       DeepSeek Harness (Deyao's fork DE0CH/deepseek-harness) on OpenRouter, routed only to DeepSeek's own
 //             endpoint (`dsh/<OpenRouter slug>`; only the dated slugs have one): its web UI on the session's origin
 // The OpenCode list is Jarvis 1's curated one (every slug checked for tool calling on OpenRouter; prices are $/M
@@ -43,6 +44,7 @@ var modelCatalog = []ModelChoice{
 	{"paseo/claude-opus-5-5", "Opus 5.5", "paseo-claude"},
 	{"aviary/claude-fable-5-2", "Fable 5.2", "aviary"},
 	{"aviary/claude-opus-5-5", "Opus 5.5", "aviary"},
+	{"aviary/z-ai/glm-5.3", "GLM 5.3 — $1.40 / $4.40", "aviary"},
 	{"dsh/deepseek/deepseek-v4-pro-0813", "DeepSeek V4 Pro — $0.66 / $1.98", "dsh"},
 	{"dsh/deepseek/deepseek-v4.1-flash-1017", "DeepSeek V4.1 Flash — $0.15 / $0.60", "dsh"},
 }
@@ -53,7 +55,7 @@ var harnessInfo = map[string]map[string]string{
 	"opencode":     {"label": "OpenCode · OpenRouter", "detail": "Paseo app + web UI"},
 	"openclaw":     {"label": "claw-code · OpenClaw", "detail": "Claude subscription · OpenClaw app + Control UI"},
 	"paseo-claude": {"label": "Claude Code · Paseo", "detail": "Claude subscription · Paseo app + web UI"},
-	"aviary":       {"label": "Claude Code · aviary", "detail": "Claude subscription · chat.deyaochen.com"},
+	"aviary":       {"label": "Claude Code · aviary", "detail": "Claude subscription or OpenRouter · chat.deyaochen.com"},
 	"dsh":          {"label": "DeepSeek Harness · OpenRouter", "detail": "DeepSeek V4 on DeepSeek's endpoint · web UI"},
 }
 
