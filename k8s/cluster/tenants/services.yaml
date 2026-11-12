@@ -12,11 +12,15 @@ metadata:
 # search 2 × 1 Gi + cloudflared 2 × 128 Mi + dsh-web 2 × 128 Mi, rolling surges included (+1 of each); the chat stack
 # (Jarvis 4's aviary harness, DE0CH/jarvis4 aviary/README.md): pigeon, magpie, hermit-jarvis 2 × 256 Mi each (+1 surge),
 # its Postgres chat-db 2 × 512 Mi (+ their Barman sidecars) on 2 × 10 Gi volumes
+# limits.cpu: the containers' caps add up to 8.4 at rest (chat-db 2, magpie 2, pigeon 1.4, search 1, hermit-jarvis 1,
+# dsh-web 0.6, cloudflared 0.4) and a rolling update adds one surge pod of each Deployment (3.2 when all roll at once).
+# At 8 the surge pods of magpie and pigeon were refused ("exceeded quota"), so a new pin never rolled out and the old
+# pods kept serving with nothing red anywhere (2026-11-12).
 apiVersion: v1
 kind: ResourceQuota
 metadata: { name: services, namespace: services }
 spec:
-  hard: { limits.memory: 9Gi, requests.memory: 5Gi, limits.cpu: "8", persistentvolumeclaims: "4", requests.storage: 40Gi }
+  hard: { limits.memory: 9Gi, requests.memory: 5Gi, limits.cpu: "12", persistentvolumeclaims: "4", requests.storage: 40Gi }
 ---
 # the quota counts limits.cpu, so a container without one is refused; operators' own pods (CloudNativePG's initdb and
 # join Jobs, whose spec is fixed once created) get this default instead of being refused
