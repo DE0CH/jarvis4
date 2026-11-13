@@ -554,7 +554,13 @@ func TestAnUpgradeResumeRestoresTheLastSnapshot(t *testing.T) {
 	}
 	sign := func(a *Approval) {
 		s, _ := k.Phone.Sign([]byte(a.Challenge.Payload))
-		if _, _, err := rg.r.Respond(a.ID, s); err != nil {
+		// the approval is filed while the session's start still runs: the answer waits for that action to end
+		var err error
+		waitFor(t, "the answer taken", func() bool {
+			_, _, err = rg.r.Respond(a.ID, s)
+			return err == nil || !strings.Contains(err.Error(), "in the middle of another action")
+		})
+		if err != nil {
 			t.Fatal(err)
 		}
 	}
