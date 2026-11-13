@@ -40,6 +40,8 @@ jobs:
       - run: cd machine && go vet ./... && go test ./...
       # the aviary sandbox's home carries the volume's ~/workspace and ~/artifacts (a mount namespace of its own)
       - run: sudo bash session-image/base/aviary-sandbox_test.sh
+      # every shell script parses: one that does not ends its harness at every start
+      - run: bash session-image/scripts_syntax_test.sh
       - run: pip install -q cryptography && python3 infra/setup_trust_test.py && python3 infra/setup_write_test.py && python3 infra/setup_roster_test.py && python3 infra/kernel_pin_test.py
   base:
     needs: test
