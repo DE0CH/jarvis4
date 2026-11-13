@@ -59,6 +59,35 @@ func answerExecs(r *Router, machine string, code int, stop chan struct{}) *[]str
 	return cmds
 }
 
+// A session restarted in the middle of a turn (it asked for its own restart onto a new image, 2026-11-13) is told
+// to continue once it is back: a restart resumes with no prompt, and the cut-off turn would never go on (that
+// session sat idle and was auto-paused five minutes later).
+func TestRestartContinuesACutOffTurn(t *testing.T) {
+	cases := []struct {
+		status, prompt string
+		want           bool
+	}{
+		{"busy", "", true},
+		{"working", "", true},
+		{"idle", "", false},         // nothing was running
+		{"waiting", "", false},      // it waits for Deyao: his answer continues it
+		{"", "", false},             // no live harness reported
+		{"busy", "carry on", false}, // the restart's own prompt continues it
+	}
+	for _, c := range cases {
+		var g *Registry
+		if c.status != "" {
+			g = &Registry{Status: c.status}
+		}
+		if got := restartContinues(g, c.prompt); got != c.want {
+			t.Errorf("status %q prompt %q: %v, want %v", c.status, c.prompt, got, c.want)
+		}
+	}
+	if restartContinues(nil, "") {
+		t.Error("no registry: nothing to continue")
+	}
+}
+
 func TestPermissionModeInPlaceAndPaused(t *testing.T) {
 	r := newTestRouter(t)
 	addSession(r, "sA", "started", "mA", false)

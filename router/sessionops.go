@@ -552,8 +552,16 @@ func normalizeEnvPatch(in map[string]any) (map[string]*string, error) {
 	return out, nil
 }
 
+// restartContinues: whether a restart must tell the session to continue once it is back. A turn was running when
+// the restart began (the registry's status is neither idle nor waiting) and the restart carries no prompt of its
+// own: a resume starts no turn, so the cut-off one would never go on.
+func restartContinues(before *Registry, prompt string) bool {
+	return prompt == "" && before != nil && before.Status != "" && before.Status != "idle" && before.Status != "waiting"
+}
+
 // Restart: a running session is paused (its signed snapshot), then the patch and the rollback are recorded,
-// then it resumes on the same image (the dead-machine rule). A paused one just resumes.
+// then it resumes on the same image (the dead-machine rule). A paused one just resumes. One restarted in the middle
+// of a turn gets "continue" once its harness is up again (restartContinues).
 func (r *Router) Restart(id string, in RestartRequest) (map[string]any, error) {
 	patch, err := normalizeEnvPatch(in.Env)
 	if err != nil {
@@ -596,6 +604,12 @@ func (r *Router) Restart(id string, in RestartRequest) (map[string]any, error) {
 		endJob()
 		return nil, err
 	}
+	// a turn that runs now is cut off by the pause: the session is told to continue once it is back
+	var before *Registry
+	if s.MachineID != "" {
+		before, _ = r.liveReg(id, s.MachineID)
+	}
+	cont := restartContinues(before, prompt)
 	r.ops.setBusy(id, "restarting")
 	op := r.lcBeginJob(id, "restart") // lifecycle.go: its pause and resume are this one operation
 	op.machine(s.MachineID)
@@ -662,6 +676,9 @@ func (r *Router) Restart(id string, in RestartRequest) (map[string]any, error) {
 			fail(err)
 			return
 		}
+		if cont {
+			r.continueAfterRestart(j, id)
+		}
 		r.ops.phase(j, "done", nil)
 		op.endJob(nil)
 	}()
@@ -670,6 +687,30 @@ func (r *Router) Restart(id string, in RestartRequest) (map[string]any, error) {
 		keys = append(keys, k)
 	}
 	return map[string]any{"started": true, "kind": "restart", "env": keys, "rollback": marker != "", "upgrade": in.Upgrade}, nil
+}
+
+// continueAfterRestart: "continue" into the restarted session once its new machine's harness is up and idle (the
+// canned delivery the account switch uses). A harness that doesn't come up in time leaves a note on the job: the
+// restart itself is done.
+func (r *Router) continueAfterRestart(j *wakeJob, id string) {
+	machine := ""
+	r.st.Do(func(d *persisted) {
+		if x := d.Sessions[id]; x != nil {
+			machine = x.MachineID
+		}
+	})
+	r.ops.phase(j, "delivering continue", nil)
+	if _, err := r.waitReg(id, machine, swapUpWait, func(g *Registry) bool { return g.Status == "idle" }); err != nil {
+		r.ops.note(j, fmt.Sprintf("the restarted session's harness didn't come up idle within %s: its cut-off turn was not continued", swapUpWait))
+		log.Printf("[restart] %s: no idle harness within %s, \"continue\" not delivered: %v", id, swapUpWait, err)
+		return
+	}
+	if err := r.DeliverCanned(id, Delivery{Kind: "continue"}, "continue"); err != nil {
+		r.ops.note(j, "\"continue\" could not be delivered: "+err.Error())
+		log.Printf("[restart] %s: delivering \"continue\": %v", id, err)
+		return
+	}
+	log.Printf("[restart] %s: \"continue\" delivered (a turn was running when it was restarted)", id)
 }
 
 func certMachine(c *Doc) string {
