@@ -3001,3 +3001,35 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      looked up once. The tag is no credential (who can tag can already start instances); it only picks the row. *Not
      chosen*: hiding instances named `jarvis4-bake` (a builder a failed run left would be hidden too); the bake job
      registering with the router (a router credential in CI for a row of a view).
+
+257. **A new session starts on aviary** (Deyao, 2026-11-13: "change the default harness to aviary when starting a new
+     session on jarvis"). `router/harness.go` `defaultHarness`: aviary where the policy offers it, else Claude Code;
+     used for a create that names no harness, for `/api/models` (`default`, `defaultHarness`), and as the harness New
+     session opens on in the web page and the iPhone app until another is picked by hand. *Not chosen*: a constant
+     in each client (the test stacks' policies offer only Claude Code, and would start sessions they cannot run).
+258. **An open web page notices a new build of itself** (Deyao, 2026-11-13: a tab from before a fix showed the old
+     harness subtitle and the old policy's sensitive store `aviary` for a day). The page loaded its code and the
+     policy once. Pages are served `no-cache`; `GET /api/build` names the page's build; the page asks every 5 min and
+     on every return, loads itself again only while in the background (a half-typed prompt is never lost), and reads
+     the models and the policy again on every return. *Not chosen*: a "new version, reload" banner (a step for
+     Deyao); reloading under the reader.
+259. **A session restarted in the middle of a turn is told to continue** (2026-11-13: a session asked for its own
+     restart onto a new image, came back idle with nobody to continue, and was auto-paused five minutes later because
+     its last prompt had been a watch's). `Restart` notes whether a turn runs when it begins (the registry's status
+     is neither idle nor waiting) and, when it carries no prompt of its own, delivers the canned "continue" once the
+     new machine's harness is up and idle (`restartContinues`, `continueAfterRestart`). *Not chosen*: changing the
+     five-minute pause after an unattended turn (it did what it is for).
+260. **The pressure watch counts a harness's own memory guard** (Deyao, 2026-11-13: "the memory pressure watcher isn't
+     working"). The aviary supervisor kills the biggest process before the kernel would, within seconds, so none of
+     the watch's signs showed while an aviary session lost `npm ci` twice. The guard's kills, read from its log as it
+     grows, are a fourth sign (`machine/pressure.go`). Its message, like every Jarvis message, now joins a running
+     aviary turn (magpie's `joinRunning`): before, a delivery during a turn was refused and retried until the turn
+     ended, so a warning could not arrive during the long turn it was about.
+261. **An aviary session's status is the supervisor's run state** (Deyao, 2026-11-13: "it says working instead of idle
+     with background tasks"). The shim knew busy or idle, and the supervisor is busy while background tasks outlive
+     a turn. aviary-gateway names the status in the registry's words (`jarvis_status`: held = idle with background
+     jobs, asking = waiting), so the card and the idle watchdog see it.
+262. **DE0CH/services is DE0CH/deyao-ai** (Deyao, 2026-11-13). His deployment repo, the counterpart of DE0CH/YYC:
+     pins, branding, settings and his Cloudflare. Jarvis 4 keeps the platform and the cluster; hermit-jarvis and
+     aviary-gateway (code) stay here. The tenant's namespace stays `services`. Still here and to move: the chat's
+     model menu and product name (`aviary/src/app.rs`, `hermit.rs`), which are settings of his deployment.
