@@ -11,6 +11,8 @@
 #   aviary-gateway the machine's half of the sandbox gateway on 127.0.0.1:3128: boots the sandbox with hermit-jarvis
 #                  (signed with the machine key), sends Claude's calls to Anthropic with the session's CURRENT Claude
 #                  login (an account switch needs no restart), magpie/hermit to chat-gw.deyaochen.com.
+#   tunnel agent   the session's own page origin https://<session id>-s.deyaochen.com/ -> 127.0.0.1:8899, where the
+#                  agent in the sandbox serves drop pages and content (run_tunnel)
 #   front end      Jarvis 4's chat web app, https://chat.deyaochen.com (aviary's pigeon + magpie, DE0CH/services).
 #
 # Everything Jarvis reads from a session keeps the shape a Claude session has (see harness-opencode.sh):
@@ -54,6 +56,20 @@ run_gateway() {
         SESSION_MODEL="$MODEL" /usr/local/bin/aviary-gateway
       echo "[aviary] gateway exited ($?); restarting in 2 s"; sleep 2
     done ) 2>&1 | logs gateway &
+}
+
+# The session's tunnel, https://<session id>-s.deyaochen.com/ (Access: Deyao only), from the machine's side: the
+# sandbox has neither the store `tunnel`'s token in a form the Worker takes nor the tunnel proof (TUNNEL_AGENT_SECRET
+# stays out of the descriptor), but it shares the machine's network namespace, so whatever it serves on
+# 127.0.0.1:8899 (a drop page, a content server: claude-env tunnel.md) is the session's page. Nothing listening = 502.
+run_tunnel() {
+  [ -n "${CF_ACCESS_CLIENT_ID:-}" ] && [ -n "${CF_ACCESS_CLIENT_SECRET:-}" ] || {
+    echo "[aviary] no CF_ACCESS_* in the secrets (store tunnel): the session's pages are not published"; return 0; }
+  ( while true; do
+      TUNNEL_ID="$MACHINE" TUNNEL_TARGET="http://127.0.0.1:${AVIARY_PAGE_PORT:-8899}" node /usr/local/lib/cf-tunnel-agent.js
+      sleep 3
+    done ) >> "$A/tunnel.out" 2>&1 &
+  echo "[aviary] session pages: https://$MACHINE-s.deyaochen.com/ <- 127.0.0.1:${AVIARY_PAGE_PORT:-8899}"
 }
 
 # The supervisor, in a restart loop (its keeper restarts the supervisor itself; this restarts the keeper)
@@ -208,6 +224,7 @@ tmux_pane() {
 
 echo "[aviary] harness up in $WD (model: $MODEL, name: ${LABEL:-auto})"
 run_gateway
+run_tunnel
 run_supervisor &
 tmux_pane
 send_first_prompt &
