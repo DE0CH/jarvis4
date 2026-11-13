@@ -147,6 +147,10 @@ final class ReplicaUITests: JarvisUITestCase {
     scrolledTo(el("secure-store-rh-plain"), max: 4)
     if wait(el("secure-store-rh-plain"), 30, "rh-plain offered") { el("secure-store-rh-plain").tap() }
     XCTAssertFalse(el("secure-store-claude").exists, "the harness's own store isn't offered as a pick")
+    // the harness under test, picked: New session opens on aviary where the router offers it (2026-11-13), and an
+    // aviary session has no chat stack to boot into here (its row never came up: run of 9329d09)
+    scrolledTo(el("secure-harness-claude"), max: 6)
+    if wait(el("secure-harness-claude"), 30, "Claude Code offered") { el("secure-harness-claude").tap() }
     // an image from Photos (the replica job added one): Start uploads it and signs its sha256 + size with the session
     for _ in 0..<3 { app.swipeDown() }
     let image = attachImage()
