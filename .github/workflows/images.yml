@@ -38,6 +38,8 @@ jobs:
       - run: cd kernel && go vet ./... && go test ./... && test -z "$(gofmt -l .)"
       - run: cd router && go vet ./... && go test ./...
       - run: cd machine && go vet ./... && go test ./...
+      # the aviary sandbox's home carries the volume's ~/workspace and ~/artifacts (a mount namespace of its own)
+      - run: sudo bash session-image/base/aviary-sandbox_test.sh
       - run: pip install -q cryptography && python3 infra/setup_trust_test.py && python3 infra/setup_write_test.py && python3 infra/setup_roster_test.py && python3 infra/kernel_pin_test.py
   base:
     needs: test

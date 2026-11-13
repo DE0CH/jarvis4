@@ -5,7 +5,8 @@
 # `/home/sandbox/.claude` an empty directory, `/dev/fuse` there. The supervisor is the same build as YYC AI's; only
 # what is mounted where differs, and that is this script:
 #
-#   /home/sandbox            a bind of /home/claude, so the agent (uid 1000 = claude) keeps Jarvis's home: ~/workspace,
+#   /home/sandbox            a bind of /home/claude and of what is mounted in it (the volume's ~/workspace and
+#                            ~/artifacts), so the agent (uid 1000 = claude) keeps Jarvis's home: ~/workspace,
 #                            ~/artifacts, ~/.ssh's deploy keys, ~/.local/bin; /run/jarvis (session-secret, the ssh agent)
 #                            is the machine's own
 #   /home/sandbox/.claude    an empty tmpfs the supervisor mounts magpie's FUSE on (Claude Code's state lives in magpie)
@@ -31,7 +32,11 @@ if [ "${AVIARY_SANDBOX_INNER:-}" != 1 ]; then
 fi
 
 mkdir -p /home/sandbox /workspace /run/supervisor /var/lib/supervisor
-mount --bind /home/claude /home/sandbox
+# --rbind: with what is mounted in the machine's home. ~/workspace and ~/artifacts are mounts from the session's
+# volume there; a plain bind left them out, and the agent wrote its repos and records to the root disk, which a
+# pause throws away (aviary-sandbox_test.sh). The tmpfs below hides the volume's ~/.claude/projects (the transcript
+# mirror) again.
+mount --rbind /home/claude /home/sandbox
 mount -t tmpfs -o mode=0700,uid=1000,gid=1000,size=64m tmpfs /home/sandbox/.claude
 mount --bind "$wd" /workspace
 mount -t tmpfs -o mode=0755 tmpfs /etc/claude-code
