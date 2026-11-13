@@ -35,6 +35,14 @@ final class ReplicaUITests: JarvisUITestCase {
     while Date() < until { if let e = es.first(where: { $0.exists }) { return e }; usleep(500_000) }
     return nil
   }
+  /// The harness under test, picked on the New session page: it opens on aviary where the router offers it
+  /// (2026-11-13), and an aviary session has no chat stack to boot into here (its row never came up, the page
+  /// never closed: runs of 9329d09 and 0518f67). Every session this test starts picks Claude Code.
+  func pickClaudeCode() {
+    scrolledTo(el("secure-harness-claude"), max: 6)
+    if wait(el("secure-harness-claude"), 30, "Claude Code offered") { el("secure-harness-claude").tap() }
+  }
+
   func openNewSession() -> Bool {
     sessionsList()
     guard wait(el("newBtn"), 30, "sessions") else { return false }
@@ -147,10 +155,7 @@ final class ReplicaUITests: JarvisUITestCase {
     scrolledTo(el("secure-store-rh-plain"), max: 4)
     if wait(el("secure-store-rh-plain"), 30, "rh-plain offered") { el("secure-store-rh-plain").tap() }
     XCTAssertFalse(el("secure-store-claude").exists, "the harness's own store isn't offered as a pick")
-    // the harness under test, picked: New session opens on aviary where the router offers it (2026-11-13), and an
-    // aviary session has no chat stack to boot into here (its row never came up: run of 9329d09)
-    scrolledTo(el("secure-harness-claude"), max: 6)
-    if wait(el("secure-harness-claude"), 30, "Claude Code offered") { el("secure-harness-claude").tap() }
+    pickClaudeCode()
     // an image from Photos (the replica job added one): Start uploads it and signs its sha256 + size with the session
     for _ in 0..<3 { app.swipeDown() }
     let image = attachImage()
@@ -360,6 +365,7 @@ final class ReplicaUITests: JarvisUITestCase {
     if openNewSession() {
       scrolledTo(el("secure-store-rh-secret"), max: 4)  // below the Images section
       if wait(el("secure-store-rh-secret"), 30, "rh-secret offered") { el("secure-store-rh-secret").tap() }
+      pickClaudeCode()
       faceIDMatches(90)
       el("secure-create").tap()
       XCTAssertTrue(gone(el("secure-create"), 120), "the New session page closes")  // the list shows behind it already
