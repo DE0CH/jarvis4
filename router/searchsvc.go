@@ -6,7 +6,7 @@ package main
 // reaches it only while its cert holds the `identity` store (where the iCloud login lives); any other session gets
 // 403. It has no login of its own: only the router can reach it (its NetworkPolicy), and the router is behind
 // Cloudflare Access (the app) or the machine signature (sessions). Shapes: docs/API.md "iCloud index".
-// Transcript search is not Jarvis's: DE0CH/services, at search.deyaochen.com behind its own Access app.
+// Transcript search is not Jarvis's: DE0CH/deyao-ai, at search.deyaochen.com behind its own Access app.
 //
 // router env: ICLOUD_INDEX_URL (default http://10.77.0.3:30091).
 

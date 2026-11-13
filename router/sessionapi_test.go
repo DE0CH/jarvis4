@@ -136,7 +136,7 @@ func TestMachineAPINothingGoesToJarvis1(t *testing.T) {
 	if code, _ := m.do(t, h, "POST", "/m/api/sessions/sA/content/x/zip", ""); code != 404 || seen != nil {
 		t.Fatalf("%d", code)
 	}
-	// transcript search is not Jarvis's (DE0CH/services): no route
+	// transcript search is not Jarvis's (DE0CH/deyao-ai): no route
 	if code, _ := m.do(t, h, "GET", "/m/api/search?q=hello+world&n=5", ""); code != 404 || seen != nil {
 		t.Fatalf("search: %d", code)
 	}

@@ -1,4 +1,5 @@
-# A tenant on the cluster: Deyao's own services (DE0CH/services: transcript search), not part of Jarvis 4 (Deyao,
+# A tenant on the cluster: Deyao's own deployments (DE0CH/deyao-ai, until 2026-11-13 DE0CH/services: transcript search,
+# the dsh web UI, the aviary chat; its namespace keeps the name `services`), not part of Jarvis 4 (Deyao,
 # 2026-10-24: Jarvis 4's job is secrets and the lifecycle of Fly containers and runners). Jarvis 4 only hosts them: the
 # namespace `services`, its quota, and a Flux sync of that repo's k8s/ applied as flux-services, which is admin in
 # `services` and nothing else, so nothing that repo holds can touch Jarvis. Its Secrets are SOPS-encrypted to the
@@ -77,7 +78,7 @@ kind: GitRepository
 metadata: { name: services, namespace: flux-system }
 spec:
   interval: 1m
-  url: https://github.com/DE0CH/services
+  url: https://github.com/DE0CH/deyao-ai
   ref: { branch: main }
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1

@@ -7,7 +7,7 @@ import (
 
 // GET /setup/services (the setup session; infra/setup.py services): the watch runner as the router reaches it, for an
 // operator with no way into the cluster: a check script that only prints, through the same call a watch's check makes.
-// Nothing is written. Transcript search is not Jarvis's (DE0CH/services, search.deyaochen.com).
+// Nothing is written. Transcript search is not Jarvis's (DE0CH/deyao-ai, search.deyaochen.com).
 func (r *Router) setupServices(w http.ResponseWriter, req *http.Request) {
 	if err := r.checkSetupSig(req.Method, req.URL.RequestURI(), req.Header.Get("X-Setup-Time"), req.Header.Get("X-Setup-Sig"), nil); err != nil {
 		writeJSON(w, 401, map[string]string{"error": err.Error()})

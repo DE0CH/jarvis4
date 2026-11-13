@@ -1037,7 +1037,7 @@ never a value. Pulling and asking are separate: a pull never answers a value, an
 
 ## Transcript search
 
-Not part of Jarvis 4 (Deyao, 2026-10-24): one of Deyao's own services, DE0CH/services, a tenant on the cluster
+Not part of Jarvis 4 (Deyao, 2026-10-24): one of Deyao's own services, DE0CH/deyao-ai, a tenant on the cluster
 (`k8s/cluster/tenants/services.yaml`), at https://search.deyaochen.com behind its own Access app. Its API: that repo's
 README. The router neither forwards to it nor pokes it; it reads the Storage Box (`.live/`, archives) on its own.
 

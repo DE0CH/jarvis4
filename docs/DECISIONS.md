@@ -2966,7 +2966,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      unit's `docker run` stays as the kernel released it).
 254. **The aviary harness replaces cloudcli: Jarvis 4 dogfoods YYC AI's stack** (Deyao, 2026-11-11: "dogfood of YYC
      AI … as one of the harness options"; aviary/README.md). A session with harness `aviary` runs DE0CH/aviary's
-     supervisor (YYC AI's build, unmodified) and its conversation lives in Jarvis 4's own pigeon + magpie (a DE0CH/services
+     supervisor (YYC AI's build, unmodified) and its conversation lives in Jarvis 4's own pigeon + magpie (a DE0CH/deyao-ai
      tenant, chat.deyaochen.com); hermit-jarvis and aviary-gateway (aviary/, Rust) are the deployment-specific parts,
      behind aviary's contracts. Deyao's choices: sessions start only in the Jarvis 4 app (no New chat in the chat app);
      the contract gains a starting folder rather than Jarvis configuring the supervisor (descriptor

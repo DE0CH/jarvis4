@@ -82,7 +82,7 @@ and jarvis-rescue there, limited by memory.max (machine/oomguard.go cgroupDir).
 
 Per region (London, Singapore, Tokyo): a VPC 10.40.0.0/16 with a public subnet per zone, an internet gateway, the
 security group (UDP 51820 in, anything out), the launch template (IMDSv2, terminate on shutdown, unlimited t3
-credits). Account-wide: the IAM users above. State in R2 beside DE0CH/services'. The workflow's key is IAM user
+credits). Account-wide: the IAM users above. State in R2 beside DE0CH/deyao-ai'. The workflow's key is IAM user
 `jarvis4-infra` (EC2 and the /jarvis4/ IAM users only).
 
 ## Router

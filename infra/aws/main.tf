@@ -9,7 +9,7 @@ terraform {
   required_providers {
     aws = { source = "hashicorp/aws", version = "6.20.0" }
   }
-  # State in R2 on Deyao's Cloudflare account, beside DE0CH/services' (bucket deyao-tofu-state, lockfile).
+  # State in R2 on Deyao's Cloudflare account, beside DE0CH/deyao-ai' (bucket deyao-tofu-state, lockfile).
   backend "s3" {
     bucket                      = "deyao-tofu-state"
     key                         = "jarvis4/aws/terraform.tfstate"

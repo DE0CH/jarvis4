@@ -10,7 +10,7 @@ package main
 //   dsh       DeepSeek Harness web (harness-dsh.sh): its web UI on the same origin; Cloudflare Access is its only
 //             gate (dsh-front.js hands dsh's launch token to a request Access admitted; nothing for the router to read)
 //   aviary    no front end of its own: its conversation is in Jarvis 4's chat web app at chat.deyaochen.com (aviary's
-//             pigeon and magpie, DE0CH/services), so its remote is that address (nothing to read)
+//             pigeon and magpie, DE0CH/deyao-ai), so its remote is that address (nothing to read)
 // The router reads those secrets on demand through a grant for holder "remote" (grants.go): its own key, so
 // Deyao can let the router read a session's remote without giving it the terminal. Never in /api/state.
 //
@@ -43,7 +43,7 @@ var remoteHarnesses = map[string]bool{"opencode": true, "openclaw": true, "paseo
 
 // webOriginHarness: the remote is only the session's origin, Cloudflare Access its gate (nothing to read)
 //
-// A dsh session's link is the persistent dsh web UI (DE0CH/services dsh-web), which reaches that origin itself with its
+// A dsh session's link is the persistent dsh web UI (DE0CH/deyao-ai dsh-web), which reaches that origin itself with its
 // own service token and stays up while the machine is paused
 func dshWebURL(id string) string { return "https://dsh.deyaochen.com/s/" + id + "/" }
 

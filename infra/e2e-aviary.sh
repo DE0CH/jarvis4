@@ -138,7 +138,7 @@ S3K="e2e$(openssl rand -hex 8)"; S3S="$(openssl rand -hex 24)"
 mkdir -p "$W/s3/magpie"
 "$CACHE/rclone" serve s3 --addr "10.88.0.1:${PP}900" --auth-key "$S3K,$S3S" --force-path-style=true "$W/s3" > "$W/s3.log" 2>&1 & PIDS+=($!)
 
-# ---- the chat stack's keys (as DE0CH/services infra/chat-keys.py makes them)
+# ---- the chat stack's keys (as DE0CH/deyao-ai infra/chat-keys.py makes them)
 tok() { openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n'; }
 declare -A K
 for pair in PIGEON_MAGPIE PIGEON_HERMIT PIGEON_MODEL GATEWAY_MAGPIE GATEWAY_HERMIT HERMIT_MAGPIE MAGPIE_HERMIT ADMIN_MAGPIE ADMIN_HERMIT; do K[$pair]="$(tok)"; done

@@ -704,7 +704,7 @@ watchdog, one-shot, snapshots and archives have one path; all but `claude` take 
 | `opencode` | OpenCode, driven by a Paseo daemon | the Paseo app (relay) + the daemon's web UI | OpenRouter key from the store `openrouter` |
 | `openclaw` | claw-code, run per turn by an OpenClaw gateway | the OpenClaw app + Control UI | the session's Claude account, sent by `api-proxy.js` |
 | `paseo-claude` (Deyao, 2026-10-20) | the image's unmodified Claude Code, driven by a Paseo daemon through the Claude Agent SDK | the Paseo app (relay) + the daemon's web UI | the session's Claude account, sent by `api-proxy.js` per request |
-| `aviary` (Deyao, 2026-11-11) | the image's unmodified Claude Code, driven by DE0CH/aviary's supervisor (YYC AI's build) in its own PID + mount namespace | Jarvis 4's chat web app, chat.deyaochen.com (aviary's pigeon + magpie, DE0CH/services) | the session's Claude account, sent by the machine's `aviary-gateway` per request |
+| `aviary` (Deyao, 2026-11-11) | the image's unmodified Claude Code, driven by DE0CH/aviary's supervisor (YYC AI's build) in its own PID + mount namespace | Jarvis 4's chat web app, chat.deyaochen.com (aviary's pigeon + magpie, DE0CH/deyao-ai) | the session's Claude account, sent by the machine's `aviary-gateway` per request |
 
 Claude Code · Paseo (`harness-paseo-claude.sh`, DECISIONS 204): Claude Code loads the working dir's CLAUDE.md, skills,
 settings, hooks (the worker count) and MCP servers itself; its transcripts are its own; a pause keeps `~/.paseo` and the
@@ -719,7 +719,7 @@ refused, so claude.ai MCP connectors are not available in these sessions.
 
 Claude Code · aviary (`harness-aviary.sh`, aviary/README.md; Deyao, 2026-11-11) makes the session an aviary sandbox:
 DE0CH/aviary's supervisor (the same build YYC AI's sandboxes run) drives Claude Code, its conversation lives in Jarvis
-4's own magpie, and its front end is pigeon's chat web app at chat.deyaochen.com (a DE0CH/services tenant with
+4's own magpie, and its front end is pigeon's chat web app at chat.deyaochen.com (a DE0CH/deyao-ai tenant with
 hermit-jarvis, aviary/). The machine's `aviary-gateway` boots the sandbox with hermit-jarvis (signed with the machine
 key, which hermit-jarvis has the router check: `POST /api/machine-signatures/verify`) and sends Claude's calls to
 Anthropic with the session's current login, as api-proxy.js does (an account switch needs no restart). Jarvis's

@@ -1,7 +1,7 @@
 name: aviary
 # aviary/ (Jarvis 4's side of the aviary harness, aviary/README.md): fmt, clippy and the tests (against a TLS Postgres,
 # as aviary-pg requires), then ghcr.io/de0ch/hermit-jarvis:sha-<12> and :latest (public: the services tenant pulls it
-# without a login; DE0CH/services chat-pin.yml pins it). aviary-gateway goes into the session image (images.yml builds
+# without a login; DE0CH/deyao-ai chat-pin.yml pins it). aviary-gateway goes into the session image (images.yml builds
 # it from the same tree).
 on:
   push:

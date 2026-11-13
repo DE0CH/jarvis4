@@ -8,7 +8,7 @@
 #                  endpoint, model = SESSION_MODEL ("dsh/<OpenRouter slug>"). Home: ~/.dsh (in the pause snapshot).
 #   dsh-front.js   the web UI's front (port 6770): what the cf-tunnel agent targets on the session's own origin
 #                  https://<session id>-s.deyaochen.com/ (Cloudflare Access); it hands dsh's launch token to a page
-#                  load Access already admitted. The persistent dsh UI (DE0CH/services) reaches sessions through it.
+#                  load Access already admitted. The persistent dsh UI (DE0CH/deyao-ai) reaches sessions through it.
 #   Instructions   the workspace CLAUDE.md with its @imports (dsh's agent-instructions, expandImports in the fork) and
 #   and skills     the Claude Code skill roots (<workdir>/.claude/skills, ~/.claude/skills): dsh-profile-patch.py
 #                  writes them into every agent preset at each boot, from this dsh version's own --dump-config.

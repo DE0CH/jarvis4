@@ -1,5 +1,5 @@
 // Search: Deyao's iCloud Drive by name and content. The router forwards it to the iCloud index (api/icloud/search); a
-// file hit opens what the index read from the file. Transcript search is not Jarvis's: DE0CH/services, its own page at
+// file hit opens what the index read from the file. Transcript search is not Jarvis's: DE0CH/deyao-ai, its own page at
 // https://search.deyaochen.com.
 import SwiftUI
 

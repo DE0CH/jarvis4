@@ -13,7 +13,7 @@
 #                  login (an account switch needs no restart), magpie/hermit to chat-gw.deyaochen.com.
 #   tunnel agent   the session's own page origin https://<session id>-s.deyaochen.com/ -> 127.0.0.1:8899, where the
 #                  agent in the sandbox serves drop pages and content (run_tunnel)
-#   front end      Jarvis 4's chat web app, https://chat.deyaochen.com (aviary's pigeon + magpie, DE0CH/services).
+#   front end      Jarvis 4's chat web app, https://chat.deyaochen.com (aviary's pigeon + magpie, DE0CH/deyao-ai).
 #
 # Everything Jarvis reads from a session keeps the shape a Claude session has (see harness-opencode.sh):
 #   ~/.claude/sessions/aviary.json     status shim: idle | busy from the supervisor's health (the gateway's /jarvis/state)

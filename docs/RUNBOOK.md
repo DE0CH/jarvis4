@@ -463,7 +463,7 @@ per account its email, expiry, last refresh, the participants of its refresh pro
 
 ## The iCloud index
 
-Transcript search is not Jarvis's: DE0CH/services (README there), a tenant on the cluster in namespace `services`
+Transcript search is not Jarvis's: DE0CH/deyao-ai (README there), a tenant on the cluster in namespace `services`
 (`k8s/cluster/tenants/services.yaml`), at https://search.deyaochen.com.
 
 In jarvis4-services (`services/icloud-index`; `k8s/cluster/services/icloud-index/`), built by `.github/workflows/services.yml` (only the service that changed; its unit

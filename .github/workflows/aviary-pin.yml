@@ -5,7 +5,7 @@ name: aviary-pin
 #   session-image/aviary.json      {release, supervisor, supervisor-keeper}: the sha256 of each binary (its SHA256SUMS)
 #   aviary/Cargo.toml + Cargo.lock the contract crates' rev (the release's commit)
 # and pushes to main with the pin deploy key (environment `release`), which starts images.yml (the session image) and
-# aviary.yml (hermit-jarvis). DE0CH/services' chat-pin.yml pins pigeon and magpie of the same releases.
+# aviary.yml (hermit-jarvis). DE0CH/deyao-ai' chat-pin.yml pins pigeon and magpie of the same releases.
 on:
   schedule: [{ cron: "*/15 * * * *" }]
   workflow_dispatch:
