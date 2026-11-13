@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +91,54 @@ func TestPressureReasons(t *testing.T) {
 	}
 	if low, clear, _ := diskPressure(diskSample{Root: &diskFS{TotalKb: 10 << 20, AvailKb: 1536 << 10}}); low || clear {
 		t.Fatal("between the marks the disk is neither low nor clear")
+	}
+}
+
+// a harness's own memory guard kills before the kernel does (the aviary supervisor): its kills are pressure too
+// (2026-11-13: an aviary session lost `npm ci` twice and the watch said nothing)
+func TestPressureGuardKills(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "supervisor.out")
+	old := guardLogPath
+	guardLogPath = func() string { return log }
+	defer func() { guardLogPath = old }()
+	n := func(v int64) *int64 { return &v }
+	ok := memSample{TotalKb: 4 << 20, AvailKb: 2 << 20, OOMKills: n(0)}
+	add := func(lines string) {
+		f, err := os.OpenFile(log, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.WriteString(lines)
+		f.Close()
+	}
+	var w pressureWatch
+	if r := w.memReason(ok); r != "" {
+		t.Fatalf("no log yet: %q", r)
+	}
+	// what the log held before the watch's first look at it is not news
+	add(`{"level":"warn","msg":"memory guard killed","pid":7,"comm":"old","rss":1073741824}` + "\n")
+	w = pressureWatch{}
+	if r := w.memReason(ok); r != "" {
+		t.Fatalf("a kill from before the watch: %q", r)
+	}
+	add(`{"level":"info","msg":"turn started"}` + "\n" +
+		`{"level":"warn","msg":"memory guard killed","pid":1682,"comm":"npm ci","rss":3269664768,"used":3977883648}` + "\n" +
+		`{"level":"warn","msg":"memory guard kil`)
+	if r := w.memReason(ok); !strings.Contains(r, "memory guard killed npm ci at 3.0 GB") {
+		t.Fatalf("a guard kill: %q", r)
+	}
+	if r := w.memReason(ok); r != "" {
+		t.Fatalf("the same kill told twice: %q", r)
+	}
+	// the line that was still being written counts once it is whole
+	add(`led","pid":1850,"comm":"node","rss":2147483648}` + "\n")
+	if r := w.memReason(ok); !strings.Contains(r, "node at 2.0 GB") {
+		t.Fatalf("the completed line: %q", r)
+	}
+	// a new, shorter log is read from its start
+	os.WriteFile(log, []byte(`{"msg":"memory guard killed","comm":"cargo","rss":1073741824}`+"\n"), 0o600)
+	if r := w.memReason(ok); !strings.Contains(r, "cargo at 1.0 GB") {
+		t.Fatalf("a new log: %q", r)
 	}
 }
 

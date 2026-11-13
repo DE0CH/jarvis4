@@ -4,13 +4,19 @@ package main
 // pressure/memory pressure, do not upgrade; discord Deyao if upgrade is necessary or recommended"): a component of
 // the supervisor, beside the stall watch. Every pressureEvery it reads its own machine's memory and disk and decides
 // by the router's rules (router/memory.go, router/disk.go: the episode Deyao is DMed about) whether the machine is
-// short of memory or of disk. A new episode is told to the session's harness through the Jarvis channel at once, and
+// short of memory or of disk. A process the harness's own memory guard killed counts too (the aviary supervisor
+// kills the biggest process before the kernel would, within seconds: none of the router's three signs ever shows,
+// and an aviary session lost `npm ci` twice with nothing said, 2026-11-13). A new episode is told to the session's harness through the Jarvis channel at once, and
 // again every pressureAgain while it lasts. The text tells the session not to upgrade by itself: a bigger machine or
 // disk is Deyao's decision, asked for over Discord. The router takes no part.
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -68,16 +74,83 @@ func (e *pressureEpisode) step(under, healthy bool, now time.Time, clear time.Du
 // untold: the harness didn't take the message: it is due again at the next look
 func (e *pressureEpisode) untold() { e.told = time.Time{} }
 
-// pressureWatch: the two episodes and the kernel's oom_kill count at the last look
+// pressureWatch: the two episodes, the kernel's oom_kill count at the last look, and how far the harness's memory
+// guard's log has been read
 type pressureWatch struct {
 	mem, disk pressureEpisode
 	oomKills  *int64
+	guard     guardLog
+}
+
+// guardLogPath: where a harness with its own memory guard logs its kills: the aviary supervisor's log
+// (harness-aviary.sh; JSON lines, `"msg":"memory guard killed"` with `comm` and `rss` in bytes). Missing on every
+// other harness.
+var guardLogPath = func() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".aviary", "supervisor.out")
+}
+
+// guardLog: the guard's log read up to offset; started says the first look is over (what the log held before it is
+// not news)
+type guardLog struct {
+	offset  int64
+	started bool
+}
+
+// kills: the guard's kills logged since the last look, as "npm ci at 3.1 GB". A log that got shorter (a new one) is
+// read from its start.
+func (g *guardLog) kills() []string {
+	f, err := os.Open(guardLogPath())
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil
+	}
+	if !g.started {
+		g.started, g.offset = true, st.Size()
+		return nil
+	}
+	if st.Size() < g.offset {
+		g.offset = 0
+	}
+	if _, err := f.Seek(g.offset, io.SeekStart); err != nil {
+		return nil
+	}
+	b, err := io.ReadAll(io.LimitReader(f, 4<<20))
+	if err != nil {
+		return nil
+	}
+	// only whole lines: one still being written is read at the next look
+	end := strings.LastIndexByte(string(b), '\n') + 1
+	g.offset += int64(end)
+	var out []string
+	for _, l := range strings.Split(string(b[:end]), "\n") {
+		if !strings.Contains(l, "memory guard killed") {
+			continue
+		}
+		var e struct {
+			Msg  string  `json:"msg"`
+			Comm string  `json:"comm"`
+			Rss  float64 `json:"rss"`
+		}
+		if json.Unmarshal([]byte(l), &e) != nil || e.Msg != "memory guard killed" {
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s at %.1f GB", e.Comm, e.Rss/(1<<30)))
+	}
+	return out
 }
 
 // memReason: why the machine is short of memory now ("" when it is not), as router/memory.go observe decides
 func (w *pressureWatch) memReason(s memSample) string {
 	reason := ""
+	guardKills := w.guard.kills()
 	switch {
+	case len(guardKills) > 0:
+		reason = fmt.Sprintf("the session's memory guard killed %s for lack of memory", strings.Join(guardKills, ", "))
 	case w.oomKills != nil && s.OOMKills != nil && *s.OOMKills > *w.oomKills:
 		n := *s.OOMKills - *w.oomKills
 		reason = fmt.Sprintf("the kernel killed %d process%s for lack of memory", n, map[bool]string{true: "", false: "es"}[n == 1])
