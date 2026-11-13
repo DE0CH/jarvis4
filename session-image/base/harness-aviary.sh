@@ -101,7 +101,9 @@ if not s.get("ready"): sys.exit(0)
 path = os.path.expanduser("~/.claude/sessions/aviary.json")
 try: prev = json.load(open(path))
 except Exception: prev = {}
-status = "busy" if s.get("busy") else "idle"
+# the gateway names the status (busy, idle, shell = idle with background tasks, waiting = on Deyao's answer); one
+# from before that says only busy
+status = s.get("status") or ("busy" if s.get("busy") else "idle")
 now = int(time.time() * 1000)
 changed = prev.get("status") != status
 entry = {"pid": os.getppid(), "sessionId": s.get("conversationId") or "aviary",
