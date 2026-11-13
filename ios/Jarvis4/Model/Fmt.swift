@@ -85,12 +85,13 @@ enum Fmt {
 /// the harnesses a session can run (session image), as the New session page offers them
 struct Harness: Identifiable, Equatable {
   let id: String, title: String, sub: String
+  /// aviary first: a new session starts on it (Deyao, 2026-11-13; the router's defaultHarness)
   static let all = [
+    Harness(id: "aviary", title: "Claude Code · aviary", sub: "Claude subscription · chat.deyaochen.com"),
     Harness(id: "claude", title: "Claude Code", sub: "Claude subscription · Claude app"),
     Harness(id: "opencode", title: "OpenCode · OpenRouter", sub: "Paseo app + web UI"),
     Harness(id: "openclaw", title: "claw-code · OpenClaw", sub: "Claude subscription · OpenClaw app + Control UI"),
     Harness(id: "paseo-claude", title: "Claude Code · Paseo", sub: "Claude subscription · Paseo app + web UI"),
-    Harness(id: "aviary", title: "Claude Code · aviary", sub: "Claude subscription · chat.deyaochen.com"),
   ]
   /// what an approval page says for a signed harness (a task line names its template)
   static func name(_ h: String) -> String {

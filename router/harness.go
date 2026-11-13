@@ -68,6 +68,15 @@ func paseoHarness(h string) bool { return h == "opencode" || h == "paseo-claude"
 // with no restart
 func proxyLoginHarness(h string) bool { return h == "paseo-claude" || h == "aviary" }
 
+// defaultHarness: the harness of a new session that names none, and the one New session opens on: aviary (Deyao,
+// 2026-11-13) where the policy offers it, else Claude Code
+func (r *Router) defaultHarness() string {
+	if _, ok := r.policy.Harnesses["aviary"]; ok {
+		return "aviary"
+	}
+	return "claude"
+}
+
 func defaultModel(harness string) string {
 	for _, m := range modelCatalog {
 		if m.Harness == harness {
@@ -114,10 +123,11 @@ func (r *Router) registerHarnesses(app appRoute) {
 				defaults[name], harnesses[name] = defaultModel(name), info
 			}
 		}
-		def := defaultModel("claude")
+		def := defaultModel(r.defaultHarness())
 		if h != "" {
 			def = defaultModel(h)
 		}
-		writeJSON(w, 200, map[string]any{"models": out, "default": def, "defaults": defaults, "harnesses": harnesses})
+		writeJSON(w, 200, map[string]any{"models": out, "default": def, "defaults": defaults, "harnesses": harnesses,
+			"defaultHarness": r.defaultHarness()})
 	})
 }

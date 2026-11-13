@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -52,6 +54,15 @@ func TestModelsList(t *testing.T) {
 	if _, ok := all["harnesses"].(map[string]any)["openclaw"]; ok || all["default"] != "claude-fable-5-2" {
 		t.Fatalf("%v", all)
 	}
+	// a new session starts on aviary when the policy offers it (Deyao, 2026-11-13), else on Claude Code
+	if all["defaultHarness"] != "claude" {
+		t.Fatalf("no aviary in the policy: %v", all["defaultHarness"])
+	}
+	r.policy.Harnesses["aviary"] = HarnessPolicy{}
+	if av := get(""); av["defaultHarness"] != "aviary" || av["default"] != "aviary/claude-fable-5-2" {
+		t.Fatalf("%v %v", av["defaultHarness"], av["default"])
+	}
+	delete(r.policy.Harnesses, "aviary")
 	oc := get("?harness=opencode")
 	ms := oc["models"].([]any)
 	if len(ms) != 6 || oc["default"] != "openrouter/z-ai/glm-5.3" {
@@ -61,6 +72,51 @@ func TestModelsList(t *testing.T) {
 		if !strings.HasPrefix(m.(map[string]any)["id"].(string), "openrouter/") {
 			t.Fatalf("%v", m)
 		}
+	}
+}
+
+// The web page is never served from a browser's cache without asking, and names its build so an open tab can tell
+// a new one (Deyao, 2026-11-13: a tab from before a fix showed the old page for a day).
+func TestWebPageBuild(t *testing.T) {
+	st, err := testState(t, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	web := t.TempDir()
+	os.WriteFile(filepath.Join(web, "index.html"), []byte("<!doctype html><script src=/_expo/a1.js></script>"), 0o644)
+	os.MkdirAll(filepath.Join(web, "_expo"), 0o755)
+	os.WriteFile(filepath.Join(web, "_expo", "a1.js"), []byte("1"), 0o644)
+	r := NewRouter(Config{NoAccess: true, DataDir: st.dir, WebDir: web}, st, nil, Policy{})
+	get := func(path string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		r.Handler().ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		return w
+	}
+	for _, page := range []string{"/", "/new"} {
+		if w := get(page); w.Code != 200 || w.Header().Get("Cache-Control") != "no-cache" {
+			t.Fatalf("%s: %d cache-control %q", page, w.Code, w.Header().Get("Cache-Control"))
+		}
+	}
+	if w := get("/_expo/a1.js"); w.Code != 200 || w.Header().Get("Cache-Control") == "no-cache" {
+		t.Fatalf("a hashed file: %d %q", w.Code, w.Header().Get("Cache-Control"))
+	}
+	build := func() string {
+		out := map[string]string{}
+		json.Unmarshal(get("/api/build").Body.Bytes(), &out)
+		return out["build"]
+	}
+	b1 := build()
+	if len(b1) != 12 || b1 != build() {
+		t.Fatalf("build %q", b1)
+	}
+	os.WriteFile(filepath.Join(web, "index.html"), []byte("<!doctype html><script src=/_expo/b2.js></script>"), 0o644)
+	r2 := NewRouter(Config{NoAccess: true, DataDir: st.dir, WebDir: web}, st, nil, Policy{})
+	w := httptest.NewRecorder()
+	r2.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/api/build", nil))
+	out := map[string]string{}
+	json.Unmarshal(w.Body.Bytes(), &out)
+	if out["build"] == b1 || len(out["build"]) != 12 {
+		t.Fatalf("another page, the same build: %q", out["build"])
 	}
 }
 

@@ -568,7 +568,7 @@ func (r *Router) CreateSession(in NewSession) (string, error) {
 		ok = true // a task line (tasks.go): the template's stores only, no harness stores
 	}
 	if !ok {
-		in.Harness = "claude"
+		in.Harness = r.defaultHarness()
 		if h, ok = r.policy.Harnesses[in.Harness]; !ok {
 			return "", fmt.Errorf("no harness %s in the policy", in.Harness)
 		}

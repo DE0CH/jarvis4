@@ -279,6 +279,16 @@ func (r *Router) buildHandlers() {
 	r.registerRoster(app, mux) // roster.go
 	r.registerLineState(app)
 	app("GET /api/policy", func(w http.ResponseWriter, req *http.Request) { writeJSON(w, 200, r.policy) })
+	// the web page's build (its index.html, which names its hashed files): an open tab asks now and then, and loads
+	// itself again when the answer is no longer the one it was loaded from (app/src/lib/build.ts)
+	webBuild := ""
+	if b, err := os.ReadFile(filepath.Join(r.cfg.WebDir, "index.html")); err == nil {
+		sum := sha256.Sum256(b)
+		webBuild = hex.EncodeToString(sum[:])[:12]
+	}
+	app("GET /api/build", func(w http.ResponseWriter, req *http.Request) {
+		writeJSON(w, 200, map[string]string{"build": webBuild})
+	})
 
 	// ---- sign-in -----------------------------------------------------------------------------------
 	app("GET /api/auth/start", func(w http.ResponseWriter, req *http.Request) {
@@ -802,6 +812,11 @@ func (r *Router) buildHandlers() {
 			} else if _, err := os.Stat(filepath.Join(p, "index.html")); err != nil {
 				req.URL.Path = "/" // a client-side route
 			}
+		}
+		// a page is asked for again every time (its hashed files are not): without this a browser keeps an old
+		// index.html, and with it the whole old page, for as long as it likes
+		if strings.HasSuffix(req.URL.Path, "/") || strings.HasSuffix(req.URL.Path, ".html") {
+			w.Header().Set("Cache-Control", "no-cache")
 		}
 		web.ServeHTTP(w, req)
 	}))

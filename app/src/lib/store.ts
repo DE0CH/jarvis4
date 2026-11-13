@@ -1,6 +1,7 @@
 // One external store for everything the UI polls, read from components with useSyncExternalStore.
 // Nothing in here is optimistic: cards only change when the router reports the new state; in-flight
 // actions show as PENDING labels on their buttons.
+import { buildSeen } from "./build";
 import { useSyncExternalStore } from "react";
 import { AppState, Platform } from "react-native";
 import { api, coreStores, loadPolicy, RUN_ACTIVE, type Choice, type CoreStore, type Policy, type Rec, type State, type TasksOverview, type Machine, type FlyOrgView, type MachinesOverview, type InboxItem, type InboxBatch } from "./api";
@@ -145,13 +146,35 @@ export function start() {
     // tasks: every 15 s while their tab is open, every 2 s while a run is queued/starting/running
     if ((S.tab === "tasks" || S.tab === "schedules") && (Date.now() - tasksAt >= 15000 || S.tasks.data.instances.some((i) => i.activeRun || (i.lastRun && RUN_ACTIVE(i.lastRun.phase))))) loadTasks();
   }, 2000);
-  // back in the foreground: refresh at once (this is also where an expired login gets noticed)
-  AppState.addEventListener("change", (st) => { if (st === "active") refresh(false); });
+  // back in the foreground: refresh at once (this is also where an expired login gets noticed), with what a new
+  // router may offer differently (the harnesses' stores, the models)
+  AppState.addEventListener("change", (st) => {
+    if (st === "active") { refresh(false); loadOffers(); }
+    lookAtBuild();
+  });
+  setInterval(lookAtBuild, 5 * 60 * 1000);
+  lookAtBuild();
   api<{ sizes: Choice[] }>("GET", "api/sizes").then((j) => { S.sizes = j.sizes || []; emit(); }).catch(() => {});
   api<{ regions: Choice[]; default: string; runners?: Choice[]; defaultRunner?: string }>("GET", "api/regions").then((j) => { S.regions = j.regions || []; S.defaultRegion = j.default || ""; S.runners = j.runners || []; S.defaultRunner = j.defaultRunner || ""; emit(); }).catch(() => {});
+  loadOffers();
+  refresh(true);
+}
+
+// what New session offers, which a new router may change: the models and each harness's stores
+function loadOffers() {
   api<{ models: Choice[] }>("GET", "api/models").then((j) => { S.models = j.models || []; emit(); }).catch(() => {});
   loadPolicy().then((p) => { S.policy = p; emit(); }).catch(() => {});
-  refresh(true);
+}
+
+// lib/build.ts: an open page loads itself again, in the background, once the router serves a newer build of it
+let loadedBuild: string | null = null;
+function lookAtBuild() {
+  if (typeof document === "undefined" || typeof location === "undefined") return; // the web page only
+  api<{ build?: string }>("GET", "api/build").then((j) => {
+    const look = buildSeen(loadedBuild, j.build || "", document.hidden);
+    loadedBuild = look.loaded;
+    if (look.reload) location.reload();
+  }).catch(() => {});
 }
 
 export const loadRecords = coalesce(async () => {

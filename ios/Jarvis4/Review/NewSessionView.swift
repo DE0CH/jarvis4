@@ -17,6 +17,8 @@ struct NewSessionView: View {
   @State private var stores: [StoreView] = []
   @State private var picked: Set<String> = []
   @State private var harness = "claude"
+  /// the harness was picked by hand: the default no longer moves it
+  @State private var harnessPicked = false
   private let perm = "bypass" // the only start mode
   @State private var oneShot = false
   @State private var prompt = ""
@@ -87,7 +89,8 @@ struct NewSessionView: View {
     .navigationDestination(isPresented: Binding(get: { kernelApproval != nil }, set: { if !$0 { kernelApproval = nil } })) {
       if let a = kernelApproval { KernelApprovalView(a: a, inbox: nil, request: .newSession) }
     }
-    .task { await load() }
+    .task { await load(); defaultHarness() }
+    .onChange(of: model.policy) { defaultHarness() }
     .onChange(of: harness) { pickModel() }
     .onChange(of: model.models) { pickModel() }
     .onChange(of: model.repos) { defaultRepo() }
@@ -155,10 +158,15 @@ struct NewSessionView: View {
     }
   }
 
+  /// a new session starts on aviary (Deyao, 2026-11-13) where the router's policy offers it, else on Claude Code
+  private func defaultHarness() {
+    if !harnessPicked, model.policy["aviary"] != nil { harness = "aviary" }
+  }
+
   @ViewBuilder private var harnessSection: some View {
     Section("Harness") {
       ForEach(Harness.all) { h in
-        CheckRow(on: harness == h.id, id: "secure-harness-\(h.id)", action: { harness = h.id }) {
+        CheckRow(on: harness == h.id, id: "secure-harness-\(h.id)", action: { harness = h.id; harnessPicked = true }) {
           VStack(alignment: .leading) { Text(h.title); Text(h.sub).font(.footnote).foregroundStyle(Color.secondary) }
         }
       }

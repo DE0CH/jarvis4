@@ -62,12 +62,13 @@ function Attachments({ items, add, remove, disabled }: { items: Picked[]; add: (
 }
 const fmtSize = (n: number) => (n < 1024 ? `${n} B` : n < 1 << 20 ? `${(n / 1024).toFixed(0)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`);
 
+// aviary first: a new session starts on it (Deyao, 2026-11-13; the router's defaultHarness)
 const HARNESSES = [
+  { value: "aviary", title: "Claude Code · aviary", sub: "Claude subscription · chat.deyaochen.com" },
   { value: "claude", title: "Claude Code", sub: "Claude subscription · Claude app" },
   { value: "opencode", title: "OpenCode · OpenRouter", sub: "Paseo app + web UI" },
   { value: "openclaw", title: "claw-code · OpenClaw", sub: "Claude subscription · OpenClaw app + Control UI" },
   { value: "paseo-claude", title: "Claude Code · Paseo", sub: "Claude subscription · Paseo app + web UI" },
-  { value: "aviary", title: "Claude Code · aviary", sub: "Claude subscription · chat.deyaochen.com" },
 ];
 const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 // what each runner means for the session (docs/PLAN-aws.md)
@@ -84,7 +85,11 @@ export function NewSession() {
   const [picked, setPicked] = useState<string[]>([]);
   const touched = useRef(false);
   useEffect(() => { if (!touched.current) setPicked(plain.some((s) => s.name === "default" && !s.sensitive) ? ["default"] : []); }, [plain.map((s) => s.name).join(",")]);
-  const [model, setModel] = useState(""), [size, setSize] = useState("medium"), [harness, setHarness] = useState("claude");
+  const [model, setModel] = useState(""), [size, setSize] = useState("medium"), [harness, setHarnessState] = useState("claude");
+  // a new session starts on aviary (Deyao, 2026-11-13) where the router's policy offers it, until one is picked by hand
+  const harnessTouched = useRef(false), hasAviary = useStore((s) => "aviary" in s.policy);
+  const setHarness = (h: string) => { harnessTouched.current = true; setHarnessState(h); };
+  useEffect(() => { if (!harnessTouched.current && hasAviary) setHarnessState("aviary"); }, [hasAviary]);
   // the Fly region its machines run in (router/regions.go); the router's default until another is picked
   const [region, setRegion] = useState("");
   // where its machines run (router/awsrunner.go): AWS (one EC2 instance each) or Fly; the router's default until
