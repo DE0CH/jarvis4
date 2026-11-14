@@ -37,6 +37,11 @@ LABEL="${SESSION_LABEL:-}"
 MACHINE="${SESSION_ID:-${FLY_MACHINE_ID:-$(hostname)}}"
 GW=http://127.0.0.1:3128
 MIRROR="$STATE/projects/-home-claude-workspace"
+# Claude Code's home in the sandbox: the `claude` home of the supervisor's mount, whose files are the conversation's in
+# magpie. The sandbox's ~/.claude is not it (aviary-sandbox), so the gateway hands this to hermit-jarvis at boot and
+# the sandbox's descriptor gives it to Claude Code. Without it Claude Code writes its transcript beside the mount: the
+# chat shows no tool call and the turn never ends there.
+CLAUDE_HOME=/home/sandbox/.harness/claude
 # the image's digest for the descriptor (Fly's FLY_IMAGE_REF names it), else a placeholder
 IMAGE="sha256:$(printf '%064d' 0)"
 case "${FLY_IMAGE_REF:-}" in *@sha256:*) IMAGE="sha256:${FLY_IMAGE_REF##*@sha256:}" ;; esac
@@ -53,7 +58,7 @@ run_gateway() {
     echo "[aviary] no AVIARY_GW_ACCESS_* in the secrets (store aviary-gw): the gateway cannot start"; return 1; }
   ( while true; do
       env POD_NAME="$MACHINE" AVIARY_GW_URL="${AVIARY_GW_URL:-https://chat-gw.deyaochen.com}" AVIARY_BOOT_FILE="$BOOT" AVIARY_IMAGE="$IMAGE" \
-        SESSION_MODEL="$MODEL" /usr/local/bin/aviary-gateway
+        SESSION_MODEL="$MODEL" CLAUDE_CONFIG_DIR="$CLAUDE_HOME" /usr/local/bin/aviary-gateway
       echo "[aviary] gateway exited ($?); restarting in 2 s"; sleep 2
     done ) 2>&1 | logs gateway &
 }
@@ -140,10 +145,10 @@ mirror_loop() {
     sleep 30
     pid="$(keeper_pid)"; [ -n "$pid" ] || continue
     sudo -n nsenter --target "$pid" --mount --setuid 1000 --setgid 1000 \
-      sh -c 'src=/home/sandbox/.claude/projects/-workspace; [ -d "$src" ] || exit 0
+      sh -c 'src="$2/projects/-workspace"; [ -d "$src" ] || exit 0
              for f in "$src"/*.jsonl; do [ -f "$f" ] || continue; d="$1/$(basename "$f")"
                if [ ! -f "$d" ] || [ "$f" -nt "$d" ]; then cp "$f" "$d.tmp" && mv "$d.tmp" "$d"; fi; done' \
-      _ "$MIRROR" 2>> "$A/mirror.err" || true
+      _ "$MIRROR" "$CLAUDE_HOME" 2>> "$A/mirror.err" || true
   done
 }
 

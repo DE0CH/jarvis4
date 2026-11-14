@@ -2,14 +2,19 @@
 # aviary-sandbox BOOT_ENV_FILE [WORKDIR] (as root, by harness-aviary.sh through sudo): runs DE0CH/aviary's supervisor for this
 # session the way an aviary sandbox runs it (DE0CH/aviary docs/CONTRACTS.md "Boot"): supervisor-keeper as PID 1 of its
 # own PID namespace, with only the gateway's boot environment, `/workspace` the conversation's workspace,
-# `/home/sandbox/.claude` an empty directory, `/dev/fuse` there. The supervisor is the same build as YYC AI's; only
+# `/home/sandbox/.harness` the supervisor's mount, `/dev/fuse` there. The supervisor is the same build as YYC AI's; only
 # what is mounted where differs, and that is this script:
 #
 #   /home/sandbox            a bind of /home/claude and of what is mounted in it (the volume's ~/workspace and
 #                            ~/artifacts), so the agent (uid 1000 = claude) keeps Jarvis's home: ~/workspace,
 #                            ~/artifacts, ~/.ssh's deploy keys, ~/.local/bin; /run/jarvis (session-secret, the ssh agent)
 #                            is the machine's own
-#   /home/sandbox/.claude    an empty tmpfs the supervisor mounts magpie's FUSE on (Claude Code's state lives in magpie)
+#   /home/sandbox/.harness   where the supervisor mounts magpie's FUSE, one home per harness: Claude Code's state is
+#                            the conversation's in magpie, under claude/ there. An aviary sandbox image links
+#                            ~/.claude to it; here ~/.claude is the machine's own directory, so hermit-jarvis's
+#                            descriptor names the home instead (CLAUDE_CONFIG_DIR, from harness-aviary.sh)
+#   /home/sandbox/.claude    an empty tmpfs: the machine's ~/.claude (its login, the transcript mirror) stays out of
+#                            the agent's sight, and nothing is kept there
 #   /workspace               a bind of the harness's working directory WORKDIR: the one repo (~/workspace/<repo>), or
 #                            ~/workspace with several (the merged CLAUDE.md, skills and settings: workspace-layer.sh),
 #                            or the empty ~/workspace; loaded as the project's (the descriptor's claude.projectSettings)
@@ -38,6 +43,7 @@ mkdir -p /home/sandbox /workspace /run/supervisor /var/lib/supervisor
 # mirror) again.
 mount --rbind /home/claude /home/sandbox
 mount -t tmpfs -o mode=0700,uid=1000,gid=1000,size=64m tmpfs /home/sandbox/.claude
+install -d -m 0755 -o 1000 -g 1000 /home/sandbox/.harness
 mount --bind "$wd" /workspace
 mount -t tmpfs -o mode=0755 tmpfs /etc/claude-code
 
