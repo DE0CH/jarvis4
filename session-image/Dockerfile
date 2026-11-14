@@ -27,6 +27,8 @@ RUN set -e; rel="$(python3 -c 'import json;print(json.load(open("/tmp/aviary.jso
 FROM ${BASE}
 COPY --from=build /out/jarvis-machine /usr/local/bin/jarvis-machine
 COPY --from=aviary /out/aviary-gateway /out/supervisor /out/supervisor-keeper /usr/local/bin/
+# the aviary release's pins as the harness reads them (aviary-sandbox: the Claude Code version of aviary's image)
+COPY --chmod=644 session-image/aviary.json /usr/local/share/aviary.json
 # task templates (tasks/<name>/, router/tasks.go): a task line's machine runs one of these instead of a harness;
 # the image digest in the line's cert fixes which code that is
 COPY tasks/ /opt/jarvis/tasks/

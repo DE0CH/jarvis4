@@ -1,25 +1,29 @@
 #!/bin/bash
 # aviary-sandbox BOOT_ENV_FILE [WORKDIR] (as root, by harness-aviary.sh through sudo): runs DE0CH/aviary's supervisor for this
-# session the way an aviary sandbox runs it (DE0CH/aviary docs/CONTRACTS.md "Boot"): supervisor-keeper as PID 1 of its
-# own PID namespace, with only the gateway's boot environment, `/workspace` the conversation's workspace,
-# `/home/sandbox/.harness` the supervisor's mount, `/dev/fuse` there. The supervisor is the same build as YYC AI's; only
-# what is mounted where differs, and that is this script:
+# session in the layout of an aviary sandbox image (DE0CH/aviary images/sandbox/Dockerfile, docs/CONTRACTS.md "Boot"):
+# supervisor-keeper as PID 1 of its own PID namespace, with only the gateway's boot environment.
 #
-#   /home/sandbox            a bind of /home/claude and of what is mounted in it (the volume's ~/workspace and
-#                            ~/artifacts), so the agent (uid 1000 = claude) keeps Jarvis's home: ~/workspace,
-#                            ~/artifacts, ~/.ssh's deploy keys, ~/.local/bin; /run/jarvis (session-secret, the ssh agent)
-#                            is the machine's own
-#   /home/sandbox/.harness   where the supervisor mounts magpie's FUSE, one home per harness: Claude Code's state is
-#                            the conversation's in magpie, under claude/ there. An aviary sandbox image links
-#                            ~/.claude to it; here ~/.claude is the machine's own directory, so hermit-jarvis's
-#                            descriptor names the home instead (CLAUDE_CONFIG_DIR, from harness-aviary.sh)
-#   /home/sandbox/.claude    an empty tmpfs: the machine's ~/.claude (its login, the transcript mirror) stays out of
-#                            the agent's sight, and nothing is kept there
-#   /workspace               a bind of the harness's working directory WORKDIR: the one repo (~/workspace/<repo>), or
-#                            ~/workspace with several (the merged CLAUDE.md, skills and settings: workspace-layer.sh),
-#                            or the empty ~/workspace; loaded as the project's (the descriptor's claude.projectSettings)
+# Dogfooding (Deyao, 2026-11-14; claude-env `dogfood-aviary` skill): what Claude Code and the supervisor see is what
+# they see in YYC AI's sandbox. Nothing here tells either where things are; the paths are aviary's:
+#
+#   /home/sandbox            the agent's home (uid 1000). Here: a bind of /home/claude and of what is mounted in it
+#                            (the volume's ~/workspace and ~/artifacts), so the agent keeps Jarvis's home: ~/workspace,
+#                            ~/artifacts, ~/.ssh's deploy keys, ~/.local/bin; /run/jarvis (session-secret, the ssh
+#                            agent) is the machine's own
+#   /home/sandbox/.harness   an empty directory the supervisor mounts magpie's FUSE on, a home per harness. Here: an
+#                            empty tmpfs over the machine's ~/.harness (its own ~/.claude lives there, aviary-home),
+#                            so the machine's login and transcript mirror stay out of the agent's sight
+#   /home/sandbox/.claude    a link to .harness/claude (and .qwen to .harness/qwen), as in aviary's image: made in
+#                            the machine's home by aviary-home, so the bind carries it
+#   /opt/claude-code         Claude Code at the version aviary's image pins (session-image/aviary.json
+#                            "claude-code", written by aviary-pin.yml from the release's Dockerfile), installed as
+#                            that image installs it. It is 290 MB and the session image has no room for it
+#                            (claude-env lessons/72), so it is installed on the session's volume at the first start
+#   /workspace               the conversation's folder. Here: a bind of the harness's working directory WORKDIR: the
+#                            one repo (~/workspace/<repo>), or ~/workspace with several (the merged CLAUDE.md, skills
+#                            and settings: workspace-layer.sh), or the empty ~/workspace; loaded as the project's (the
+#                            descriptor's claude.projectSettings)
 #   /etc/claude-code         a tmpfs: the supervisor's managed files stay out of the machine's own /etc/claude-code
-#   /opt/claude-code/bin/claude  the image's Claude Code (a symlink in the image)
 #   /proc                    the namespace's own: the supervisor's memory guard sees (and kills) only the agent's tree
 #
 # The network namespace is the machine's: the agent reaches $JARVIS_URL and the gateway on 127.0.0.1.
@@ -31,19 +35,39 @@ case "$(realpath -m "$wd")/" in /home/claude/workspace/*) ;; *) echo "aviary-san
 [ "$(id -u)" = 0 ] || { echo "aviary-sandbox: run as root" >&2; exit 1; }
 [ -s "$boot" ] || { echo "aviary-sandbox: no boot environment at $boot" >&2; exit 1; }
 
+[ "$(readlink /home/claude/.claude 2>/dev/null)" = .harness/claude ] || { echo "aviary-sandbox: /home/claude/.claude is not the link to .harness/claude (aviary-home)" >&2; exit 1; }
+
+# Claude Code at aviary's pinned version, installed as aviary's image installs it, root-owned, on the volume
+cc_version="$(python3 -I -c 'import json,sys;print(json.load(open(sys.argv[1]))["claude-code"])' "${AVIARY_PINS:-/usr/local/share/aviary.json}")"
+case "$cc_version" in ''|*[!0-9.]*) echo "aviary-sandbox: no Claude Code version in the aviary pins ($cc_version)" >&2; exit 1 ;; esac
+cc_root="${AVIARY_CC_ROOT:-/data/aviary}"; cc="$cc_root/claude-code-$cc_version"
+if [ "${AVIARY_SANDBOX_INNER:-}" != 1 ] && ! "$cc/bin/claude" --version 2>/dev/null | grep -qF "$cc_version"; then
+  mkdir -p "$cc_root"; rm -rf "$cc.tmp" "$cc"
+  for attempt in 1 2 3 4 5; do
+    if npm install --prefix "$cc.tmp" -g "@anthropic-ai/claude-code@$cc_version" --cache "$cc_root/.npm-cache" --no-audit --no-fund > "$cc_root/install.log" 2>&1 \
+       && "$cc.tmp/bin/claude" --version | grep -qF "$cc_version"; then break; fi
+    echo "aviary-sandbox: installing Claude Code $cc_version failed (attempt $attempt): $(tail -1 "$cc_root/install.log")" >&2
+    rm -rf "$cc.tmp"; sleep 5
+  done
+  rm -rf "$cc_root/.npm-cache"
+  [ -x "$cc.tmp/bin/claude" ] || { echo "aviary-sandbox: Claude Code $cc_version could not be installed" >&2; exit 1; }
+  chown -R root:root "$cc.tmp"; chmod -R go-w "$cc.tmp"; mv "$cc.tmp" "$cc"
+  echo "aviary-sandbox: Claude Code $cc_version installed in $cc"
+fi
+
 if [ "${AVIARY_SANDBOX_INNER:-}" != 1 ]; then
   # a PID namespace (keeper = PID 1, `/proc` remounted) and a private mount namespace
   exec env AVIARY_SANDBOX_INNER=1 unshare --pid --fork --mount --propagation private --mount-proc "$0" "$boot" "$wd"
 fi
 
-mkdir -p /home/sandbox /workspace /run/supervisor /var/lib/supervisor
+mkdir -p /home/sandbox /workspace /run/supervisor /var/lib/supervisor /opt/claude-code
 # --rbind: with what is mounted in the machine's home. ~/workspace and ~/artifacts are mounts from the session's
 # volume there; a plain bind left them out, and the agent wrote its repos and records to the root disk, which a
-# pause throws away (aviary-sandbox_test.sh). The tmpfs below hides the volume's ~/.claude/projects (the transcript
-# mirror) again.
+# pause throws away (aviary-sandbox_test.sh). The tmpfs hides the machine's ~/.harness (its own ~/.claude and, in
+# it, the volume's transcript mirror): the supervisor's mount goes on this empty directory.
 mount --rbind /home/claude /home/sandbox
-mount -t tmpfs -o mode=0700,uid=1000,gid=1000,size=64m tmpfs /home/sandbox/.claude
-install -d -m 0755 -o 1000 -g 1000 /home/sandbox/.harness
+mount -t tmpfs -o mode=0755,uid=1000,gid=1000,size=1m tmpfs /home/sandbox/.harness
+mount --bind -o ro "$cc" /opt/claude-code
 mount --bind "$wd" /workspace
 mount -t tmpfs -o mode=0755 tmpfs /etc/claude-code
 

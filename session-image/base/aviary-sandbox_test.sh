@@ -29,3 +29,42 @@ done
 echo kept > "$t/sandbox/artifacts/record.md"
 [ "$(cat "$t/claude/artifacts/record.md")" = kept ] || { echo "FAIL: a file written in the sandbox's ~/artifacts is not on the volume" >&2; exit 1; }
 echo "ok: the sandbox's ~/workspace and ~/artifacts are the volume's"
+
+# Dogfooding (Deyao, 2026-11-14): the sandbox's home has an aviary sandbox image's links, so Claude Code finds its home
+# in the supervisor's mount with nothing telling it where. A sandbox whose ~/.claude was a directory of its own had
+# Claude Code write its transcript beside the mount: no tool calls in the chat, a turn that never ended.
+# both ways aviary-home moves the machine's ~/.claude: the atomic exchange, and the copy a new machine's overlay root
+# needs (it refuses to rename a directory that comes from several image layers: the first replica run, 2026-11-14)
+for way in exchange copy; do
+  h="$(mktemp -d)"
+  mkdir -p "$h/claude/.claude/projects" "$h/claude/.claude/sessions" "$h/sandbox"
+  echo login > "$h/claude/.claude/.credentials.json"
+  echo shim > "$h/claude/.claude/sessions/aviary.json"
+  mount -t tmpfs tmpfs "$h/claude/.claude/projects"   # the volume's transcript mirror, mounted inside as the entrypoint does
+  echo mirror > "$h/claude/.claude/projects/t.jsonl"
+  if [ "$way" = copy ]; then export AVIARY_HOME_TEST_NO_EXCHANGE=1; else unset AVIARY_HOME_TEST_NO_EXCHANGE; fi
+  "$here/aviary-home" "$h/claude"
+  "$here/aviary-home" "$h/claude"   # again: nothing changes
+  unset AVIARY_HOME_TEST_NO_EXCHANGE
+  [ "$(readlink "$h/claude/.claude")" = .harness/claude ] || { echo "FAIL ($way): the home's ~/.claude is not a link to .harness/claude" >&2; exit 1; }
+  [ "$(readlink "$h/claude/.qwen")" = .harness/qwen ] || { echo "FAIL ($way): the home's ~/.qwen is not a link to .harness/qwen" >&2; exit 1; }
+  # the machine's side still reaches its own files through the old paths, the volume's mount among them
+  [ "$(cat "$h/claude/.claude/.credentials.json")" = login ] && [ "$(cat "$h/claude/.claude/sessions/aviary.json")" = shim ] \
+    && [ "$(cat "$h/claude/.claude/projects/t.jsonl")" = mirror ] \
+    || { echo "FAIL ($way): the machine's ~/.claude files are not reachable through the link" >&2; exit 1; }
+  [ "$(findmnt -rn -o TARGET | grep -c "^$h/claude/")" = 1 ] && findmnt -rn -o TARGET | grep -qx "$h/claude/.harness/claude/projects" \
+    || { echo "FAIL ($way): the volume's mount is not (only) at ~/.harness/claude/projects: $(findmnt -rn -o TARGET | grep "^$h/claude/")" >&2; exit 1; }
+done
+# the sandbox: the script's own home and .harness lines, then the supervisor's mount stands in as a tmpfs with claude/
+for pat in '^mount .* /home/claude /home/sandbox$' '^mount .* /home/sandbox/\.harness$'; do
+  line="$(grep -E "$pat" "$here/aviary-sandbox")"
+  [ "$(printf '%s\n' "$line" | wc -l)" = 1 ] && [ -n "$line" ] || { echo "FAIL: no single line $pat in aviary-sandbox" >&2; exit 1; }
+  eval "$(printf '%s' "$line" | sed "s#/home/claude#$h/claude#; s#/home/sandbox#$h/sandbox#g")"
+done
+[ -z "$(ls -A "$h/sandbox/.harness")" ] || { echo "FAIL: the machine's ~/.harness (its login, the mirror) shows in the sandbox: $(ls -A "$h/sandbox/.harness")" >&2; exit 1; }
+mount -t tmpfs tmpfs "$h/sandbox/.harness"; mkdir "$h/sandbox/.harness/claude"   # the supervisor's mount
+echo line > "$h/sandbox/.claude/transcript"   # what Claude Code does, knowing only its home's name
+[ "$(cat "$h/sandbox/.harness/claude/transcript")" = line ] || { echo "FAIL: a file written to the sandbox's ~/.claude is not in the supervisor's mount" >&2; exit 1; }
+[ ! -e "$h/claude/.harness/claude/transcript" ] || { echo "FAIL: the sandbox's ~/.claude writes into the machine's own" >&2; exit 1; }
+grep -q 'CLAUDE_CONFIG_DIR' "$here/aviary-sandbox" "$here/harness-aviary.sh" && { echo "FAIL: the harness tells Claude Code where its home is (an aviary sandbox never does)" >&2; exit 1; }
+echo "ok: the sandbox's ~/.claude is aviary's link into the supervisor's mount"

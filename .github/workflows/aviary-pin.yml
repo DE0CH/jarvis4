@@ -2,7 +2,8 @@ name: aviary-pin
 # Dogfooding (Deyao, 2026-11-11): Jarvis 4's aviary sessions follow DE0CH/aviary's main as soon as its CI publishes a
 # release (aviary-<sha12>, only made when every check passed). This pins the newest release, never an older one than
 # the current pin:
-#   session-image/aviary.json      {release, supervisor, supervisor-keeper}: the sha256 of each binary (its SHA256SUMS)
+#   session-image/aviary.json      {release, supervisor, supervisor-keeper}: the sha256 of each binary (its SHA256SUMS);
+#                                  claude-code: the version the release's sandbox image installs
 #   aviary/Cargo.toml + Cargo.lock the contract crates' rev (the release's commit)
 # and pushes to main with the pin deploy key (environment `release`), which starts images.yml (the session image) and
 # aviary.yml (hermit-jarvis). DE0CH/deyao-ai' chat-pin.yml pins pigeon and magpie of the same releases.
@@ -39,7 +40,11 @@ jobs:
           gh release download "$tag" -R DE0CH/aviary -p SHA256SUMS -O /tmp/SUMS
           sup="$(awk '$2=="supervisor"{print $1}' /tmp/SUMS)"; kee="$(awk '$2=="supervisor-keeper"{print $1}' /tmp/SUMS)"
           [[ "$sup" =~ ^[0-9a-f]{64}$ && "$kee" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::no sums for the supervisor in $tag"; exit 1; }
-          printf '{\n  "release": "%s",\n  "supervisor": "%s",\n  "supervisor-keeper": "%s"\n}\n' "$tag" "$sup" "$kee" > session-image/aviary.json
+          # the Claude Code version of the release's own sandbox image: a session's sandbox runs the same one
+          cc="$(gh api "repos/DE0CH/aviary/contents/images/sandbox/Dockerfile?ref=$tag" -H "Accept: application/vnd.github.raw" \
+            | sed -n 's/^ARG CLAUDE_CODE_VERSION=\([0-9.]*\)$/\1/p')"
+          [[ "$cc" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::no CLAUDE_CODE_VERSION in $tag's images/sandbox/Dockerfile"; exit 1; }
+          printf '{\n  "release": "%s",\n  "supervisor": "%s",\n  "supervisor-keeper": "%s",\n  "claude-code": "%s"\n}\n' "$tag" "$sup" "$kee" "$cc" > session-image/aviary.json
           sed -i -E "s#(git = \"https://github.com/DE0CH/aviary\", rev = \")[0-9a-f]{40}#\1$sha#" aviary/Cargo.toml
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - if: steps.rel.outputs.tag != ''

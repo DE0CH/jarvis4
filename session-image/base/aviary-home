@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""aviary-home HOME (harness-aviary.sh, as the home's owner): gives a session's home the links an aviary sandbox
+image has (DE0CH/aviary images/sandbox/Dockerfile): ~/.claude -> .harness/claude and ~/.qwen -> .harness/qwen.
+
+Dogfooding (Deyao, 2026-11-14): a session's sandbox is the machine's home bound to /home/sandbox, and Claude Code
+must find its home there exactly as in an aviary sandbox, through the link into the supervisor's mount
+(/home/sandbox/.harness), with nothing of Jarvis 4's own telling it where to write. The machine's ~/.claude is a
+real directory (its login, the status shim, the volume's ~/.claude/projects mounted inside), so it moves to
+~/.harness/claude and the link takes its name: every path through ~/.claude keeps working on the machine's side,
+and in the sandbox the supervisor's mount covers ~/.harness, so the same link leads to the conversation's files in
+magpie. Run again, it changes nothing.
+
+The move is one atomic exchange where the filesystem allows it. A new machine's root is an overlay whose ~/.claude
+comes from several image layers, and renaming such a directory is refused (EXDEV; seen on the first replica run,
+2026-11-14): there its files are copied, what is mounted inside (the volume's ~/.claude/projects) is bound at the new
+place and unmounted at the old, and the link replaces the emptied directory. This runs first thing in the harness,
+before anything of the session writes there; a directory that reappears meanwhile is taken in on the next try."""
+import ctypes, errno, os, shutil, subprocess, sys
+
+RENAME_EXCHANGE = 2
+AT_FDCWD = -100
+
+
+def exchange(a, b):
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.renameat2(AT_FDCWD, a.encode(), AT_FDCWD, b.encode(), RENAME_EXCHANGE) != 0:
+        e = ctypes.get_errno()
+        raise OSError(e, os.strerror(e), a)
+
+
+def run(*cmd):
+    subprocess.run(cmd, check=True)
+
+
+def mounts_under(d):
+    """The mount points inside d, outermost first."""
+    out = subprocess.run(["findmnt", "-rn", "-o", "TARGET"], check=True, capture_output=True, text=True).stdout
+    return sorted(t for t in out.splitlines() if t.startswith(d + "/"))
+
+
+def carry(claude, inner):
+    """Without a rename: copy, bind what is mounted inside at the new place, empty the old, link."""
+    for _ in range(5):
+        os.makedirs(inner, exist_ok=True)
+        run("cp", "-ax", claude + "/.", inner + "/")  # -x: a mount point inside is made, its files are not copied
+        for m in mounts_under(claude):
+            to = os.path.join(inner, os.path.relpath(m, claude))
+            if to not in mounts_under(inner):
+                run("sudo", "-n", "mount", "--bind", m, to)
+        for m in reversed(mounts_under(claude)):
+            run("sudo", "-n", "umount", m)
+        shutil.rmtree(claude)
+        try:
+            os.symlink(".harness/claude", claude)
+            return
+        except FileExistsError:
+            continue  # something made ~/.claude again in between: take that in too
+    sys.exit(f"aviary-home: {claude} kept reappearing")
+
+
+def main():
+    home = sys.argv[1]
+    harness = os.path.join(home, ".harness")
+    os.makedirs(harness, exist_ok=True)
+    claude, inner = os.path.join(home, ".claude"), os.path.join(harness, "claude")
+    if os.path.islink(claude):
+        if os.readlink(claude) != ".harness/claude":
+            sys.exit(f"aviary-home: {claude} is a link to {os.readlink(claude)}, not to .harness/claude")
+    elif os.path.isdir(claude):
+        if os.path.lexists(inner):
+            sys.exit(f"aviary-home: both {claude} and {inner} exist")
+        os.symlink(".harness/claude", inner)  # the link, made under its future target's name
+        try:
+            if os.environ.get("AVIARY_HOME_TEST_NO_EXCHANGE"):  # the test's stand-in for the overlay's refusal
+                raise OSError(errno.EXDEV, "test")
+            exchange(inner, claude)  # atomically: the link is ~/.claude, the directory is ~/.harness/claude
+        except OSError as e:
+            os.remove(inner)
+            if e.errno != errno.EXDEV:
+                raise
+            carry(claude, inner)
+    else:
+        os.makedirs(inner, exist_ok=True)
+        os.symlink(".harness/claude", claude)
+    qwen = os.path.join(home, ".qwen")
+    if not os.path.lexists(qwen):
+        os.symlink(".harness/qwen", qwen)
+
+
+if __name__ == "__main__":
+    main()

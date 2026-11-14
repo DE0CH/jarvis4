@@ -227,12 +227,14 @@ RUN chmod +x /usr/local/bin/harness-openclaw.sh /usr/local/bin/openclaw-transcri
 # own claude in its own PID + mount namespace (aviary-sandbox, as root), with aviary-gateway as its proxy; the chat web
 # app at chat.deyaochen.com is its front end. The supervisor, its keeper and aviary-gateway are added by
 # session-image/Dockerfile (pinned release assets and this repo's own build). /home/sandbox and /workspace are the
-# mount points aviary-sandbox binds; /opt/claude-code/bin/claude is where the supervisor runs Claude Code from.
+# mount points aviary-sandbox binds; /opt/claude-code is where the supervisor runs Claude Code from: the version
+# aviary's own sandbox image pins, which aviary-sandbox installs on the session's volume (the image has no room for
+# a second Claude Code) and binds there. aviary-home gives the home an aviary image's links (~/.claude, ~/.qwen).
 COPY harness-aviary.sh /usr/local/bin/harness-aviary.sh
 COPY aviary-sandbox /usr/local/bin/aviary-sandbox
-RUN chmod 755 /usr/local/bin/harness-aviary.sh /usr/local/bin/aviary-sandbox \
- && mkdir -p /home/sandbox /workspace /opt/claude-code/bin \
- && ln -s /home/claude/.local/bin/claude /opt/claude-code/bin/claude
+COPY aviary-home /usr/local/bin/aviary-home
+RUN chmod 755 /usr/local/bin/harness-aviary.sh /usr/local/bin/aviary-sandbox /usr/local/bin/aviary-home \
+ && mkdir -p /home/sandbox /workspace /opt/claude-code
 # DeepSeek Harness (harness dsh): Deyao's fork DE0CH/deepseek-harness serves its agent loop and web UI on the session;
 # OpenRouter routed to DeepSeek's own endpoint. The fork and its Node (24) are NOT in the image: session-image/Dockerfile
 # adds /usr/local/bin/dsh-runtime, which fetches the bundle pinned by sha256 in session-image/dsh-runtime.json on first
