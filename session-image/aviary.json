@@ -1,6 +1,6 @@
 {
-  "release": "aviary-f17612d8254b",
-  "supervisor": "a48d53eec3b2881790dbfa4abbff73af6bc3a01477e545ce6c7459a3a16e9d77",
+  "release": "aviary-c49b00d050ab",
+  "supervisor": "66fe4681d700352428f40248f3d058acab1a66c4643b0702d6ffd48fe4b92c89",
   "supervisor-keeper": "846e55a3cdbc989eec83422fcac07489f048737030d7a7077b26fbcc576b7129",
   "claude-code": "2.1.304"
 }
