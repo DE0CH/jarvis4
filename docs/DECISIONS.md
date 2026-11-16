@@ -3029,7 +3029,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      with background tasks"). The shim knew busy or idle, and the supervisor is busy while background tasks outlive
      a turn. aviary-gateway names the status in the registry's words (`jarvis_status`: held = idle with background
      jobs, asking = waiting), so the card and the idle watchdog see it.
-262. **DE0CH/services is DE0CH/deyao-ai** (Deyao, 2026-11-13). His deployment repo, the counterpart of DE0CH/YYC:
+262. **DE0CH/services is DE0CH/deyao-ai** (Deyao, 2026-11-13). His deployment repo, the counterpart of DE0CH/yyc-code:
      pins, branding, settings and his Cloudflare. Jarvis 4 keeps the platform and the cluster; hermit-jarvis and
      aviary-gateway (code) stay here. The tenant's namespace stays `services`. Still here and to move: the chat's
      model menu and product name (`aviary/src/app.rs`, `hermit.rs`), which are settings of his deployment.
