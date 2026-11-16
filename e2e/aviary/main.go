@@ -598,12 +598,9 @@ func main() {
 	// the agent's turns went where the session's model lives: an OpenRouter model's to OpenRouter, a Claude model's
 	// to Anthropic; never the other
 	wantOpenRouter := strings.Contains(strings.TrimPrefix(sessionModel(), "aviary/"), "/")
-	// the model's own context window reaches Claude Code (the models route's per-model contextTokens → the
-	// supervisor): GLM 5.3's 1M; a Claude model names none, so Claude Code keeps its own
-	wantContext := "none"
-	if wantOpenRouter {
-		wantContext = "1000000"
-	}
+	// the context window reaches Claude Code (the models route's contextTokens → the supervisor): 1M, the default
+	// for every model that names no window of its own (Deyao, 2026-11-16), and GLM 5.3's own
+	wantContext := "1000000"
 	if models.root != "aviary" {
 		log.Fatalf("FAIL: the tool call did not run in aviary's sandbox image with Jarvis's session commands (%q): the session's sandbox is not the image YYC AI runs", models.root)
 	}
