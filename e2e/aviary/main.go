@@ -175,7 +175,8 @@ func wrapKey(combined []byte, store, key, value string) secrets.KeyEntry {
 type modelLog struct {
 	sync.Mutex
 	calls []string // one line per call: what it answered
-	// CLAUDE_CODE_MAX_CONTEXT_TOKENS in the sandbox ("none": unset), from the tool call's output
+	// CLAUDE_CODE_MAX_CONTEXT_TOKENS in the sandbox ("none": unset), from the tool call's output: what the supervisor
+	// asked Claude Code for, which is not the window Claude Code runs at (magpieContextWindow)
 	context string
 	// where the tool call ran, from its output: "aviary" = in the root of aviary's sandbox image (the image's own
 	// setup files are there, the session image's harness script is not) with Jarvis's session commands on the PATH
@@ -259,13 +260,15 @@ func sse(w io.Writer, typ string, data any) {
 	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", typ, b)
 }
 
-// sessionModel: the model the run's session starts on (E2E_MODEL): a Claude model by default; an OpenRouter one
-// (aviary/z-ai/glm-5.3) sends the agent's turns to the stand-in OpenRouter, the title call still to the Claude one.
+// sessionModel: the model the run's session starts on (E2E_MODEL): by default the newest Claude model of the menu,
+// the one a pinned Claude Code is the likeliest not to recognise (2.1.304 ran Fable 5.2 at 200k, 2026-11-16); an
+// OpenRouter one (aviary/z-ai/glm-5.3) sends the agent's turns to the stand-in OpenRouter, the title call still to
+// the Claude one.
 func sessionModel() string {
 	if m := os.Getenv("E2E_MODEL"); m != "" {
 		return m
 	}
-	return "aviary/claude-opus-5-5"
+	return "aviary/claude-fable-5-2"
 }
 
 // openRouterKey: the OPENROUTER_API of the run's store, which only the stand-in OpenRouter takes.
@@ -331,7 +334,12 @@ func serveModel(w http.ResponseWriter, req *http.Request) {
 	models.Unlock()
 	log.Printf("model: %s (openrouter %v, auth %q)", kind, openRouter, req.Header.Get("Authorization"))
 	id := "msg_e2e_" + hex.EncodeToString(randBytes(6))
+	// the agent's turns read the most input: the supervisor takes the conversation's context window from the model
+	// that did (a `result`'s modelUsage), never from a side call's model
 	usage := map[string]int{"input_tokens": 10, "output_tokens": 5}
+	if kind == "tool" || kind == "answer" || kind == "wakeup" {
+		usage["input_tokens"] = 1000
+	}
 	if s, _ := in["stream"].(bool); !s {
 		json.NewEncoder(w).Encode(map[string]any{"id": id, "type": "message", "role": "assistant", "model": in["model"],
 			"content": content, "stop_reason": stop, "stop_sequence": nil, "usage": usage})
@@ -377,6 +385,38 @@ func serveFront() {
 }
 
 // ---- magpie, through its admin API
+
+// magpieContextWindow: the context window Claude Code states for the conversation's model (a `result`'s
+// modelUsage[model].contextWindow, which the supervisor reports at each turn end and magpie keeps on the
+// conversation): where Claude Code compacts. 0 until a turn has ended.
+func magpieContextWindow() int64 {
+	hdr := []string{"Authorization", "Bearer " + os.Getenv("E2E_MAGPIE_ADMIN"), "Aviary-Admin", "e2e@example.com"}
+	code, b := call("GET", os.Getenv("E2E_MAGPIE")+"/v1/admin/conversations", nil, hdr...)
+	if code != 200 {
+		return 0
+	}
+	var list any
+	json.Unmarshal(b, &list)
+	var window int64
+	var walk func(any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case map[string]any:
+			if w, ok := x["contextWindow"].(float64); ok {
+				window = int64(w)
+			}
+			for _, y := range x {
+				walk(y)
+			}
+		case []any:
+			for _, y := range x {
+				walk(y)
+			}
+		}
+	}
+	walk(list)
+	return window
+}
 
 func magpieText() string {
 	hdr := []string{"Authorization", "Bearer " + os.Getenv("E2E_MAGPIE_ADMIN"), "Aviary-Admin", "e2e@example.com"}
@@ -598,8 +638,9 @@ func main() {
 	// the agent's turns went where the session's model lives: an OpenRouter model's to OpenRouter, a Claude model's
 	// to Anthropic; never the other
 	wantOpenRouter := strings.Contains(strings.TrimPrefix(sessionModel(), "aviary/"), "/")
-	// the context window reaches Claude Code (the models route's contextTokens → the supervisor): 1M, the default
-	// for every model that names no window of its own (Deyao, 2026-11-16), and GLM 5.3's own
+	// the context window: 1M, the default for every model that names no window of its own (Deyao, 2026-11-16), and
+	// GLM 5.3's own. Two checks: the supervisor asks Claude Code for it (the models route's contextTokens →
+	// CLAUDE_CODE_MAX_CONTEXT_TOKENS), and Claude Code runs the conversation at it (below, after the lock)
 	wantContext := "1000000"
 	if models.root != "aviary" {
 		log.Fatalf("FAIL: the tool call did not run in aviary's sandbox image with Jarvis's session commands (%q): the session's sandbox is not the image YYC AI runs", models.root)
@@ -617,6 +658,18 @@ func main() {
 		}
 	}
 	models.Unlock()
+	// The window Claude Code runs the conversation at, as Claude Code states it. The variable alone proved nothing:
+	// Claude Code 2.1.304 had it at 1000000 and still compacted Fable 5.2's conversations at 200k (a `claude-` id
+	// it did not recognise; 2026-11-16).
+	var window int64
+	waitFor("the conversation's context window in magpie", 2*time.Minute, func() bool {
+		window = magpieContextWindow()
+		return window > 0
+	})
+	if fmt.Sprint(window) != wantContext {
+		log.Fatalf("FAIL: Claude Code runs %s at a context window of %d, want %s: it compacts the conversation there", sessionModel(), window, wantContext)
+	}
+	log.Printf("Claude Code runs %s at a context window of %d", sessionModel(), window)
 
 	step("destroy: archived, its source burned")
 	must("POST", router+"/api/sessions/"+created.ID+"/destroy?force=1", map[string]any{}, nil)
