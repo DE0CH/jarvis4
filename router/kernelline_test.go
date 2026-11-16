@@ -839,3 +839,92 @@ func TestABootingKernelMachineCarriesTheSnapshotItsSourceNames(t *testing.T) {
 		t.Fatalf("the third machine's snapshot: %d", code)
 	}
 }
+
+// a restoring line whose first machine never gets past boot is paused like any other machine that never booted, and
+// the next start restores the archived snapshot again: the pause kept the machine ("kept, not killed: no snapshot",
+// because the archived snapshot is none of the line's machines'), the minute's tidy dropped the archive's copy, and a
+// later machine was pointed at the first one, which has no snapshot
+func TestARestoringLineWhoseFirstMachineNeverBootsRestoresTheArchiveAgain(t *testing.T) {
+	rg, k := kernelRig(t)
+	old := &kernelLineT{t: t, rg: rg, k: k, sid: kernelStart(t, rg, k, "to restore")}
+	h := rg.r.MachineHandler()
+	m0 := old.next("the machine")
+	old.booted(m0)
+	tarball := makeTar(t, rg.files)
+	sum := sha256.Sum256(tarball)
+	want := hex.EncodeToString(sum[:])
+	snapSig, _ := m0.Sig.Sign([]byte(want))
+	putSnap(t, rg.r, m0.ID, tarball, snapSig)
+	if err := rg.r.Destroy(old.sid); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the record", func() bool { rec := rg.r.record(old.sid); return rec != nil && rec.Archive != nil })
+	nsid, err := rg.r.RestoreRecord(old.sid, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ra *Approval
+	waitFor(t, "the restore's approval", func() bool {
+		rg.r.st.Do(func(d *persisted) {
+			for _, x := range d.Approvals {
+				if x.Session == nsid {
+					ra = x
+				}
+			}
+		})
+		return ra != nil
+	})
+	rsig, _ := k.Phone.Sign([]byte(ra.Challenge.Payload))
+	waitFor(t, "the answer taken", func() bool {
+		_, _, err = rg.r.Respond(ra.ID, rsig)
+		return err == nil || !strings.Contains(err.Error(), "in the middle of another action")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := &kernelLineT{t: t, rg: rg, k: k, sid: nsid}
+	restores := func(m *kerneltest.FakeMachine, who string) {
+		t.Helper()
+		if code, body := kdo(t, h, m, "GET", "/m/snapshot", ""); code != 200 || string(body) != string(tarball) {
+			t.Fatalf("%s: the archived snapshot: %d %.200s", who, code, body)
+		}
+	}
+	m1 := l.next("the restoring machine")
+	restores(m1, "the first machine")
+	// it never gets past boot (say its restore ran out of disk): the pause kills it into a source that names the
+	// archived snapshot still, and the archive's copy stays for the next start
+	l.pause()
+	if m1.State != "destroyed" {
+		t.Fatal("the machine that never booted is still there")
+	}
+	ks := kernelSession(rg, nsid)
+	sc, _ := doc.PeekCert(*ks.Kernel.SourceCert)
+	if sc.Pred != doc.Object("fly-"+m1.ID) || sc.Source.Snapshot != want || ks.NoSnapshot != "" {
+		t.Fatalf("the source after the machine that never booted: %+v %q", sc, ks.NoSnapshot)
+	}
+	rg.r.tidyRestores()
+	l.resume()
+	m2 := l.next("the second machine")
+	restores(m2, "the second machine")
+	// and again; then one that boots: the archive's copy goes and the record notes the restore
+	l.pause()
+	rg.r.tidyRestores()
+	l.resume()
+	m3 := l.next("the third machine")
+	restores(m3, "the third machine")
+	if code, body := kdo(t, h, m3, "POST", "/m/pull-secrets", "{}"); code != 200 {
+		t.Fatal(code, string(body))
+	}
+	rg.r.tidyRestores()
+	if rg.r.snap(restoreSnap(nsid)) == nil {
+		t.Fatal("the archive's copy went before the line's first boot")
+	}
+	l.booted(m3)
+	rg.r.tidyRestores()
+	if rg.r.snap(restoreSnap(nsid)) != nil {
+		t.Fatal("the archive's copy stayed after the line booted")
+	}
+	if rec := rg.r.record(old.sid); len(rec.Restored) != 1 || rec.Restored[0].Session != nsid {
+		t.Fatalf("restored %+v", rec.Restored)
+	}
+}

@@ -220,7 +220,25 @@ func (r *Router) checkRestoreFiles(dir string) (*Doc, error) {
 	return &cert, nil
 }
 
-// restoreFilesFor: the restore snapshot a machine may fetch — only the first machine of a restoring session
+// restoreSum: the sha256 of the archived snapshot a restoring session still holds ("" = none, or not restoring)
+func (r *Router) restoreSum(sid string) string {
+	restoring := false
+	r.st.Do(func(d *persisted) {
+		if s := d.Sessions[sid]; s != nil {
+			restoring = s.RestoreCert != nil
+		}
+	})
+	if !restoring {
+		return ""
+	}
+	if s := r.snap(restoreSnap(sid)); s != nil && s.State == "committed" {
+		return s.Sha256
+	}
+	return ""
+}
+
+// restoreFilesFor: the restore snapshot a machine may fetch — only the first machine of a restoring session (a kernel
+// line: its running machine while no machine of the line has left a snapshot, kernelline.go kernelPred)
 func (r *Router) restoreFilesFor(machine string) *Snap {
 	var sid string
 	r.st.Do(func(d *persisted) {
@@ -251,20 +269,23 @@ func (r *Router) putRestoreSnapshot(sid, dir string) error {
 }
 
 // tidyRestores: once a restoring session is past its first boot (or gone), its restore files go; a session
-// that came up is noted on the record it was restored from
+// that came up is noted on the record it was restored from. A kernel line keeps them until a machine of it has
+// booted, whatever its state: one that never got past boot is killed with no snapshot, and the next start restores
+// the archive again (kernelline.go neverBootedStateKept).
 func (r *Router) tidyRestores() {
 	for _, m := range r.snapsLike("restore-") {
 		sid := strings.TrimPrefix(m, "restore-")
 		var state, from string
+		var kernel, booted bool
 		r.st.Do(func(d *persisted) {
 			if s := d.Sessions[sid]; s != nil {
-				state, from = s.State, s.RestoreFrom
+				state, from, kernel, booted = s.State, s.RestoreFrom, s.Kernel != nil, s.Booted != ""
 			}
 		})
-		switch state {
-		case "approval", "starting", "initialising":
+		switch {
+		case state == "approval" || state == "starting" || state == "initialising" || (kernel && !booted):
 			continue
-		case "started":
+		case state == "started" || (kernel && booted):
 			r.markRestored(from, sid)
 		}
 		r.snapDrop(m)

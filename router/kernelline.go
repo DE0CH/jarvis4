@@ -315,7 +315,9 @@ const kernelSpawnTries = 3
 // hash, machine/kernelboot.go kernelRestore). That is the machine the source came from when it left that snapshot. It
 // is an earlier one when the source came from a machine that never got past boot, whose kill passed on the hash its
 // own source named (neverBootedStateKept), or from the sink: a phone-signed source on a new image (a resume-upgrade)
-// names the hash of the line's last snapshot. A restoring line's first machine keeps its archived one (restore.go).
+// names the hash of the line's last snapshot. A restoring line's machine has none ("") while the hash is the archived
+// snapshot's: its first machine, and every one after it until a machine of the line leaves a snapshot (the earlier
+// ones never got past boot); snapshotFor then serves the archive's copy (restore.go).
 func (r *Router) kernelPred(s *Session, sc doc.Cert) string {
 	pred, sum := "", ""
 	if sc.Pred.Kind() == "machine" {
@@ -334,6 +336,9 @@ func (r *Router) kernelPred(s *Session, sc doc.Cert) string {
 	}
 	if m := r.snapMachineWith(s.ID, sum); m != "" {
 		return m
+	}
+	if r.restoreSum(s.ID) == sum {
+		return ""
 	}
 	return pred
 }
@@ -632,7 +637,8 @@ func (r *Router) isKernelMachine(machine string) bool {
 
 // neverBootedStateKept: the machine never got past boot (it has no state of its own), and the snapshot its source
 // named, if any, is still the line's newest: killing it without one loses nothing, because the next start names that
-// snapshot again (kernelResume). E.g. a resume-upgrade's machine that couldn't restore (2026-11-05).
+// snapshot again (kernelResume). E.g. a resume-upgrade's machine that couldn't restore (2026-11-05). A restoring line
+// that has no snapshot of its own yet: the archived one it still holds (restore.go), which the next start restores.
 func (r *Router) neverBootedStateKept(id, machine string) bool {
 	var booted bool
 	var src *sig.Doc
@@ -651,7 +657,13 @@ func (r *Router) neverBootedStateKept(id, machine string) bool {
 	if err != nil || c.Source == nil {
 		return false
 	}
-	return c.Source.Snapshot == "" || r.newestSnapSum(id) == c.Source.Snapshot
+	if c.Source.Snapshot == "" {
+		return true
+	}
+	if newest := r.newestSnapSum(id); newest != "" {
+		return newest == c.Source.Snapshot
+	}
+	return r.restoreSum(id) == c.Source.Snapshot
 }
 
 // kernelKillDone: snapsafe.go's kill for a kernel machine (after its final snapshot, or past a failed one with force)

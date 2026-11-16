@@ -2959,7 +2959,10 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      machine that never booted and names the hash that machine's own source named, so the next start's predecessor
      is found by that hash too (`kernelPred`), not taken from the source's machine, which has no snapshot of its own
      (2026-11-16: a machine whose restore ran out of disk was paused, and the resume's machine came up "REFUSING TO
-     START: snapshot: GET /m/snapshot: HTTP 404 no snapshot"). Router only; no kernel change.
+     START: snapshot: GET /m/snapshot: HTTP 404 no snapshot"). A restoring line's snapshot is the archived one, which
+     is no machine's of the line: while no machine of the line has booted, the router keeps its copy (`tidyRestores`),
+     a machine that never got past boot is killed without a snapshot as above, and the next start is served the
+     archive's copy again (`kernelPred` gives it no predecessor). Router only; no kernel change.
 253. **On an AWS instance the keeper is the container's pid 1, and it gets the harness's env like on Fly** (Deyao,
      2026-11-07: "the previous session on aws failed with no secret set, fix it"). The AWS session unit runs the image
      with `docker run` and no init, so `jarvis-machine boot` (the keeper) is pid 1 of the container; the supervisor's
