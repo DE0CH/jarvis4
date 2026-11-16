@@ -43,12 +43,13 @@ func (r *Router) objDirect() objDirect {
 }
 
 // snapshotFor: the snapshot a machine's boot takes (GET /m/snapshot): its predecessor's committed one (signed: its
-// signature goes with it), or, for a restoring line's first machine, the archived one (checked by the cert's hash) →
+// signature goes with it; a kernel machine's predecessor is the machine that left the snapshot its source names,
+// kernelline.go kernelPred), or, for a restoring line's first machine, the archived one (checked by the cert's hash) →
 // nil and why when there is none
 func (r *Router) snapshotFor(machine string) (*Snap, bool, string) {
 	var pred string
 	r.st.Do(func(d *persisted) {
-		if st := d.Started[machine]; st != nil && st.KernelPred != "" { // kernelline.go: the source's machine
+		if st := d.Started[machine]; st != nil && st.KernelPred != "" { // kernelline.go kernelPred
 			pred = st.KernelPred
 			return
 		}

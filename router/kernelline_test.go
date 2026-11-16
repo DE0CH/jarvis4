@@ -626,3 +626,127 @@ func TestAnUpgradeResumeRestoresTheLastSnapshot(t *testing.T) {
 		t.Fatalf("the third machine's snapshot: %d %s", code, body)
 	}
 }
+
+// a resume after a machine that never got past boot restores the line's last snapshot: that machine's kill passes on
+// the hash its source named, so the source comes from a machine with no snapshot of its own, and the next machine's
+// GET /m/snapshot was refused "no snapshot" (2026-11-16: a machine whose restore ran out of disk, paused, resumed).
+// The machine takes the snapshot by the hash its source names (machine/kernelboot.go kernelRestore).
+func TestAResumeAfterAMachineThatNeverBootedRestoresTheLastSnapshot(t *testing.T) {
+	rg, k := kernelRig(t)
+	sid, err := rg.r.CreateSession(NewSession{Label: "never booted", Harness: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a *Approval
+	waitFor(t, "the approval", func() bool {
+		rg.r.st.Do(func(d *persisted) {
+			for _, x := range d.Approvals {
+				if x.Session == sid && x.Kind == kernelApprovalKind {
+					a = x
+				}
+			}
+		})
+		return a != nil
+	})
+	s, _ := k.Phone.Sign([]byte(a.Challenge.Payload))
+	waitFor(t, "the answer taken", func() bool {
+		_, _, err = rg.r.Respond(a.ID, s)
+		return err == nil || !strings.Contains(err.Error(), "in the middle of another action")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := rg.r.MachineHandler()
+	last := ""
+	next := func(what string) *kerneltest.FakeMachine {
+		t.Helper()
+		waitFor(t, what, func() bool {
+			s := kernelSession(rg, sid)
+			return s.MachineID != "" && s.MachineID != last && s.Kernel.MachineCert != nil
+		})
+		last = kernelSession(rg, sid).MachineID
+		return k.Fly.Machine(last)
+	}
+	pause := func() {
+		t.Helper()
+		if err := rg.r.Pause(sid); err != nil {
+			t.Fatal(err)
+		}
+		if err := rg.r.waitActionEnd(sid, "paused"); err != nil {
+			t.Fatal(err, kernelSession(rg, sid).Error)
+		}
+	}
+	// the first machine boots and leaves its signed snapshot at the pause
+	m1 := next("the machine")
+	rg.r.st.Do(func(d *persisted) { d.Sessions[sid].Booted = m1.ID })
+	tarball := makeTar(t, rg.files)
+	sum := sha256.Sum256(tarball)
+	want := hex.EncodeToString(sum[:])
+	snapSig, _ := m1.Sig.Sign([]byte(want))
+	putSnap(t, rg.r, m1.ID, tarball, snapSig)
+	pause()
+	// what the machine's boot does: the hash its source names (GET /m/kernel/boot), then the snapshot, checked by it
+	restores := func(m *kerneltest.FakeMachine, who string) {
+		t.Helper()
+		code, body := kdo(t, h, m, "GET", "/m/kernel/boot", "")
+		var boot struct {
+			SourceCert sig.Doc `json:"sourceCert"`
+		}
+		if code != 200 || json.Unmarshal(body, &boot) != nil {
+			t.Fatalf("%s: its boot documents: %d %s", who, code, body)
+		}
+		sc, err := doc.PeekCert(boot.SourceCert)
+		if err != nil || sc.Source == nil || sc.Source.Snapshot != want {
+			t.Fatalf("%s: its source names %+v, not the line's snapshot %s (%v)", who, sc.Source, want, err)
+		}
+		code, body = kdo(t, h, m, "GET", "/m/snapshot", "")
+		if code != 200 {
+			t.Fatalf("%s: GET /m/snapshot: %d %s", who, code, body)
+		}
+		if got := sha256.Sum256(body); hex.EncodeToString(got[:]) != sc.Source.Snapshot {
+			t.Fatalf("%s: the snapshot it got isn't the one its source names", who)
+		}
+	}
+	// a machine that did boot is its successor's predecessor, as before
+	if err := rg.r.Resume(sid, false); err != nil {
+		t.Fatal(err)
+	}
+	m2 := next("the second machine")
+	restores(m2, "the second machine")
+	if p := startedPred(rg, m2.ID); p != m1.ID {
+		t.Fatalf("the second machine's predecessor: %q", p)
+	}
+	// m2 never gets past boot: paused with nothing to snapshot, its kill passes m1's hash on; the resume needs no
+	// approval, and the third machine restores m1's snapshot though its source came from m2
+	pause()
+	ks := kernelSession(rg, sid)
+	sc, _ := doc.PeekCert(*ks.Kernel.SourceCert)
+	if sc.Pred != doc.Object("fly-"+m2.ID) || sc.Source.Snapshot != want || rg.r.haveSnap(m2.ID) {
+		t.Fatalf("the source after a machine that never booted: %+v", sc)
+	}
+	if err := rg.r.Resume(sid, false); err != nil {
+		t.Fatal(err)
+	}
+	m3 := next("the third machine")
+	restores(m3, "the third machine")
+	if p := startedPred(rg, m3.ID); p != m1.ID {
+		t.Fatalf("the third machine's predecessor: %q", p)
+	}
+	// and again: two machines in a row that never booted
+	pause()
+	if err := rg.r.Resume(sid, false); err != nil {
+		t.Fatal(err)
+	}
+	restores(next("the fourth machine"), "the fourth machine")
+}
+
+// startedPred: the machine whose snapshot the router serves this kernel machine's boot
+func startedPred(rg *rig, machine string) string {
+	p := ""
+	rg.r.st.Do(func(d *persisted) {
+		if st := d.Started[machine]; st != nil {
+			p = st.KernelPred
+		}
+	})
+	return p
+}

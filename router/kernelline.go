@@ -256,13 +256,8 @@ func (r *Router) kernelSpawn(sid string) {
 		op.note(id, "the spawner made Fly machine "+id+"; waiting for its keys")
 	}
 	pred := ""
-	if sc, err := doc.PeekCert(*l.SourceCert); err == nil && sc.Pred.Kind() == "machine" {
-		pred = sc.Pred.MachineID()
-	} else if err == nil && sc.Source != nil && sc.Source.Snapshot != "" && s.RestoreCert == nil {
-		// a phone-signed source on a new image (a resume-upgrade) names the hash of the line's last snapshot: the
-		// machine of this line that left it is the one whose snapshot the new machine restores (the machine checks the
-		// hash, kernelboot.go kernelRestore). A restoring line's first machine keeps its archived one (restore.go).
-		pred = r.snapMachineWith(sid, sc.Source.Snapshot)
+	if sc, err := doc.PeekCert(*l.SourceCert); err == nil {
+		pred = r.kernelPred(&s, sc)
 	}
 	r.st.Do(func(d *persisted) {
 		d.Machines[id] = sid
@@ -314,6 +309,34 @@ func (r *Router) kernelSpawn(sid string) {
 
 // kernelSpawnTries: how many spawns a start makes (each a new volume: one on a full host is deleted by the spawner)
 const kernelSpawnTries = 3
+
+// kernelPred: the machine whose snapshot a start from this source restores (GET /m/snapshot, snapdirect.go
+// snapshotFor): the line's machine whose committed snapshot has the hash the source names (the machine checks the
+// hash, machine/kernelboot.go kernelRestore). That is the machine the source came from when it left that snapshot. It
+// is an earlier one when the source came from a machine that never got past boot, whose kill passed on the hash its
+// own source named (neverBootedStateKept), or from the sink: a phone-signed source on a new image (a resume-upgrade)
+// names the hash of the line's last snapshot. A restoring line's first machine keeps its archived one (restore.go).
+func (r *Router) kernelPred(s *Session, sc doc.Cert) string {
+	pred, sum := "", ""
+	if sc.Pred.Kind() == "machine" {
+		pred = sc.Pred.MachineID()
+	}
+	if sc.Source != nil {
+		sum = sc.Source.Snapshot
+	}
+	if sum == "" || (pred == "" && s.RestoreCert != nil) {
+		return pred
+	}
+	if pred != "" {
+		if p := r.snap(pred); p != nil && p.State == "committed" && p.Sha256 == sum {
+			return pred
+		}
+	}
+	if m := r.snapMachineWith(s.ID, sum); m != "" {
+		return m
+	}
+	return pred
+}
 
 // kernelAdopt: the machine an earlier spawn from this source made whose answer was lost (a crash, a timeout, another
 // replica's start that died), found with the router's read-only Fly token by the source its Fly metadata names, or
