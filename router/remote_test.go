@@ -275,6 +275,15 @@ func TestAviaryRemote(t *testing.T) {
 	addHarnessSession(r, "sAV", "aviary", "started", "mAV")
 	addHarnessSession(r, "sAP", "aviary", "paused", "")
 	addHarnessSession(r, "sPC", "paseo-claude", "started", "mPC")
+	// a paused session whose resume waits for Deyao's approval (a restart onto a newer image) is still a session:
+	// hermit-jarvis takes one missing from this list for destroyed and removes its conversation from the chat
+	// (2026-11-16: three restarted sessions left chat.deyaochen.com). A new session not yet approved is not listed.
+	addHarnessSession(r, "sAR", "aviary", "approval", "")
+	addHarnessSession(r, "sAN", "aviary", "approval", "")
+	r.st.Do(func(d *persisted) {
+		now := time.Now()
+		d.Sessions["sAR"].PausedAt = &now
+	})
 	defer fakeMachine(t, r, "mAV", func(holder, cmd string) ExecResult {
 		return ExecResult{Error: "the router ran " + holder + ": " + cmd + " on an aviary session"}
 	})()
@@ -291,12 +300,18 @@ func TestAviaryRemote(t *testing.T) {
 	}
 	code, out := get("/api/remotes?harness=aviary")
 	ss := out["sessions"].([]any)
-	if code != 200 || len(ss) != 2 {
+	if code != 200 || len(ss) != 3 {
 		t.Fatalf("%d %v", code, out)
 	}
 	byID := map[string]map[string]any{}
 	for _, s := range ss {
 		byID[s.(map[string]any)["id"].(string)] = s.(map[string]any)
+	}
+	if s := byID["sAR"]; s["state"] != "paused" || s["webUrl"] != nil {
+		t.Fatalf("a session waiting for its resume approval is listed as paused: %v", s)
+	}
+	if byID["sAN"] != nil {
+		t.Fatalf("a new session not yet approved is not listed: %v", byID["sAN"])
 	}
 	if s := byID["sAV"]; s["webUrl"] != chatURL || s["model"] != "aviary/claude-fable-5-2" || s["error"] != nil {
 		t.Fatalf("%v", s)

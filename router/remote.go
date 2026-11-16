@@ -208,7 +208,8 @@ func tunnelProof(key, id string) string {
 // GET /api/remotes?harness=openclaw|opencode|paseo-claude|paseo|aviary|dsh → {sessions: [{id, title, state, model,
 // harness, + url, token, webUrl (openclaw) | pairUrl (a Paseo harness) | webUrl (aviary, dsh) — only on a started session
 // whose front end is up, else error}]}. harness=paseo: every session a Paseo daemon fronts (opencode and paseo-claude),
-// what the Paseo app lists; harness=aviary: what hermit-jarvis lists (paused ones too).
+// what the Paseo app lists; harness=aviary: what hermit-jarvis lists (paused ones too, and one whose resume waits for
+// Deyao's approval, as paused).
 func (r *Router) remotes(w http.ResponseWriter, req *http.Request) {
 	harness := req.URL.Query().Get("harness")
 	if !remoteHarnesses[harness] && harness != "paseo" {
@@ -219,8 +220,15 @@ func (r *Router) remotes(w http.ResponseWriter, req *http.Request) {
 	var all []Session
 	r.st.Do(func(d *persisted) {
 		for _, s := range d.Sessions {
-			if match(s.Harness) && s.State != "destroying" && s.State != "approval" {
-				all = append(all, *s)
+			// "approval" with no pause behind it: a new session Deyao has not approved yet, not a session. One that
+			// was paused and waits for its resume's approval (a restart onto a newer image) is listed, as paused:
+			// a session missing here is a destroyed one to hermit-jarvis, which then ends its conversation
+			if match(s.Harness) && s.State != "destroying" && (s.State != "approval" || s.PausedAt != nil) {
+				x := *s
+				if x.State == "approval" {
+					x.State = "paused"
+				}
+				all = append(all, x)
 			}
 		}
 	})
