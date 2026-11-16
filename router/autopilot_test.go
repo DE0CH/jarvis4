@@ -623,6 +623,35 @@ func TestHarnessRetryUpgrade(t *testing.T) {
 	}
 }
 
+// a kernel line has no cert of the old core: the image its Claude never came up on is its machine's (Session.Image),
+// and its resume goes on the newest image all the same (it resumed on the image that hung, again and again)
+func TestHarnessRetryUpgradeOnAKernelLine(t *testing.T) {
+	const own = "ghcr.io/de0ch/jarvis4-session:sha-0@sha256:aaa"
+	newest := "ghcr.io/de0ch/jarvis4-session:sha-1@sha256:bbb"
+	r := newTestRouter(t)
+	addSession(r, "s1", "started", "m1", false)
+	r.st.Do(func(p *persisted) {
+		s := p.Sessions["s1"]
+		s.Cert, s.Kernel, s.Image, s.Booted = nil, &KernelLine{}, own, "m1"
+	})
+	r.harnessStuck(pilotAction{Kind: "harness-stuck", Session: "s1", Machine: "m1", Text: harnessStuckText(time.Minute, "")})
+	var got Session
+	r.st.Do(func(p *persisted) { got = *p.Sessions["s1"] })
+	if got.State != "failed" || got.StuckImage != own {
+		t.Fatalf("%s, stuck on %q", got.State, got.StuckImage)
+	}
+	if !harnessRetryUpgrade(got, newest) {
+		t.Fatal("not upgraded")
+	}
+	if harnessRetryUpgrade(got, own) {
+		t.Fatal("upgraded onto its own image")
+	}
+	got.Kernel = nil // neither a core cert nor a kernel line: nothing to upgrade
+	if harnessRetryUpgrade(got, newest) {
+		t.Fatal("upgraded a session with no line")
+	}
+}
+
 // idle after a scheduled turn pauses in IdlePauseScheduled; after Deyao's own prompt it keeps the hour (Deyao, 2026-11-02)
 func TestAutoPauseAfterScheduledTurn(t *testing.T) {
 	c, now := defaultPilot, time.Now()

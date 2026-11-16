@@ -68,7 +68,7 @@ reason and the last lines of its pane ("the harness didn't come up within 4 min 
 Error / … / 3. Continue without these settings. Resume starts it again on a new machine."), logged as a `harness-check`
 operation and DMed once; Resume (which finishes its pause first) or Destroy go on from there. Such a Resume goes on the
 newest session image when the session's own is older (the image its Claude never came up on would hang again): the
-`resume-upgrade` approval in the Inbox, one Face ID. A command the machine
+`resume-upgrade` approval in the Inbox (a kernel line: its `kernel-source` approval), one Face ID. A command the machine
 refuses sets `needsGrant` to that holder and the loop leaves it alone for 10 min, or until a phone grant for that
 holder is saved.
 
