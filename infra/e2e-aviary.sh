@@ -161,7 +161,7 @@ MAGPIE_ACCEPT_ADMIN=${K[ADMIN_MAGPIE]}
 MAGPIE_TOKEN_HERMIT=${K[MAGPIE_HERMIT]}
 ENV
 sudo -n ip netns exec "$NS" env -i PATH=/usr/local/bin:/usr/bin:/bin $(cat "$W/magpie-env") \
-  /usr/sbin/chroot --userspec=10001:10001 "$MROOT" /usr/local/bin/magpie serve > "$W/magpie.log" 2>&1 & SUDO_PIDS+=($!)
+  "$(PATH="$PATH:/usr/sbin:/sbin" command -v chroot)" --userspec=10001:10001 "$MROOT" /usr/local/bin/magpie serve > "$W/magpie.log" 2>&1 & SUDO_PIDS+=($!)
 
 # hermit-jarvis: here, `http://magpie` = 10.88.0.2 (its own /etc/hosts, a private mount namespace)
 { cat /etc/hosts; echo "10.88.0.2 magpie"; } > "$W/hosts-hermit"
