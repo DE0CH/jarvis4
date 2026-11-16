@@ -74,7 +74,11 @@ holder is saved.
 
 `state`: `approval` (waiting for the iPhone; no machine yet) → `starting` (the core makes the machine) →
 `initialising` → `started` (running) → `pausing` → `paused` (no machine) → `resuming` → … ; `destroying` →
-gone (moved to records); `failed` (with `error`).
+gone (moved to records); `failed` (with `error`). A machine that refuses to start (`POST /m/boot-failed`) fails its
+`initialising` or `started` session with "machine <id> refused to start: <its reason>. …" and one DM; the machine is
+kept, so Resume (which finishes its pause first: a machine that never got past boot is killed with nothing to
+snapshot, and the next one restores the line's last snapshot), More disk and Destroy go on as for any failed session
+with a machine.
 
 While the router drains for a rollout (`router/drain.go`), every call that starts a lifecycle action (create's first
 start after the approval answer, `respond`, pause, resume, destroy, restart, upgrade, the permission-mode switch, and
@@ -721,6 +725,7 @@ off.
 | `POST /m/snapshot-progress` | `{phase: "measuring" \| "uploading" \| "writing", done, total /* uncompressed file bytes */, sent /* compressed bytes so far */, elapsedMs /* since the phase began */}`, every 3 s while the supervisor makes the final snapshot (`machine/snapprogress.go`: measured first, then counted as the tar.gz is made; "writing" = the whole-file path of an older router). Only while the router awaits that machine's snapshot: the router writes its own words from the numbers into the session's `waiting` ("measuring the snapshot (2.5 GB so far)", "uploading snapshot 1.2/3.4 GB (35%), 40 MB/s, 55 s left") and a line into the running operation's lifecycle log at most every 20 s. A report whose numbers moved keeps the pause waiting (`router/snapwait.go`, DECISIONS 214: the wait has no overall limit, it ends after `SNAPSHOT_STALL_SECONDS` with no progress; the body's bytes arriving at `/m/snapshot-stream` count too). → `{ok}` (`false`: nothing awaits it); 400 another phase or a negative number. The supervisor logs a line every 10 s and the last one ("snapshot: uploading done, … read, … compressed in N s"). |
 | `POST /m/snapshot-failed` | `{error}`: the machine couldn't take its snapshot; the waiting pause stops waiting at once (and keeps a machine with no volume). |
 | `POST /m/snapshot-carry` | `{sha256, sig}`: a machine asked while still booting signs the predecessor snapshot its cert names (a kernel machine: the snapshot its source names, left by the machine `GET /m/snapshot` serves it from); the router links the predecessor's file as this machine's snapshot (409 for any other hash), and the machine never finishes booting. |
+| `POST /m/boot-failed` | `{error}`: the machine's boot steps ended without a harness (a failed check, a snapshot that wouldn't restore: its log's "REFUSING TO START: …"; `machine/main.go` prepareCmd, told up to 3 times) → `{ok}`: whether the session was failed with it (`router/bootfailed.go`). Only from the session's current machine, before its first status report, while the session is `initialising` or `started`; else `ok: false` and nothing changes. |
 | `POST /m/disk` | `{root: {totalKb, availKb}, data?: {totalKb, availKb}}`: the root disk and the volume, every 30 s once booted (`machine/disk.go`), for the low-disk warning. 400 malformed. |
 | `GET /m/restore-snapshot` | A restoring session's first machine only: the archived snapshot, same format, signed by the OLD machine named in `JARVIS2_RESTORE_CERT`; for a Jarvis 1 import, the import manifest (JSON). 404 otherwise. Streamed to disk by the machine. |
 | `GET /m/import-file/{name}` | A Jarvis 1 import's first machine only: one file the manifest lists, streamed from the Storage Box with `Content-Length` = the manifest's size (the machine checks size and sha256). 404 for any other name or machine. |

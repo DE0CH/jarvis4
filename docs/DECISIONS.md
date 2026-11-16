@@ -3040,3 +3040,14 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      pins, branding, settings and his Cloudflare. Jarvis 4 keeps the platform and the cluster; hermit-jarvis and
      aviary-gateway (code) stay here. The tenant's namespace stays `services`. Still here and to move: the chat's
      model menu and product name (`aviary/src/app.rs`, `hermit.rs`), which are settings of his deployment.
+263. **A machine that refuses to start fails its session with the reason** (2026-11-16: machine 86545dea990778's
+     restore ran out of disk, "REFUSING TO START: snapshot: write …: no space left on device", and its session showed
+     `initialising` with no error an hour and a half later). The router learnt of a machine only once it had booted
+     (its status reports), and the harness check looks at booted machines only. The boot steps now tell the router
+     why they start nothing (`POST /m/boot-failed`, signed as every machine request), and the router sets the session
+     `failed` with that reason (the start's operation in the lifecycle log ends failed with it) and DMs once. The
+     machine is kept, as after every failure that leaves one: Resume finishes its pause first (a machine that never
+     got past boot is killed with nothing to snapshot, into a source that names the line's last snapshot still, 252),
+     and More disk and Destroy work as for any failed session with a machine. A refusal before the machine has keys
+     the router knows (the keeper's own checks, a boot that never got its documents) still shows only in the
+     machine's log.

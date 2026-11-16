@@ -198,7 +198,11 @@ func prepareCmd() error {
 	spec, err := prepare()
 	if err != nil {
 		// any failed check → start nothing; the keeper keeps the machine (and the supervisor) up, so the failure stays
-		// visible in its log. Not a select{}: with no other goroutine Go ends it as a deadlock, a stack dump in the log
+		// visible in its log. Not a select{}: with no other goroutine Go ends it as a deadlock, a stack dump in the log.
+		// The router is told why, so the session fails with the reason instead of showing a boot that never ends
+		if c, cerr := newClient(); cerr == nil {
+			reportBootFailed(c, err)
+		}
 		return fmt.Errorf("REFUSING TO START: %v", err)
 	}
 	out := os.NewFile(3, "harness-spec") // keeper.go startPrepare
@@ -207,6 +211,39 @@ func prepareCmd() error {
 	}
 	defer out.Close()
 	return json.NewEncoder(out).Encode(spec)
+}
+
+// bootReportTries: how often a refused start is told to the router, and how long each try may take
+var bootReportTries, bootReportTimeout, bootReportWait = 3, 20 * time.Second, 2 * time.Second
+
+// reportBootFailed: tell the router why this machine starts nothing (POST /m/boot-failed, router/bootfailed.go: its
+// session becomes failed with the reason). Best effort: the refusal is in the log either way; a router without the
+// route (404) isn't asked again.
+func reportBootFailed(c *client, why error) {
+	rc := *c
+	rc.http = &http.Client{Timeout: bootReportTimeout}
+	if c.http != nil {
+		rc.http.Transport = c.http.Transport
+	}
+	body := mustJSON(map[string]string{"error": why.Error()})
+	for try := 1; ; try++ {
+		_, _, status, err := rc.raw("POST", "/m/boot-failed", body)
+		if err == nil && status == 200 {
+			log.Printf("told the router this machine refused to start")
+			return
+		}
+		if err == nil && (status == 404 || status == 405) {
+			return // an older router
+		}
+		if err == nil {
+			err = fmt.Errorf("HTTP %d", status)
+		}
+		if try >= bootReportTries {
+			log.Printf("telling the router this machine refused to start: %v", err)
+			return
+		}
+		time.Sleep(bootReportWait)
+	}
 }
 
 // initCmd: the one command the core runs through Fly (no arguments). It prints this machine's public keys

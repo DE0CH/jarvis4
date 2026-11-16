@@ -24,6 +24,7 @@ func (r *Router) registerFeatures(app appRoute, m machineRoute, public publicRou
 	r.registerAutopilot(app, m)
 	r.registerMemory(app, m)                // memory.go
 	r.registerDisk(app, m)                  // disk.go: disk reports, the low-disk DM, More disk
+	r.registerBootFailed(m)                 // bootfailed.go: a machine that refuses to start fails its session
 	r.registerHarnesses(app)                // harness.go: /api/models
 	r.registerRemote(app, m, public)        // remote.go: remote pages, /api/remotes, tunnel proofs
 	r.registerLeases(app, m, public)        // leases.go: shared-device leases (before sessionapi.go's /m/api/ catch-all)
