@@ -2,9 +2,9 @@
 # Launcher for a session whose harness is aviary (SESSION_HARNESS=aviary), exec'd by harness-claude.sh in place of the
 # `claude --remote-control` host: the session is an aviary sandbox (DE0CH/jarvis4 aviary/README.md).
 #
-#   Claude Code    the agent: the image's own claude, driven by DE0CH/aviary's supervisor (the same build YYC AI's
-#                  sandboxes run), in the session's workspace with its CLAUDE.md, skills, settings and hooks (the
-#                  descriptor's claude.projectSettings). Model = SESSION_MODEL ("aviary/<model id>": a Claude model, or
+#   Claude Code    the agent: the Claude Code of DE0CH/aviary's sandbox image, driven by that image's supervisor, in
+#                  that image's root (the same image YYC AI's sandboxes run: aviary-sandbox), in the session's
+#                  workspace with its CLAUDE.md, skills, settings and hooks (the descriptor's claude.projectSettings). Model = SESSION_MODEL ("aviary/<model id>": a Claude model, or
 #                  an OpenRouter one such as z-ai/glm-5.3, which needs OPENROUTER_API from the store `openrouter`).
 #   supervisor     supervisor-keeper as PID 1 of its own PID + mount namespace (aviary-sandbox, as root): ~/.claude is
 #                  magpie's (FUSE), so the conversation lives in magpie and a resume picks it up from there.
@@ -29,8 +29,11 @@ export HOME=/home/claude
 export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
 # the session's secrets are already in this env (boot took them from the supervisor; RAM only)
 
-# the home's links, as an aviary sandbox image has them, before anything here writes under ~/.claude
-/usr/local/bin/aviary-home "$HOME" || echo "[aviary] aviary-home failed: the sandbox cannot start without the home's links"
+# aviary's sandbox image on the volume (the first start fetches it: 1.4 GB, a few minutes), then the home gets what
+# the image's home holds (its ~/.claude link above all), before anything here writes under ~/.claude
+until IMG="$(sudo -n /usr/local/bin/aviary-sandbox --fetch)" && /usr/local/bin/aviary-home "$HOME" "$IMG/home/sandbox"; do
+  echo "[aviary] the sandbox image or the home's links failed (above); the sandbox cannot start without them: again in 15 s"; sleep 15
+done
 STATE="$HOME/.claude"; mkdir -p "$STATE/sessions"
 A="$HOME/.aviary"; mkdir -p "$A"; chmod 700 "$A"
 BOOT="$A/boot.env"
@@ -39,6 +42,7 @@ LABEL="${SESSION_LABEL:-}"
 MACHINE="${SESSION_ID:-${FLY_MACHINE_ID:-$(hostname)}}"
 GW=http://127.0.0.1:3128
 MIRROR="$STATE/projects/-home-claude-workspace"
+mkdir -p "$MIRROR"   # before the sandbox starts: aviary-sandbox binds it in
 # the image's digest for the descriptor (Fly's FLY_IMAGE_REF names it), else a placeholder
 IMAGE="sha256:$(printf '%064d' 0)"
 case "${FLY_IMAGE_REF:-}" in *@sha256:*) IMAGE="sha256:${FLY_IMAGE_REF##*@sha256:}" ;; esac
@@ -135,17 +139,17 @@ if title:
 }
 
 # The conversation's transcripts out of magpie's FUSE (visible in the supervisor's mount namespace only) into the
-# place Jarvis reads a Claude session's from, every 30 s, as the agent's user (the FUSE mount is its)
+# place Jarvis reads a Claude session's from ($MIRROR, bound in the sandbox at /run/jarvis-transcripts), every 30 s, as the agent's user (the FUSE mount is its)
 mirror_loop() {
   mkdir -p "$MIRROR"
   while true; do
     sleep 30
     pid="$(keeper_pid)"; [ -n "$pid" ] || continue
-    sudo -n nsenter --target "$pid" --mount --setuid 1000 --setgid 1000 \
+    sudo -n nsenter --target "$pid" --mount --root --wd=/ --setuid 1000 --setgid 1000 \
       sh -c 'src=/home/sandbox/.claude/projects/-workspace; [ -d "$src" ] || exit 0
              for f in "$src"/*.jsonl; do [ -f "$f" ] || continue; d="$1/$(basename "$f")"
                if [ ! -f "$d" ] || [ "$f" -nt "$d" ]; then cp "$f" "$d.tmp" && mv "$d.tmp" "$d"; fi; done' \
-      _ "$MIRROR" 2>> "$A/mirror.err" || true
+      _ /run/jarvis-transcripts 2>> "$A/mirror.err" || true
   done
 }
 

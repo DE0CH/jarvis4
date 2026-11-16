@@ -1,81 +1,137 @@
 #!/bin/bash
-# aviary-sandbox BOOT_ENV_FILE [WORKDIR] (as root, by harness-aviary.sh through sudo): runs DE0CH/aviary's supervisor for this
-# session in the layout of an aviary sandbox image (DE0CH/aviary images/sandbox/Dockerfile, docs/CONTRACTS.md "Boot"):
-# supervisor-keeper as PID 1 of its own PID namespace, with only the gateway's boot environment.
+# aviary-sandbox BOOT_ENV_FILE [WORKDIR] (as root, by harness-aviary.sh through sudo): runs this session's sandbox IN
+# DE0CH/aviary's own sandbox image, the one YYC AI's sandboxes run (ghcr.io/de0ch/hermit-sandbox, pinned by digest in
+# session-image/aviary.json "sandbox"; DE0CH/aviary images/sandbox/).
+# aviary-sandbox --fetch: only fetches the image; prints where its root filesystem is.
 #
-# Dogfooding (Deyao, 2026-11-14; claude-env `dogfood-aviary` skill): what Claude Code and the supervisor see is what
-# they see in YYC AI's sandbox. Nothing here tells either where things are; the paths are aviary's:
+# Dogfooding (Deyao, 2026-11-14/16; claude-env `dogfood-aviary` skill): the supervisor, its keeper, Claude Code, the
+# agent's tools, the paths and the environment are the image's, unmodified. Nothing of them is built, pinned or
+# written a second time here: a new aviary release needs only its digest in aviary.json.
 #
-#   /home/sandbox            the agent's home (uid 1000). Here: a bind of /home/claude and of what is mounted in it
-#                            (the volume's ~/workspace and ~/artifacts), so the agent keeps Jarvis's home: ~/workspace,
-#                            ~/artifacts, ~/.ssh's deploy keys, ~/.local/bin; /run/jarvis (session-secret, the ssh
-#                            agent) is the machine's own
-#   /home/sandbox/.harness   an empty directory the supervisor mounts magpie's FUSE on, a home per harness. Here: an
-#                            empty tmpfs over the machine's ~/.harness (its own ~/.claude lives there, aviary-home),
-#                            so the machine's login and transcript mirror stay out of the agent's sight
-#   /home/sandbox/.claude    a link to .harness/claude (and .qwen to .harness/qwen), as in aviary's image: made in
-#                            the machine's home by aviary-home, so the bind carries it
-#   /opt/claude-code         Claude Code at the version aviary's image pins (session-image/aviary.json
-#                            "claude-code", written by aviary-pin.yml from the release's Dockerfile), installed as
-#                            that image installs it. It is 290 MB and the session image has no room for it
-#                            (claude-env lessons/72), so it is installed on the session's volume at the first start
-#   /workspace               the conversation's folder. Here: a bind of the harness's working directory WORKDIR: the
-#                            one repo (~/workspace/<repo>), or ~/workspace with several (the merged CLAUDE.md, skills
-#                            and settings: workspace-layer.sh), or the empty ~/workspace; loaded as the project's (the
-#                            descriptor's claude.projectSettings)
-#   /etc/claude-code         a tmpfs: the supervisor's managed files stay out of the machine's own /etc/claude-code
-#   /proc                    the namespace's own: the supervisor's memory guard sees (and kills) only the agent's tree
+#   the image    unpacked once on the session's volume (/data/aviary/image-<digest12>), as aviary's sandboxd unpacks
+#                it for a host (`crane export | tar -x`), with its config beside it. It is 1.4 GB to fetch, 3.3 GB on
+#                disk, so it cannot be a layer of the session image (Fly's unpack limit, claude-env lessons/72). One
+#                image at a time: another pin's image and what was installed over it are removed first.
+#   the root     an overlay over the image (/data/aviary/upper-<digest12>: what the agent installs with apt stays
+#                while the session lives, as a sandbox's root does), entered with pivot_root; the machine's own root
+#                is unmounted from the namespace, so the agent sees the image's files and tools, not the machine's
+#   the start    the image's Entrypoint (supervisor-keeper) as PID 1 of a PID namespace, in the image's WorkingDir,
+#                with the image's Env plus the gateway's boot environment: what a container runtime does
 #
-# The network namespace is the machine's: the agent reaches $JARVIS_URL and the gateway on 127.0.0.1.
+# What Jarvis 4 puts in, being what a deployment implements (the session, its files, its secrets):
+#   /home/sandbox            the machine's /home/claude with what is mounted in it (the volume's ~/workspace and
+#                            ~/artifacts): the session's files outlive the sandbox. aviary-home has given it what the
+#                            image's own /home/sandbox holds (the ~/.claude and ~/.qwen links, ~/.npmrc)
+#   /home/sandbox/.harness   empty, as in the image (the supervisor mounts magpie's FUSE there): a tmpfs over the
+#                            machine's ~/.harness, where the machine's own ~/.claude (its login, the transcript
+#                            mirror) lives
+#   /workspace               the harness's working directory WORKDIR: the one repo (~/workspace/<repo>), or
+#                            ~/workspace with several (workspace-layer.sh), or the empty ~/workspace
+#   /run/jarvis              the machine's (session-secret's socket, the ssh agent)
+#   /run/jarvis-transcripts  the machine's transcript mirror, for harness-aviary.sh's copy out of the FUSE mount
+#   /usr/local/bin/…         Jarvis's session commands ($tools below), read-only binds of the machine's
+#   /etc/resolv.conf, hosts  the machine's (the network namespace is the machine's: $JARVIS_URL, the gateway)
 set -euo pipefail
-boot=$1
-wd="${2:-/home/claude/workspace}"
-case "$(realpath -m "$wd")/" in /home/claude/workspace/*) ;; *) echo "aviary-sandbox: $wd is not under ~/workspace" >&2; exit 1 ;; esac
-[ -d "$wd" ] || { echo "aviary-sandbox: no directory $wd" >&2; exit 1; }
+tools="jarvis-machine jarvis-request jarvis-message session-secret pull-secrets content-sync"
+home="${AVIARY_SANDBOX_HOME:-/home/claude}"
+bin="${AVIARY_SANDBOX_BIN:-/usr/local/bin}"
+store="${AVIARY_SANDBOX_STORE:-/data/aviary}"
 [ "$(id -u)" = 0 ] || { echo "aviary-sandbox: run as root" >&2; exit 1; }
+image="$(python3 -I -c 'import json,sys;print(json.load(open(sys.argv[1])).get("sandbox",""))' "${AVIARY_PINS:-/usr/local/share/aviary.json}")"
+[[ "$image" =~ ^[a-z0-9./-]+@sha256:[0-9a-f]{64}$ ]] || { echo "aviary-sandbox: no sandbox image by digest in the aviary pins ($image)" >&2; exit 1; }
+id="${image##*@sha256:}"; id="${id:0:12}"
+img="$store/image-$id"
+
+fetch() {
+  [ -e "$img.ok" ] && return 0
+  mkdir -p "$store"
+  find "$store" -mindepth 1 -maxdepth 1 ! -name "upper-$id" -exec rm -rf {} +
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    rm -rf "$img.tmp"; mkdir "$img.tmp"
+    if crane export "$image" - 2> "$store/fetch.log" | tar -x --numeric-owner -C "$img.tmp" 2>> "$store/fetch.log" \
+       && crane config "$image" > "$img.config" 2>> "$store/fetch.log" && [ -d "$img.tmp/home/sandbox" ]; then
+      mv "$img.tmp" "$img"; touch "$img.ok"
+      echo "aviary-sandbox: the sandbox image $image is unpacked in $img" >&2
+      return 0
+    fi
+    echo "aviary-sandbox: fetching $image failed (attempt $attempt): $(tail -1 "$store/fetch.log")" >&2
+    sleep 5
+  done
+  echo "aviary-sandbox: the sandbox image could not be fetched" >&2; return 1
+}
+
+if [ "${1:-}" = --fetch ]; then fetch; echo "$img"; exit 0; fi
+boot=$1
+wd="${2:-$home/workspace}"
+case "$(realpath -m "$wd")/" in "$home"/workspace/*) ;; *) echo "aviary-sandbox: $wd is not under ~/workspace" >&2; exit 1 ;; esac
+[ -d "$wd" ] || { echo "aviary-sandbox: no directory $wd" >&2; exit 1; }
 [ -s "$boot" ] || { echo "aviary-sandbox: no boot environment at $boot" >&2; exit 1; }
 
-[ "$(readlink /home/claude/.claude 2>/dev/null)" = .harness/claude ] || { echo "aviary-sandbox: /home/claude/.claude is not the link to .harness/claude (aviary-home)" >&2; exit 1; }
-
-# Claude Code at aviary's pinned version, installed as aviary's image installs it, root-owned, on the volume
-cc_version="$(python3 -I -c 'import json,sys;print(json.load(open(sys.argv[1]))["claude-code"])' "${AVIARY_PINS:-/usr/local/share/aviary.json}")"
-case "$cc_version" in ''|*[!0-9.]*) echo "aviary-sandbox: no Claude Code version in the aviary pins ($cc_version)" >&2; exit 1 ;; esac
-cc_root="${AVIARY_CC_ROOT:-/data/aviary}"; cc="$cc_root/claude-code-$cc_version"
-if [ "${AVIARY_SANDBOX_INNER:-}" != 1 ] && ! "$cc/bin/claude" --version 2>/dev/null | grep -qF "$cc_version"; then
-  mkdir -p "$cc_root"; rm -rf "$cc.tmp" "$cc"
-  for attempt in 1 2 3 4 5; do
-    if npm install --prefix "$cc.tmp" -g "@anthropic-ai/claude-code@$cc_version" --cache "$cc_root/.npm-cache" --no-audit --no-fund > "$cc_root/install.log" 2>&1 \
-       && "$cc.tmp/bin/claude" --version | grep -qF "$cc_version"; then break; fi
-    echo "aviary-sandbox: installing Claude Code $cc_version failed (attempt $attempt): $(tail -1 "$cc_root/install.log")" >&2
-    rm -rf "$cc.tmp"; sleep 5
-  done
-  rm -rf "$cc_root/.npm-cache"
-  [ -x "$cc.tmp/bin/claude" ] || { echo "aviary-sandbox: Claude Code $cc_version could not be installed" >&2; exit 1; }
-  chown -R root:root "$cc.tmp"; chmod -R go-w "$cc.tmp"; mv "$cc.tmp" "$cc"
-  echo "aviary-sandbox: Claude Code $cc_version installed in $cc"
-fi
-
 if [ "${AVIARY_SANDBOX_INNER:-}" != 1 ]; then
-  # a PID namespace (keeper = PID 1, `/proc` remounted) and a private mount namespace
-  exec env AVIARY_SANDBOX_INNER=1 unshare --pid --fork --mount --propagation private --mount-proc "$0" "$boot" "$wd"
+  fetch
+  # the home has what the image's home has (aviary-home): Claude Code finds its home through the image's own link
+  for l in "$img/home/sandbox"/.[!.]*; do
+    [ -L "$l" ] || continue
+    [ "$(readlink "$home/$(basename "$l")" 2>/dev/null)" = "$(readlink "$l")" ] \
+      || { echo "aviary-sandbox: $home/$(basename "$l") is not the image's link to $(readlink "$l") (aviary-home)" >&2; exit 1; }
+  done
+  # a PID namespace (the image's entrypoint = PID 1) and a private mount namespace
+  exec env AVIARY_SANDBOX_INNER=1 unshare --pid --fork --mount --propagation private bash "$0" "$boot" "$wd"
 fi
 
-mkdir -p /home/sandbox /workspace /run/supervisor /var/lib/supervisor /opt/claude-code
+new=/run/aviary-sandbox-root
+mkdir -p "$new" "$store/upper-$id/up" "$store/upper-$id/work"
+mount -t overlay overlay -o "lowerdir=$img,upperdir=$store/upper-$id/up,workdir=$store/upper-$id/work" "$new"
+mount -t proc proc "$new/proc"
+mount --rbind /sys "$new/sys"
+mount --rbind /dev "$new/dev"
 # --rbind: with what is mounted in the machine's home. ~/workspace and ~/artifacts are mounts from the session's
 # volume there; a plain bind left them out, and the agent wrote its repos and records to the root disk, which a
-# pause throws away (aviary-sandbox_test.sh). The tmpfs hides the machine's ~/.harness (its own ~/.claude and, in
-# it, the volume's transcript mirror): the supervisor's mount goes on this empty directory.
-mount --rbind /home/claude /home/sandbox
-mount -t tmpfs -o mode=0755,uid=1000,gid=1000,size=1m tmpfs /home/sandbox/.harness
-mount --bind -o ro "$cc" /opt/claude-code
-mount --bind "$wd" /workspace
-mount -t tmpfs -o mode=0755 tmpfs /etc/claude-code
+# pause throws away (aviary-sandbox_test.sh). The tmpfs hides the machine's ~/.harness.
+mount --rbind "$home" "$new/home/sandbox"
+mount -t tmpfs -o mode=0755,uid=1000,gid=1000,size=1m tmpfs "$new/home/sandbox/.harness"
+mount --bind "$wd" "$new/workspace"
+if [ -d /run/jarvis ]; then mkdir -p "$new/run/jarvis"; mount --rbind /run/jarvis "$new/run/jarvis"; fi
+mirror="$home/.harness/claude/projects/-home-claude-workspace"
+if [ -d "$mirror" ]; then mkdir -p "$new/run/jarvis-transcripts"; mount --bind "$mirror" "$new/run/jarvis-transcripts"; fi
+for f in resolv.conf hosts; do
+  if [ -e "/etc/$f" ]; then cp --remove-destination -L "/etc/$f" "$new/etc/$f"; fi
+done
+for t in $tools; do
+  [ -e "$bin/$t" ] || continue
+  # never over a file of the image's: a name the image takes is the image's
+  [ ! -e "$img/usr/local/bin/$t" ] || { echo "aviary-sandbox: the image has its own /usr/local/bin/$t" >&2; exit 1; }
+  [ -e "$new/usr/local/bin/$t" ] || : > "$new/usr/local/bin/$t"
+  mount --bind -o ro "$bin/$t" "$new/usr/local/bin/$t"
+done
+[ ! -e "$new/usr/local/bin/jarvis-machine" ] || ln -sfn jarvis-machine "$new/usr/local/bin/jarvis"
 
-# exactly the boot environment (supervisor 6.2: nothing else of ours is passed on), plus the image's PATH and locale
-envs=(PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8)
-while IFS= read -r line; do
-  case "$line" in
-    [A-Za-z_]*=*) envs+=("$line") ;;
-  esac
-done < "$boot"
-exec env -i "${envs[@]}" /usr/local/bin/supervisor-keeper
+# Into the image's root, then the image's entrypoint with the image's environment and the boot environment
+# (supervisor 6.2: nothing else of the machine's is passed on). In Python: once the root is the image's, no program
+# of the machine's can be started, and the image need not have one that unmounts.
+exec python3 -I -c '
+import ctypes, json, os, re, sys
+new, config, boot = sys.argv[1:4]
+c = json.load(open(config))["config"]
+env = dict(e.split("=", 1) for e in c.get("Env") or [])
+for line in open(boot):
+    line = line.rstrip("\n")
+    if re.match(r"[A-Za-z_][A-Za-z0-9_]*=", line):
+        k, v = line.split("=", 1)
+        env[k] = v
+argv = (c.get("Entrypoint") or []) + (c.get("Cmd") or [])
+libc = ctypes.CDLL(None, use_errno=True)
+os.chdir(new)
+if libc.pivot_root(b".", b"mnt") == 0:
+    os.chroot(".")
+    if libc.umount2(b"/mnt", 2) != 0:  # MNT_DETACH: the machine root leaves this namespace
+        sys.exit("aviary-sandbox: unmounting the machine root: " + os.strerror(ctypes.get_errno()))
+else:
+    # a root that cannot be pivoted from (an initramfs): the image moves over it
+    if libc.mount(b".", b"/", None, 8192, None) != 0:  # MS_MOVE
+        sys.exit("aviary-sandbox: entering the image: " + os.strerror(ctypes.get_errno()))
+    os.chroot(".")
+os.chdir(c.get("WorkingDir") or "/")
+os.execve(argv[0], argv, env)
+' "$new" "$img.config" "$boot"

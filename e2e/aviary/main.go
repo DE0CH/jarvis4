@@ -177,6 +177,9 @@ type modelLog struct {
 	calls []string // one line per call: what it answered
 	// CLAUDE_CODE_MAX_CONTEXT_TOKENS in the sandbox ("none": unset), from the tool call's output
 	context string
+	// where the tool call ran, from its output: "aviary" = in the root of aviary's sandbox image (the image's own
+	// setup files are there, the session image's harness script is not) with Jarvis's session commands on the PATH
+	root string
 }
 
 var models modelLog
@@ -230,11 +233,20 @@ func reply(req map[string]any) (kind string, content []map[string]any) {
 				models.Unlock()
 			}
 		}
+		if i := strings.Index(last, "E2E-ROOT="); i >= 0 {
+			root := last[i+len("E2E-ROOT="):]
+			if j := strings.Index(root, "."); j >= 0 {
+				models.Lock()
+				models.root = root[:j]
+				models.Unlock()
+			}
+		}
 		return "answer", []map[string]any{{"type": "text", "text": "E2E-DONE " + token + ": the command printed E2E-OUT-" + token}}
 	case strings.Contains(last, "E2E-WAKEUP "+token):
 		return "wakeup", []map[string]any{{"type": "text", "text": "E2E-WOKE " + token}}
 	case strings.Contains(last, "E2E-RUN "+token):
-		cmd := "echo E2E-OUT-" + token + " | tee ~/artifacts/e2e-aviary.txt && echo E2E-CTX=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-none}. && curl -sS -H 'Content-Type: application/json' " +
+		cmd := "echo E2E-OUT-" + token + " | tee ~/artifacts/e2e-aviary.txt && echo E2E-CTX=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-none}. && " +
+			"echo E2E-ROOT=$(test -e /opt/image-setup/Dockerfile && ! test -e /usr/local/bin/harness-aviary.sh && command -v jarvis > /dev/null && echo aviary || echo machine). && curl -sS -H 'Content-Type: application/json' " +
 			"-d '{\"delaySeconds\":60,\"prompt\":\"E2E-WAKEUP " + token + "\"}' \"$JARVIS_URL/api/sessions/$SESSION_ID/wakeup\""
 		return "tool", []map[string]any{{"type": "tool_use", "id": "toolu_e2e_" + token, "name": "Bash",
 			"input": map[string]any{"command": cmd, "description": "e2e: write the marker and arm the wakeup"}}}
@@ -591,6 +603,9 @@ func main() {
 	wantContext := "none"
 	if wantOpenRouter {
 		wantContext = "1000000"
+	}
+	if models.root != "aviary" {
+		log.Fatalf("FAIL: the tool call did not run in aviary's sandbox image with Jarvis's session commands (%q): the session's sandbox is not the image YYC AI runs", models.root)
 	}
 	if models.context != wantContext {
 		log.Fatalf("FAIL: Claude Code's context window for %s is %q, want %q", sessionModel(), models.context, wantContext)

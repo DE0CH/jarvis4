@@ -223,18 +223,16 @@ COPY openclaw-claw-harness /usr/local/lib/openclaw-claw-harness
 COPY harness-openclaw.sh /usr/local/bin/harness-openclaw.sh
 COPY openclaw-transcript /usr/local/bin/openclaw-transcript
 RUN chmod +x /usr/local/bin/harness-openclaw.sh /usr/local/bin/openclaw-transcript
-# Claude Code · aviary (harness aviary, DE0CH/jarvis4 aviary/README.md): DE0CH/aviary's supervisor drives the image's
-# own claude in its own PID + mount namespace (aviary-sandbox, as root), with aviary-gateway as its proxy; the chat web
-# app at chat.deyaochen.com is its front end. The supervisor, its keeper and aviary-gateway are added by
-# session-image/Dockerfile (pinned release assets and this repo's own build). /home/sandbox and /workspace are the
-# mount points aviary-sandbox binds; /opt/claude-code is where the supervisor runs Claude Code from: the version
-# aviary's own sandbox image pins, which aviary-sandbox installs on the session's volume (the image has no room for
-# a second Claude Code) and binds there. aviary-home gives the home an aviary image's links (~/.claude, ~/.qwen).
+# Claude Code · aviary (harness aviary, DE0CH/jarvis4 aviary/README.md): the session's sandbox runs in DE0CH/aviary's
+# own sandbox image (its supervisor, keeper, Claude Code and tools), which aviary-sandbox fetches onto the session's
+# volume and enters as root in its own PID + mount namespace, with aviary-gateway (session-image/Dockerfile) as its
+# proxy; the chat web app at chat.deyaochen.com is its front end. aviary-home gives the home what that image's home
+# holds (the ~/.claude and ~/.qwen links).
 COPY harness-aviary.sh /usr/local/bin/harness-aviary.sh
 COPY aviary-sandbox /usr/local/bin/aviary-sandbox
 COPY aviary-home /usr/local/bin/aviary-home
-RUN chmod 755 /usr/local/bin/harness-aviary.sh /usr/local/bin/aviary-sandbox /usr/local/bin/aviary-home \
- && mkdir -p /home/sandbox /workspace /opt/claude-code
+RUN chmod 755 /usr/local/bin/harness-aviary.sh /usr/local/bin/aviary-sandbox /usr/local/bin/aviary-home
+
 # DeepSeek Harness (harness dsh): Deyao's fork DE0CH/deepseek-harness serves its agent loop and web UI on the session;
 # OpenRouter routed to DeepSeek's own endpoint. The fork and its Node (24) are NOT in the image: session-image/Dockerfile
 # adds /usr/local/bin/dsh-runtime, which fetches the bundle pinned by sha256 in session-image/dsh-runtime.json on first

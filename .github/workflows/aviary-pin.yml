@@ -2,11 +2,18 @@ name: aviary-pin
 # Dogfooding (Deyao, 2026-11-11): Jarvis 4's aviary sessions follow DE0CH/aviary's main as soon as its CI publishes a
 # release (aviary-<sha12>, only made when every check passed). This pins the newest release, never an older one than
 # the current pin:
-#   session-image/aviary.json      {release, supervisor, supervisor-keeper}: the sha256 of each binary (its SHA256SUMS);
-#                                  claude-code: the version the release's sandbox image installs
+#   session-image/aviary.json      {release, sandbox}: the release, and its sandbox image by digest
+#                                  (ghcr.io/de0ch/hermit-sandbox:<sha12>, the image YYC AI's sandboxes run: a session's
+#                                  sandbox runs in it, session-image/base/aviary-sandbox)
 #   aviary/Cargo.toml + Cargo.lock the contract crates' rev (the release's commit)
-# and pushes to main with the pin deploy key (environment `release`), which starts images.yml (the session image) and
-# aviary.yml (hermit-jarvis). DE0CH/deyao-ai' chat-pin.yml pins pigeon and magpie of the same releases.
+# A release is pinned only after the replica passed on it (Deyao, 2026-11-16): `replica` builds the session image of the
+# candidate (ghcr.io/de0ch/jarvis4-session:pin-<release>) and runs infra/e2e-aviary.sh on it (a real Fly machine, the
+# release's magpie, this tree's hermit-jarvis with the release's contract crates): a turn with a tool call in the
+# sandbox must reach magpie. aviary moved its mount once (2026-11-13) and a pin without this check shipped sessions
+# whose chat showed no tool calls (claude-env lessons/114). A release that fails stays unpinned and this run is red;
+# the next run tries the newest release again.
+# `pin` then pushes to main with the pin deploy key (environment `release`), which starts images.yml (the session
+# image) and aviary.yml (hermit-jarvis). DE0CH/deyao-ai's chat-pin.yml pins pigeon and magpie of the same releases.
 on:
   schedule: [{ cron: "*/15 * * * *" }]
   workflow_dispatch:
@@ -14,13 +21,13 @@ permissions:
   contents: read
 concurrency: { group: aviary-pin, cancel-in-progress: false }
 jobs:
-  pin:
+  candidate:
     if: github.ref == 'refs/heads/main'
-    environment: release
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.rel.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
-        with: { ssh-key: "${{ secrets.PIN_DEPLOY_KEY }}" }
       - name: the newest release, if newer than the pin
         id: rel
         env: { GH_TOKEN: "${{ github.token }}" }
@@ -37,14 +44,11 @@ jobs:
             st="$(gh api "repos/DE0CH/aviary/compare/$old...$sha" --jq .status)"
             case "$st" in ahead) ;; *) echo "$tag is not ahead of $cur ($st): nothing pinned"; exit 0 ;; esac
           fi
-          gh release download "$tag" -R DE0CH/aviary -p SHA256SUMS -O /tmp/SUMS
-          sup="$(awk '$2=="supervisor"{print $1}' /tmp/SUMS)"; kee="$(awk '$2=="supervisor-keeper"{print $1}' /tmp/SUMS)"
-          [[ "$sup" =~ ^[0-9a-f]{64}$ && "$kee" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::no sums for the supervisor in $tag"; exit 1; }
-          # the Claude Code version of the release's own sandbox image: a session's sandbox runs the same one
-          cc="$(gh api "repos/DE0CH/aviary/contents/images/sandbox/Dockerfile?ref=$tag" -H "Accept: application/vnd.github.raw" \
-            | sed -n 's/^ARG CLAUDE_CODE_VERSION=\([0-9.]*\)$/\1/p')"
-          [[ "$cc" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::no CLAUDE_CODE_VERSION in $tag's images/sandbox/Dockerfile"; exit 1; }
-          printf '{\n  "release": "%s",\n  "supervisor": "%s",\n  "supervisor-keeper": "%s",\n  "claude-code": "%s"\n}\n' "$tag" "$sup" "$kee" "$cc" > session-image/aviary.json
+          # the release's own sandbox image, by digest: the sandbox a session runs in
+          ref="$(infra/image-digest.sh "ghcr.io/de0ch/hermit-sandbox:${tag#aviary-}")"
+          sandbox="ghcr.io/de0ch/hermit-sandbox@${ref##*@}"
+          [[ "$sandbox" =~ @sha256:[0-9a-f]{64}$ ]] || { echo "::error::no sandbox image for $tag"; exit 1; }
+          printf '{\n  "release": "%s",\n  "sandbox": "%s"\n}\n' "$tag" "$sandbox" > session-image/aviary.json
           sed -i -E "s#(git = \"https://github.com/DE0CH/aviary\", rev = \")[0-9a-f]{40}#\1$sha#" aviary/Cargo.toml
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - if: steps.rel.outputs.tag != ''
@@ -52,9 +56,77 @@ jobs:
         working-directory: aviary
         run: cargo update -p aviary-core -p aviary-pg -p hermit-api -p gateway-api -p magpie-api -p supervisor-api -p aviary-fakes
       - if: steps.rel.outputs.tag != ''
-        name: push
+        run: git diff --binary > /tmp/pin.patch && test -s /tmp/pin.patch
+      - if: steps.rel.outputs.tag != ''
+        uses: actions/upload-artifact@v4
+        with: { name: pin, path: /tmp/pin.patch, retention-days: 3 }
+  replica:
+    needs: candidate
+    if: needs.candidate.outputs.tag != ''
+    # the Fly token of the phone replica (docs/RUNBOOK.md "The phone replica"): app jarvis4-sessions and the org's
+    # WireGuard peers; main only
+    environment: replica
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/de0ch/jarvis4-session:pin-${{ needs.candidate.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: pin, path: /tmp/pin }
+      - run: git apply /tmp/pin/pin.patch && git diff --stat
+      - name: free disk space (the base image is large)
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h / | tail -1
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - name: the candidate's session image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: session-image/Dockerfile
+          push: true
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          tags: ${{ env.IMAGE }}
+          cache-from: type=gha,scope=session-pin
+          cache-to: type=gha,mode=max,scope=session-pin
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.25" }
+      - name: tools (crane, flyctl, the Rust toolchain of aviary/rust-toolchain.toml, WireGuard)
         run: |
+          set -euo pipefail
+          go install github.com/google/go-containerregistry/cmd/crane@v0.20.2
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          curl -fsSL https://fly.io/install.sh | sh > /dev/null
+          echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
+          (cd aviary && (rustup show active-toolchain || rustup toolchain install))
+          sudo apt-get update -qq && sudo apt-get install -y -qq wireguard-tools iproute2 iptables > /dev/null
+      - name: the replica (infra/e2e-aviary.sh) on the candidate
+        env:
+          JARVIS2_FLY_TOKEN: ${{ secrets.REPLICA_FLY_TOKEN }}
+          E2E_SESSION_IMAGE: ${{ env.IMAGE }}
+          E2E_LOGS: /tmp/e2e-aviary-logs
+        run: |
+          [ -n "$JARVIS2_FLY_TOKEN" ] || { echo "::error::secret REPLICA_FLY_TOKEN is missing from the GitHub environment 'replica'"; exit 1; }
+          infra/e2e-aviary.sh
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with: { name: e2e-aviary-logs, path: /tmp/e2e-aviary-logs, retention-days: 7, if-no-files-found: ignore }
+  pin:
+    needs: [candidate, replica]
+    environment: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ssh-key: "${{ secrets.PIN_DEPLOY_KEY }}" }
+      - uses: actions/download-artifact@v4
+        with: { name: pin, path: /tmp/pin }
+      - name: push
+        run: |
+          git apply /tmp/pin/pin.patch
           git config user.name "jarvis4-ci"; git config user.email "ci@jarvis4.invalid"
-          git commit -qam "aviary-pin: ${{ steps.rel.outputs.tag }}"
+          git commit -qam "aviary-pin: ${{ needs.candidate.outputs.tag }} (the replica passed on it)"
           for attempt in 1 2 3; do git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0; sleep 5; done
           exit 1

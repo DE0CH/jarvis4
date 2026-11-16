@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""aviary-home HOME (harness-aviary.sh, as the home's owner): gives a session's home the links an aviary sandbox
-image has (DE0CH/aviary images/sandbox/Dockerfile): ~/.claude -> .harness/claude and ~/.qwen -> .harness/qwen.
+"""aviary-home HOME IMAGE_HOME (harness-aviary.sh, as the home's owner): gives a session's home what the home of
+DE0CH/aviary's sandbox image holds (IMAGE_HOME = the unpacked image's /home/sandbox: today the links
+~/.claude -> .harness/claude and ~/.qwen -> .harness/qwen, the empty ~/.harness and ~/.npmrc). What it holds is read
+from the image, not written here: a link the image adds is made here too.
 
-Dogfooding (Deyao, 2026-11-14): a session's sandbox is the machine's home bound to /home/sandbox, and Claude Code
-must find its home there exactly as in an aviary sandbox, through the link into the supervisor's mount
-(/home/sandbox/.harness), with nothing of Jarvis 4's own telling it where to write. The machine's ~/.claude is a
-real directory (its login, the status shim, the volume's ~/.claude/projects mounted inside), so it moves to
-~/.harness/claude and the link takes its name: every path through ~/.claude keeps working on the machine's side,
-and in the sandbox the supervisor's mount covers ~/.harness, so the same link leads to the conversation's files in
-magpie. Run again, it changes nothing.
+Dogfooding (Deyao, 2026-11-14): a session's sandbox runs in aviary's image with the machine's home bound to
+/home/sandbox, and Claude Code must find its home there exactly as in any aviary sandbox, through the image's link
+into the supervisor's mount (/home/sandbox/.harness), with nothing of Jarvis 4's own telling it where to write.
+  a link of the image   the home gets the same link. Where the home has a real directory of that name (the machine's
+                        ~/.claude: its login, the status shim, the volume's ~/.claude/projects mounted inside), the
+                        directory moves to the link's target and the link takes its name: every path through
+                        ~/.claude keeps working on the machine's side, and in the sandbox the supervisor's mount
+                        covers ~/.harness, so the same link leads to the conversation's files in magpie
+  a file of the image   copied when the home has none of that name
+  a directory           made
+Run again, it changes nothing.
 
 The move is one atomic exchange where the filesystem allows it. A new machine's root is an overlay whose ~/.claude
 comes from several image layers, and renaming such a directory is refused (EXDEV; seen on the first replica run,
@@ -38,7 +44,7 @@ def mounts_under(d):
     return sorted(t for t in out.splitlines() if t.startswith(d + "/"))
 
 
-def carry(claude, inner):
+def carry(claude, inner, target):
     """Without a rename: copy, bind what is mounted inside at the new place, empty the old, link."""
     for _ in range(5):
         os.makedirs(inner, exist_ok=True)
@@ -51,25 +57,24 @@ def carry(claude, inner):
             run("sudo", "-n", "umount", m)
         shutil.rmtree(claude)
         try:
-            os.symlink(".harness/claude", claude)
+            os.symlink(target, claude)
             return
         except FileExistsError:
             continue  # something made ~/.claude again in between: take that in too
     sys.exit(f"aviary-home: {claude} kept reappearing")
 
 
-def main():
-    home = sys.argv[1]
-    harness = os.path.join(home, ".harness")
-    os.makedirs(harness, exist_ok=True)
-    claude, inner = os.path.join(home, ".claude"), os.path.join(harness, "claude")
+def link(home, name, target):
+    """home/name is the link to target; a real directory of that name moves to the target."""
+    claude, inner = os.path.join(home, name), os.path.normpath(os.path.join(home, target))
     if os.path.islink(claude):
-        if os.readlink(claude) != ".harness/claude":
-            sys.exit(f"aviary-home: {claude} is a link to {os.readlink(claude)}, not to .harness/claude")
+        if os.readlink(claude) != target:
+            sys.exit(f"aviary-home: {claude} is a link to {os.readlink(claude)}, not to {target}")
     elif os.path.isdir(claude):
         if os.path.lexists(inner):
             sys.exit(f"aviary-home: both {claude} and {inner} exist")
-        os.symlink(".harness/claude", inner)  # the link, made under its future target's name
+        os.makedirs(os.path.dirname(inner), exist_ok=True)
+        os.symlink(target, inner)  # the link, made under its future target's name
         try:
             if os.environ.get("AVIARY_HOME_TEST_NO_EXCHANGE"):  # the test's stand-in for the overlay's refusal
                 raise OSError(errno.EXDEV, "test")
@@ -78,13 +83,27 @@ def main():
             os.remove(inner)
             if e.errno != errno.EXDEV:
                 raise
-            carry(claude, inner)
+            carry(claude, inner, target)
+    elif os.path.lexists(claude):
+        sys.exit(f"aviary-home: {claude} is a file where the image has a link")
     else:
-        os.makedirs(inner, exist_ok=True)
-        os.symlink(".harness/claude", claude)
-    qwen = os.path.join(home, ".qwen")
-    if not os.path.lexists(qwen):
-        os.symlink(".harness/qwen", qwen)
+        os.makedirs(inner, exist_ok=True)  # the machine's side of the link (its own files; hidden in the sandbox)
+        os.symlink(target, claude)
+
+
+def main():
+    home, image_home = sys.argv[1], sys.argv[2]
+    entries = sorted(os.listdir(image_home))
+    if not any(os.path.islink(os.path.join(image_home, n)) for n in entries):
+        sys.exit(f"aviary-home: {image_home} has no link: not an aviary sandbox image's home")
+    for name in entries:
+        src, dst = os.path.join(image_home, name), os.path.join(home, name)
+        if os.path.islink(src):
+            link(home, name, os.readlink(src))
+        elif os.path.isdir(src):
+            os.makedirs(dst, exist_ok=True)
+        elif not os.path.lexists(dst):
+            shutil.copyfile(src, dst)
 
 
 if __name__ == "__main__":
