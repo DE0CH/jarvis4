@@ -12,7 +12,8 @@ package main
 // More disk (POST /api/sessions/:id/disk): the core extends the machine's volume to twice its size (core /extend; at
 // most 500 GB); the session's diskGb is the new size, which every later machine of the line gets. When Fly says the
 // machine must restart to see it, the session is paused (its signed snapshot) and resumed. A machine without a volume
-// (a core from before volumes) can't grow: the button says so.
+// (a core from before volumes) can't grow: the button says so. A kernel line's volume is never extended (the spawner
+// has no such call): the bigger size is the next spawn's, so a running session is paused and resumed onto it.
 
 import (
 	"encoding/json"
@@ -204,6 +205,13 @@ func (r *Router) MoreDisk(id string) (map[string]any, error) {
 	if live {
 		vol = r.machineVolume(s.MachineID)
 	}
+	// a kernel line's volume doesn't grow in place: the kernel's spawner makes a machine's volume and deletes it,
+	// nothing else (DECISIONS 231), and the old core knows none of its machines. The size is the next spawn's: a
+	// failed session's kept machine is replaced at its Resume; a running one moves to a new machine now (below)
+	kernel := s.Kernel != nil
+	if kernel && s.State == "failed" {
+		vol = nil
+	}
 	if vol == nil {
 		if s.State != "paused" && s.State != "failed" && s.State != "started" {
 			return nil, fmt.Errorf("session is %s: More disk once it is running, paused or failed", s.State) // "session is …" → 409
@@ -243,15 +251,19 @@ func (r *Router) MoreDisk(id string) (map[string]any, error) {
 			r.ops.phase(j, "failed", err)
 		}
 		r.ops.phase(j, "extending", nil)
-		d, err := r.core.Call("/extend", map[string]any{"machine": s.MachineID, "sizeGb": to})
-		if err != nil {
-			fail(err)
-			return
-		}
 		var ext struct {
 			NeedsRestart bool `json:"needsRestart"`
 		}
-		d.Decode(&ext)
+		if kernel {
+			ext.NeedsRestart = true // the next machine's volume: a pause and a resume
+		} else {
+			d, err := r.core.Call("/extend", map[string]any{"machine": s.MachineID, "sizeGb": to})
+			if err != nil {
+				fail(err)
+				return
+			}
+			d.Decode(&ext)
+		}
 		r.st.Do(func(d *persisted) {
 			if x := d.Sessions[id]; x != nil {
 				x.DiskGB = to // every later machine of the line gets the new size

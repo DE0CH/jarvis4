@@ -1478,7 +1478,10 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      2 GB free. More disk (`POST /api/sessions/:id/disk`, a button on the session in the app and web page) has the core
      extend the volume to twice its size (at most 500 GB); the session's `diskGb` keeps the size for every later machine,
      and when Fly says the machine must restart to see it, a pause and resume follow (as Upgrade does). A machine without
-     a volume (until the held core is live) can't grow: the alert says so. *Not chosen*: Fly's automatic volume extension
+     a volume (until the held core is live) can't grow: the alert says so. On a kernel line the size is a spawn
+     parameter (the spawner has no extend, 231; the core knows none of its machines): a running session is paused and
+     resumed onto a machine with the bigger volume, a failed one whose machine was kept gets it at its Resume.
+     *Not chosen*: Fly's automatic volume extension
      (`auto_extend_size_*`): a runaway build would grow the bill without anyone seeing it; and a bigger root disk
      (Fly `config.rootfs.size_gb`, the earlier unpushed attempt on branch snapshot-fix): the state must live on a volume
      anyway for the core's outside backup (177), a volume grows in place (often with no restart) where a root disk needs
