@@ -11,12 +11,18 @@ name: aviary-pin
 # release's magpie, this tree's hermit-jarvis with the release's contract crates): a turn with a tool call in the
 # sandbox must reach magpie. aviary moved its mount once (2026-11-13) and a pin without this check shipped sessions
 # whose chat showed no tool calls (claude-env lessons/114). A release that fails stays unpinned and this run is red;
-# the next run tries the newest release again.
+# the next run tries the newest release again. Run by hand with `replica`, it runs the same check on the release
+# already pinned and pins nothing.
 # `pin` then pushes to main with the pin deploy key (environment `release`), which starts images.yml (the session
 # image) and aviary.yml (hermit-jarvis). DE0CH/deyao-ai's chat-pin.yml pins pigeon and magpie of the same releases.
 on:
   schedule: [{ cron: "*/15 * * * *" }]
   workflow_dispatch:
+    inputs:
+      replica:
+        description: run the replica on the release already pinned (nothing is pinned); checks this workflow itself
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency: { group: aviary-pin, cancel-in-progress: false }
@@ -26,6 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.rel.outputs.tag }}
+      pin: ${{ steps.rel.outputs.pin }}
     steps:
       - uses: actions/checkout@v4
       - name: the newest release, if newer than the pin
@@ -37,7 +44,11 @@ jobs:
             --jq '[.[] | select(.tagName | startswith("aviary-"))] | sort_by(.createdAt) | last | .tagName // ""')"
           [ -n "$tag" ] || { echo "no release"; exit 0; }
           cur="$(python3 -c 'import json;print(json.load(open("session-image/aviary.json"))["release"])')"
-          [ "$tag" != "$cur" ] || { echo "pinned already: $tag"; exit 0; }
+          if [ "$tag" = "$cur" ]; then
+            echo "pinned already: $tag"
+            if [ "${{ inputs.replica }}" = true ]; then echo "tag=$tag" >> "$GITHUB_OUTPUT"; fi
+            exit 0
+          fi
           sha="$(gh api "repos/DE0CH/aviary/commits/$tag" --jq .sha)"
           old="$(gh api "repos/DE0CH/aviary/commits/$cur" --jq .sha 2>/dev/null || true)"
           if [ -n "$old" ]; then
@@ -50,13 +61,13 @@ jobs:
           [[ "$sandbox" =~ @sha256:[0-9a-f]{64}$ ]] || { echo "::error::no sandbox image for $tag"; exit 1; }
           printf '{\n  "release": "%s",\n  "sandbox": "%s"\n}\n' "$tag" "$sandbox" > session-image/aviary.json
           sed -i -E "s#(git = \"https://github.com/DE0CH/aviary\", rev = \")[0-9a-f]{40}#\1$sha#" aviary/Cargo.toml
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-      - if: steps.rel.outputs.tag != ''
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"; echo "pin=1" >> "$GITHUB_OUTPUT"
+      - if: steps.rel.outputs.pin == '1'
         name: Cargo.lock
         working-directory: aviary
         run: cargo update -p aviary-core -p aviary-pg -p hermit-api -p gateway-api -p magpie-api -p supervisor-api -p aviary-fakes
       - if: steps.rel.outputs.tag != ''
-        run: git diff --binary > /tmp/pin.patch && test -s /tmp/pin.patch
+        run: git diff --binary > /tmp/pin.patch && { test -s /tmp/pin.patch || [ "${{ steps.rel.outputs.pin }}" != 1 ]; }
       - if: steps.rel.outputs.tag != ''
         uses: actions/upload-artifact@v4
         with: { name: pin, path: /tmp/pin.patch, retention-days: 3 }
@@ -76,7 +87,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { name: pin, path: /tmp/pin }
-      - run: git apply /tmp/pin/pin.patch && git diff --stat
+      - run: if [ -s /tmp/pin/pin.patch ]; then git apply /tmp/pin/pin.patch && git diff --stat; fi
       - name: free disk space (the base image is large)
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h / | tail -1
       - uses: docker/setup-buildx-action@v3
@@ -116,6 +127,7 @@ jobs:
         with: { name: e2e-aviary-logs, path: /tmp/e2e-aviary-logs, retention-days: 7, if-no-files-found: ignore }
   pin:
     needs: [candidate, replica]
+    if: needs.candidate.outputs.pin == '1'
     environment: release
     runs-on: ubuntu-latest
     steps:
