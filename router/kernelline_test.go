@@ -750,3 +750,92 @@ func startedPred(rg *rig, machine string) string {
 	})
 	return p
 }
+
+// kernelLineT: a kernel line under test: its machines as its starts make them, its pauses and its resumes
+type kernelLineT struct {
+	t    *testing.T
+	rg   *rig
+	k    *kerneltest.Kernel
+	sid  string
+	last string
+}
+
+// next: the machine the line's start made (the spawner's cert onto it is notarized)
+func (l *kernelLineT) next(what string) *kerneltest.FakeMachine {
+	l.t.Helper()
+	waitFor(l.t, what, func() bool {
+		s := kernelSession(l.rg, l.sid)
+		return s.MachineID != "" && s.MachineID != l.last && s.Kernel != nil && s.Kernel.MachineCert != nil
+	})
+	l.last = kernelSession(l.rg, l.sid).MachineID
+	return l.k.Fly.Machine(l.last)
+}
+
+func (l *kernelLineT) pause() {
+	l.t.Helper()
+	if err := l.rg.r.Pause(l.sid); err != nil {
+		l.t.Fatal(err)
+	}
+	if err := l.rg.r.waitActionEnd(l.sid, "paused"); err != nil {
+		l.t.Fatal(err, kernelSession(l.rg, l.sid).Error)
+	}
+}
+
+func (l *kernelLineT) resume() {
+	l.t.Helper()
+	if err := l.rg.r.Resume(l.sid, false); err != nil {
+		l.t.Fatal(err)
+	}
+}
+
+// booted: the machine's first status report, as its supervisor sends it once the boot is done
+func (l *kernelLineT) booted(m *kerneltest.FakeMachine) {
+	l.t.Helper()
+	if code, body := kdo(l.t, l.rg.r.MachineHandler(), m, "POST", "/m/status", `{"raw":""}`); code != 200 {
+		l.t.Fatalf("the status report: %d %s", code, body)
+	}
+}
+
+// a kernel machine asked for its snapshot while it is still booting carries over the snapshot its source names, as a
+// core line's does (snapstream.go): the router looked for the predecessor in the old core's cert only, which a kernel
+// machine has none of, and refused the carry with 409
+func TestABootingKernelMachineCarriesTheSnapshotItsSourceNames(t *testing.T) {
+	rg, k := kernelRig(t)
+	l := &kernelLineT{t: t, rg: rg, k: k, sid: kernelStart(t, rg, k, "carried")}
+	h := rg.r.MachineHandler()
+	m1 := l.next("the machine")
+	l.booted(m1)
+	tarball := makeTar(t, rg.files)
+	sum := sha256.Sum256(tarball)
+	want := hex.EncodeToString(sum[:])
+	snapSig, _ := m1.Sig.Sign([]byte(want))
+	putSnap(t, rg.r, m1.ID, tarball, snapSig)
+	l.pause()
+	l.resume()
+	m2 := l.next("the second machine")
+	// a hash its source doesn't name is refused; the one it names becomes its own snapshot, signed by its key
+	wrong := strings.Repeat("1", 64)
+	ws, _ := m2.Sig.Sign([]byte(wrong))
+	if code, body := kdo(t, h, m2, "POST", "/m/snapshot-carry", `{"sha256":"`+wrong+`","sig":"`+ws+`"}`); code != 409 {
+		t.Fatalf("carried a hash the source doesn't name: %d %s", code, body)
+	}
+	cs, _ := m2.Sig.Sign([]byte(want))
+	if code, body := kdo(t, h, m2, "POST", "/m/snapshot-carry", `{"sha256":"`+want+`","sig":"`+cs+`"}`); code != 200 {
+		t.Fatalf("the carry: %d %s", code, body)
+	}
+	if s := rg.r.snap(m2.ID); s == nil || s.State != "committed" || s.Sha256 != want || string(snapBytes(rg.r, m2.ID)) != string(tarball) {
+		t.Fatalf("the second machine's snapshot: %+v", s)
+	}
+	// the pause kills it into a source that names the snapshot, and the next machine restores it
+	l.pause()
+	ks := kernelSession(rg, l.sid)
+	sc, _ := doc.PeekCert(*ks.Kernel.SourceCert)
+	if sc.Pred != doc.Object("fly-"+m2.ID) || sc.Source.Snapshot != want || ks.NoSnapshot != "" {
+		t.Fatalf("the source after the carry: %+v %q", sc, ks.NoSnapshot)
+	}
+	l.resume()
+	m3 := l.next("the third machine")
+	if code, body := kdo(t, h, m3, "GET", "/m/snapshot", ""); code != 200 || string(body) != string(tarball) {
+		t.Fatalf("the third machine's snapshot: %d", code)
+	}
+}

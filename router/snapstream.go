@@ -12,7 +12,8 @@ package main
 //	                          signature and that the pending file has that hash, then puts it in place: the snapshot.
 //	POST /m/snapshot-failed   {error}: the machine couldn't take it; the waiting pause stops waiting at once.
 //	POST /m/snapshot-carry    {sha256, sig}: a machine asked while it is still booting has no state of its own: its
-//	                          state is its predecessor's snapshot, the one its cert names. It signs that hash; the
+//	                          state is its predecessor's snapshot, the one its cert names (a kernel machine: the one
+//	                          its source names). It signs that hash; the
 //	                          router links the predecessor's file as this machine's snapshot, so the line goes on
 //	                          from it instead of losing it (and the machine stops booting).
 //
@@ -27,6 +28,8 @@ import (
 	"regexp"
 	"strconv"
 	"time"
+
+	"github.com/DE0CH/jarvis4/kernel/doc"
 )
 
 const streamMarker = "stream"
@@ -133,6 +136,16 @@ func (r *Router) registerSnapStream(mmux *http.ServeMux, m machineRoute) {
 				}
 				c.Decode(&x)
 				pred, named = x.PredID, x.Snapshot
+				return
+			}
+			// a kernel machine has no cert of the old core: the hash is the one its source names, the predecessor the
+			// machine that left that snapshot (kernelline.go kernelPred)
+			st, s := d.Started[machine], d.Sessions[d.Machines[machine]]
+			if st == nil || s == nil || s.MachineID != machine || s.Kernel == nil || s.Kernel.SourceCert == nil {
+				return
+			}
+			if sc, err := doc.PeekCert(*s.Kernel.SourceCert); err == nil && sc.Source != nil {
+				pred, named = st.KernelPred, sc.Source.Snapshot
 			}
 		})
 		if pred == "" || named == "" || named != in.Sha256 {
