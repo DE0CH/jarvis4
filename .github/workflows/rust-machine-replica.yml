@@ -2,13 +2,13 @@ name: rust-machine-replica
 # The gate before the Rust jarvis-machine replaces machine/ (Deyao, 2026-11-17: Jarvis 4 rewritten in Rust part by
 # part, each crate replacing its Go part once it passes that part's tests and the e2e replica): the session image the
 # router pins now, with only jarvis-machine swapped for rust/machine's build (session-image/rust-machine.Dockerfile,
-# ghcr.io/de0ch/jarvis4-session:rust-<sha12>), through a kernel line's life on real Fly machines (infra/e2e-kernel.sh:
+# ghcr.io/de0ch/jarvis4-session:rust-<sha12>), through a kernel line's life on real Fly machines (rust/e2e-kernel:
 # a new session on the kernel, pause with its snapshot, resume restoring it, destroy). Runs on every push to main that
 # changes rust/ (or by hand); deleted with machine/ at the cut.
 on:
   push:
     branches: [main]
-    paths: [rust/**, session-image/rust-machine.Dockerfile, infra/e2e-kernel.sh, e2e/kernel/**, .github/workflows/rust-machine-replica.yml]
+    paths: [rust/**, session-image/rust-machine.Dockerfile, e2e/kernel/**, .github/workflows/rust-machine-replica.yml]
   workflow_dispatch:
 permissions:
   contents: read
@@ -57,7 +57,7 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           curl -fsSL https://fly.io/install.sh | sh > /dev/null
           echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
-      - name: a kernel line's life on the candidate (infra/e2e-kernel.sh)
+      - name: a kernel line's life on the candidate (rust/e2e-kernel)
         env:
           JARVIS2_FLY_TOKEN: ${{ secrets.REPLICA_FLY_TOKEN }}
           E2E_SESSION_IMAGE: ${{ steps.img.outputs.image }}
@@ -66,7 +66,8 @@ jobs:
           [ -n "$JARVIS2_FLY_TOKEN" ] || { echo "::error::secret REPLICA_FLY_TOKEN is missing from the GitHub environment 'replica'"; exit 1; }
           mkdir -p "$E2E_LOGS"
           set -o pipefail
-          infra/e2e-kernel.sh 2>&1 | tee "$E2E_LOGS/run.log"
+          (cd rust && cargo build --release --locked -p e2e-kernel)
+          rust/target/release/e2e-kernel 2>&1 | tee "$E2E_LOGS/run.log"
       - name: the logs' tails as annotations (readable without a GitHub login)
         if: failure()
         run: |

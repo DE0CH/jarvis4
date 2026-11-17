@@ -1,11 +1,13 @@
-// e2e/kernel: a kernel line's whole life on real Fly machines (infra/e2e-kernel.sh runs it): a router and the eight
-// kernel components on this session, the machines reaching the router over Fly's private network. It plays the
-// iPhone with software keys: Recovers the kernel's secrets (the public TEST master key, e2e/testdata), signs the root
-// grant with a root key, gives the spawner the Fly token, then a new session on the kernel (the phone signs its
+// e2e/kernel: a kernel line's whole life on real Fly machines (rust/e2e-kernel runs it): a router and the nine
+// kernel components here, the machines reaching the router over a WireGuard peer of the Fly org. It plays the
+// iPhone with software keys: registers the root key and signs the roster of the components' fresh keys, Recovers the
+// kernel's secrets (the public TEST master key, e2e/testdata), signs the root grant with the root key, gives the
+// spawner the Fly token, then a new session on the kernel (the phone signs its
 // source), waits for its machine to boot from its kernel documents and pull its secrets, pauses it (its snapshot goes
 // into the next source), resumes it (a new machine restores that snapshot), and destroys it (the source burns).
 //
 //	E2E_ROUTER (the router), E2E_SPAWNER (the spawner, direct), E2E_DATA_DIR (the router's state), E2E_MASTER_KEY_FILE,
+//	E2E_ROOT_KEY_FILE (the root key the components were started with), E2E_KERNEL (role=URL,… of every component),
 //	E2E_FLY_TOKEN
 package main
 
@@ -21,6 +23,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/DE0CH/jarvis4/e2e/routerdb"
@@ -126,7 +130,38 @@ func main() {
 	}
 	phone, _ := sig.NewSigner()
 	phoneAgree, _ := ecdh.P256().GenerateKey(rand.Reader)
-	root, _ := sig.NewSigner()
+	rk, err := os.ReadFile(os.Getenv("E2E_ROOT_KEY_FILE"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	root, err := sig.SignerFromPEM(rk)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	step("the roster: the root key registered, every component's fresh keys vouched for in one root-signed document")
+	must("POST", router+"/api/kernel/root-key", map[string]string{"rootKey": root.PublicKey()}, nil)
+	ro := sig.Roster{Kind: "kernel-roster", Copy: "blue"}
+	for _, kv := range strings.Split(strings.TrimRight(os.Getenv("E2E_KERNEL"), ","), ",") {
+		role, base, _ := strings.Cut(kv, "=")
+		var m sig.Identity
+		waitFor(role+"'s identity", time.Minute, func() bool {
+			code, b := call("GET", base+"/identity", nil)
+			if code != 200 {
+				return false
+			}
+			if role == "secrets" { // {role, signingKey, agreementKey, state}
+				return json.Unmarshal(b, &m) == nil && m.SigningKey != ""
+			}
+			var d sig.Doc // self-signed {payload, sig}
+			return json.Unmarshal(b, &d) == nil && json.Unmarshal([]byte(d.Payload), &m) == nil && m.SigningKey != ""
+		})
+		ro.Members = append(ro.Members, sig.Identity{Role: m.Role, SigningKey: m.SigningKey, AgreementKey: m.AgreementKey})
+	}
+	sort.Slice(ro.Members, func(i, j int) bool { return ro.Members[i].Role < ro.Members[j].Role })
+	rp, _ := json.Marshal(ro)
+	rsig, _ := root.Sign(rp)
+	must("POST", router+"/api/kernel/roster", map[string]string{"payload": string(rp), "rootSig": rsig}, nil)
 
 	step("the kernel's secrets: a Reset with the test master key, naming the phone and the root key")
 	var id struct{ SigningKey, AgreementKey string }

@@ -83,6 +83,15 @@ impl Signer {
             .map_err(|_| Error::NotP256)
     }
 
+    /// The key as PKCS#8 PEM (what openssl genpkey writes; the e2e's box and root keys)
+    pub fn to_pkcs8_pem(&self) -> String {
+        use p256::pkcs8::{EncodePrivateKey, LineEnding};
+        SecretKey::from(&self.key)
+            .to_pkcs8_pem(LineEnding::LF)
+            .map(|z| z.to_string())
+            .unwrap_or_default()
+    }
+
     /// The raw 32-byte scalar (the machine keeps its private halves this way)
     pub fn from_scalar(b: &[u8]) -> Result<Self, Error> {
         SigningKey::from_slice(b)
