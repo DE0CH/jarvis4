@@ -3,6 +3,9 @@
 import importlib.machinery, importlib.util, json, os, sys, tempfile, threading, time
 loader = importlib.machinery.SourceFileLoader("jr", os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis-request"))
 spec = importlib.util.spec_from_loader("jr", loader); jr = importlib.util.module_from_spec(spec); loader.exec_module(jr)
+# the command itself names the supervisor's outcomes dir (2026-11-17: only this test set it, and every real filing
+# failed "NameError: OUTCOMES" while it waited)
+assert jr.OUTCOMES == "/run/jarvis/outcomes", "jarvis-request names no outcomes dir"
 jr.OUTCOMES = os.path.join(tempfile.mkdtemp(), "out"); os.makedirs(jr.OUTCOMES)
 def put(ref, outcome, ns):
     json.dump({"ref": ref, "outcome": outcome, "text": f"{outcome.upper()}: {ref}"}, open(f"{jr.OUTCOMES}/{ref}.{ns}.json", "w"))
