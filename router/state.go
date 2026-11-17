@@ -172,6 +172,7 @@ type State struct {
 	data persisted
 	sdb  *stateDB
 	seal *Sealer // sealed.go: the router's secrets in the database
+	load doLoad  // statestats.go: what the Do's of the last minute cost (under mu)
 	// failures.go: told (outside the lock) of each session that has just become failed, with its reason
 	onFailed func(session, reason string)
 }
@@ -197,8 +198,10 @@ func (s *State) Do(fn func(d *persisted)) {
 }
 
 func (s *State) doLocked(fn func(d *persisted)) {
+	asked := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.load.done(asked, time.Now()) // statestats.go
 	if s.sdb == nil {
 		fn(&s.data) // a State that was never opened (a test's frozen stand-in)
 		return
@@ -243,14 +246,19 @@ func (s *State) doOnce(fn func(d *persisted)) error {
 	var written rows
 	var ver int64
 	err := pgx.BeginFunc(ctx, s.sdb.db.pool, func(tx pgx.Tx) error {
+		t := time.Now()
 		if err := tx.QueryRow(ctx, "SELECT v FROM state_version WHERE id = 1 FOR UPDATE").Scan(&ver); err != nil {
 			return err
 		}
+		s.load.rowLock += time.Since(t)
 		if ver != s.sdb.ver {
+			t = time.Now()
 			if err := s.reload(ctx, tx); err != nil {
 				return err
 			}
 			s.sdb.ver = ver
+			s.load.reloads++
+			s.load.reload += time.Since(t)
 		}
 		fn(&s.data)
 		d := &s.data
@@ -260,11 +268,15 @@ func (s *State) doOnce(fn func(d *persisted)) error {
 				d.SessCerts[id] = ss.Cert
 			}
 		}
+		t = time.Now()
 		now, changed, err := s.sdb.writeTx(ctx, tx, d)
+		s.load.write += time.Since(t)
 		if err != nil {
 			return err
 		}
+		s.load.note(now)
 		if changed {
+			s.load.writes++
 			if err := tx.QueryRow(ctx, "UPDATE state_version SET v = v + 1 WHERE id = 1 RETURNING v").Scan(&ver); err != nil {
 				return err
 			}
