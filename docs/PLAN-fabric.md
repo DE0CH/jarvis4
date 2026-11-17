@@ -6,8 +6,22 @@ sandboxd, the AMI recipe, hermit's scaler and placement), unmodified. What diffe
 session's git repository and its own CLAUDE.md, skills and settings, not a managed CLAUDE.md. The existing kinds
 (Fly machines, AWS machines, every harness on them) keep their code paths and tests; nothing of theirs changes.
 
-Status: design confirmed with Deyao; aviary's part is written; Jarvis 4's part is not built yet. This file is the
-plan and becomes the description as the parts land.
+Status (2026-11-17): design confirmed with Deyao. Built and pushed, all inert until infra and a kernel release
+turn them on:
+
+| Part | State |
+|---|---|
+| aviary: spec `mounts`, `sandbox.mounts`, `directEgress`, live console tail | pushed (DE0CH/aviary d417d225) |
+| kernel/spawner: the fabric runner (`fabric.go`), objects `fabric-x<32 hex>` | pushed, tests pass; ships with a kernel release (Deyao's OK) |
+| machine: `JARVIS2_RUNNER=fabric` (object, keys line, records-only snapshot) | pushed, tests pass |
+| router: runner `fabric`, the session's conversation, the env endpoint, workspace delete on Destroy | to do |
+| the source image: the phone signs a source's image after checking CI's signature, so `jarvis4-session-fabric` needs CI's signature and the app's acceptance of the repo | to do |
+| image `jarvis4-session-fabric` and `aviary-sandbox`'s bind mode | to do |
+| hermit-jarvis: the fabric control-token hash, activity forwarding | to do |
+| infra: AWS eu-central-1, AMI, hermit + gateway, JuiceFS, bucket | to do |
+| replica end to end (`infra/e2e-aviary.sh` fabric run) | to do |
+
+This file is the plan and becomes the description as the parts land.
 
 ## Decisions (Deyao, 2026-11-17)
 
@@ -75,11 +89,22 @@ The spawner's `Runner` interface, as for AWS:
 | Destroy | `POST …/sandbox/release {"reason": "deleted"}` (forced) |
 | DeleteVolume | `DELETE /v1/workspaces/{cid}` when the session is destroyed (the workspace and the home go); a pause keeps them |
 
-Open points to settle in the code: how a machine gets its per-machine environment (`JARVIS2_SOURCE`, the roster and
-root key; hermit's contract has no per-sandbox environment, so the machine asks the router for it by its sandbox id
-over the fabric's egress address, which the gateway sends to the router's machine port), and the image check (hermit
-starts the one image its `hermit.json` names; a session's source names that digest, so a resume always starts on the
-current image).
+The machine's environment: hermit's contract passes no per-sandbox environment, so the spawn's answer carries it
+(`env`: `JARVIS2_SOURCE`, the roster, the root key, `JARVIS2_URL`) and the router serves it to the machine. The
+fabric image's entrypoint reads its sandbox token from the boot environment's proxy URL (hermit's `hst1`, Ed25519,
+naming the sandbox), asks the router at the fabric's egress address (`KERNEL_FABRIC_MACHINE_URL`, the gateway's
+DNAT to the router's fabric listener) with that token, and gets the env plus `JARVIS2_RUNNER=fabric` and
+`JARVIS2_MACHINE_ID=x<sandbox id>`. The router checks the token with hermit's `GET /v1/sandbox-token-keys`. Nothing
+in the env is secret; the keys line and the cert are the trust path, as on the other runners.
+
+The image check: hermit starts the one image its `hermit.json` names, and the spawner's init refuses a sandbox on
+another digest than the source's (`wrong-image`), so a session's sources name the fabric image hermit runs, and a
+resume after a pin moved starts on the new image (the router writes the new source on the current pin, as for Fly).
+
+The snapshot on the fabric holds only the small files (`machine/main.go` `fabricStatePaths`): the Jarvis records
+(grants, the line's keys, deliveries) keep travelling signed, the directories stay on JuiceFS. So hermit, its hosts,
+the JuiceFS metadata database and the bucket are trusted with the session's files between machines, as Deyao
+accepted hermit and its hosts as trusted like Fly.
 
 ### hermit-jarvis (DE0CH/jarvis4 aviary/), only for sessions whose runner is `fabric`
 
