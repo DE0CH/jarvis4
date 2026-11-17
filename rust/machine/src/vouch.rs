@@ -132,9 +132,7 @@ pub fn read_image_env() -> Vec<String> {
 
 /// boot's first step. When the env isn't already the clean one, re-exec with it
 pub fn ensure_clean_env() -> Result<()> {
-    let cur_env: Vec<String> = std::env::vars_os()
-        .map(|(k, v)| format!("{}={}", k.to_string_lossy(), v.to_string_lossy()))
-        .collect();
+    let cur_env: Vec<String> = crate::env::vars().into_iter().map(|(k, v)| format!("{k}={v}")).collect();
     let clean = clean_env(&cur_env, &read_image_env())?;
     let mut cur = cur_env.clone();
     cur.sort();

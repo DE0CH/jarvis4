@@ -29,10 +29,10 @@ const API_MAX_BODY: usize = 64 << 20;
 
 /// serve_api_proxy: runs for the supervisor's life
 pub fn serve_api_proxy(c: &Client) {
-    let addr = std::env::var("JARVIS_API_ADDR")
-        .ok()
-        .filter(|a| !a.is_empty())
-        .unwrap_or_else(|| API_PROXY_ADDR.to_string());
+    let mut addr = crate::env::get("JARVIS_API_ADDR");
+    if addr.is_empty() {
+        addr = API_PROXY_ADDR.to_string();
+    }
     logf!("session API on http://{addr} (→ router /m/api)");
     let app = api_proxy_router(c.clone());
     let r = rt::block_on(async move {

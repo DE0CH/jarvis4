@@ -80,12 +80,12 @@ fn getenv(k: &str) -> String {
         .lock()
         .ok()
         .and_then(|m| m.get(k).cloned())
-        .unwrap_or_else(|| std::env::var(k).unwrap_or_default())
+        .unwrap_or_else(|| crate::env::get(k))
 }
 
 /// the process env with the task's values over it
 fn environ() -> Vec<String> {
-    let mut m: BTreeMap<String, String> = std::env::vars().collect();
+    let mut m: BTreeMap<String, String> = crate::env::vars().into_iter().collect();
     if let Ok(t) = TASK_ENV.lock() {
         m.extend(t.iter().map(|(k, v)| (k.clone(), v.clone())));
     }

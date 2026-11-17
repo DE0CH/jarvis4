@@ -75,9 +75,8 @@ pub const CLAUDE_HOME: &str = "/home/claude";
 
 /// $HOME (Go's os.UserHomeDir)
 pub fn home() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"))
+    let h = crate::env::get("HOME");
+    PathBuf::from(if h.is_empty() { "/" } else { &h })
 }
 
 /// where the predecessor's snapshot lands while it is checked (a machine with a volume: on the volume)

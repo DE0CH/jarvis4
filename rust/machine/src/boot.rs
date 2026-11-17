@@ -149,12 +149,10 @@ pub fn prepare() -> Result<HarnessSpec> {
     // the core: the one that created this machine. It sets its signing key in the machine's Fly config, and only the
     // core's Fly token can create or change machines in this app, so the key comes from the core through Fly, never
     // from the router.
-    let core_key = std::env::var(CORE_KEY_ENV)
-        .unwrap_or_default()
+    let core_key = crate::env::get(CORE_KEY_ENV)
         .trim()
         .to_string();
-    let kernel = !std::env::var(crate::kernelboot::KERNEL_ROOT_ENV)
-        .unwrap_or_default()
+    let kernel = !crate::env::get(crate::kernelboot::KERNEL_ROOT_ENV)
         .trim()
         .is_empty();
     if core_key.is_empty() && !kernel {
@@ -326,7 +324,7 @@ pub fn prepare() -> Result<HarnessSpec> {
     crate::snapstream::hold_if_carried();
     util::write_file(&paths::booted_path(), util::now_rfc3339().as_bytes(), 0o644)
         .map_err(|e| anyhow!("booted marker: {e}"))?;
-    let clean: Vec<String> = std::env::vars().map(|(k, v)| format!("{k}={v}")).collect(); // already the clean env
+    let clean: Vec<String> = crate::env::vars().into_iter().map(|(k, v)| format!("{k}={v}")).collect(); // already the clean env
     if let Some(t) = cert
         .options
         .harness
@@ -385,10 +383,10 @@ pub fn go_list(v: &[String]) -> String {
 /// the supervisor starts the local Jarvis API once booted exists; the harness's entrypoint calls it at once, so wait
 /// until it accepts connections (at most d)
 pub fn wait_api_proxy(d: Duration) {
-    let addr = std::env::var("JARVIS_API_ADDR")
-        .ok()
-        .filter(|a| !a.is_empty())
-        .unwrap_or_else(|| crate::apiproxy::API_PROXY_ADDR.to_string());
+    let mut addr = crate::env::get("JARVIS_API_ADDR");
+    if addr.is_empty() {
+        addr = crate::apiproxy::API_PROXY_ADDR.to_string();
+    }
     let end = Instant::now() + d;
     while Instant::now() < end {
         if let Ok(a) = addr.parse::<std::net::SocketAddr>()

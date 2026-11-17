@@ -31,6 +31,7 @@ mod deliver;
 mod deploykeys;
 mod disk;
 mod downgrade;
+mod env;
 mod gojson;
 mod grants;
 mod guard;
@@ -70,6 +71,8 @@ mod supervisor;
 mod supervisorlog;
 mod task;
 mod teardown;
+#[cfg(test)]
+mod tests;
 mod util;
 mod volume;
 mod vouch;
@@ -89,9 +92,9 @@ macro_rules! logf {
 /// this isn't a session machine (a test, a dev box)
 pub fn machine_id() -> String {
     if on_aws() || on_fabric() {
-        return std::env::var("JARVIS2_MACHINE_ID").unwrap_or_default();
+        return crate::env::get("JARVIS2_MACHINE_ID");
     }
-    std::env::var("FLY_MACHINE_ID").unwrap_or_default()
+    crate::env::get("FLY_MACHINE_ID")
 }
 
 /// this machine's kernel object, "<runner>-<id>" (kernel/doc)
@@ -107,12 +110,12 @@ pub fn machine_object(id: &str) -> String {
 
 /// started by the spawner's AWS runner (the instance's unit sets JARVIS2_RUNNER=aws)
 pub fn on_aws() -> bool {
-    std::env::var("JARVIS2_RUNNER").as_deref() == Ok("aws")
+    crate::env::get("JARVIS2_RUNNER") == "aws"
 }
 
 /// a gVisor sandbox on aviary's fabric (docs/PLAN-fabric.md)
 pub fn on_fabric() -> bool {
-    std::env::var("JARVIS2_RUNNER").as_deref() == Ok("fabric")
+    crate::env::get("JARVIS2_RUNNER") == "fabric"
 }
 
 fn run(args: &[String]) -> Result<()> {

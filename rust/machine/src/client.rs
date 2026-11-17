@@ -54,7 +54,7 @@ impl Client {
     pub fn new() -> Result<Client> {
         load_private()?;
         let mut conf = ClientConf {
-            url: std::env::var("JARVIS2_URL").unwrap_or_default(),
+            url: crate::env::get("JARVIS2_URL"),
             machine: machine_id(),
         };
         if !conf.url.is_empty() && !conf.machine.is_empty() {

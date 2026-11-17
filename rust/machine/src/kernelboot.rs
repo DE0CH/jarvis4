@@ -139,15 +139,14 @@ struct KernelSettings {
 
 /// the roster the documents come with (checked against the root key in the Fly config), else the one in the Fly config
 pub fn kernel_trust_for(b: &KernelBootDocs) -> Result<Trust> {
-    let t = Trust::new(std::env::var(KERNEL_ROOT_ENV).unwrap_or_default().trim());
+    let t = Trust::new(crate::env::get(KERNEL_ROOT_ENV).trim());
     if let Some(r) = &b.roster {
         t.set(r.as_sig_doc(), None)
             .map_err(|e| anyhow!("the kernel's roster from the router: {e}"))?;
         return Ok(t);
     }
     let d: SignedDoc = gojson::unmarshal(
-        std::env::var(KERNEL_ROSTER_ENV)
-            .unwrap_or_default()
+        crate::env::get(KERNEL_ROSTER_ENV)
             .as_bytes(),
     )
     .map_err(|e| anyhow!("the kernel's roster ({KERNEL_ROSTER_ENV}): {e}"))?;
@@ -362,8 +361,7 @@ fn write_trust_and_cert(trust: &KernelTrust, cert: Option<&Cert>) -> Result<()> 
 }
 
 fn source_env() -> String {
-    std::env::var(KERNEL_SOURCE_ENV)
-        .unwrap_or_default()
+    crate::env::get(KERNEL_SOURCE_ENV)
         .trim()
         .to_string()
 }

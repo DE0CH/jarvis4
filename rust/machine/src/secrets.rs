@@ -71,8 +71,7 @@ struct MemState {
 impl HeldSecrets {
     /// supervisor-core's start: the values the memfd holds (from an earlier one), if any
     pub fn load_held(&self) {
-        let Ok(fd) = std::env::var(SECRETS_FD_ENV)
-            .unwrap_or_default()
+        let Ok(fd) = crate::env::get(SECRETS_FD_ENV)
             .parse::<i32>()
         else {
             return;
@@ -133,6 +132,14 @@ impl HeldSecrets {
         }
         if let Err(e) = crate::deploykeys::setup_deploy_keys(&clean) {
             logf!("deploy keys: {e:#}");
+        }
+    }
+
+    /// tests: the RAM copy as given (no deploy keys, no memfd)
+    #[cfg(test)]
+    pub fn set_for_test(&self, m: HashMap<String, String>) {
+        if let Ok(mut g) = self.vals.write() {
+            *g = (m, false);
         }
     }
 

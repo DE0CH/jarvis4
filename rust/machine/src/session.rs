@@ -32,7 +32,7 @@ pub fn session() -> &'static SessionIds {
             uid: Uid::current().as_raw(),
             gid: Gid::current().as_raw(),
             groups: vec![],
-            home: std::env::var("HOME").unwrap_or_default(),
+            home: crate::env::get("HOME"),
         };
         let Ok(Some(u)) = nix::unistd::User::from_name(SESSION_USER) else {
             return own;
@@ -82,6 +82,7 @@ fn unprotected_command(flag: &str, name: &str, args: &[&str]) -> Command {
     if !privileged() {
         let mut c = Command::new(name);
         c.args(args);
+        crate::env::apply(&mut c);
         return c;
     }
     let mut c = Command::new("/proc/self/exe");
