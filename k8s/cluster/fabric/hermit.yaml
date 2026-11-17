@@ -31,7 +31,7 @@ spec:
             labelSelector: { matchLabels: { app: hermit } }, matchLabelKeys: [pod-template-hash] }
       initContainers:
         - name: jfs
-          image: juicedata/mount:ce-v1.4.1
+          image: juicedata/mount:ce-v1.4.1@sha256:ab99388a397fe52575fdeb84a9e017c3c594a6b07d63966cd4805bbf6f172673
           restartPolicy: Always
           # hermit's container starts only once the volume is mounted (and keeps it: a bind made at its start holds
           # the FUSE mount; a later remount reaches it through HostToContainer)

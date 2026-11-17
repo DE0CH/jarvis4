@@ -35,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4  # workflow_run, schedule: main's newest commit, the pin included
       - run: |
-          image=$(grep -oE 'SESSION_IMAGE, value: "[^"]+"' k8s/cluster/router/router.yaml | cut -d'"' -f2)
+          image=$(grep -oE 'name: SESSION_IMAGE, value: "[^"]+"' k8s/cluster/router/router.yaml | cut -d'"' -f2)
           infra/aws/bake.sh bake ${{ matrix.region }} "$image"
   apply:
     needs: bake
