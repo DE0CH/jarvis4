@@ -70,6 +70,7 @@ fn reset_seams() {
     *crate::snapshot::TEST_BOOTED.lock().unwrap_or_else(|e| e.into_inner()) = None;
     *crate::memory::TEST_SIGNALS.lock().unwrap_or_else(|e| e.into_inner()) = None;
     *crate::stall::TEST_SHELL_JOBS.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::deliver::TEST_CHANNEL.write().unwrap_or_else(|e| e.into_inner()) = None;
     *crate::deliver::PREDECESSOR_KEY.lock().unwrap_or_else(|e| e.into_inner()) = String::new();
     crate::deliver::RESTORED_ARCHIVE.store(false, std::sync::atomic::Ordering::SeqCst);
     crate::snapshot::FROZEN.store(false, std::sync::atomic::Ordering::SeqCst);

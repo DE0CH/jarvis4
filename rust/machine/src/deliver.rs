@@ -480,7 +480,11 @@ pub fn deliver(c: &Client, d: Delivery) -> Result<()> {
     } else if d.kind == "request-outcome" && crate::outcomes::filed_by_command(&d) {
         // a request's outcome is the answer of the jarvis-request command that filed it, never a message into the
         // conversation (Deyao, 2026-11-17)
-        crate::outcomes::record_outcome(&d, &text, now)?;
+        let ns = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        crate::outcomes::record_outcome(&d, &text, ns)?;
     } else {
         send_to_harness(&cert.options.harness, &live_mode(&cert), "jarvis", &text)?;
     }
@@ -512,9 +516,18 @@ pub fn live_mode(cert: &Cert) -> String {
     }
 }
 
-/// the Jarvis channel's sender and config (session-image/Dockerfile)
+/// the Jarvis channel's sender and config (session-image/Dockerfile; tests give their own)
 pub const CHANNEL_SEND: &str = "/usr/local/bin/jarvis-channel-send";
 pub const CHANNEL_CONFIG: &str = "/etc/claude-code/jarvis-channel.json";
+pub static TEST_CHANNEL: std::sync::RwLock<Option<(String, String)>> = std::sync::RwLock::new(None);
+
+fn channel() -> (String, String) {
+    TEST_CHANNEL
+        .read()
+        .ok()
+        .and_then(|c| c.clone())
+        .unwrap_or_else(|| (CHANNEL_SEND.into(), CHANNEL_CONFIG.into()))
+}
 
 /// a command with `stdin` written to it, its combined output, killed after `limit`
 pub fn run_with_input(
@@ -558,14 +571,13 @@ pub fn run_with_input(
 
 /// the text into the harness (the same as the router's old exec path, run here)
 pub fn send_to_harness(harness: &str, mode: &str, from: &str, text: &str) -> Result<()> {
+    let (send, cfg) = channel();
     let cmd = if via_harness_send(harness) {
         session_command("/usr/local/bin/harness-send", &["--queue"])
-    } else if util::file_exists(std::path::Path::new(CHANNEL_SEND))
-        && util::file_exists(std::path::Path::new(CHANNEL_CONFIG))
-    {
+    } else if util::file_exists(std::path::Path::new(&send)) && util::file_exists(std::path::Path::new(&cfg)) {
         // the Jarvis channel: the image refuses every cross-session peer message, so Jarvis's own messages go in
         // through its channel, whatever the session's permission mode
-        session_command(CHANNEL_SEND, &["--from", from])
+        session_command(&send, &["--from", from])
     } else {
         // an image before the channel: the peer socket, in the mode class claude runs in
         let fm = if mode == "bypass" {
