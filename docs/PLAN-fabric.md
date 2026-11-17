@@ -19,8 +19,8 @@ turn them on:
 | the source image: a fabric session's sources name `FABRIC_SESSION_IMAGE` with `FABRIC_SESSION_IMAGE_SIG` (router), the iPhone app accepts the fabric repo (`KernelChecks.fabricImageRepo`) | pushed; the app needs a TestFlight build; CI pins and signs it (images.yml `fabric-pin`) once the router's manifest has `FABRIC_SESSION_IMAGE` |
 | image `jarvis4-session-fabric` (images.yml job `fabric`, `session-image/fabric/`), `aviary-sandbox`'s bind mode, the env-fetching entrypoint | pushed; bind mode tested (`aviary-sandbox_test.sh`); the new GHCR package must be made public (github-web) before hosts can pull it |
 | hermit-jarvis: the fabric hermit's control hashes in the descriptor (`aviary/src/fabric.rs`, `FABRIC_HERMIT_URL`, `FABRIC_HERMIT_GATEWAY_TOKEN`) | pushed, tests pass (the flow unchanged). No activity forwarding: the fabric hermit's janitor keeps a sandbox whose supervisor answers its health (`silence_check`), and its `idleMinutes`/`maxLifetimeHours` are set past any session |
-| infra: AWS eu-central-1, AMI, hermit + gateway, JuiceFS, bucket | to do |
-| replica end to end (`infra/e2e-aviary.sh` fabric run) | to do |
+| infra: AWS eu-central-1 (AMI, launch template, scaler and AMI-CI users, image bucket, `fabric-ami.yml`), the gateway server, the fabric bucket and its fenced key, the fabric hermit with its database and JuiceFS on the cluster | done 2026-11-17; smoke test passed (`k8s/cluster/fabric/smoke.yaml`: a sandbox asked as the spawner asks, an AWS host in about a minute, the fabric image under gVisor, the console read live, released) |
+| the kernel release (the spawner's fabric runner, its env and network rule), then the router's `FABRIC_HERMIT_URL` and the first fabric session | waiting on Deyao's OK |
 
 This file is the plan and becomes the description as the parts land.
 
