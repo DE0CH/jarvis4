@@ -1,0 +1,16 @@
+[package]
+name = "jarvis-schedule"
+version = "0.1.0"
+edition = "2024"
+description = "schedule-wakeup and schedule-cron: a Jarvis 4 session arms, lists and cancels its own router crons"
+
+[[bin]]
+name = "jarvis-schedule"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
+ureq = { version = "2", default-features = false, features = ["json"] }
+
+[profile.release]
+strip = true

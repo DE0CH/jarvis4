@@ -36,7 +36,7 @@ func (r *Router) registerSessionAPI(app appRoute, m machineRoute) {
 	app("GET /api/sessions/{id}/wakeups", func(w http.ResponseWriter, req *http.Request) { r.getWakeups(w, req.PathValue("id"), false) })
 	for _, p := range []string{"POST /api/sessions/{id}/wakeup", "POST /api/sessions/{id}/wakeups"} {
 		app(p, func(w http.ResponseWriter, req *http.Request) {
-			appArmRefused(w, "wakeup", "scripts/schedule-wakeup.sh")
+			appArmRefused(w, "wakeup", "schedule-wakeup")
 		})
 	}
 	app("DELETE /api/sessions/{id}/wakeup", func(w http.ResponseWriter, req *http.Request) {
@@ -53,7 +53,7 @@ func (r *Router) registerSessionAPI(app appRoute, m machineRoute) {
 		r.postRunNow(w, req.PathValue("id"), "c", req.PathValue("name"))
 	})
 	app("GET /api/sessions/{id}/crons", func(w http.ResponseWriter, req *http.Request) { r.getCrons(w, req.PathValue("id")) })
-	app("POST /api/sessions/{id}/crons", func(w http.ResponseWriter, req *http.Request) { appArmRefused(w, "cron", "scripts/schedule-cron.sh") })
+	app("POST /api/sessions/{id}/crons", func(w http.ResponseWriter, req *http.Request) { appArmRefused(w, "cron", "schedule-cron") })
 	// hermit-jarvis: the next fire of an aviary session's chat schedules (schedule.go ChatSchedule)
 	app("PUT /api/sessions/{id}/chat-schedule", func(w http.ResponseWriter, req *http.Request) { r.putChatSchedule(w, req) })
 	app("DELETE /api/sessions/{id}/crons/{name}", func(w http.ResponseWriter, req *http.Request) {

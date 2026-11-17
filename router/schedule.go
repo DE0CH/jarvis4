@@ -643,7 +643,7 @@ func (r *Router) PendingSchedule(sid string) []string {
 			out = append(out, "watch "+w.Name)
 		}
 		if s != nil && s.Chat != nil {
-			out = append(out, "chat schedule (scripts/schedule-wakeup.sh --list)")
+			out = append(out, "chat schedule (schedule-wakeup --list)")
 		}
 	})
 	return out
