@@ -18,7 +18,7 @@ turn them on:
 | router: the conversation's files deleted at hermit on Destroy (`DELETE /v1/workspaces/{cid}`) | to do |
 | the source image: a fabric session's sources name `FABRIC_SESSION_IMAGE` with `FABRIC_SESSION_IMAGE_SIG` (router), the iPhone app accepts the fabric repo (`KernelChecks.fabricImageRepo`) | pushed; the app needs a TestFlight build; CI does not sign the fabric image yet (images.yml pin step: `jarvis2-session-image <ref>` with the CI key) |
 | image `jarvis4-session-fabric` (images.yml job `fabric`, `session-image/fabric/`), `aviary-sandbox`'s bind mode, the env-fetching entrypoint | pushed; bind mode tested (`aviary-sandbox_test.sh`); the new GHCR package must be made public (github-web) before hosts can pull it |
-| hermit-jarvis: the fabric control-token hash, activity forwarding | to do |
+| hermit-jarvis: the fabric hermit's control hashes in the descriptor (`aviary/src/fabric.rs`, `FABRIC_HERMIT_URL`, `FABRIC_HERMIT_GATEWAY_TOKEN`) | pushed, tests pass (the flow unchanged). No activity forwarding: the fabric hermit's janitor keeps a sandbox whose supervisor answers its health (`silence_check`), and its `idleMinutes`/`maxLifetimeHours` are set past any session |
 | infra: AWS eu-central-1, AMI, hermit + gateway, JuiceFS, bucket | to do |
 | replica end to end (`infra/e2e-aviary.sh` fabric run) | to do |
 
@@ -111,8 +111,8 @@ accepted hermit and its hosts as trusted like Fly.
 
 - the descriptor's `control.tokenSha256` also holds the fabric hermit's hash for the session's sandbox (read from
   the fabric hermit's `GET /v1/sandbox/self` as caller `gateway`);
-- the machine's health reports are passed on as `POST /v1/sandbox/activity` to the fabric hermit, so its janitor sees
-  the sandbox alive and busy while the session runs.
+- nothing else: the fabric hermit's janitor keeps a sandbox whose supervisor answers its health, and its idle and
+  lifetime limits are past any session's, so Jarvis 4's own pause stays the one that ends a sandbox.
 
 The fabric hermit's `hermit.json` leaves pausing to Jarvis 4: `idleMinutes` and `maxLifetimeHours` past any session,
 long `supervisorWaitSeconds` and `startDeadlineSeconds` (the supervisor comes up only after the machine's cert), and
