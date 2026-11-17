@@ -83,8 +83,9 @@ spec:
             - { name: BROWSERBASE_BUDGET_WARN_USD, value: "8" }
             # the fabric runner (router/fabricrunner.go, docs/PLAN-fabric.md): its listener for the fabric machines
             # (/m and GET /fabric/env), reached through the fabric gateway at a node's private address (Service
-            # router-fabric, k3s ServiceLB). Nothing of the fabric runs, and New session offers no fabric, until
-            # FABRIC_HERMIT_URL is set; the tokens are Secret router-secrets-fabric (router-secrets.py --part router-fabric)
+            # router-fabric, k3s ServiceLB). New session offers the fabric runner and the
+            # listener runs because FABRIC_HERMIT_URL is set; the tokens are Secret router-secrets-fabric (router-secrets.py --part router-fabric)
+            - { name: FABRIC_HERMIT_URL, value: "http://hermit.jarvis4-fabric.svc.cluster.local" }
             - { name: FABRIC_MACHINE_ADDR, value: ":3128" }
             - { name: FABRIC_SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session-fabric:sha-a2dd43d52916@sha256:33e1ad215011569db08dca55de5504abbaa8aa1882f255f48e6bcf31439d4bc3" }
             - { name: FABRIC_SESSION_IMAGE_SIG, value: "MEUCIEF+gG+gJsM8fu0Kk6mA0s70UXz/q4Q5PglqLqoDeksPAiEA6MJ5a76Q9z/LTJ2PCABGKqSBFuKhFnEBRN9DbXNpQQg=" }
