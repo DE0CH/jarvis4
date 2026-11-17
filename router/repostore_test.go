@@ -151,6 +151,72 @@ func TestARepoInABatchNamesTheAskingSession(t *testing.T) {
 	}
 }
 
+// A repo that has its deploy key already (Deyao, 2026-11-17: "sessions keep asking me to make a new deploy key even
+// when one already exists"): a session asking for it needs the key's store, so the ask is the add-store of that
+// store, alone or in a batch, and no new key is asked for. A session that holds the store asks for a new key (a
+// rotation), as does anyone naming no session.
+func TestARepoThatHasItsKeyIsAnAddStoreNotANewKey(t *testing.T) {
+	r := newTestRouter(t)
+	successions := repoCore(t, r, "DE0CH/claude-env")
+	addSession(r, "sA", "started", "mA", false)
+	addSession(r, "sH", "started", "mH", false)
+	r.st.Do(func(d *persisted) {
+		d.Sessions["sA"].Stores = []string{"default"}
+		d.Sessions["sH"].Stores = []string{"github-claude-env"}
+	})
+	r.updateRepos(func([]RepoEntry) []RepoEntry {
+		e, n := repoEntry("DE0CH/claude-env"), repoEntry("DE0CH/nokey")
+		e.Fingerprint = "SHA256:abc"
+		return []RepoEntry{e, n}
+	})
+	mA, mH, mh := newTestMachine(r, "mA"), newTestMachine(r, "mH"), r.MachineHandler()
+	requests := func() int {
+		n := 0
+		r.st.Do(func(d *persisted) { n = len(d.Inbox) })
+		return n
+	}
+
+	code, out := mA.do(t, mh, "POST", "/m/api/requests/repo/add", `{"repo":"https://github.com/de0ch/claude-env.git","explanation":"push the skill"}`)
+	as := approvalsFor(r, "sA")
+	if code != 200 || out["existing"] != true || out["store"] != "github-claude-env" || out["id"] != nil || requests() != 0 || len(as) != 1 {
+		t.Fatalf("%d %v, %d requests, approvals %+v", code, out, requests(), as)
+	}
+	a := as[0]
+	if a.Kind != "add-store" || a.Options["store"] != "github-claude-env" || a.Machine != "mA" || a.Explanation != "push the skill" ||
+		a.Origin.Caller != (Caller{Kind: "session", Session: "sA"}) || !strings.EqualFold(a.Origin.Call.Args["repo"].(string), "DE0CH/claude-env") || out["approval"] != a.ID {
+		t.Fatalf("%+v %+v", a, a.Origin)
+	}
+	if len(*successions) != 1 || strings.Join(toStrings((*successions)[0]["stores"]), ",") != "default,github-claude-env" {
+		t.Fatalf("successions %v", *successions)
+	}
+	// in a batch: the item is the add-store
+	r.st.Do(func(d *persisted) { d.Approvals = map[string]*Approval{} })
+	code, out = mA.do(t, mh, "POST", "/m/api/requests/batch", `{"summary":"work","items":[{"intent":"repo/add","repo":"DE0CH/claude-env"}]}`)
+	as = approvalsFor(r, "sA")
+	if code != 200 || requests() != 0 || len(as) != 1 || as[0].Kind != "add-store" || as[0].Options["store"] != "github-claude-env" || as[0].Batch == "" {
+		t.Fatalf("%d %v, %d requests, approvals %+v", code, out, requests(), as)
+	}
+	// still a new key: a repo with none, a session that holds the store (a rotation), an ask without the store
+	for i, c := range []struct {
+		m    testMachine
+		body string
+	}{
+		{mA, `{"repo":"DE0CH/nokey","explanation":"x"}`},
+		{mA, `{"repo":"DE0CH/unlisted","explanation":"x"}`},
+		{mH, `{"repo":"DE0CH/claude-env","explanation":"rotate"}`},
+		{mA, `{"repo":"DE0CH/claude-env","noStore":true,"explanation":"x"}`},
+	} {
+		code, out = c.m.do(t, mh, "POST", "/m/api/requests/repo/add", c.body)
+		if code != 200 || out["id"] == nil || requests() != i+1 {
+			t.Fatalf("%s: %d %v (%d requests)", c.body, code, out, requests())
+		}
+	}
+	// Deyao's own add makes a key
+	if _, out = appDo(t, r, "POST", "/api/requests/repo/add", `{"repo":"DE0CH/claude-env"}`, "cf-access-token", "x"); out["id"] == nil {
+		t.Fatalf("%v", out)
+	}
+}
+
 func toStrings(v any) []string {
 	out := []string{}
 	for _, x := range v.([]any) {

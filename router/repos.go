@@ -107,6 +107,36 @@ func (r *Router) updateRepos(fn func([]RepoEntry) []RepoEntry) error {
 	return r.st.WriteDoc("repos.json", b)
 }
 
+// existingRepoStore: a session asks for a repo that has its deploy key already and doesn't hold the key's store →
+// its running machine and that store: what it needs is the store (an add-store), not a new key. Every such ask used
+// to become a "make a deploy key" request, a new key for a repo that had one (Deyao, 2026-11-17). "" for anything
+// else, which asks for a key as before: a repo with no key, a session that holds the store (a rotation), an ask
+// that names no session (noStore, Deyao's own, the setup session's), one that makes the store sensitive.
+func (r *Router) existingRepoStore(c Caller, kind string, p RequestParams) (machine, store string) {
+	if kind != requestKindRepo || p.Action != "add" || p.Session == "" || (c.Kind != "session" && c.Kind != "actions") {
+		return "", ""
+	}
+	for _, e := range r.Repos() {
+		if strings.EqualFold(e.Repo, p.Repo) && e.Fingerprint != "" && (e.Sensitive || !p.Sensitive) {
+			store = e.Store
+		}
+	}
+	if store == "" {
+		return "", ""
+	}
+	r.st.Do(func(d *persisted) {
+		// a running machine, as an add-store takes (batches.go)
+		if s := d.Sessions[p.Session]; s != nil && s.MachineID != "" && (s.Cert != nil || s.Kernel != nil) && (s.State == "started" || s.State == "initialising") &&
+			!slices.Contains(s.Stores, store) {
+			machine = s.MachineID
+		}
+	})
+	if machine == "" {
+		return "", ""
+	}
+	return machine, store
+}
+
 // keyAnswer: the core's answer to a finished deploy-key request, applied to the list
 type keyAnswer struct {
 	Kind        string `json:"kind"` // deploy-key-added | deploy-key-removed

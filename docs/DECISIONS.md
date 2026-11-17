@@ -3054,3 +3054,13 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      and More disk and Destroy work as for any failed session with a machine. A refusal before the machine has keys
      the router knows (the keeper's own checks, a boot that never got its documents) still shows only in the
      machine's log.
+264. **A session's ask for a repo that has its key is the add-store of the key's store** (Deyao, 2026-11-17:
+     "sessions keep asking me to make a new deploy key even when one already exists in a key store"). `repo/add`
+     never looked at the repo list, so every session told to push to a repo (`jarvis-request add-repo`) filed a
+     "make a deploy key" request, a new key for a repo whose store `github-<repo>` was there. Now (`router/repos.go`
+     `existingRepoStore`), from a session (its requests or actions, alone or as a batch item), for a repo on the
+     list with a key, when the session runs and doesn't hold the store: the router files the add-store approval of
+     that store and no request. A new key is still asked for by a repo with no key, by a session that holds the
+     store (a rotation), by `noStore`, by an ask that makes the store sensitive, and by Deyao or the setup session.
+     When the core refuses the add-store (the list names a key whose store a Recover didn't bring back), the ask is
+     the key request after all.

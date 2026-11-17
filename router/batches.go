@@ -307,6 +307,12 @@ func (r *Router) checkBatchItem(c Caller, raw json.RawMessage) (*batchItem, erro
 		if err := callerMay(c, kind, np); err != nil {
 			return nil, &forbidden{err.Error()}
 		}
+		if machine, store := r.existingRepoStore(c, kind, np); machine != "" {
+			// repos.go: the repo has its key, the session needs its store: the item is that add-store
+			it.intent, it.machine, it.store = "add-store", machine, store
+			it.args = map[string]any{"intent": it.intent, "session": np.Session, "store": store, "repo": np.Repo}
+			return it, nil
+		}
 		it.kind, it.p, it.args = kind, np, callArgs(kind, np)
 		it.args["intent"] = in.Intent
 		return it, nil

@@ -293,7 +293,7 @@ kind of caller; the router records the caller from the credential (never from th
 
 | Intent | Body (`explanation` in every one) | Who |
 |---|---|---|
-| `POST …/repo/add` | `{repo /* owner/name or a GitHub URL */, sensitive?, noStore?}`; from a session (its requests or actions) the request names that session (`params.session`, `open.options.into`/`intoLabel`/`store`), which gets the repo's store in the same approval; `noStore: true` only makes the key | anyone |
+| `POST …/repo/add` | `{repo /* owner/name or a GitHub URL */, sensitive?, noStore?}`; from a session (its requests or actions) the request names that session (`params.session`, `open.options.into`/`intoLabel`/`store`), which gets the repo's store in the same approval; `noStore: true` only makes the key. From a session, for a repo that has its key already (on the list with a fingerprint) whose store the running session doesn't hold: no request and no new key, the add-store approval of `github-<repo>` → `{ok, approval, store, existing: true, note}`; in a batch the item is filed as that `add-store` (DECISIONS 264) | anyone |
 | `POST …/repo/remove` | `{repo}` | anyone |
 | `POST …/grant` | `{session, holder, minutes /* 1–10, default 10 */}` or `{session, holder, days /* 1–365: a standing rule */}` | anyone, for any session (a session may leave `session` out: itself) |
 | `POST …/unlock` | `{session}`: the locked stores that session waits on | anyone, for any session (a session may leave `session` out) |

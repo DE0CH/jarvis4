@@ -777,7 +777,25 @@ func (r *Router) fileIntent(w http.ResponseWriter, method, path, intent string, 
 		writeRequestErr(w, &badRequest{err.Error()})
 		return
 	}
-	q, dup, err := r.FileRequest(kind, np, in.Explanation, Origin{Caller: c, Call: APICall{Method: method, Path: path, Args: callArgs(kind, np)}, Signed: signed})
+	o := Origin{Caller: c, Call: APICall{Method: method, Path: path, Args: callArgs(kind, np)}, Signed: signed}
+	if machine, store := r.existingRepoStore(c, kind, np); machine != "" { // repos.go: the repo has its key, the session needs its store
+		expl, err := cleanExplanation(in.Explanation, true)
+		if err != nil {
+			writeRequestErr(w, &badRequest{err.Error()})
+			return
+		}
+		o.Call.Args["store"] = store
+		if id, err := r.addStoreApproval(machine, store, o, expl, ""); err == nil {
+			writeJSON(w, 200, map[string]any{"ok": true, "approval": id, "store": store, "existing": true,
+				"note": np.Repo + " has its deploy key already (store " + store + "): asked for that store, not for a new key"})
+			return
+		} else {
+			// the list names a key whose store is gone (a Recover keeps no repo stores): a new key after all
+			log.Printf("repos: %s asked for %s, which has a key, but the add-store of %s failed (%v): asking for a new key", np.Session, np.Repo, store, err)
+			delete(o.Call.Args, "store")
+		}
+	}
+	q, dup, err := r.FileRequest(kind, np, in.Explanation, o)
 	if err != nil {
 		writeRequestErr(w, err)
 		return
