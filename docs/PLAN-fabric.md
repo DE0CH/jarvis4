@@ -98,6 +98,11 @@ DNAT to the router's fabric listener) with that token, and gets the env plus `JA
 `JARVIS2_MACHINE_ID=x<sandbox id>`. The router checks the token with hermit's `GET /v1/sandbox-token-keys`. Nothing
 in the env is secret; the keys line and the cert are the trust path, as on the other runners.
 
+The one image: hermit.json's `sandbox.image` and the router's `FABRIC_SESSION_IMAGE` name the same
+`jarvis4-session-fabric:sha-…@sha256:…`, and images.yml `fabric-pin` moves both in one commit; `fabric-ami.yml` then
+publishes it to the hosts' bucket and bakes the AMI. A source made before hermit sees the new image published starts on
+nothing (the spawner's `wrong-image`) for those minutes.
+
 The image check: hermit starts the one image its `hermit.json` names, and the spawner's init refuses a sandbox on
 another digest than the source's (`wrong-image`), so a session's sources name the fabric image hermit runs, and a
 resume after a pin moved starts on the new image (the router writes the new source on the current pin, as for Fly).
