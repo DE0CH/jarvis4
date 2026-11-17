@@ -19,6 +19,7 @@ pub mod secrets;
 pub mod small;
 pub mod snapdirect;
 pub mod snapstream;
+pub mod snapvectors;
 pub mod supervisor;
 pub mod task;
 pub mod testutil;
