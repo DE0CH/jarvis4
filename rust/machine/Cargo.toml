@@ -1,0 +1,40 @@
+[package]
+name = "jarvis-machine"
+description = "The session machine's side of Jarvis 4 (machine/ in Go): the keeper, the boot steps, the supervisors, the local API"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "jarvis-machine"
+path = "src/main.rs"
+
+[dependencies]
+jarvis-sig = { path = "../sig" }
+jarvis-doc = { path = "../doc" }
+anyhow = "1"
+base64 = "0.22"
+bytes = "1"
+flate2 = "1"
+hex = "0.4"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "server", "http1"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio", "server"] }
+nix = { version = "0.29", features = ["fs", "signal", "process", "user", "mman", "resource", "socket", "uio", "term", "sched", "hostname", "ioctl"] }
+minlz = "1.2"
+rand = "0.8"
+regex = "1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["raw_value"] }
+sha2 = "0.10"
+tar = "0.4"
+time = { version = "0.3", features = ["parsing", "formatting", "macros"] }
+tokio = { version = "1", features = ["full"] }
+tower-service = "0.3"
+tokio-util = { version = "0.7", features = ["io"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+
+[lints]
+workspace = true
