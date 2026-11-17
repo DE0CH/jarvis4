@@ -1,0 +1,67 @@
+# fabric-db: the fabric hermit's own Postgres (database hermit) and the JuiceFS metadata (database jfs), apart from the
+# router's jarvis4-db: the fabric's load never touches the database Jarvis 4 itself runs on. Two instances (a node's
+# loss or a node upgrade is a switchover). The AWS hosts' JuiceFS clients reach it through the fabric gateway at a
+# node's private address (Service fabric-db-lb, k3s ServiceLB): the gateway forwards to one address and keeps the port.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata: { name: fabric-db, namespace: jarvis4-fabric }
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.6-202609281634-minimal-trixie@sha256:4467d4cf7e502fbc29800b75d755ede477a765b25a506a58a0842a57a4bf42c9
+  primaryUpdateStrategy: unsupervised
+  primaryUpdateMethod: switchover
+  bootstrap:
+    initdb:
+      database: hermit
+      owner: hermit
+      secret: { name: fabric-db-hermit }
+      dataChecksums: true
+  managed:
+    roles:
+      - { name: hermit, ensure: present, login: true, passwordSecret: { name: fabric-db-hermit } }
+      - { name: jfs, ensure: present, login: true, passwordSecret: { name: fabric-db-jfs } }
+  postgresql:
+    parameters:
+      shared_buffers: 64MB
+      max_connections: "100"
+      idle_in_transaction_session_timeout: 60s
+  storage: { size: 4Gi, storageClass: local-path }
+  resources:
+    requests: { cpu: 50m, memory: 256Mi }
+    limits: { memory: 384Mi }
+  affinity:
+    enablePodAntiAffinity: true
+    podAntiAffinityType: preferred
+    topologyKey: kubernetes.io/hostname
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata: { name: fabric-db-jfs, namespace: jarvis4-fabric }
+spec:
+  name: jfs
+  owner: jfs
+  cluster: { name: fabric-db }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: fabric-db-lb, namespace: jarvis4-fabric }
+spec:
+  type: LoadBalancer
+  selector: { cnpg.io/cluster: fabric-db, cnpg.io/instanceRole: primary }
+  ports: [{ name: pg, port: 5432, targetPort: 5432 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: fabric-db-in, namespace: jarvis4-fabric }
+spec:
+  podSelector: { matchLabels: { cnpg.io/cluster: fabric-db } }
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { cnpg.io/cluster: fabric-db } } }]   # replication
+    - from: [{ podSelector: { matchLabels: { app: hermit } } }]
+      ports: [{ port: 5432, protocol: TCP }]
+    - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: cnpg-system } } }]
+      ports: [{ port: 8000, protocol: TCP }]
+    # the AWS hosts' JuiceFS metadata, through the gateway (SNAT to its private address) and ServiceLB
+    - from: [{ ipBlock: { cidr: 10.77.0.0/16 } }, { ipBlock: { cidr: 10.42.0.0/16 } }]
+      ports: [{ port: 5432, protocol: TCP }]

@@ -1,0 +1,20 @@
+# The fabric hermit (docs/PLAN-fabric.md). Listed in k8s/cluster/kustomization.yaml once an aviary release holds the
+# fabric's additions (hermit refuses hermit.json's sandbox.mounts and fabric.directEgress before it).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - db.yaml
+  - hermit.yaml
+images:
+  # the aviary release (one commit for hermit and sandboxd: hermit.json fabric.sandboxd names the same release)
+  - { name: hermit, newName: ghcr.io/de0ch/hermit, newTag: "ca6e3b194266" }
+configMapGenerator:
+  - name: hermit-config
+    namespace: jarvis4-fabric
+    files:
+      - hermit.json
+      - catalogue.json
+      - system-prompt.md
+      - sandbox-rules.md
+      - title-system.md

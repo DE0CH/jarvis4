@@ -1,0 +1,133 @@
+# The fabric hermit (docs/PLAN-fabric.md): DE0CH/aviary's hermit, the build YYC AI runs, as an internal service: the
+# kernel's spawner (caller magpie and admin), the router (magpie, tools) and hermit-jarvis (gateway) are its callers;
+# no chat site. Configuration: ConfigMap hermit-config (hermit.json, the catalogue, the prompt files, which a fabric
+# sandbox never reads), env from Secret hermit (infra/router-secrets.py --part fabric). /jfs: the JuiceFS volume
+# jarvis4-fabric, mounted by the privileged sidecar `jfs` (FUSE; this cluster has no JuiceFS CSI driver) into an
+# emptyDir hermit sees with HostToContainer propagation. The sidecar also formats the volume on first start
+# (`juicefs format --no-update` never rewrites an existing volume).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermit
+  namespace: jarvis4-fabric
+  labels: { app: hermit }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  minReadySeconds: 5
+  selector: { matchLabels: { app: hermit } }
+  strategy: { type: RollingUpdate, rollingUpdate: { maxSurge: 1, maxUnavailable: 0 } }
+  template:
+    metadata:
+      labels: { app: hermit }
+      annotations: { jarvis2/secrets-rev-fabric: "" }
+    spec:
+      serviceAccountName: hermit
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 90
+      topologySpreadConstraints:
+        - { maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway,
+            labelSelector: { matchLabels: { app: hermit } }, matchLabelKeys: [pod-template-hash] }
+      containers:
+        - name: hermit
+          image: hermit
+          args: [serve]
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: ops, containerPort: 9090 }
+          env:
+            - { name: POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+            - { name: HERMIT_POD, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+            - { name: HERMIT_NAMESPACE, valueFrom: { fieldRef: { fieldPath: metadata.namespace } } }
+          envFrom: [{ secretRef: { name: hermit } }]
+          readinessProbe: { httpGet: { path: /readyz, port: ops }, periodSeconds: 3, failureThreshold: 1 }
+          livenessProbe: { httpGet: { path: /healthz, port: ops }, initialDelaySeconds: 5, periodSeconds: 10, failureThreshold: 6 }
+          lifecycle: { preStop: { sleep: { seconds: 12 } } }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi, ephemeral-storage: 64Mi }
+            limits: { memory: 384Mi, ephemeral-storage: 320Mi }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: config, mountPath: /etc/hermit/config, readOnly: true }
+            - { name: catalogue, mountPath: /etc/hermit/catalogue, readOnly: true }
+            - { name: jfs, mountPath: /jfs, mountPropagation: HostToContainer }
+            - { name: tmp, mountPath: /tmp }
+        - name: jfs
+          image: juicedata/mount:ce-v1.4.1
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              juicefs format --no-update --storage s3 --bucket "$JFS_BUCKET" --access-key "$JFS_ACCESS_KEY" \
+                --secret-key "$JFS_SECRET_KEY" "$HERMIT_JUICEFS_META_URL" jarvis4-fabric
+              export META_PASSWORD="$HERMIT_JUICEFS_META_PASSWORD"
+              trap 'umount -l /jfs 2>/dev/null; exit 0' TERM INT
+              juicefs mount --no-usage-report --all-squash 1000:1000 --cache-size 0 --open-cache 0 \
+                "$HERMIT_JUICEFS_META_URL" /jfs &
+              wait $!
+          env:
+            - { name: META_PASSWORD, valueFrom: { secretKeyRef: { name: hermit, key: HERMIT_JUICEFS_META_PASSWORD } } }
+          envFrom: [{ secretRef: { name: hermit } }]
+          resources:
+            requests: { cpu: 20m, memory: 128Mi }
+            limits: { memory: 256Mi }
+          securityContext: { privileged: true }
+          volumeMounts:
+            - { name: jfs, mountPath: /jfs, mountPropagation: Bidirectional }
+      volumes:
+        - { name: config, configMap: { name: hermit-config } }
+        - name: catalogue
+          configMap: { name: hermit-config, items: [{ key: catalogue.json, path: catalogue.json }] }
+        - { name: jfs, emptyDir: { sizeLimit: 16Mi } }
+        - { name: tmp, emptyDir: { sizeLimit: 256Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: hermit, namespace: jarvis4-fabric }
+spec:
+  selector: { app: hermit }
+  ports: [{ name: http, port: 80, targetPort: http }]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: hermit, namespace: jarvis4-fabric }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: hermit-read, namespace: jarvis4-fabric }
+rules:
+  - { apiGroups: [apps], resources: [deployments], verbs: [get, list] }
+  - { apiGroups: [""], resources: [pods], verbs: [get, list] }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: hermit-read, namespace: jarvis4-fabric }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: hermit-read }
+subjects: [{ kind: ServiceAccount, name: hermit, namespace: jarvis4-fabric }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: hermit, namespace: jarvis4-fabric }
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app: hermit } }
+---
+# hermit's callers: the kernel's spawner, the router, hermit-jarvis (namespace services)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: hermit-in, namespace: jarvis4-fabric }
+spec:
+  podSelector: { matchLabels: { app: hermit } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis4-router } }
+        - namespaceSelector: { matchLabels: { jarvis2/ns: kernel } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: services } }
+      ports: [{ port: 8080, protocol: TCP }]
