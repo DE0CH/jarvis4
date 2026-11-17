@@ -134,4 +134,6 @@ spec:
         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis4-router } }
         - namespaceSelector: { matchLabels: { jarvis2/ns: kernel } }
         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: services } }
+        # a one-shot smoke test (smoke.yaml, while it is listed)
+        - podSelector: { matchLabels: { app: fabric-smoke } }
       ports: [{ port: 8080, protocol: TCP }]
