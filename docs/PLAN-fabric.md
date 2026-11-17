@@ -133,6 +133,17 @@ image's `/etc/resolv.conf` names public resolvers.
   DaemonSet on one node (WireGuard hub), the Hetzner network route to it, the JuiceFS bucket in Hetzner Object
   Storage. Flux, as everything of Jarvis 4's.
 
+### Infra in detail (from YYC AI's deployment, DE0CH/yyc-code yyc-ai/deploy/hermit and yyc-ai/infra/gateway.sh)
+
+| Piece | Jarvis 4 |
+|---|---|
+| Addresses | sandboxes 10.205.0.0/16, hosts 10.204.0.0/24 (gateway 10.204.0.1), egress address 10.204.1.1; control = the Network jarvis2 10.77.0.0/16; pods 10.42.0.0/16 (k3s) |
+| AWS (Deyao's account, eu-central-1, default VPC, subnet eu-central-1a) | aviary `fabric/aws/infra.sh` with `k8s/cluster/fabric/hermit.json`: `sg` and `ipv6` done (2026-11-17); `ami` (needs an aviary release with the fabric changes), `template`, `iam`/`iam-key` (scaler), `ci-iam`, `image-bucket`, `publish-image` |
+| Gateway | a plain Hetzner server (not a cluster node: Deyao, 2026-11-16), fsn1, IPv6, on the Network jarvis2, its own firewall letting in udp 51821 only; sandboxd in gateway mode as a systemd unit (aviary `gateway-setup.sh`), installed by its cloud-init (Jarvis 4's boxes have no SSH); the Network's route 10.204.0.0/15 → its private address |
+| Keys | the fabric CA, hermit's client cert, the hosts' cert, the gateway's cert and WireGuard key (aviary `fabric/host/make-certs.sh`), into the `infra` store |
+| Cluster | namespace `fabric`: hermit (aviary's image, 2 replicas) with `hermit.json`, its database and the JuiceFS metadata database on the CloudNativePG cluster, `/jfs` through the JuiceFS CSI driver (bucket in Hetzner Object Storage); a DaemonSet that routes 10.204.0.0/15 via the Network's gateway on every node; the router's fabric listener and the metadata database reachable from the gateway at a node's private address on 3128 and 5432 (k3s ServiceLB: the gateway forwards to one address and keeps the port) |
+| Wiring | router: `FABRIC_HERMIT_URL`, `FABRIC_HERMIT_TOOLS_TOKEN`, `FABRIC_HERMIT_MAGPIE_TOKEN`, `FABRIC_MACHINE_ADDR`, `FABRIC_SESSION_IMAGE(_SIG)`; spawner (kernel release): `KERNEL_FABRIC_HERMIT_URL`, `KERNEL_FABRIC_MACHINE_URL` = `http://10.204.1.1:3128`, then `POST /fabric-credentials`; hermit-jarvis: `FABRIC_HERMIT_URL`, `FABRIC_HERMIT_GATEWAY_TOKEN` |
+
 ### Tests
 
 - aviary: unit and contract tests with each change (its CI gates the release Jarvis 4 pins).
