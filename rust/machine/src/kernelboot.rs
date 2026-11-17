@@ -401,7 +401,7 @@ pub fn kernel_boot_cert(c: &Client, me: &str, keys: &HashMap<String, String>) ->
     Ok(cert)
 }
 
-type Refresh = Box<dyn Fn() -> Result<KernelTrust> + Send>;
+pub type Refresh = Box<dyn Fn() -> Result<KernelTrust> + Send>;
 
 struct RefreshState {
     refresh: Option<Refresh>,
@@ -416,6 +416,18 @@ static REFRESH: Mutex<RefreshState> = Mutex::new(RefreshState {
 /// how often a delivered input that doesn't check makes the machine read its documents again (ms; tests shorten it)
 pub static KERNEL_TRUST_EVERY_MS: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(10_000);
+
+/// tests: the re-read replaced (None: none armed), and the last one forgotten
+pub fn set_refresh_for_test(f: Option<Refresh>) {
+    if let Ok(mut s) = REFRESH.lock() {
+        s.refresh = f;
+        s.at = None;
+    }
+}
+
+pub fn refresh_armed() -> bool {
+    REFRESH.lock().map(|s| s.refresh.is_some()).unwrap_or(false)
+}
 
 fn set_refresh(f: Refresh) {
     if let Ok(mut s) = REFRESH.lock() {
