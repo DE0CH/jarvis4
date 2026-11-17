@@ -8,10 +8,11 @@
 //
 //   - a Claude account with a fake login (the machine's gateway sends its token to the stand-in model only);
 //
-//   - a session with the harness aviary and a first prompt; the phone signs its source;
+//   - a session with the harness aviary and a first prompt with a screenshot attached; the phone signs its source;
 //
 //   - the machine boots, its gateway boots a sandbox through hermit-jarvis (signed with the machine key, checked with
 //     the router), the supervisor starts Claude Code on magpie's ~/.claude, the first prompt arrives through magpie;
+//     its screenshot is the message's image (uploaded for the owner through the gateway), never a path in its text;
 //
 //   - Claude Code's model calls reach the stand-in model through the machine's gateway: a Bash tool call that writes
 //     ~/artifacts/e2e-aviary.txt and arms a wakeup through the session's local Jarvis API, then an answer naming the
@@ -39,6 +40,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"log"
 	"net/http"
@@ -181,6 +184,8 @@ type modelLog struct {
 	// where the tool call ran, from its output: "aviary" = in the root of aviary's sandbox image (the image's own
 	// setup files are there, the session image's harness script is not) with Jarvis's session commands on the PATH
 	root string
+	// the first prompt's message held an image block: its attached screenshot reached the model as an image
+	image bool
 }
 
 var models modelLog
@@ -246,6 +251,11 @@ func reply(req map[string]any) (kind string, content []map[string]any) {
 	case strings.Contains(last, "E2E-WAKEUP "+token):
 		return "wakeup", []map[string]any{{"type": "text", "text": "E2E-WOKE " + token}}
 	case strings.Contains(last, "E2E-RUN "+token):
+		if strings.Contains(last, `"type":"image"`) {
+			models.Lock()
+			models.image = true
+			models.Unlock()
+		}
 		cmd := "echo E2E-OUT-" + token + " | tee ~/artifacts/e2e-aviary.txt && echo E2E-CTX=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-none}. && " +
 			"echo E2E-ROOT=$(test -e /opt/image-setup/Dockerfile && ! test -e /usr/local/bin/harness-aviary.sh && command -v jarvis > /dev/null && echo aviary || echo machine). && curl -sS -H 'Content-Type: application/json' " +
 			"-d '{\"delaySeconds\":60,\"prompt\":\"E2E-WAKEUP " + token + "\"}' \"$JARVIS_URL/api/sessions/$SESSION_ID/wakeup\""
@@ -465,6 +475,8 @@ func magpieText() string {
 	for _, id := range ids {
 		_, t := call("GET", os.Getenv("E2E_MAGPIE")+"/v1/admin/conversations/"+id+"/transcript", nil, hdr...)
 		all += "\n" + string(t)
+		_, ev := call("GET", os.Getenv("E2E_MAGPIE")+"/v1/admin/conversations/"+id+"/events?limit=500", nil, hdr...)
+		all += "\n" + string(ev)
 	}
 	return all
 }
@@ -591,10 +603,29 @@ func main() {
 	must("POST", router+"/peer/claude-login", map[string]any{"credentials": `{"claudeAiOauth": {"accessToken": "e2e-fake-access", "refreshToken": "e2e-fake-refresh", "expiresAt": 4102444800000, "scopes": ["user:inference"], "subscriptionType": "max"}}`,
 		"account": `{"oauthAccount":{"accountUuid":"e2e-account","emailAddress":"e2e@example.com"}}`, "relogin": true}, nil)
 
-	step("a session with the harness aviary and a first prompt; the phone signs its source")
+	step("a session with the harness aviary and a first prompt with a screenshot attached; the phone signs its source")
+	shot := "e2e-shot-" + token + ".png"
+	uploadID := "e2e-" + token
+	{
+		img := image.NewRGBA(image.Rect(0, 0, 8, 8))
+		for i := range img.Pix {
+			img.Pix[i] = byte(i * 7)
+		}
+		var buf bytes.Buffer
+		png.Encode(&buf, img)
+		req, _ := http.NewRequest("POST", router+"/api/uploads", &buf)
+		req.Header.Set("x-upload-id", uploadID)
+		req.Header.Set("x-upload-name", shot)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil || resp.StatusCode/100 != 2 {
+			log.Fatalf("the screenshot's upload: %v %v", err, resp)
+		}
+		resp.Body.Close()
+	}
 	var created struct{ ID string }
 	must("POST", router+"/api/sessions", map[string]any{"label": "e2e aviary", "harness": "aviary", "size": "small",
-		"model": sessionModel(), "prompt": "E2E-RUN " + token}, &created)
+		"model": sessionModel(), "prompt": "E2E-RUN " + token,
+		"attachments": map[string]any{"uploadId": uploadID, "files": []map[string]any{{"name": shot, "isImage": true}}}}, &created)
 	var aID, aKind string
 	var challenge sig.Doc
 	waitFor("the approval", time.Minute, func() bool {
@@ -640,6 +671,16 @@ func main() {
 		t := magpieText()
 		return strings.Contains(t, "E2E-DONE "+token) && strings.Contains(t, "E2E-OUT-"+token)
 	})
+	step("the screenshot is an image of the first message, as Deyao's own in the chat: never a path in its text")
+	models.Lock()
+	sawImage := models.image
+	models.Unlock()
+	if !sawImage {
+		log.Fatalf("FAIL: the first prompt's message reached the model without an image block: the attached screenshot was not sent as an image")
+	}
+	if t := magpieText(); !strings.Contains(t, `"path":"uploads/`+shot+`"`) || strings.Contains(t, "[attached image:") {
+		log.Fatalf("FAIL: magpie's first message does not carry the screenshot as its image (uploads/%s), or names it as a path in its text", shot)
+	}
 	step("the conversation has its title, which the session's card gets")
 	waitFor("the title in magpie", 3*time.Minute, func() bool {
 		return strings.Contains(magpieText(), `"title":"E2E-TITLE `+token+`"`)
