@@ -204,5 +204,20 @@ Known limits the tool's description states: frozen means frozen (a local build d
 for waiting on something outside), connections to the outside reset at a thaw (another host, another address), and
 wall time jumps (monotonic time doesn't).
 
-First step: measure freeze and thaw of a real 7 GiB sandbox to and from S3 (sandboxd's checkpoint, which today streams
-to a peer host for a live migration).
+Measured 2026-11-17 (eu-central-1, m7i.xlarge from the fabric AMI, gp3 120 GB at its default throughput, runsc
+precopy-20261102.1; a sandbox with a 7 GiB limit holding N of memory, half random, half text; `runsc checkpoint
+--image-path` to the disk, `aws s3 cp` up, deleted, down, `runsc restore`):
+
+| Memory held | Freeze (checkpoint) | Image | Upload | Download | Thaw (restore) | After the thaw |
+|---|---|---|---|---|---|---|
+| 1.5 GiB | 4.6 s | 1.6 GB | 4.9 s | 2.4 s | 0.4 s | the process went on counting |
+| 6 GiB | 53 s | 6.1 GB | 44 s | 30 s | 1.5 s | the process went on counting |
+
+So a typical session freezes in about 10 s and thaws in about 3 s plus a host (seconds on a warm host, about a minute
+from the AMI). What this shows for the build:
+- The image is not compressed (6 GB held, 6.1 GB written): about 115 MB/s at 6 GB is the gp3 disk's default
+  throughput. Streaming the checkpoint straight to S3 (multipart), as the fork already streams it to a peer for a
+  live migration, skips the disk and the separate upload.
+- Monotonic time did NOT stay continuous: inside the sandbox it ran on through the freeze (19.5 s after 8 ticks at
+  1.5 GiB). Programs see both clocks jump; the tool's description says so.
+- The restore loads the image eagerly and is fast; most of a thaw is the download.
