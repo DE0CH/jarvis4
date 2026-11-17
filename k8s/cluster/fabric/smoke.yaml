@@ -4,7 +4,7 @@
 # gets its env (the router's fabric listener is off), so the console stops at the entrypoint's retries: that is enough.
 apiVersion: batch/v1
 kind: Job
-metadata: { name: fabric-smoke-1, namespace: jarvis4-fabric }
+metadata: { name: fabric-smoke-2, namespace: jarvis4-fabric }
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 2400
@@ -27,11 +27,14 @@ spec:
               M="${MAGPIE%%,*}"; P="aviary-protocol: hermit-core=1"
               m() { curl -s -H "$P" -H "authorization: Bearer $M" -H 'content-type: application/json' "$@"; }
               a() { curl -s -H "$P" -H "authorization: Bearer $ADMIN" -H 'aviary-admin: jarvis4@deyaochen.com' -H 'content-type: application/json' "$@"; }
-              echo "== start"; m -X PUT "$H/v1/conversations/$C/sandbox" -d '{"person":"jarvis4@deyaochen.com"}'; echo
+              for i in $(seq 1 20); do
+                o=$(m -X PUT "$H/v1/conversations/$C/sandbox" -d '{"person":"jarvis4@deyaochen.com"}'); echo "== start: $o" | cut -c1-400
+                case "$o" in *'"id":'*) break ;; esac; sleep 10
+              done
               S=""; for i in $(seq 1 100); do
                 o=$(m "$H/v1/conversations/$C/sandbox"); echo "$(date -u +%T) $o" | cut -c1-400
                 S=$(echo "$o" | sed -n 's/.*"id":"\([0-9a-f-]*\)".*/\1/p')
-                case "$o" in *'"phase":"supervisor"'*|*'"state":"ready"'*|*'"state":"gone"'*) break ;; esac
+                case "$o" in *'"phase":"supervisor"'*|*'"state":"ready"'*|*'"state":"gone"'*|*no_sandbox*) break ;; esac
                 sleep 15
               done
               sleep 60
