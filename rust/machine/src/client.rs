@@ -77,12 +77,12 @@ impl Client {
     /// A client of the router at `url` (one address, or the gateways comma-separated) as machine `me`
     pub fn with_url(url: &str, me: &str) -> Client {
         let (base, d) = router_transport(url);
-        let http = rt::block_on(async {
-            HClient::builder(TokioExecutor::new())
-                .pool_max_idle_per_host(8)
-                .pool_idle_timeout(Duration::from_secs(90))
-                .build(Connector(d))
-        });
+        // building a client needs no runtime context (a with_url inside an async block must not block_on)
+        let http = HClient::builder(TokioExecutor::new())
+            .pool_max_idle_per_host(8)
+            .pool_idle_timeout(Duration::from_secs(90))
+            .pool_timer(hyper_util::rt::TokioTimer::new())
+            .build(Connector(d));
         Client {
             base,
             me: me.to_string(),
@@ -353,7 +353,7 @@ impl Client {
 
     /// A plain (unsigned) request to any URL (the bucket's presigned URLs) through this client's pool
     pub fn plain_http() -> HClient<hyper_util::client::legacy::connect::HttpConnector, Body> {
-        rt::block_on(async { HClient::builder(TokioExecutor::new()).build_http() })
+        HClient::builder(TokioExecutor::new()).build_http()
     }
 }
 

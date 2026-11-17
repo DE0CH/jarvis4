@@ -26,15 +26,36 @@ fn tee_lines_pass_through() {
     w.write_all(input.as_bytes()).unwrap();
     drop(w);
     t.join().unwrap();
-    assert_eq!(String::from_utf8_lossy(&out.lock().unwrap()), input, "the original output changed");
+    assert_eq!(
+        String::from_utf8_lossy(&out.lock().unwrap()),
+        input,
+        "the original output changed"
+    );
     let b = std::fs::read_to_string(crate::paths::output_log_path()).unwrap();
     let got: Vec<String> = b
         .trim()
         .split('\n')
-        .map(|l| crate::gojson::unmarshal::<LogLine>(l.as_bytes()).unwrap().text)
+        .map(|l| {
+            crate::gojson::unmarshal::<LogLine>(l.as_bytes())
+                .unwrap()
+                .text
+        })
         .collect();
     assert_eq!(got.len(), 5, "{} lines", got.len());
-    assert_eq!((got[0].as_str(), got[1].as_str(), got[2].len(), got[4].as_str()), ("[jarvis] keeper up", "second", 16 << 10, "last without newline"));
+    assert_eq!(
+        (
+            got[0].as_str(),
+            got[1].as_str(),
+            got[2].len(),
+            got[4].as_str()
+        ),
+        (
+            "[jarvis] keeper up",
+            "second",
+            16 << 10,
+            "last without newline"
+        )
+    );
 }
 
 /// the push: both files to /m/machine-output with their source, each line once, the held values replaced; a file past
@@ -54,19 +75,32 @@ fn output_push() {
         let v: serde_json::Value = serde_json::from_slice(&r.body).unwrap();
         let src = v["source"].as_str().unwrap_or("").to_string();
         for l in v["lines"].as_array().into_iter().flatten() {
-            g2.lock().unwrap().entry(src.clone()).or_default().push(l["text"].as_str().unwrap_or("").into());
+            g2.lock()
+                .unwrap()
+                .entry(src.clone())
+                .or_default()
+                .push(l["text"].as_str().unwrap_or("").into());
         }
         ans(200, r#"{"ok":true}"#)
     });
     let c = srv.client();
     OUTPUT_SHIP.add(SystemTime::now(), "panic: token hunter2hunter2");
-    JOURNAL_SHIP.add(SystemTime::now(), "jarvis4-session.service docker: Pulling fs layer");
+    JOURNAL_SHIP.add(
+        SystemTime::now(),
+        "jarvis4-session.service docker: Pulling fs layer",
+    );
     push_outputs_once(&c);
     push_outputs_once(&c);
     {
         let g = got.lock().unwrap();
-        assert_eq!(g.get("machine").map(|v| v.join("|")).unwrap_or_default(), "panic: token [secret]");
-        assert_eq!(g.get("journal").map(|v| v.join("|")).unwrap_or_default(), "jarvis4-session.service docker: Pulling fs layer");
+        assert_eq!(
+            g.get("machine").map(|v| v.join("|")).unwrap_or_default(),
+            "panic: token [secret]"
+        );
+        assert_eq!(
+            g.get("journal").map(|v| v.join("|")).unwrap_or_default(),
+            "jarvis4-session.service docker: Pulling fs layer"
+        );
     }
     SHIP_FILE_CAP.store(10, Ordering::SeqCst);
     OUTPUT_SHIP.add(SystemTime::now(), "taken: everything before it was pushed");
@@ -77,7 +111,10 @@ fn output_push() {
     push_outputs_once(&c);
     let m = got.lock().unwrap()["machine"].clone();
     assert!(
-        m.len() == 4 && m[1] == "taken: everything before it was pushed" && m[2].contains("2 machine lines not sent") && m[3] == "room again",
+        m.len() == 4
+            && m[1] == "taken: everything before it was pushed"
+            && m[2].contains("2 machine lines not sent")
+            && m[3] == "room again",
         "{m:?}"
     );
 }
@@ -87,23 +124,75 @@ fn output_push() {
 #[test]
 fn journal_lines() {
     let since = SystemTime::UNIX_EPOCH + Duration::from_secs(1_793_793_600);
-    let us = |t: SystemTime| t.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_micros().to_string();
-    let (before, after) = (us(since - Duration::from_secs(60)), us(since + Duration::from_secs(1)));
-    let entry = |rt: &str, msg: &str, unit: &str, ident: &str, comm: &str, transport: &str| JournalEntry {
-        realtime: rt.into(),
-        message: Some(serde_json::value::RawValue::from_string(msg.into()).unwrap()),
-        unit: unit.into(),
-        ident: ident.into(),
-        comm: comm.into(),
-        transport: transport.into(),
-        cursor: String::new(),
+    let us = |t: SystemTime| {
+        t.duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_micros()
+            .to_string()
     };
+    let (before, after) = (
+        us(since - Duration::from_secs(60)),
+        us(since + Duration::from_secs(1)),
+    );
+    let entry =
+        |rt: &str, msg: &str, unit: &str, ident: &str, comm: &str, transport: &str| JournalEntry {
+            realtime: rt.into(),
+            message: Some(serde_json::value::RawValue::from_string(msg.into()).unwrap()),
+            unit: unit.into(),
+            ident: ident.into(),
+            comm: comm.into(),
+            transport: transport.into(),
+            cursor: String::new(),
+        };
     let cases = [
-        (entry(&before, r#""Pulling fs layer""#, "jarvis4-session.service", "docker", "docker", ""), "jarvis4-session.service docker: Pulling fs layer"),
-        (entry(&after, r#""[jarvis] keeper up""#, "jarvis4-session.service", "docker", "docker", ""), ""),
-        (entry(&after, r#""Out of memory: Killed process 7""#, "", "", "", "kernel"), ""),
-        (entry(&after, r#""Started jarvis4-session.service""#, "init.scope", "systemd", "", ""), "systemd: Started jarvis4-session.service"),
-        (entry(&after, "[104,105,255]", "", "x", "", ""), "x: hi\u{fffd}"),
+        (
+            entry(
+                &before,
+                r#""Pulling fs layer""#,
+                "jarvis4-session.service",
+                "docker",
+                "docker",
+                "",
+            ),
+            "jarvis4-session.service docker: Pulling fs layer",
+        ),
+        (
+            entry(
+                &after,
+                r#""[jarvis] keeper up""#,
+                "jarvis4-session.service",
+                "docker",
+                "docker",
+                "",
+            ),
+            "",
+        ),
+        (
+            entry(
+                &after,
+                r#""Out of memory: Killed process 7""#,
+                "",
+                "",
+                "",
+                "kernel",
+            ),
+            "",
+        ),
+        (
+            entry(
+                &after,
+                r#""Started jarvis4-session.service""#,
+                "init.scope",
+                "systemd",
+                "",
+                "",
+            ),
+            "systemd: Started jarvis4-session.service",
+        ),
+        (
+            entry(&after, "[104,105,255]", "", "x", "", ""),
+            "x: hi\u{fffd}",
+        ),
     ];
     for (i, (e, want)) in cases.iter().enumerate() {
         let (at, got) = journal_line(e, since);
@@ -121,7 +210,10 @@ fn root_partition_by_name() {
     for (name, ev) in [
         ("nvme0n1", "DEVTYPE=disk\nDEVNAME=nvme0n1\n"),
         ("nvme0n1p6", "PARTNAME=OEM\nDEVNAME=nvme0n1p6\n"),
-        ("nvme0n1p9", "MAJOR=259\nDEVNAME=nvme0n1p9\nDEVTYPE=partition\nPARTN=9\nPARTNAME=ROOT\n"),
+        (
+            "nvme0n1p9",
+            "MAJOR=259\nDEVNAME=nvme0n1p9\nDEVTYPE=partition\nPARTN=9\nPARTNAME=ROOT\n",
+        ),
     ] {
         std::fs::create_dir_all(d.join(name)).unwrap();
         std::fs::write(d.join(name).join("uevent"), ev).unwrap();
@@ -162,13 +254,26 @@ fn snapshot_progress() {
     let (_, n) = write_snapshot(&mut out).unwrap();
     p.tick(true);
     p.end(None);
-    assert!(p.done.load(Ordering::SeqCst) == want && p.sent.load(Ordering::SeqCst) == n as i64 && n > 0);
+    assert!(
+        p.done.load(Ordering::SeqCst) == want && p.sent.load(Ordering::SeqCst) == n as i64 && n > 0
+    );
     assert!(current_progress().is_none(), "still counting after end");
     {
         let r = reports.lock().unwrap();
-        assert!(r.len() >= 2 && r[0]["phase"] == "measuring" && r[r.len() - 1]["phase"] == "uploading" && r[r.len() - 1]["done"] == want, "{r:?}");
+        assert!(
+            r.len() >= 2
+                && r[0]["phase"] == "measuring"
+                && r[r.len() - 1]["phase"] == "uploading"
+                && r[r.len() - 1]["done"] == want,
+            "{r:?}"
+        );
         let l = lines.lock().unwrap();
-        assert!(l.last().unwrap().contains("snapshot: uploading done, 0.00 GB read"), "{l:?}");
+        assert!(
+            l.last()
+                .unwrap()
+                .contains("snapshot: uploading done, 0.00 GB read"),
+            "{l:?}"
+        );
         assert!(l.join("\n").contains("(100%)"), "no 100% line: {l:?}");
     }
     // a router without the route: reported once, then only logged; the snapshot isn't held up
@@ -186,7 +291,11 @@ fn snapshot_progress() {
     write_snapshot(std::io::sink()).unwrap();
     q.tick(true);
     q.end(None);
-    assert_eq!(*calls.lock().unwrap(), 1, "reported more than once to a router without the route");
+    assert_eq!(
+        *calls.lock().unwrap(),
+        1,
+        "reported more than once to a router without the route"
+    );
 }
 
 #[test]
@@ -198,7 +307,11 @@ fn harness_kinds() {
         ("openclaw", [true, false, false]),
         ("paseo-claude", [true, true, true]),
     ] {
-        assert_eq!([via_harness_send(h), runs_claude_code(h), proxy_login(h)], want, "{h:?}");
+        assert_eq!(
+            [via_harness_send(h), runs_claude_code(h), proxy_login(h)],
+            want,
+            "{h:?}"
+        );
     }
 }
 
@@ -211,13 +324,29 @@ fn live_mode_follows_the_in_place_switch() {
     let auto = Cert::default();
     let mut bypass = Cert::default();
     bypass.options.permission_mode = "bypass".into();
-    assert_eq!((live_mode(&auto).as_str(), live_mode(&bypass).as_str()), ("auto", "bypass"), "without the in-place file the cert decides");
+    assert_eq!(
+        (live_mode(&auto).as_str(), live_mode(&bypass).as_str()),
+        ("auto", "bypass"),
+        "without the in-place file the cert decides"
+    );
     let p = e.root.join(MODE_FILE);
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
     std::fs::write(&p, "bypass\n").unwrap();
-    assert_eq!(live_mode(&auto), "bypass", "raised in place to bypass, sent as auto");
+    assert_eq!(
+        live_mode(&auto),
+        "bypass",
+        "raised in place to bypass, sent as auto"
+    );
     std::fs::write(&p, "auto\n").unwrap();
-    assert_eq!(live_mode(&bypass), "auto", "lowered in place to auto, sent as bypass");
+    assert_eq!(
+        live_mode(&bypass),
+        "auto",
+        "lowered in place to auto, sent as bypass"
+    );
     std::fs::write(&p, "nonsense").unwrap();
-    assert_eq!(live_mode(&bypass), "auto", "harness-claude.sh runs anything but bypass as auto");
+    assert_eq!(
+        live_mode(&bypass),
+        "auto",
+        "harness-claude.sh runs anything but bypass as auto"
+    );
 }

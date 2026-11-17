@@ -81,9 +81,7 @@ impl HeldSecrets {
 
     /// supervisor-core's start: the values the memfd holds (from an earlier one), if any
     pub fn load_held(&self) {
-        let Ok(fd) = crate::env::get(SECRETS_FD_ENV)
-            .parse::<i32>()
-        else {
+        let Ok(fd) = crate::env::get(SECRETS_FD_ENV).parse::<i32>() else {
             return;
         };
         if fd < 3 {

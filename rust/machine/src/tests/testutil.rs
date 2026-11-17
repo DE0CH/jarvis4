@@ -44,10 +44,21 @@ impl TestEnv {
         paths::set_dir(&dir);
         env::set("HOME", Some(home.to_str().unwrap()));
         // never this machine's own identity: code gated on it acts on the real session (a freeze is kill(-1, STOP))
-        for k in ["FLY_MACHINE_ID", "JARVIS2_MACHINE_ID", "JARVIS2_RUNNER", "JARVIS2_URL", "JARVIS2_CORE_KEY"] {
+        for k in [
+            "FLY_MACHINE_ID",
+            "JARVIS2_MACHINE_ID",
+            "JARVIS2_RUNNER",
+            "JARVIS2_URL",
+            "JARVIS2_CORE_KEY",
+        ] {
             env::set(k, None);
         }
-        TestEnv { _g: g, root, home, dir }
+        TestEnv {
+            _g: g,
+            root,
+            home,
+            dir,
+        }
     }
 
     /// the machine's private key on disk (the client signs with it)
@@ -68,35 +79,86 @@ impl Drop for TestEnv {
 
 fn reset_seams() {
     env::reset();
-    for k in ["FLY_MACHINE_ID", "JARVIS2_MACHINE_ID", "JARVIS2_RUNNER", "JARVIS2_URL", "JARVIS2_CORE_KEY"] {
+    for k in [
+        "FLY_MACHINE_ID",
+        "JARVIS2_MACHINE_ID",
+        "JARVIS2_RUNNER",
+        "JARVIS2_URL",
+        "JARVIS2_CORE_KEY",
+    ] {
         env::set(k, None);
     }
-    *crate::supervisor::TEST_FREEZE.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::snapstream::TEST_CERT_FILE.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::grants::TEST_CERT.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::outcomes::TEST_CORE_KEY.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::apiproxy::TEST_CORE_KEY.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::snapshot::TEST_BOOTED.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::memory::TEST_SIGNALS.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::stall::TEST_SHELL_JOBS.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::deliver::TEST_CHANNEL.write().unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::claudelogin::TEST_PANE.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::claudelogin::TEST_KEYS.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    crate::snapdirect::DIRECT_TRIES.store(4, std::sync::atomic::Ordering::SeqCst);
+    crate::snapdirect::DIRECT_BACKOFF_MS.store(2000, std::sync::atomic::Ordering::SeqCst);
+    crate::snapdirect::RANGE_SIZE.store(16 << 20, std::sync::atomic::Ordering::SeqCst);
+    *crate::supervisor::TEST_FREEZE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::snapstream::TEST_CERT_FILE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::grants::TEST_CERT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::outcomes::TEST_CORE_KEY
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::apiproxy::TEST_CORE_KEY
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::snapshot::TEST_BOOTED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::memory::TEST_SIGNALS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::stall::TEST_SHELL_JOBS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::deliver::TEST_CHANNEL
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::claudelogin::TEST_PANE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::claudelogin::TEST_KEYS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
     crate::claudelogin::RC_UP_WAIT_MS.store(90_000, std::sync::atomic::Ordering::SeqCst);
     crate::rcwatch::RC_STEP_WAIT_MS.store(30_000, std::sync::atomic::Ordering::SeqCst);
-    *crate::deliver::PREDECESSOR_KEY.lock().unwrap_or_else(|e| e.into_inner()) = String::new();
+    *crate::deliver::PREDECESSOR_KEY
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = String::new();
     crate::deliver::RESTORED_ARCHIVE.store(false, std::sync::atomic::Ordering::SeqCst);
     crate::snapshot::FROZEN.store(false, std::sync::atomic::Ordering::SeqCst);
     crate::snapshot::FULL_SNAPSHOT.store(false, std::sync::atomic::Ordering::SeqCst);
-    *crate::snapstream::SIGNED.lock().unwrap_or_else(|e| e.into_inner()) = Default::default();
-    *crate::memory::PROC_ROOT.write().unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::stall::CLAUDE_SESSIONS.write().unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::pressure::GUARD_LOG_PATH.write().unwrap_or_else(|e| e.into_inner()) = None;
-    *paths::PREDECESSOR_TMP.write().unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::task::TASKS_ROOT.write().unwrap_or_else(|e| e.into_inner()) = None;
-    *paths::TEST_CLAUDE_HOME.write().unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::keeper::TEST_KEEPER_DIR.write().unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::supervisorlog::TEST_LOG.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::snapstream::SIGNED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = Default::default();
+    *crate::memory::PROC_ROOT
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::stall::CLAUDE_SESSIONS
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::pressure::GUARD_LOG_PATH
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *paths::PREDECESSOR_TMP
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::task::TASKS_ROOT
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *paths::TEST_CLAUDE_HOME
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::keeper::TEST_KEEPER_DIR
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::supervisorlog::TEST_LOG
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
     crate::output::SHIP_FILE_CAP.store(32 << 20, std::sync::atomic::Ordering::SeqCst);
     crate::snapshot::PROGRESS_POST_EVERY_MS.store(3000, std::sync::atomic::Ordering::SeqCst);
     crate::snapshot::PROGRESS_LOG_EVERY_MS.store(10_000, std::sync::atomic::Ordering::SeqCst);
@@ -179,9 +241,18 @@ impl Drop for FakeRouter {
 }
 
 impl FakeRouter {
+    /// a server that answers unsigned requests too (a bucket's presigned URLs beside the router's routes): the handler
+    /// sees whether the machine's signature checked in the "X-Checked" header
+    pub fn open(key: &str, h: impl Fn(Req) -> Ans + Send + Sync + 'static) -> FakeRouter {
+        Self::serve(key, true, Arc::new(h))
+    }
+
     pub fn new(key: &str, h: impl Fn(Req) -> Ans + Send + Sync + 'static) -> FakeRouter {
+        Self::serve(key, false, Arc::new(h))
+    }
+
+    fn serve(key: &str, open: bool, h: Handler) -> FakeRouter {
         let key = key.to_string();
-        let h: Handler = Arc::new(h);
         rt::block_on(async move {
             let ln = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let url = format!("http://{}", ln.local_addr().unwrap());
@@ -191,24 +262,45 @@ impl FakeRouter {
                     let (parts, body) = req.into_parts();
                     let body = axum::body::to_bytes(body, 1 << 30).await.unwrap().to_vec();
                     let path = crate::util::path_unescape(parts.uri.path());
-                    let t = parts.headers.get("X-Time").and_then(|v| v.to_str().ok()).unwrap_or("");
-                    let sig = parts.headers.get("X-Sig").and_then(|v| v.to_str().ok()).unwrap_or("");
-                    let me = parts.headers.get("X-Machine").and_then(|v| v.to_str().ok()).unwrap_or("");
-                    let sum = if sig.is_empty() { String::new() } else { sha256_hex(&body) };
+                    let t = parts
+                        .headers
+                        .get("X-Time")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("");
+                    let sig = parts
+                        .headers
+                        .get("X-Sig")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("");
+                    let me = parts
+                        .headers
+                        .get("X-Machine")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("");
+                    let sum = if sig.is_empty() {
+                        String::new()
+                    } else {
+                        sha256_hex(&body)
+                    };
                     let msg = format!("{} {} {t} {sum}", parts.method, path);
                     let stream_msg = format!("{} {} {t} stream", parts.method, path);
                     let good = me == "m1"
-                        && (jarvis_sig::verify(&key, msg.as_bytes(), sig) || jarvis_sig::verify(&key, stream_msg.as_bytes(), sig));
-                    if !good {
+                        && (jarvis_sig::verify(&key, msg.as_bytes(), sig)
+                            || jarvis_sig::verify(&key, stream_msg.as_bytes(), sig));
+                    if !good && !open {
                         let mut r = Response::new(Body::empty());
                         *r.status_mut() = StatusCode::UNAUTHORIZED;
                         return r;
+                    }
+                    let mut headers = parts.headers.clone();
+                    if good {
+                        headers.insert("X-Checked", axum::http::HeaderValue::from_static("1"));
                     }
                     let req = Req {
                         method: parts.method.to_string(),
                         path,
                         query: parts.uri.query().unwrap_or("").to_string(),
-                        headers: parts.headers.clone(),
+                        headers,
                         body,
                     };
                     let a = tokio::task::spawn_blocking(move || h(req)).await.unwrap();

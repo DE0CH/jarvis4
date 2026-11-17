@@ -27,7 +27,8 @@ use std::time::{Duration, SystemTime};
 /// the spawner's bind of the host's journal (docs/PLAN-aws.md "Logs")
 const HOST_JOURNAL_BIND: &str = "/run/jarvis-host/journal";
 /// a file this far ahead of its push takes no more lines (two fit /run/jarvis, 256 MB; tests lower it)
-pub static SHIP_FILE_CAP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(32 << 20);
+pub static SHIP_FILE_CAP: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(32 << 20);
 const SUPERVISOR_LOG_ROLL: u64 = 2 << 20;
 const OUTPUT_PUSH_EVERY: Duration = Duration::from_secs(2);
 
@@ -79,7 +80,8 @@ impl ShipFile {
         let mut dropped = self.dropped.lock().unwrap_or_else(|e| e.into_inner());
         let p = (self.path)();
         if let Ok(md) = std::fs::metadata(&p)
-            && md.len().saturating_sub(read_offset_of(&self.sent_path())) > SHIP_FILE_CAP.load(Ordering::Relaxed)
+            && md.len().saturating_sub(read_offset_of(&self.sent_path()))
+                > SHIP_FILE_CAP.load(Ordering::Relaxed)
         {
             *dropped += 1;
             return;
@@ -211,7 +213,9 @@ pub fn tee_lines<R: Read, W: Write>(mut r: R, out: &Mutex<W>, f: &ShipFile) {
         if let Ok(mut o) = out.lock() {
             let _ = o.write_all(piece);
         }
-        let t = String::from_utf8_lossy(piece).trim_end_matches(['\r', '\n']).to_string();
+        let t = String::from_utf8_lossy(piece)
+            .trim_end_matches(['\r', '\n'])
+            .to_string();
         if !t.is_empty() {
             f.add(SystemTime::now(), &t);
         }

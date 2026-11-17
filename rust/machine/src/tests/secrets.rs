@@ -25,7 +25,9 @@ fn ask(op: &str, keys: &[&str]) -> anyhow::Result<SecretsResp> {
 }
 
 fn hm(kv: &[(&str, &str)]) -> HashMap<String, String> {
-    kv.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    kv.iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
 }
 
 /// the supervisor serves what it holds over its socket, only the keys a request names (never all of them); each request
@@ -34,7 +36,10 @@ fn hm(kv: &[(&str, &str)]) -> HashMap<String, String> {
 fn the_supervisor_serves_secrets_from_ram() {
     let e = TestEnv::new();
     crate::env::set("GIT_CONFIG_NOSYSTEM", Some("1"));
-    HELD.set(hm(&[("API_KEY", "value-of-api-key"), ("OTHER", "other-value-123")]));
+    HELD.set(hm(&[
+        ("API_KEY", "value-of-api-key"),
+        ("OTHER", "other-value-123"),
+    ]));
     *crate::supervisorlog::TEST_LOG.lock().unwrap() = Some(vec![]);
     let c = Client::with_url("http://127.0.0.1:1", "m1");
     std::thread::spawn(move || serve_secrets(c));
@@ -52,9 +57,17 @@ fn the_supervisor_serves_secrets_from_ram() {
     assert_eq!(r.secrets["API_KEY"], "value-of-api-key");
     // a name not held is an error naming it, and nothing is handed over
     let r = ask("get", &["API_KEY", "NOPE"]);
-    assert!(format!("{:#}", r.as_ref().unwrap_err()).contains("NOPE"), "an unknown key: {r:?}");
+    assert!(
+        format!("{:#}", r.as_ref().unwrap_err()).contains("NOPE"),
+        "an unknown key: {r:?}"
+    );
     // no request for all keys
-    for (op, keys) in [("all", vec![]), ("get", vec![]), ("get", vec!["*"]), ("dump everything", vec![])] {
+    for (op, keys) in [
+        ("all", vec![]),
+        ("get", vec![]),
+        ("get", vec!["*"]),
+        ("dump everything", vec![]),
+    ] {
         assert!(ask(op, &keys).is_err(), "{op} {keys:?} answered");
     }
     // boot-env: only to the boot process (harness.pid), only before the machine has booted
@@ -65,11 +78,23 @@ fn the_supervisor_serves_secrets_from_ram() {
     std::fs::write(kd.join("harness.pid"), "1").unwrap(); // not this test process
     assert!(ask("boot-env", &[]).is_err(), "boot-env to another process");
     std::fs::write(kd.join("harness.pid"), std::process::id().to_string()).unwrap();
-    assert_eq!(ask("boot-env", &[]).unwrap().secrets.len(), 2, "boot-env to boot");
+    assert_eq!(
+        ask("boot-env", &[]).unwrap().secrets.len(),
+        2,
+        "boot-env to boot"
+    );
     *crate::snapshot::TEST_BOOTED.lock().unwrap() = Some(true);
     assert!(ask("boot-env", &[]).is_err(), "boot-env after the boot");
-    let l = crate::supervisorlog::TEST_LOG.lock().unwrap().clone().unwrap().join("\n");
-    assert!(!l.contains("value-of-api-key") && !l.contains("other-value"), "a value in the log: {l}");
+    let l = crate::supervisorlog::TEST_LOG
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap()
+        .join("\n");
+    assert!(
+        !l.contains("value-of-api-key") && !l.contains("other-value"),
+        "a value in the log: {l}"
+    );
     for want in [
         "secrets: get API_KEY for pid ",
         "secrets: refused get API_KEY NOPE for pid ",
@@ -97,7 +122,10 @@ fn secrets_survive_a_worker_restart() {
     crate::env::set("GIT_CONFIG_NOSYSTEM", Some("1"));
     let mem = new_memfd().unwrap();
     let link = std::fs::read_link(format!("/proc/self/fd/{}", mem.as_raw_fd())).unwrap();
-    assert!(link.to_string_lossy().starts_with("/memfd:"), "not a memfd: {link:?}");
+    assert!(
+        link.to_string_lossy().starts_with("/memfd:"),
+        "not a memfd: {link:?}"
+    );
     let first = HeldSecrets::new_with_mem(Some(std::fs::File::from(mem.try_clone().unwrap())));
     first.set(hm(&[("K", "kept-value")]));
     let worker = || {
@@ -106,7 +134,11 @@ fn secrets_survive_a_worker_restart() {
         h.load_held();
         h
     };
-    assert_eq!(worker().snapshot().get("K").map(String::as_str), Some("kept-value"), "after a restart");
+    assert_eq!(
+        worker().snapshot().get("K").map(String::as_str),
+        Some("kept-value"),
+        "after a restart"
+    );
     first.set(HashMap::new()); // a downgrade to nothing: the memfd holds nothing either
     assert!(worker().snapshot().is_empty(), "a dropped value survived");
 }
@@ -120,7 +152,11 @@ fn a_slower_waiter_never_writes_an_older_pull_over_a_newer_one() {
     let current = {
         let v = version.clone();
         move || -> HashMap<String, String> {
-            if *v.lock().unwrap() == 1 { hm(&[("YYC", "y")]) } else { hm(&[("YYC", "y"), ("IDENTITY", "i")]) }
+            if *v.lock().unwrap() == 1 {
+                hm(&[("YYC", "y")])
+            } else {
+                hm(&[("YYC", "y"), ("IDENTITY", "i")])
+            }
         }
     };
     let (tx, rx) = std::sync::mpsc::channel();
@@ -143,7 +179,10 @@ fn a_slower_waiter_never_writes_an_older_pull_over_a_newer_one() {
     first.join().unwrap();
     second.join().unwrap();
     let got = HELD.snapshot();
-    assert!(got.len() == 2 && got["IDENTITY"] == "i", "the supervisor ends with {got:?}");
+    assert!(
+        got.len() == 2 && got["IDENTITY"] == "i",
+        "the supervisor ends with {got:?}"
+    );
     assert!(!e.home.join(".secrets").exists(), "~/.secrets written");
 }
 
@@ -154,7 +193,14 @@ fn gcm_open_aad(key: &[u8], sealed: &[u8], aad: &[u8]) -> Option<Vec<u8>> {
     let g = Aes256Gcm::new_from_slice(key).ok()?;
     let mut n = [0u8; 12];
     n.copy_from_slice(&sealed[..12]);
-    g.decrypt(&Nonce::from(n), Payload { msg: &sealed[12..], aad }).ok()
+    g.decrypt(
+        &Nonce::from(n),
+        Payload {
+            msg: &sealed[12..],
+            aad,
+        },
+    )
+    .ok()
 }
 
 /// what put-key sends opens exactly as the core (with the combined store key's scalar) and Deyao's kit (with the
@@ -163,36 +209,103 @@ fn gcm_open_aad(key: &[u8], sealed: &[u8], aad: &[u8]) -> Option<Vec<u8>> {
 fn put_key_seals_to_the_store_and_the_master_key() {
     let (combined, master) = (Opener::generate(), Opener::generate());
     let k = Keys::generate();
-    let req = key_write_request(&combined.public_key(), &master.public_key(), &k.sig, "yyc", "YYC_KEY", b"v4lue", false, "the cluster's key").unwrap();
+    let req = key_write_request(
+        &combined.public_key(),
+        &master.public_key(),
+        &k.sig,
+        "yyc",
+        "YYC_KEY",
+        b"v4lue",
+        false,
+        "the cluster's key",
+    )
+    .unwrap();
     let w = &req["wrapped"];
-    let dk = open_sealed(&combined, w["e"].as_str().unwrap(), w["wrapped"].as_str().unwrap(), "jarvis2/store-data-key").unwrap();
+    let dk = open_sealed(
+        &combined,
+        w["e"].as_str().unwrap(),
+        w["wrapped"].as_str().unwrap(),
+        "jarvis2/store-data-key",
+    )
+    .unwrap();
     let data = unb64(req["data"].as_str().unwrap()).unwrap();
-    assert_eq!(gcm_open_aad(&dk, &data, b"yyc\nYYC_KEY").as_deref(), Some(&b"v4lue"[..]));
-    assert!(gcm_open_aad(&dk, &data, b"yyc\nOTHER").is_none(), "the value opened under another key's name");
+    assert_eq!(
+        gcm_open_aad(&dk, &data, b"yyc\nYYC_KEY").as_deref(),
+        Some(&b"v4lue"[..])
+    );
+    assert!(
+        gcm_open_aad(&dk, &data, b"yyc\nOTHER").is_none(),
+        "the value opened under another key's name"
+    );
     let bk = &req["backup"];
     // the backup opens with the master key: the same ECDH + HKDF as sealing, with the store and key as AAD
     let be = bk["e"].as_str().unwrap();
     let bd = bk["data"].as_str().unwrap();
     let e_pub = p256::PublicKey::from_sec1_bytes(&unb64(be).unwrap()).unwrap();
-    let x = p256::ecdh::diffie_hellman(p256::SecretKey::from_slice(&master.scalar()).unwrap().to_nonzero_scalar(), e_pub.as_affine());
+    let x = p256::ecdh::diffie_hellman(
+        p256::SecretKey::from_slice(&master.scalar())
+            .unwrap()
+            .to_nonzero_scalar(),
+        e_pub.as_affine(),
+    );
     let mut key = [0u8; 32];
-    hkdf::Hkdf::<sha2::Sha256>::new(None, x.raw_secret_bytes()).expand(b"jarvis2/backup", &mut key).unwrap();
-    assert_eq!(gcm_open_aad(&key, &unb64(bd).unwrap(), b"yyc\nYYC_KEY").as_deref(), Some(&b"v4lue"[..]), "the backup doesn't open");
-    assert_eq!(req["backupSha256"].as_str().unwrap(), sha256_hex(format!("{be}\n{bd}").as_bytes()));
-    let wt = writer_text("yyc", "YYC_KEY", w["e"].as_str().unwrap(), req["data"].as_str().unwrap(), req["backupSha256"].as_str().unwrap());
-    assert!(jarvis_sig::verify(&k.sig.public_key(), wt.as_bytes(), req["sig"].as_str().unwrap()), "the signature doesn't cover WriterText");
+    hkdf::Hkdf::<sha2::Sha256>::new(None, x.raw_secret_bytes())
+        .expand(b"jarvis2/backup", &mut key)
+        .unwrap();
+    assert_eq!(
+        gcm_open_aad(&key, &unb64(bd).unwrap(), b"yyc\nYYC_KEY").as_deref(),
+        Some(&b"v4lue"[..]),
+        "the backup doesn't open"
+    );
+    assert_eq!(
+        req["backupSha256"].as_str().unwrap(),
+        sha256_hex(format!("{be}\n{bd}").as_bytes())
+    );
+    let wt = writer_text(
+        "yyc",
+        "YYC_KEY",
+        w["e"].as_str().unwrap(),
+        req["data"].as_str().unwrap(),
+        req["backupSha256"].as_str().unwrap(),
+    );
+    assert!(
+        jarvis_sig::verify(
+            &k.sig.public_key(),
+            wt.as_bytes(),
+            req["sig"].as_str().unwrap()
+        ),
+        "the signature doesn't cover WriterText"
+    );
     // a delete: no value, no backup, still signed
-    let del = key_write_request(&combined.public_key(), &master.public_key(), &k.sig, "yyc", "YYC_KEY", b"", true, "").unwrap();
+    let del = key_write_request(
+        &combined.public_key(),
+        &master.public_key(),
+        &k.sig,
+        "yyc",
+        "YYC_KEY",
+        b"",
+        true,
+        "",
+    )
+    .unwrap();
     assert!(del.get("wrapped").is_none() && del.get("backup").is_none());
-    assert!(jarvis_sig::verify(&k.sig.public_key(), writer_text("yyc", "YYC_KEY", "", "", "").as_bytes(), del["sig"].as_str().unwrap()));
+    assert!(jarvis_sig::verify(
+        &k.sig.public_key(),
+        writer_text("yyc", "YYC_KEY", "", "", "").as_bytes(),
+        del["sig"].as_str().unwrap()
+    ));
 }
 
 /// a kernel machine's live copy opens in secrets exactly as kernel/secrets liveUpdate opens it
 #[test]
 fn the_live_copy_opens_in_secrets() {
     let k = Opener::generate();
-    let (e, data) = seal_parts(&k.public_key(), b"v4lue", &live_info("yyc", "YYC_KEY"), b"").unwrap();
-    assert_eq!(open_sealed(&k, &e, &data, "jarvis2/live-key\nyyc\nYYC_KEY").unwrap(), b"v4lue");
+    let (e, data) =
+        seal_parts(&k.public_key(), b"v4lue", &live_info("yyc", "YYC_KEY"), b"").unwrap();
+    assert_eq!(
+        open_sealed(&k, &e, &data, "jarvis2/live-key\nyyc\nYYC_KEY").unwrap(),
+        b"v4lue"
+    );
 }
 
 /// a kernel machine's write: secrets signs no store key, so the machine computes P + K from the phone secrets' signed
@@ -206,10 +319,18 @@ fn a_kernel_writer_computes_the_store_key() {
     let (pa, ka) = (phone.public_key(), agree.public_key());
     let state = sec.doc(&serde_json::json!({"kind": "secrets-state", "master": "M", "phone": {"signingKey": "S", "agreementKey": pa}}));
     let sp = sec.public();
-    let srv = FakeRouter::new(&key.sig.public_key(), move |_| ok_json(serde_json::json!({"identity": {"signingKey": sp, "state": state}})));
+    let srv = FakeRouter::new(&key.sig.public_key(), move |_| {
+        ok_json(serde_json::json!({"identity": {"signingKey": sp, "state": state}}))
+    });
     let c = srv.client();
     let (store_key, master) = seal_targets(&c, &sec.public(), &ka).unwrap();
-    assert_eq!((store_key, master.as_str()), (jarvis_sig::store_key(&pa, &ka).unwrap(), "M"));
-    assert!(seal_targets(&c, &new_key().public(), &ka).is_err(), "a state another key signed was taken");
+    assert_eq!(
+        (store_key, master.as_str()),
+        (jarvis_sig::store_key(&pa, &ka).unwrap(), "M")
+    );
+    assert!(
+        seal_targets(&c, &new_key().public(), &ka).is_err(),
+        "a state another key signed was taken"
+    );
     let _ = b64(b"");
 }

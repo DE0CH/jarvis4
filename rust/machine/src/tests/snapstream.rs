@@ -40,7 +40,8 @@ pub fn snap_router(key: &Keys) -> (FakeRouter, Arc<Mutex<SnapRouter>>) {
                 ok_json(serde_json::json!({"sha256": fr.pending, "bytes": r.body.len()}))
             }
             "/m/snapshot-commit" | "/m/snapshot-carry" | "/m/snapshot-failed" => {
-                let inp: std::collections::BTreeMap<String, String> = serde_json::from_slice(&r.body).unwrap_or_default();
+                let inp: std::collections::BTreeMap<String, String> =
+                    serde_json::from_slice(&r.body).unwrap_or_default();
                 let g = |k: &str| inp.get(k).cloned().unwrap_or_default();
                 match r.path.as_str() {
                     "/m/snapshot-failed" => fr.failed.push(g("error")),
@@ -55,7 +56,9 @@ pub fn snap_router(key: &Keys) -> (FakeRouter, Arc<Mutex<SnapRouter>>) {
                             fr.fail_commit = false;
                             return ans(500, "");
                         }
-                        if !jarvis_sig::verify(&pk, g("sha256").as_bytes(), &g("sig")) || (g("sha256") != fr.pending && fr.commits.is_empty()) {
+                        if !jarvis_sig::verify(&pk, g("sha256").as_bytes(), &g("sig"))
+                            || (g("sha256") != fr.pending && fr.commits.is_empty())
+                        {
                             return ans(409, "");
                         }
                         fr.commits.push(format!("{} {}", g("sha256"), g("sig")));
@@ -89,11 +92,17 @@ fn the_final_snapshot_streams_without_a_local_copy() {
     std::fs::create_dir_all(e.home.join("workspace")).unwrap();
     std::fs::write(e.home.join("workspace/big"), "x".repeat(1 << 20)).unwrap();
     upload_snapshot(&c).unwrap();
-    assert!(!crate::paths::final_snapshot().exists(), "a local copy of the snapshot was written");
+    assert!(
+        !crate::paths::final_snapshot().exists(),
+        "a local copy of the snapshot was written"
+    );
     {
         let f = fr.lock().unwrap();
         assert!(
-            f.streamed == 1 && f.commits.len() == 1 && f.commits[0].starts_with(&format!("{} ", f.pending)) && f.legacy == 0,
+            f.streamed == 1
+                && f.commits.len() == 1
+                && f.commits[0].starts_with(&format!("{} ", f.pending))
+                && f.legacy == 0,
             "streamed {}, commits {:?}",
             f.streamed,
             f.commits
@@ -102,9 +111,15 @@ fn the_final_snapshot_streams_without_a_local_copy() {
     // a commit that didn't reach the router: the frozen files are streamed again and committed under the same signature
     reset_signed();
     let _ = std::fs::remove_file(crate::paths::final_snapshot_sig());
-    let _ = std::fs::remove_file(format!("{}.sha256", crate::paths::final_snapshot_sig().display()));
+    let _ = std::fs::remove_file(format!(
+        "{}.sha256",
+        crate::paths::final_snapshot_sig().display()
+    ));
     fr.lock().unwrap().fail_commit = true;
-    assert!(upload_snapshot(&c).is_err(), "a failed commit went unnoticed");
+    assert!(
+        upload_snapshot(&c).is_err(),
+        "a failed commit went unnoticed"
+    );
     let first = SIGNED.lock().unwrap().sig.clone();
     upload_snapshot(&c).unwrap();
     assert_eq!(SIGNED.lock().unwrap().sig, first, "signed again");
@@ -113,7 +128,10 @@ fn the_final_snapshot_streams_without_a_local_copy() {
     SIGNED.lock().unwrap().committed = false;
     std::fs::write(e.home.join("workspace/big"), "changed").unwrap();
     let r = upload_snapshot(&c);
-    assert!(format!("{:#}", r.as_ref().unwrap_err()).contains("no second"), "a second snapshot: {r:?}");
+    assert!(
+        format!("{:#}", r.as_ref().unwrap_err()).contains("no second"),
+        "a second snapshot: {r:?}"
+    );
 }
 
 /// a router from before streaming gets the old whole-file upload
@@ -140,7 +158,11 @@ fn a_failed_snapshot_is_reported_and_thawed() {
     let c = srv.client();
     let err = upload_snapshot(&c).expect_err("no error from a router that refuses the stream");
     let thawed = TEST_FREEZE.lock().unwrap().unwrap().1;
-    assert!(!crate::snapshot::FROZEN.load(Ordering::SeqCst) && thawed == 1 && SIGNED.lock().unwrap().sum.is_empty());
+    assert!(
+        !crate::snapshot::FROZEN.load(Ordering::SeqCst)
+            && thawed == 1
+            && SIGNED.lock().unwrap().sum.is_empty()
+    );
     report_snapshot_failed(&c, &err);
     assert_eq!(fr.lock().unwrap().failed.len(), 1, "not reported");
 }
@@ -161,6 +183,10 @@ fn a_booting_machine_carries_its_predecessors_snapshot() {
     std::fs::write(&cert_file, crate::gojson::marshal(&doc)).unwrap();
     booting_snapshot(&c1).unwrap();
     let f = fr.lock().unwrap();
-    assert!(f.carried.len() == 1 && f.carried[0] == sum && SIGNED.lock().unwrap().sum == sum, "carried {:?}", f.carried);
+    assert!(
+        f.carried.len() == 1 && f.carried[0] == sum && SIGNED.lock().unwrap().sum == sum,
+        "carried {:?}",
+        f.carried
+    );
     assert!(crate::paths::carried_run().exists(), "the boot would go on");
 }

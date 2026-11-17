@@ -29,16 +29,36 @@ fn stall_step_rules() {
         ..Default::default()
     };
     let mut c = StallClock::default();
-    assert!(!stall_step(&mut c, &idle, "", false, at(t0, 0.0)).0, "nudged at once");
-    assert!(!stall_step(&mut c, &idle, "", false, at(t0, 14.0)).0, "nudged before 15 min");
-    assert_eq!(stall_step(&mut c, &idle, "", false, at(t0, 15.0)), (true, 15), "no nudge at 15 min");
-    assert!(!stall_step(&mut c, &idle, "", false, at(t0, 20.0)).0, "nudged again within 15 min");
-    assert_eq!(stall_step(&mut c, &idle, "", false, at(t0, 30.0)), (true, 15), "not repeated after 15 more min");
+    assert!(
+        !stall_step(&mut c, &idle, "", false, at(t0, 0.0)).0,
+        "nudged at once"
+    );
+    assert!(
+        !stall_step(&mut c, &idle, "", false, at(t0, 14.0)).0,
+        "nudged before 15 min"
+    );
+    assert_eq!(
+        stall_step(&mut c, &idle, "", false, at(t0, 15.0)),
+        (true, 15),
+        "no nudge at 15 min"
+    );
+    assert!(
+        !stall_step(&mut c, &idle, "", false, at(t0, 20.0)).0,
+        "nudged again within 15 min"
+    );
+    assert_eq!(
+        stall_step(&mut c, &idle, "", false, at(t0, 30.0)),
+        (true, 15),
+        "not repeated after 15 more min"
+    );
     // a new turn starts the clock again
     let mut turn = idle.clone();
     turn.status_at = 2;
     stall_step(&mut c, &turn, "", false, at(t0, 31.0));
-    assert!(!stall_step(&mut c, &turn, "", false, at(t0, 45.0)).0, "the new turn's clock didn't restart");
+    assert!(
+        !stall_step(&mut c, &turn, "", false, at(t0, 45.0)).0,
+        "the new turn's clock didn't restart"
+    );
     // no jobs: nothing
     let mut c2 = StallClock::default();
     let nojobs = HostStatus {
@@ -48,7 +68,10 @@ fn stall_step_rules() {
         ..Default::default()
     };
     for m in (0..=30).step_by(5) {
-        assert!(!stall_step(&mut c2, &nojobs, "", false, at(t0, m as f64)).0, "nudged with no background jobs");
+        assert!(
+            !stall_step(&mut c2, &nojobs, "", false, at(t0, m as f64)).0,
+            "nudged with no background jobs"
+        );
     }
     // busy with jobs: a pane without a spinner counts as waiting on the jobs; with one, a turn runs
     let busy = HostStatus {
@@ -60,14 +83,25 @@ fn stall_step_rules() {
     };
     let mut c3 = StallClock::default();
     stall_step(&mut c3, &busy, "❯ ", true, at(t0, 0.0));
-    assert!(stall_step(&mut c3, &busy, "❯ ", true, at(t0, 15.0)).0, "a busy host waiting on its jobs wasn't nudged");
+    assert!(
+        stall_step(&mut c3, &busy, "❯ ", true, at(t0, 15.0)).0,
+        "a busy host waiting on its jobs wasn't nudged"
+    );
     let spin = "\x1b[33m✻\x1b[0m Thinking… (12s · esc to interrupt)\n";
-    assert!(!stall_step(&mut c3, &busy, spin, true, at(t0, 40.0)).0 && c3.since.is_none(), "a running turn didn't reset the clock");
+    assert!(
+        !stall_step(&mut c3, &busy, spin, true, at(t0, 40.0)).0 && c3.since.is_none(),
+        "a running turn didn't reset the clock"
+    );
     // busy with no pane: the clock stays as it is (neither starts nor resets)
     let mut c4 = StallClock::default();
-    assert!(!stall_step(&mut c4, &busy, "", false, at(t0, 0.0)).0 && c4.since.is_none(), "a busy host with no pane started the clock");
     assert!(
-        stall_text(1, 15).starts_with("Jarvis watchdog: this session has been idle for 15 min while 1 background job has"),
+        !stall_step(&mut c4, &busy, "", false, at(t0, 0.0)).0 && c4.since.is_none(),
+        "a busy host with no pane started the clock"
+    );
+    assert!(
+        stall_text(1, 15).starts_with(
+            "Jarvis watchdog: this session has been idle for 15 min while 1 background job has"
+        ),
         "{}",
         stall_text(1, 15)
     );
@@ -81,14 +115,21 @@ fn read_host_entry() {
     std::fs::create_dir_all(&d).unwrap();
     *CLAUDE_SESSIONS.write().unwrap() = Some(d.clone());
     *TEST_SHELL_JOBS.lock().unwrap() = Some(1);
-    std::fs::write(d.join("a.json"), r#"{"pid":10,"sessionId":"c1","status":"busy","statusUpdatedAt":5,"startedAt":1}"#).unwrap();
+    std::fs::write(
+        d.join("a.json"),
+        r#"{"pid":10,"sessionId":"c1","status":"busy","statusUpdatedAt":5,"startedAt":1}"#,
+    )
+    .unwrap();
     std::fs::write(
         d.join("b.json"),
         r#"{"pid":11,"sessionId":"c2","status":"idle","statusUpdatedAt":7,"startedAt":2,"bridgeSessionId":"session_x"}"#,
     )
     .unwrap();
     let h = read_host();
-    assert!(h.ok && h.status == "idle" && h.status_at == 7 && h.jobs == 1, "{h:?}");
+    assert!(
+        h.ok && h.status == "idle" && h.status_at == 7 && h.jobs == 1,
+        "{h:?}"
+    );
     let tasks = vec![
         HookTask {
             id: "j1".into(),
@@ -131,10 +172,23 @@ fn live_sent_across_processes() {
     assert_eq!(normal.pass(std::slice::from_ref(&f)), 1, "normal");
     let saved = crate::gojson::unmarshal(&std::fs::read(&state).unwrap()).unwrap();
     let core = LiveSyncer::new(mk(sent.clone()), Some(state.clone()), saved);
-    assert_eq!(core.pass(std::slice::from_ref(&f)), 0, "the teardown sent unchanged transcripts again");
+    assert_eq!(
+        core.pass(std::slice::from_ref(&f)),
+        0,
+        "the teardown sent unchanged transcripts again"
+    );
     let later = std::time::SystemTime::now() + Duration::from_secs(60);
-    std::fs::File::options().write(true).open(&f).unwrap().set_modified(later).unwrap();
-    assert_eq!(core.pass(std::slice::from_ref(&f)), 1, "the teardown didn't send the changed transcript");
+    std::fs::File::options()
+        .write(true)
+        .open(&f)
+        .unwrap()
+        .set_modified(later)
+        .unwrap();
+    assert_eq!(
+        core.pass(std::slice::from_ref(&f)),
+        1,
+        "the teardown didn't send the changed transcript"
+    );
 }
 
 /// a new episode is told at once, again every 15 min while it lasts, never while healthy; a memory episode ends after
@@ -144,20 +198,44 @@ fn pressure_episode() {
     let t0 = Instant::now();
     let a = |m: f64| at(t0, m);
     let mut e = PressureEpisode::default();
-    assert!(!e.step(false, true, a(0.0), PRESSURE_MEM_CLEAR), "told while healthy");
-    assert!(e.step(true, false, a(1.0), PRESSURE_MEM_CLEAR), "a new episode wasn't told");
-    assert!(!e.step(true, false, a(2.0), PRESSURE_MEM_CLEAR), "told again within 15 min");
-    assert!(e.step(true, false, a(16.0), PRESSURE_MEM_CLEAR), "not told again after 15 min under pressure");
+    assert!(
+        !e.step(false, true, a(0.0), PRESSURE_MEM_CLEAR),
+        "told while healthy"
+    );
+    assert!(
+        e.step(true, false, a(1.0), PRESSURE_MEM_CLEAR),
+        "a new episode wasn't told"
+    );
+    assert!(
+        !e.step(true, false, a(2.0), PRESSURE_MEM_CLEAR),
+        "told again within 15 min"
+    );
+    assert!(
+        e.step(true, false, a(16.0), PRESSURE_MEM_CLEAR),
+        "not told again after 15 min under pressure"
+    );
     e.step(false, true, a(17.0), PRESSURE_MEM_CLEAR);
-    assert!(!e.step(true, false, a(20.0), PRESSURE_MEM_CLEAR), "a dip inside the episode was told as a new one");
+    assert!(
+        !e.step(true, false, a(20.0), PRESSURE_MEM_CLEAR),
+        "a dip inside the episode was told as a new one"
+    );
     e.step(false, true, a(21.0), PRESSURE_MEM_CLEAR);
     e.step(false, true, a(36.0), PRESSURE_MEM_CLEAR);
-    assert!(e.step(true, false, a(37.0), PRESSURE_MEM_CLEAR), "a new episode after a clear one wasn't told");
+    assert!(
+        e.step(true, false, a(37.0), PRESSURE_MEM_CLEAR),
+        "a new episode after a clear one wasn't told"
+    );
     e.untold();
-    assert!(e.step(true, false, a(38.0), PRESSURE_MEM_CLEAR), "an untaken message wasn't sent again");
+    assert!(
+        e.step(true, false, a(38.0), PRESSURE_MEM_CLEAR),
+        "an untaken message wasn't sent again"
+    );
     let mut d = PressureEpisode::default();
     d.step(true, false, a(0.0), Duration::ZERO);
-    assert!(!d.step(false, false, a(1.0), Duration::ZERO) && d.on, "the disk episode ended before the disk was clear");
+    assert!(
+        !d.step(false, false, a(1.0), Duration::ZERO) && d.on,
+        "the disk episode ended before the disk was clear"
+    );
     d.step(false, true, a(2.0), Duration::ZERO);
     assert!(!d.on, "a clear disk didn't end the episode");
 }
@@ -166,7 +244,8 @@ fn pressure_episode() {
 #[test]
 fn pressure_reasons() {
     let _e = TestEnv::new();
-    *GUARD_LOG_PATH.write().unwrap() = Some(std::path::PathBuf::from("/nonexistent/supervisor.out"));
+    *GUARD_LOG_PATH.write().unwrap() =
+        Some(std::path::PathBuf::from("/nonexistent/supervisor.out"));
     let mut w = PressureWatch::default();
     let ok = MemSample {
         total_kb: 4 << 20,
@@ -211,7 +290,10 @@ fn pressure_reasons() {
         }),
         data: None,
     });
-    assert!(!l && !c, "between the marks the disk is neither low nor clear");
+    assert!(
+        !l && !c,
+        "between the marks the disk is neither low nor clear"
+    );
 }
 
 /// a harness's own memory guard kills before the kernel does (the aviary supervisor): its kills are pressure too
@@ -228,12 +310,18 @@ fn pressure_guard_kills() {
     };
     let add = |s: &str| {
         use std::io::Write;
-        let mut f = std::fs::OpenOptions::new().append(true).create(true).open(&log).unwrap();
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&log)
+            .unwrap();
         f.write_all(s.as_bytes()).unwrap();
     };
     let mut w = PressureWatch::default();
     assert_eq!(w.mem_reason(&ok), "", "no log yet");
-    add("{\"level\":\"warn\",\"msg\":\"memory guard killed\",\"pid\":7,\"comm\":\"old\",\"rss\":1073741824}\n");
+    add(
+        "{\"level\":\"warn\",\"msg\":\"memory guard killed\",\"pid\":7,\"comm\":\"old\",\"rss\":1073741824}\n",
+    );
     let mut w = PressureWatch::default();
     assert_eq!(w.mem_reason(&ok), "", "a kill from before the watch");
     add(concat!(
@@ -246,18 +334,39 @@ fn pressure_guard_kills() {
     assert_eq!(w.mem_reason(&ok), "", "the same kill told twice");
     add("led\",\"pid\":1850,\"comm\":\"node\",\"rss\":2147483648}\n");
     assert!(w.mem_reason(&ok).contains("node at 2.0 GB"));
-    std::fs::write(&log, "{\"msg\":\"memory guard killed\",\"comm\":\"cargo\",\"rss\":1073741824}\n").unwrap();
+    std::fs::write(
+        &log,
+        "{\"msg\":\"memory guard killed\",\"comm\":\"cargo\",\"rss\":1073741824}\n",
+    )
+    .unwrap();
     assert!(w.mem_reason(&ok).contains("cargo at 1.0 GB"), "a new log");
 }
 
 #[test]
 fn pressure_text_says_what_deyao_asked() {
-    let m = pressure_text("memory", "it is almost out of memory", "100 MB free of 4.0 GB");
-    for want in ["Jarvis watchdog: memory pressure", "100 MB free of 4.0 GB", "Do not upgrade", "Discord Deyao", "This is an automated message from Jarvis."] {
+    let m = pressure_text(
+        "memory",
+        "it is almost out of memory",
+        "100 MB free of 4.0 GB",
+    );
+    for want in [
+        "Jarvis watchdog: memory pressure",
+        "100 MB free of 4.0 GB",
+        "Do not upgrade",
+        "Discord Deyao",
+        "This is an automated message from Jarvis.",
+    ] {
         assert!(m.contains(want), "{m:?} is missing {want:?}");
     }
-    let d = pressure_text("disk", "it is almost out of disk", "0.5 GB free of 10.0 GB on its volume");
-    assert!(d.contains("Jarvis watchdog: disk pressure") && d.contains("Do not upgrade"), "{d}");
+    let d = pressure_text(
+        "disk",
+        "it is almost out of disk",
+        "0.5 GB free of 10.0 GB on its volume",
+    );
+    assert!(
+        d.contains("Jarvis watchdog: disk pressure") && d.contains("Do not upgrade"),
+        "{d}"
+    );
 }
 
 /// only an outage that outlasts 3 min, seen between turns, is revived, and again only after 10 min
@@ -278,16 +387,31 @@ fn rc_step_rules() {
     for (m, l) in [&up, &gone, &gone, &gone].iter().enumerate() {
         assert!(!rc_step(&mut c, l, a(m as f64)), "revived at {m} min");
     }
-    assert!(rc_step(&mut c, &gone, a(4.0)), "down 3 min between turns: not revived");
-    assert!(!rc_step(&mut c, &gone, a(5.0)) && !rc_step(&mut c, &gone, a(13.5)), "revived again before the retry wait");
-    assert!(rc_step(&mut c, &gone, a(14.5)), "still down after the retry wait: not revived again");
+    assert!(
+        rc_step(&mut c, &gone, a(4.0)),
+        "down 3 min between turns: not revived"
+    );
+    assert!(
+        !rc_step(&mut c, &gone, a(5.0)) && !rc_step(&mut c, &gone, a(13.5)),
+        "revived again before the retry wait"
+    );
+    assert!(
+        rc_step(&mut c, &gone, a(14.5)),
+        "still down after the retry wait: not revived again"
+    );
     let mut c = RcClock::default();
     let mut busy = off.clone();
     busy.idle = false;
     for (m, l) in [&off, &busy, &busy, &busy, &busy].iter().enumerate() {
-        assert!(!rc_step(&mut c, l, a(m as f64)), "revived in a turn at {m} min");
+        assert!(
+            !rc_step(&mut c, l, a(m as f64)),
+            "revived in a turn at {m} min"
+        );
     }
-    assert!(rc_step(&mut c, &off, a(5.0)), "Remote Control off on the host, turn over: not revived");
+    assert!(
+        rc_step(&mut c, &off, a(5.0)),
+        "Remote Control off on the host, turn over: not revived"
+    );
     for l in [RcLook::default(), look(true, "session_a", "", true)] {
         let mut c = RcClock::default();
         for m in 0..20 {
@@ -296,7 +420,10 @@ fn rc_step_rules() {
     }
     let mut c = RcClock::default();
     for (m, l) in [&gone, &gone, &up, &gone, &gone, &gone].iter().enumerate() {
-        assert!(!rc_step(&mut c, l, a(m as f64)), "revived at {m} min after the blip");
+        assert!(
+            !rc_step(&mut c, l, a(m as f64)),
+            "revived at {m} min after the blip"
+        );
     }
 }
 
@@ -326,9 +453,19 @@ fn rc_menu() {
     let m = open_menu(RC_MENU_ON);
     assert_eq!(menu_distance(&m, RC_DISCONNECT_TEXT), Some(-2));
     let off = open_menu(RC_MENU_OFF);
-    assert_eq!(menu_distance(&off, crate::claudelogin::RC_ENABLE_TEXT), Some(0));
-    assert!(open_menu("❯ Disconnect this session\n").is_empty() && open_menu("Remote Control\n❯ Disconnect this session\n").is_empty());
-    assert_eq!(menu_distance(&m, crate::claudelogin::RC_ENABLE_TEXT), None, "a choice the menu lacks was found");
+    assert_eq!(
+        menu_distance(&off, crate::claudelogin::RC_ENABLE_TEXT),
+        Some(0)
+    );
+    assert!(
+        open_menu("❯ Disconnect this session\n").is_empty()
+            && open_menu("Remote Control\n❯ Disconnect this session\n").is_empty()
+    );
+    assert_eq!(
+        menu_distance(&m, crate::claudelogin::RC_ENABLE_TEXT),
+        None,
+        "a choice the menu lacks was found"
+    );
 }
 
 /// the menu with its cursor one choice higher
@@ -351,7 +488,10 @@ fn cursor_up(menu: &str) -> String {
 #[test]
 fn revive_remote_control_types_the_menu() {
     for (held, want) in [
-        ("session_old", "-l /remote-control|Enter|Up|Up|Enter|-l /remote-control|Enter"),
+        (
+            "session_old",
+            "-l /remote-control|Enter|Up|Up|Enter|-l /remote-control|Enter",
+        ),
         ("", "-l /remote-control|Enter|Enter"),
     ] {
         let e = TestEnv::new();
@@ -379,7 +519,8 @@ fn revive_remote_control_types_the_menu() {
             ..Default::default()
         }));
         let s1 = st.clone();
-        *crate::claudelogin::TEST_PANE.lock().unwrap() = Some(Arc::new(move || s1.lock().unwrap().pane.clone()));
+        *crate::claudelogin::TEST_PANE.lock().unwrap() =
+            Some(Arc::new(move || s1.lock().unwrap().pane.clone()));
         let s2 = st.clone();
         let reg2 = reg.clone();
         *crate::claudelogin::TEST_KEYS.lock().unwrap() = Some(Arc::new(move |a: &[&str]| {
@@ -397,7 +538,11 @@ fn revive_remote_control_types_the_menu() {
                 reg2("session_new");
             } else if k == "Enter" && s.typed {
                 s.typed = false;
-                s.pane = if crate::claudelogin::live_bridge().is_empty() { RC_MENU_OFF.into() } else { RC_MENU_ON.into() };
+                s.pane = if crate::claudelogin::live_bridge().is_empty() {
+                    RC_MENU_OFF.into()
+                } else {
+                    RC_MENU_ON.into()
+                };
             } else if k == "Enter" {
                 if menu_distance(&m, RC_DISCONNECT_TEXT) == Some(0) {
                     reg2("");
@@ -424,14 +569,20 @@ fn revive_remote_control_types_the_menu() {
 }
 
 fn dialog_pane() -> String {
-    std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tests/testdata/permission-dialog.txt")).unwrap()
+    std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/tests/testdata/permission-dialog.txt"
+    ))
+    .unwrap()
 }
 
 #[test]
 fn permission_dialog_found() {
     let (ok, what) = permission_dialog(&dialog_pane());
     assert!(
-        ok && what.starts_with("Bash command") && what.contains("touch made-by-test.txt") && what.ends_with("Do you want to proceed?"),
+        ok && what.starts_with("Bash command")
+            && what.contains("touch made-by-test.txt")
+            && what.ends_with("Do you want to proceed?"),
         "{ok} {what:?}"
     );
 }
@@ -439,7 +590,9 @@ fn permission_dialog_found() {
 #[test]
 fn permission_dialog_others_left_alone() {
     let pane = dialog_pane();
-    let moved = pane.replacen("❯ 1. Yes", "  1. Yes", 1).replacen("  4. No", "❯ 4. No", 1);
+    let moved = pane
+        .replacen("❯ 1. Yes", "  1. Yes", 1)
+        .replacen("  4. No", "❯ 4. No", 1);
     let quoted = format!("{pane}\n● done\n\n────\n❯ \n────\n  ⏵⏵ bypass permissions on\n");
     for (name, s) in [
         ("trust", " Quick safety check: Is this a project you created or one you trust?\n ❯ No, exit\n   Yes, I trust this folder\n\n Enter to confirm · Esc to cancel\n".to_string()),
@@ -455,8 +608,14 @@ fn permission_dialog_others_left_alone() {
 
 #[test]
 fn permission_dialog_other_tools() {
-    for q in ["Do you want to make this edit to main.go?", "Do you want to create notes.md?", "Do you want to allow Claude to fetch this content?"] {
-        let s = format!(" Edit file\n {q}\n ❯ 1. Yes\n   2. Yes, allow all edits during this session\n   3. No\n\n Esc to cancel · Tab to amend\n");
+    for q in [
+        "Do you want to make this edit to main.go?",
+        "Do you want to create notes.md?",
+        "Do you want to allow Claude to fetch this content?",
+    ] {
+        let s = format!(
+            " Edit file\n {q}\n ❯ 1. Yes\n   2. Yes, allow all edits during this session\n   3. No\n\n Esc to cancel · Tab to amend\n"
+        );
         assert!(permission_dialog(&s).0, "{q}: not found");
     }
 }
@@ -465,10 +624,23 @@ fn permission_dialog_other_tools() {
 fn accept_step_only_in_bypass_and_at_most_twice() {
     let pane = dialog_pane();
     let mut s = AcceptState::default();
-    assert!(!accept_step(&mut s, "auto", &pane).0, "pressed in auto mode");
+    assert!(
+        !accept_step(&mut s, "auto", &pane).0,
+        "pressed in auto mode"
+    );
     for (i, want) in [true, true, false, false].iter().enumerate() {
-        assert_eq!(accept_step(&mut s, "bypass", &pane).0, *want, "look {i} on the same dialog");
+        assert_eq!(
+            accept_step(&mut s, "bypass", &pane).0,
+            *want,
+            "look {i} on the same dialog"
+        );
     }
-    assert!(!accept_step(&mut s, "bypass", "❯ \n").0, "pressed with no dialog");
-    assert!(accept_step(&mut s, "bypass", &pane).0, "the next dialog (same text, after it had gone) not pressed");
+    assert!(
+        !accept_step(&mut s, "bypass", "❯ \n").0,
+        "pressed with no dialog"
+    );
+    assert!(
+        accept_step(&mut s, "bypass", &pane).0,
+        "the next dialog (same text, after it had gone) not pressed"
+    );
 }

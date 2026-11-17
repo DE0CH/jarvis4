@@ -2,14 +2,15 @@
 //! HOME, the test seams), so each takes the one lock (testutil::TestEnv).
 #![allow(clippy::unwrap_used)]
 
-pub mod testutil;
-pub mod vouch;
+pub mod deploykeys;
 pub mod grants;
-pub mod outcomes;
-pub mod watchdogs;
 pub mod misc;
-pub mod task;
+pub mod outcomes;
 pub mod output;
 pub mod secrets;
-pub mod deploykeys;
+pub mod snapdirect;
 pub mod snapstream;
+pub mod task;
+pub mod testutil;
+pub mod vouch;
+pub mod watchdogs;

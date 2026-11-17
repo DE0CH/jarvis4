@@ -7,12 +7,11 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    rt::block_on(async {
-        reqwest::Client::builder()
-            .http1_only()
-            .build()
-            .unwrap_or_default()
-    })
+    // building a client needs no runtime (first used inside an async block: no block_on here)
+    reqwest::Client::builder()
+        .http1_only()
+        .build()
+        .unwrap_or_default()
 });
 
 /// a GET with headers → status and body (at most `max` bytes), within `limit`

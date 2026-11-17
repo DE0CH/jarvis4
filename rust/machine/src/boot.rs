@@ -149,9 +149,7 @@ pub fn prepare() -> Result<HarnessSpec> {
     // the core: the one that created this machine. It sets its signing key in the machine's Fly config, and only the
     // core's Fly token can create or change machines in this app, so the key comes from the core through Fly, never
     // from the router.
-    let core_key = crate::env::get(CORE_KEY_ENV)
-        .trim()
-        .to_string();
+    let core_key = crate::env::get(CORE_KEY_ENV).trim().to_string();
     let kernel = !crate::env::get(crate::kernelboot::KERNEL_ROOT_ENV)
         .trim()
         .is_empty();
@@ -324,7 +322,10 @@ pub fn prepare() -> Result<HarnessSpec> {
     crate::snapstream::hold_if_carried();
     util::write_file(&paths::booted_path(), util::now_rfc3339().as_bytes(), 0o644)
         .map_err(|e| anyhow!("booted marker: {e}"))?;
-    let clean: Vec<String> = crate::env::vars().into_iter().map(|(k, v)| format!("{k}={v}")).collect(); // already the clean env
+    let clean: Vec<String> = crate::env::vars()
+        .into_iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect(); // already the clean env
     if let Some(t) = cert
         .options
         .harness

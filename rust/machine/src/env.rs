@@ -19,7 +19,12 @@ pub fn get(k: &str) -> String {
 /// every variable with the overlay over it, as Go's os.Environ
 pub fn vars() -> Vec<(String, String)> {
     let mut m: BTreeMap<String, String> = std::env::vars_os()
-        .map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned()))
+        .map(|(k, v)| {
+            (
+                k.to_string_lossy().into_owned(),
+                v.to_string_lossy().into_owned(),
+            )
+        })
         .collect();
     if let Ok(o) = OVERLAY.read() {
         for (k, v) in o.iter() {

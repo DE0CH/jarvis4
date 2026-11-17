@@ -574,7 +574,9 @@ pub fn send_to_harness(harness: &str, mode: &str, from: &str, text: &str) -> Res
     let (send, cfg) = channel();
     let cmd = if via_harness_send(harness) {
         session_command("/usr/local/bin/harness-send", &["--queue"])
-    } else if util::file_exists(std::path::Path::new(&send)) && util::file_exists(std::path::Path::new(&cfg)) {
+    } else if util::file_exists(std::path::Path::new(&send))
+        && util::file_exists(std::path::Path::new(&cfg))
+    {
         // the Jarvis channel: the image refuses every cross-session peer message, so Jarvis's own messages go in
         // through its channel, whatever the session's permission mode
         session_command(&send, &["--from", from])

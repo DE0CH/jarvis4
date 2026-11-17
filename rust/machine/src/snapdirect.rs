@@ -27,7 +27,8 @@ use std::time::{Duration, Instant};
 pub struct NoDirect;
 
 pub const DIRECT_WORKERS: usize = 4;
-const DIRECT_TRIES: u32 = 4;
+/// tries per part or range (tests lower it)
+pub static DIRECT_TRIES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(4);
 /// the backoff between tries (ms; tests shorten it)
 pub static DIRECT_BACKOFF_MS: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(2000);
@@ -37,13 +38,12 @@ pub static RANGE_SIZE: AtomicI64 = AtomicI64::new(16 << 20);
 /// the machine's own way to the bucket (the internet, not the router's gateway). HTTP/1.1, so the parts and ranges in
 /// flight each have a connection of their own.
 static BUCKET: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    rt::block_on(async {
-        reqwest::Client::builder()
-            .http1_only()
-            .pool_max_idle_per_host(16)
-            .build()
-            .unwrap_or_default()
-    })
+    // building a client needs no runtime (first used inside an async block: no block_on here)
+    reqwest::Client::builder()
+        .http1_only()
+        .pool_max_idle_per_host(16)
+        .build()
+        .unwrap_or_default()
 });
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -262,7 +262,7 @@ pub fn upload_parts<R: Read>(
 /// one part to its URL, tried again on a failure → its ETag
 pub fn put_part(url: &str, body: &[u8]) -> Result<String> {
     let mut last = anyhow!("no try");
-    for tr in 1..=DIRECT_TRIES {
+    for tr in 1..=DIRECT_TRIES.load(Ordering::Relaxed) {
         let body = body.to_vec();
         let r = rt::block_on(async {
             let resp =
@@ -393,7 +393,7 @@ pub fn get_ranges(url: &str, size: i64, dst: &Path, done: &AtomicI64) -> Result<
 
 fn get_range(url: &str, f: &std::fs::File, off: i64, end: i64, done: &AtomicI64) -> Result<()> {
     let mut last = anyhow!("no try");
-    for tr in 1..=DIRECT_TRIES {
+    for tr in 1..=DIRECT_TRIES.load(Ordering::Relaxed) {
         let r = rt::block_on(async {
             let resp = tokio::time::timeout(
                 Duration::from_secs(120),

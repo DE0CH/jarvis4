@@ -511,8 +511,10 @@ pub fn upload_snapshot_file(c: &Client) -> Result<()> {
 // A router without the route (404) or a failed report never holds the snapshot up.
 
 /// how often the router gets the numbers, and the log a line (ms; tests change them)
-pub static PROGRESS_POST_EVERY_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(3000);
-pub static PROGRESS_LOG_EVERY_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(10_000);
+pub static PROGRESS_POST_EVERY_MS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(3000);
+pub static PROGRESS_LOG_EVERY_MS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(10_000);
 pub const PROGRESS_LOG_EVERY: Duration = Duration::from_secs(10);
 
 type Report = Box<dyn Fn(&serde_json::Value) -> Result<()> + Send + Sync>;
@@ -614,7 +616,12 @@ impl Progress {
     pub fn tick(&self, force: bool) {
         let mut t = self.tick.lock().unwrap_or_else(|e| e.into_inner());
         let now = Instant::now();
-        if !t.2 && (force || t.1.is_none_or(|l| now - l >= Duration::from_millis(PROGRESS_POST_EVERY_MS.load(Ordering::Relaxed)))) {
+        if !t.2
+            && (force
+                || t.1.is_none_or(|l| {
+                    now - l >= Duration::from_millis(PROGRESS_POST_EVERY_MS.load(Ordering::Relaxed))
+                }))
+        {
             t.1 = Some(now);
             if let Err(e) = (self.report)(&self.numbers()) {
                 t.2 = true; // an older router, or none: the log still has it
@@ -623,7 +630,11 @@ impl Progress {
                 ));
             }
         }
-        if force || t.0.is_none_or(|l| now - l >= Duration::from_millis(PROGRESS_LOG_EVERY_MS.load(Ordering::Relaxed))) {
+        if force
+            || t.0.is_none_or(|l| {
+                now - l >= Duration::from_millis(PROGRESS_LOG_EVERY_MS.load(Ordering::Relaxed))
+            })
+        {
             t.0 = Some(now);
             (self.logf)(&self.line());
         }

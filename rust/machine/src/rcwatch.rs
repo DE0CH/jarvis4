@@ -16,7 +16,8 @@ const RC_EVERY: Duration = Duration::from_secs(60);
 pub const RC_DOWN_AFTER: Duration = Duration::from_secs(180);
 pub const RC_RETRY_WAIT: Duration = Duration::from_secs(600);
 /// for the menu, typed between turns (ms; tests shorten it)
-pub static RC_STEP_WAIT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(30_000);
+pub static RC_STEP_WAIT_MS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(30_000);
 /// the /remote-control menu of a host that has Remote Control on
 pub const RC_DISCONNECT_TEXT: &str = "Disconnect this session";
 
@@ -154,9 +155,10 @@ pub fn rc_choose(want: &str, done: impl Fn() -> bool) -> bool {
             let _ = send_keys(&["Escape"]);
         }
     };
-    if !wait_until(Duration::from_millis(RC_STEP_WAIT_MS.load(std::sync::atomic::Ordering::Relaxed)), || {
-        done() || open_menu(&pane_text()).contains(want)
-    }) {
+    if !wait_until(
+        Duration::from_millis(RC_STEP_WAIT_MS.load(std::sync::atomic::Ordering::Relaxed)),
+        || done() || open_menu(&pane_text()).contains(want),
+    ) {
         logf!(
             "remote control: the /remote-control menu didn't offer {} within 30s",
             util::go_quote(want)

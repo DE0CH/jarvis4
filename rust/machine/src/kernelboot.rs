@@ -145,11 +145,8 @@ pub fn kernel_trust_for(b: &KernelBootDocs) -> Result<Trust> {
             .map_err(|e| anyhow!("the kernel's roster from the router: {e}"))?;
         return Ok(t);
     }
-    let d: SignedDoc = gojson::unmarshal(
-        crate::env::get(KERNEL_ROSTER_ENV)
-            .as_bytes(),
-    )
-    .map_err(|e| anyhow!("the kernel's roster ({KERNEL_ROSTER_ENV}): {e}"))?;
+    let d: SignedDoc = gojson::unmarshal(crate::env::get(KERNEL_ROSTER_ENV).as_bytes())
+        .map_err(|e| anyhow!("the kernel's roster ({KERNEL_ROSTER_ENV}): {e}"))?;
     t.set(d.as_sig_doc(), None).map_err(|e| anyhow!("{e}"))?;
     Ok(t)
 }
@@ -361,9 +358,7 @@ fn write_trust_and_cert(trust: &KernelTrust, cert: Option<&Cert>) -> Result<()> 
 }
 
 fn source_env() -> String {
-    crate::env::get(KERNEL_SOURCE_ENV)
-        .trim()
-        .to_string()
+    crate::env::get(KERNEL_SOURCE_ENV).trim().to_string()
 }
 
 /// the documents, checked → the cert and the trust (nothing written)

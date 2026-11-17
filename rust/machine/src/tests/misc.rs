@@ -33,21 +33,41 @@ fn workers_hook_sequence() {
     };
     ev(r#"{"session_id":"s1","hook_event_name":"SessionStart","source":"startup"}"#);
     want("start", 0, &[]);
-    ev(r#"{"session_id":"s1","hook_event_name":"SubagentStart","agent_id":"abg","agent_type":"general-purpose"}"#);
+    ev(
+        r#"{"session_id":"s1","hook_event_name":"SubagentStart","agent_id":"abg","agent_type":"general-purpose"}"#,
+    );
     want("bg agent started", 1, &[]);
-    ev(r#"{"session_id":"s1","hook_event_name":"PostToolUse","tool_name":"Agent","tool_response":{"isAsync":true,"status":"async_launched","agentId":"abg"}}"#);
-    ev(r#"{"session_id":"s1","hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"","backgroundTaskId":"b1"}}"#);
+    ev(
+        r#"{"session_id":"s1","hook_event_name":"PostToolUse","tool_name":"Agent","tool_response":{"isAsync":true,"status":"async_launched","agentId":"abg"}}"#,
+    );
+    ev(
+        r#"{"session_id":"s1","hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"","backgroundTaskId":"b1"}}"#,
+    );
     want("bash", 1, &[("shell", 1)]);
-    ev(r#"{"session_id":"s1","hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"x"}}"#);
-    ev(r#"{"session_id":"s1","hook_event_name":"SubagentStart","agent_id":"afg","agent_type":"Explore"}"#);
-    ev(r#"{"session_id":"s1","hook_event_name":"SubagentStart","agent_id":"internal","agent_type":""}"#);
+    ev(
+        r#"{"session_id":"s1","hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"x"}}"#,
+    );
+    ev(
+        r#"{"session_id":"s1","hook_event_name":"SubagentStart","agent_id":"afg","agent_type":"Explore"}"#,
+    );
+    ev(
+        r#"{"session_id":"s1","hook_event_name":"SubagentStart","agent_id":"internal","agent_type":""}"#,
+    );
     want("fg agent", 2, &[("shell", 1)]);
-    ev(r#"{"session_id":"s1","hook_event_name":"SubagentStop","agent_id":"afg","agent_type":"Explore","background_tasks":[{"id":"abg","type":"subagent","status":"running"},{"id":"b1","type":"shell","status":"running"}]}"#);
+    ev(
+        r#"{"session_id":"s1","hook_event_name":"SubagentStop","agent_id":"afg","agent_type":"Explore","background_tasks":[{"id":"abg","type":"subagent","status":"running"},{"id":"b1","type":"shell","status":"running"}]}"#,
+    );
     want("fg stopped", 1, &[("shell", 1)]);
-    ev(r#"{"session_id":"s1","hook_event_name":"SubagentStart","agent_id":"afg2","agent_type":"Explore"}"#);
-    ev(r#"{"session_id":"s1","hook_event_name":"SubagentStop","agent_id":"abg","agent_type":"general-purpose","background_tasks":[{"id":"abg","type":"subagent","status":"running"},{"id":"m1","type":"monitor","status":"running"}]}"#);
+    ev(
+        r#"{"session_id":"s1","hook_event_name":"SubagentStart","agent_id":"afg2","agent_type":"Explore"}"#,
+    );
+    ev(
+        r#"{"session_id":"s1","hook_event_name":"SubagentStop","agent_id":"abg","agent_type":"general-purpose","background_tasks":[{"id":"abg","type":"subagent","status":"running"},{"id":"m1","type":"monitor","status":"running"}]}"#,
+    );
     want("bg stopped", 1, &[("monitor", 1)]);
-    ev(r#"{"session_id":"s1","hook_event_name":"Stop","background_tasks":[{"id":"w1","type":"workflow","status":"running"},{"id":"x","type":"shell","status":"completed"}]}"#);
+    ev(
+        r#"{"session_id":"s1","hook_event_name":"Stop","background_tasks":[{"id":"w1","type":"workflow","status":"running"},{"id":"x","type":"shell","status":"completed"}]}"#,
+    );
     want("turn end", 0, &[("workflow", 1)]);
     ev(r#"{"session_id":"s1","hook_event_name":"Stop"}"#);
     want("no list", 0, &[("workflow", 1)]);
@@ -63,7 +83,10 @@ fn workers_hook_sequence() {
     set_worker_count(&state);
     let again = get("s1").expect("kept count");
     assert!(again.jobs.is_empty(), "{again:?}");
-    assert!(r.contains(r#""workersOf":"s1""#) && r.matches('\n').count() == 1, "report {r:?}");
+    assert!(
+        r.contains(r#""workersOf":"s1""#) && r.matches('\n').count() == 1,
+        "report {r:?}"
+    );
 }
 
 /// the hook only notifies: its event reaches the supervisor's count over the socket, and with no supervisor listening
@@ -89,7 +112,10 @@ fn workers_hook_notifies_the_supervisor() {
     }
     assert_eq!(get("s1").map(|f| f.subagents), Some(1));
     let e = worker_event_of(br#"{"session_id":"s1","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"echo hunter2"},"tool_response":{"stdout":"hunter2","backgroundTaskId":"b1"}}"#).unwrap();
-    assert!(!crate::gojson::marshal(&e).contains("hunter2"), "the notification carries a command or its output");
+    assert!(
+        !crate::gojson::marshal(&e).contains("hunter2"),
+        "the notification carries a command or its output"
+    );
     // the server thread goes on; the next test's directory has no socket
     let _ = std::fs::remove_file(crate::paths::workers_sock());
 }
@@ -107,15 +133,24 @@ fn install_worker_hooks_keeps_the_rest() {
     assert_eq!(s["remoteControlAtStartup"], true);
     assert_eq!(s["hooks"]["Stop"].as_array().unwrap().len(), 2);
     assert_eq!(s["hooks"]["SubagentStart"].as_array().unwrap().len(), 1);
-    assert_eq!(s["hooks"]["PostToolUse"][0]["matcher"], "Bash|Monitor|Agent");
+    assert_eq!(
+        s["hooks"]["PostToolUse"][0]["matcher"],
+        "Bash|Monitor|Agent"
+    );
     std::fs::write(&p, "{broken").unwrap();
-    assert!(install_worker_hooks(&e.home).is_err(), "overwrote an unreadable settings file");
+    assert!(
+        install_worker_hooks(&e.home).is_err(),
+        "overwrote an unreadable settings file"
+    );
 }
 
 #[test]
 fn truncate_at_marker_rule() {
     let body = b"a\nb\nc MARK here\nd\n";
-    assert_eq!(truncate_at_marker(body, "MARK"), (b"a\nb\n".to_vec(), 4, 2, true));
+    assert_eq!(
+        truncate_at_marker(body, "MARK"),
+        (b"a\nb\n".to_vec(), 4, 2, true)
+    );
     let (kept, before, after, cut) = truncate_at_marker(body, "nowhere");
     assert!(!cut && kept == body && before == after);
     let (kept, _, after, _) = truncate_at_marker(b"MARK first\nx\n", "MARK");
@@ -131,7 +166,11 @@ fn apply_rollback_only_with_a_marker() {
     let sub = proj.join("conv/subagents/agent.jsonl");
     let other = proj.join("other.jsonl");
     let write = || {
-        std::fs::write(&conv, "{\"n\":1}\n{\"n\":2,\"text\":\"bad turn XYZZY\"}\n{\"n\":3}\n").unwrap();
+        std::fs::write(
+            &conv,
+            "{\"n\":1}\n{\"n\":2,\"text\":\"bad turn XYZZY\"}\n{\"n\":3}\n",
+        )
+        .unwrap();
         std::fs::write(&sub, "{\"text\":\"XYZZY\"}\n").unwrap();
         std::fs::write(&other, "{\"n\":1}\n").unwrap();
         use std::os::unix::fs::PermissionsExt;
@@ -141,17 +180,32 @@ fn apply_rollback_only_with_a_marker() {
     // the env asks for one: nothing happens (only the cert's one-time inputs do)
     crate::env::set("JARVIS2_ROLLBACK", Some("XYZZY"));
     apply_rollback("");
-    assert!(std::fs::read_to_string(&conv).unwrap().contains("XYZZY"), "a rollback from the env was applied");
+    assert!(
+        std::fs::read_to_string(&conv).unwrap().contains("XYZZY"),
+        "a rollback from the env was applied"
+    );
     apply_rollback("XYZZY");
     assert_eq!(std::fs::read_to_string(&conv).unwrap(), "{\"n\":1}\n");
     use std::os::unix::fs::PermissionsExt;
-    assert_eq!(std::fs::metadata(&conv).unwrap().permissions().mode() & 0o777, 0o600);
-    assert!(std::fs::read_to_string(&sub).unwrap().contains("XYZZY"), "a subagent transcript was touched");
+    assert_eq!(
+        std::fs::metadata(&conv).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    assert!(
+        std::fs::read_to_string(&sub).unwrap().contains("XYZZY"),
+        "a subagent transcript was touched"
+    );
     assert_eq!(std::fs::read_to_string(&other).unwrap(), "{\"n\":1}\n");
     write();
     apply_rollback("");
-    assert!(std::fs::read_to_string(&conv).unwrap().contains("XYZZY"), "rolled back without a marker");
-    assert!(rollback_transcripts(&e.home, "ab").1.is_some(), "a 2-character marker was accepted");
+    assert!(
+        std::fs::read_to_string(&conv).unwrap().contains("XYZZY"),
+        "rolled back without a marker"
+    );
+    assert!(
+        rollback_transcripts(&e.home, "ab").1.is_some(),
+        "a 2-character marker was accepted"
+    );
 }
 
 #[test]
@@ -161,7 +215,15 @@ fn fetch_attachments_checks_each_file() {
     let core = new_key();
     let files: BTreeMap<&str, &str> = [("photo 1.png", "PNG"), ("notes%.txt", "text")].into();
     let attest: Arc<Mutex<BTreeMap<String, Option<SignedDoc>>>> = Arc::new(Mutex::new(
-        files.iter().map(|(n, b)| (n.to_string(), Some(attest_for(&core, "m1", "attachment", b.as_bytes())))).collect(),
+        files
+            .iter()
+            .map(|(n, b)| {
+                (
+                    n.to_string(),
+                    Some(attest_for(&core, "m1", "attachment", b.as_bytes())),
+                )
+            })
+            .collect(),
     ));
     let state = Arc::new(Mutex::new((false, 0)));
     let (a2, s2, f2) = (attest.clone(), state.clone(), files.clone());
@@ -176,7 +238,9 @@ fn fetch_attachments_checks_each_file() {
                 .iter()
                 .map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap()))
                 .collect();
-            return ok_json(serde_json::json!({"files": [{"name": "photo 1.png", "isImage": true}, {"name": "notes%.txt"}], "attest": att}));
+            return ok_json(
+                serde_json::json!({"files": [{"name": "photo 1.png", "isImage": true}, {"name": "notes%.txt"}], "attest": att}),
+            );
         }
         if r.method == "GET"
             && let Some(n) = r.path.strip_prefix("/m/attachments/")
@@ -204,12 +268,25 @@ fn fetch_attachments_checks_each_file() {
     let staging = e.home.join(ATTACH_STAGING);
     let refused = |why: &str, r: &[AttachmentRef], bad: &str| {
         let env = fetch_attachments(&c, &core.public(), r).join("\n");
-        assert!(env.contains("SESSION_ATTACHMENTS_REFUSED=") && env.contains(bad), "{why}: the refused file isn't named: {env}");
-        assert!(!staging.join(bad).exists(), "{why}: a refused attachment was left on disk");
-        assert!(!state.lock().unwrap().0, "{why}: the router's copy was dropped for a refused set");
+        assert!(
+            env.contains("SESSION_ATTACHMENTS_REFUSED=") && env.contains(bad),
+            "{why}: the refused file isn't named: {env}"
+        );
+        assert!(
+            !staging.join(bad).exists(),
+            "{why}: a refused attachment was left on disk"
+        );
+        assert!(
+            !state.lock().unwrap().0,
+            "{why}: the router's copy was dropped for a refused set"
+        );
         for f in r {
             if f.name != bad {
-                assert!(env.contains(&format!(r#"{{"name":{}"#, crate::gojson::marshal(&f.name))), "{why}: the verified {} was dropped too: {env}", f.name);
+                assert!(
+                    env.contains(&format!(r#"{{"name":{}"#, crate::gojson::marshal(&f.name))),
+                    "{why}: the verified {} was dropped too: {env}",
+                    f.name
+                );
             }
         }
         let _ = std::fs::remove_dir_all(&staging);
@@ -231,19 +308,32 @@ fn fetch_attachments_checks_each_file() {
         Some(attest_for(&new_key(), "m1", "attachment", b"text")),
     ] {
         attest.lock().unwrap().insert("notes%.txt".into(), a);
-        refused("an attachment without the core's attestation", &refs, "notes%.txt");
+        refused(
+            "an attachment without the core's attestation",
+            &refs,
+            "notes%.txt",
+        );
     }
     attest.lock().unwrap().insert("notes%.txt".into(), saved);
     let env = fetch_attachments(&c, &core.public(), &refs);
     for (n, want) in &files {
-        assert_eq!(std::fs::read_to_string(staging.join(n)).unwrap(), *want, "{n}");
+        assert_eq!(
+            std::fs::read_to_string(staging.join(n)).unwrap(),
+            *want,
+            "{n}"
+        );
     }
     let (deleted, listed) = *state.lock().unwrap();
-    assert!(deleted && listed > 0, "the router's copy wasn't dropped ({deleted}) or the listing wasn't read ({listed})");
+    assert!(
+        deleted && listed > 0,
+        "the router's copy wasn't dropped ({deleted}) or the listing wasn't read ({listed})"
+    );
     let joined = env.join("\n");
     assert!(
-        joined.contains(&format!("SESSION_ATTACH_DAV_BASE=file://{}\n", e.home.display()))
-            && joined.contains(&format!("SESSION_ATTACH_DIR={ATTACH_STAGING}"))
+        joined.contains(&format!(
+            "SESSION_ATTACH_DAV_BASE=file://{}\n",
+            e.home.display()
+        )) && joined.contains(&format!("SESSION_ATTACH_DIR={ATTACH_STAGING}"))
             && joined.contains(r#"{"name":"photo 1.png","isImage":true}"#),
         "env {env:?}"
     );
@@ -286,7 +376,10 @@ fn harness_log_keeps_only_tagged_lines() {
     let t = b.text();
     let got: Vec<&str> = t.trim().split('\n').collect();
     assert_eq!(got.len(), 2, "{got:?}");
-    assert_eq!(got[0], "[dsh] dsh web exited (code 1) after 3 s; restarting");
+    assert_eq!(
+        got[0],
+        "[dsh] dsh web exited (code 1) after 3 s; restarting"
+    );
     assert_eq!(got[1].len(), crate::supervisorlog::MAX_LOG_LINE);
     b.reset();
     for _ in 0..200 {
@@ -297,7 +390,10 @@ fn harness_log_keeps_only_tagged_lines() {
     b.reset();
     h.line("[dsh] after");
     let t = b.text();
-    assert!(t.contains("harness lines left out") && t.ends_with("[dsh] after\n"), "{t:?}");
+    assert!(
+        t.contains("harness lines left out") && t.ends_with("[dsh] after\n"),
+        "{t:?}"
+    );
 }
 
 /// the pipe: a child's lines arrive, and the reader ends once the last holder of the write end is gone
@@ -332,12 +428,31 @@ fn downgrade_needs_a_mode() {
     }
     let held = s(&["default", "github-claude-env", "infra", "tunnel"]);
     let keep = |a: &[&str]| downgrade_args(&s(a)).unwrap().keep_for(&held);
-    assert_eq!(keep(&["--keep", "default", "tunnel"]).unwrap().join(" "), "default tunnel");
-    assert_eq!(keep(&["--drop", "infra"]).unwrap().join(" "), "default github-claude-env tunnel");
+    assert_eq!(
+        keep(&["--keep", "default", "tunnel"]).unwrap().join(" "),
+        "default tunnel"
+    );
+    assert_eq!(
+        keep(&["--drop", "infra"]).unwrap().join(" "),
+        "default github-claude-env tunnel"
+    );
     assert!(keep(&["--none"]).unwrap().is_empty());
-    assert_eq!(keep(&["--drop", "identity", "infra"]).unwrap().join(" "), "default github-claude-env tunnel");
+    assert_eq!(
+        keep(&["--drop", "identity", "infra"]).unwrap().join(" "),
+        "default github-claude-env tunnel"
+    );
     let e = keep(&["--drop", "identity", "gmail"]).unwrap_err();
-    assert!(e.downcast_ref::<crate::downgrade::NothingToDrop>().is_some(), "--drop of only unheld stores: {e:#}");
-    assert!(keep(&["--keep", "default", "gmail"]).is_err(), "keeping a store not held must be refused");
-    assert!(keep(&["--drop", "default", "github-claude-env", "infra", "tunnel"]).is_err(), "--drop of every held store must be refused");
+    assert!(
+        e.downcast_ref::<crate::downgrade::NothingToDrop>()
+            .is_some(),
+        "--drop of only unheld stores: {e:#}"
+    );
+    assert!(
+        keep(&["--keep", "default", "gmail"]).is_err(),
+        "keeping a store not held must be refused"
+    );
+    assert!(
+        keep(&["--drop", "default", "github-claude-env", "infra", "tunnel"]).is_err(),
+        "--drop of every held store must be refused"
+    );
 }
