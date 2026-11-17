@@ -51,25 +51,35 @@ func TestLiveDoc(t *testing.T) {
 		addSession(r, id, "started", "m"+id, false)
 		reg(id, st, map[int]int{3: 1}[i], int64(1000+i))
 	}
-	addSession(r, "e", "paused", "", false) // not running: not listed
+	addSession(r, "e", "paused", "", false) // paused, nothing armed: not listed
+	addSession(r, "f", "paused", "", false) // paused with a cron and a wakeup: scheduled, the sooner one
+	addSession(r, "g", "started", "mg", false)
+	reg("g", "idle", 0, 1)
+	addSession(r, "h", "paused", "", false) // a watch only: scheduled, no time, after the timed ones
+	r.st.Do(func(d *persisted) {
+		sched(d, "f").Crons["c"] = &Cron{Name: "c", NextAt: 9000}
+		sched(d, "f").Wakeups["w"] = &Wakeup{Name: "w", At: 7000}
+		sched(d, "g").Wakeups["w"] = &Wakeup{Name: "w", At: 8000} // idle with a wakeup: scheduled
+		sched(d, "h").Watches["x"] = &Watch{Name: "x", NextAt: 1}
+	})
 	for i := 0; i < 20; i++ {
 		id := "z" + string(rune('a'+i))
 		addSession(r, id, "started", "m"+id, false)
 		reg(id, "idle", 0, int64(i))
 	}
 	doc := r.liveDoc(now)
-	if doc.Total != 24 || len(doc.Sessions) != liveMax {
+	if doc.Total != 27 || len(doc.Sessions) != liveMax {
 		t.Fatalf("total %d, %d sessions", doc.Total, len(doc.Sessions))
 	}
 	var order []string
-	for _, x := range doc.Sessions[:5] {
+	for _, x := range doc.Sessions[:8] {
 		order = append(order, x.State+":"+x.Name)
 	}
-	want := []string{"waiting:label c", "working:label b", "background:label d", "idle:label a", "idle:label zt"}
+	want := []string{"waiting:label c", "working:label b", "background:label d", "scheduled:label f", "scheduled:label g", "scheduled:label h", "idle:label a", "idle:label zt"}
 	if b, _ := json.Marshal(order); string(b) != func() string { w, _ := json.Marshal(want); return string(w) }() {
 		t.Fatalf("order %v, want %v", order, want)
 	}
-	if doc.Sessions[2].Jobs != 1 || doc.Sessions[0].Since != 1002 {
+	if doc.Sessions[2].Jobs != 1 || doc.Sessions[0].Since != 1002 || doc.Sessions[3].Next != 7000 || doc.Sessions[4].Next != 8000 || doc.Sessions[5].Next != 0 {
 		t.Fatalf("%+v", doc.Sessions[:3])
 	}
 }

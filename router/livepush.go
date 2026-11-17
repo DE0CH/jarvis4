@@ -5,7 +5,9 @@ package main
 // sessions every livePushEvery to LIVE_PUSH_URL with the header X-Jarvis-Secret: LIVE_PUSH_SECRET (Secret
 // router-secrets-livepush, infra/router-secrets.py --part livepush; unset = off). Jarvis 4 holds the dashboard's write
 // secret; the dashboard holds nothing of Jarvis 4's. Each session is only its title, a state, two counts and since
-// when; at most liveMax, the most active first, with the total running.
+// when; at most liveMax, the most active first, with the total listed. A session that will wake by itself (a wakeup,
+// cron or watch armed) and has nothing running is "scheduled", paused or idle, as the app's Scheduled (Deyao,
+// 2026-11-17: "it should also show scheduled as blue, similar to background"), with its next wake when it has a time.
 
 import (
 	"bytes"
@@ -25,10 +27,11 @@ const (
 
 type liveSession struct {
 	Name      string `json:"name"`
-	State     string `json:"state"` // working | waiting | background | idle | booting
+	State     string `json:"state"` // working | waiting | background | scheduled | idle | booting
 	Jobs      int    `json:"jobs"`
 	Subagents int    `json:"subagents"`
 	Since     int64  `json:"since,omitempty"` // ms: the status's last change (statusUpdatedAt; changes every turn)
+	Next      int64  `json:"next,omitempty"`  // ms: a scheduled session's next wakeup or cron (a watch alone has none)
 }
 
 type liveDocument struct {
@@ -44,7 +47,25 @@ var (
 )
 
 // liveRank: the order on the panel, the most active first
-var liveRank = map[string]int{"waiting": 0, "working": 1, "background": 2, "booting": 3, "idle": 4}
+var liveRank = map[string]int{"waiting": 0, "working": 1, "background": 2, "scheduled": 3, "booting": 4, "idle": 5}
+
+// nextWake: the session's earliest wakeup or cron (0: none with a time, e.g. a watch only); callers hold the lock
+func nextWake(d *persisted, sid string) int64 {
+	var next int64
+	if sc := d.Schedules[sid]; sc != nil {
+		for _, w := range sc.Wakeups {
+			if next == 0 || w.At < next {
+				next = w.At
+			}
+		}
+		for _, c := range sc.Crons {
+			if next == 0 || c.NextAt < next {
+				next = c.NextAt
+			}
+		}
+	}
+	return next
+}
 
 // liveStateOf: a running session's state. Claude Code keeps a host "busy" while background jobs run after its turn
 // ended (machine/stall.go), so a busy host with jobs or subagents and no working line on its pane is "background".
@@ -87,6 +108,11 @@ func (r *Router) liveDoc(now time.Time) liveDocument {
 	var rows []row
 	r.st.Do(func(d *persisted) {
 		for _, s := range d.Sessions {
+			wakes := willWake(d, s.ID)
+			if s.State == "paused" && wakes {
+				rows = append(rows, row{s: liveSession{Name: sessionTitle(*s), State: "scheduled", Next: nextWake(d, s.ID)}, id: s.ID})
+				continue
+			}
 			if s.State != "started" || s.MachineID == "" {
 				continue
 			}
@@ -97,6 +123,9 @@ func (r *Router) liveDoc(now time.Time) liveDocument {
 			}
 			st, jobs, sub := liveStateOf(g, fresh, "")
 			x := liveSession{Name: sessionTitle(*s), State: st, Jobs: jobs, Subagents: sub}
+			if st == "idle" && wakes {
+				x.State, x.Next = "scheduled", nextWake(d, s.ID)
+			}
 			if g != nil && fresh && g.StatusUpdatedAt > 0 {
 				x.Since = g.StatusUpdatedAt
 			}
@@ -115,6 +144,9 @@ func (r *Router) liveDoc(now time.Time) liveDocument {
 		a, b := rows[i].s, rows[j].s
 		if liveRank[a.State] != liveRank[b.State] {
 			return liveRank[a.State] < liveRank[b.State]
+		}
+		if a.State == "scheduled" && a.Next != b.Next { // the soonest first, a watch only (no time) last
+			return b.Next == 0 || (a.Next != 0 && a.Next < b.Next)
 		}
 		return a.Since > b.Since
 	})
