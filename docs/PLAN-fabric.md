@@ -195,6 +195,11 @@ Decisions (Deyao, 2026-11-17):
   for a specific task at a specific time. That text ships with the tool, in the same change (docs describe the
   present: until then a session has no time machine to prefer).
 
+Everywhere a session's state shows knows `frozen` (Deyao, 2026-11-17), as a state of its own (and "in the time machine
+until T" when it froze with `until`): the router's session states and its live push (router/livepush.go) to the live
+monitoring dashboard and its iPhone app, the Jarvis 4 iPhone app (ios/) and the web page (app/). A frozen session is
+neither running nor paused there, and the apps' actions on it (Resume, Destroy) thaw or destroy it.
+
 Known limits the tool's description states: frozen means frozen (a local build doesn't advance; the time machine is
 for waiting on something outside), connections to the outside reset at a thaw (another host, another address), and
 wall time jumps (monotonic time doesn't).
