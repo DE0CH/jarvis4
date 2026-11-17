@@ -161,3 +161,37 @@ image's `/etc/resolv.conf` names public resolvers.
 AWS eu-central-1 on demand: m7i.xlarge USD 0.2415/h per host (two sessions), each host at least 15 min, plus its
 public IPv4 USD 0.005/h and gp3 disk USD 0.0952 per GB-month while it runs; traffic out of AWS USD 0.09/GB (the
 JuiceFS data written to Hetzner included).
+
+## Next: freeze and the time machine (Deyao, 2026-11-17; not built yet)
+
+Two kinds of stopping in hermit's contract (DE0CH/aviary docs/CONTRACTS.md), both optional per deployment:
+
+| Operation | What survives | What comes back |
+|---|---|---|
+| `release` (as today: YYC AI's pause) | `/workspace` and the deployment's mounts | a new sandbox; Claude Code resumes from its transcript |
+| `freeze` (new) | everything: RAM, processes, scratch disk, the mounts | the same sandbox (same id, same machine for the kernel); its processes go on where they stopped |
+
+`POST /v1/conversations/{cid}/sandbox/freeze {"until": optional}` and `…/thaw`; a new state `frozen`, distinct from `gone`;
+the unused `pause`/`resume` routes go (a clean cut). magpie's get-or-start thaws a frozen sandbox. The idle default is
+a `hermit.json` setting: YYC AI keeps release; Jarvis 4's fabric freezes at a turn's end.
+
+Decisions (Deyao, 2026-11-17):
+- The image (RAM and scratch) is encrypted by the fabric hermit with a key of its own (hermit and its hosts are
+  trusted with the session's files already); no kernel change.
+- Images live in AWS S3 in the hosts' region (eu-central-1): no traffic fee, the fastest thaw.
+- `time-machine <duration>` (the agent's tool) freezes with `until`; a message (or any delivery) during it thaws at
+  once and the tool returns early, saying so.
+- A turn that ends with background tasks running keeps the sandbox running (today's `held`), and freezes when they end
+  or when the agent calls the time machine.
+- A thaw the hosts can't restore (a newer gVisor release than the image's, a lost image) falls back to what release
+  gives: the files, a fresh sandbox, the transcript. Upgrades never wait on frozen sessions.
+- Frozen images are kept until the session is thawed or destroyed.
+- For fabric sessions, freeze and the time machine replace Jarvis 4's idle pause, scheduled wakeups and crons (a clean
+  cut); Fly and AWS sessions keep them.
+
+Known limits the tool's description states: frozen means frozen (a local build doesn't advance; the time machine is
+for waiting on something outside), connections to the outside reset at a thaw (another host, another address), and
+wall time jumps (monotonic time doesn't).
+
+First step: measure freeze and thaw of a real 7 GiB sandbox to and from S3 (sandboxd's checkpoint, which today streams
+to a peer host for a live migration).
