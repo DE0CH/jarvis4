@@ -84,6 +84,7 @@ fn reset_seams() {
     *crate::stall::CLAUDE_SESSIONS.write().unwrap_or_else(|e| e.into_inner()) = None;
     *crate::pressure::GUARD_LOG_PATH.write().unwrap_or_else(|e| e.into_inner()) = None;
     *paths::PREDECESSOR_TMP.write().unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::task::TASKS_ROOT.write().unwrap_or_else(|e| e.into_inner()) = None;
     crate::secrets::HELD.set_for_test(Default::default());
 }
 

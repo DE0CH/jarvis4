@@ -23,8 +23,16 @@ pub const TASK_HARNESS_PREFIX: &str = "task:";
 const TASK_KEEP_LOGS: usize = 20;
 const TASK_LOG_MAX: usize = 256 << 10;
 const TASK_OUTPUT_MAX: u64 = 64 << 10;
-/// baked into the session image (session-image/Dockerfile)
-pub const TASKS_ROOT: &str = "/opt/jarvis/tasks";
+/// baked into the session image (session-image/Dockerfile; tests move it)
+pub static TASKS_ROOT: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
+
+fn tasks_root() -> PathBuf {
+    TASKS_ROOT
+        .read()
+        .ok()
+        .and_then(|p| p.clone())
+        .unwrap_or_else(|| PathBuf::from("/opt/jarvis/tasks"))
+}
 const TASK_REPORT_WAIT: Duration = Duration::from_secs(10);
 const TASK_REPORT_FOR: Duration = Duration::from_secs(30 * 60);
 
@@ -430,7 +438,7 @@ pub fn do_run(
             format!("bad template name {}", gojson::marshal(template)),
         );
     }
-    let dir = PathBuf::from(TASKS_ROOT).join(template);
+    let dir = tasks_root().join(template);
     let (spec, timeout) = match load_task_spec(&dir) {
         Ok(x) => x,
         Err(e) => return fail(res, format!("template {template} in this image: {e:#}")),
