@@ -1,7 +1,7 @@
 // A session's wakeups, crons and watches (router/schedule.go, watches.go; a watch fires when its check passes): at the due time the router delivers the prompt into the session
 // as a message, resuming it first when it is paused. Into a session holding a sensitive store, each delivery waits in
 // the Inbox as a pending message until Deyao delivers it (Face ID) or denies it, unless a per-kind message rule says
-// to deliver it (MessageReviewView). Only the session arms them (scripts/schedule-wakeup.sh, schedule-cron.sh: its own
+// to deliver it (MessageReviewView). Only the session arms them (schedule-wakeup, schedule-cron: its own
 // signed request is what vouches for the delivery; the router refuses arming from the app), so this page lists and
 // cancels them (app DECISIONS 76), and Run now delivers one at once as its scheduled firing would, counted as that
 // firing; a cron run skipped after failed attempts (e.g. Fly's machine limit on the resume) shows as missed until one is

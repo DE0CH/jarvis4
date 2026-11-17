@@ -9,7 +9,7 @@
 #
 # The server: a cluster under ${TEST_PG_DIR:-${TMPDIR:-/tmp}/jarvis4-test-pg} on 127.0.0.1:${TEST_PG_PORT:-55439}, trust auth,
 # from whatever Postgres binaries are here (pg_config, Homebrew's postgresql@18/17/16, Debian's /usr/lib/postgresql),
-# installed with Homebrew or apt when there are none. TLS on (a self-signed certificate) for aviary's services; the router's
+# installed with Homebrew or apt when there are none, with pgvector (magpie's migrations need it). TLS on (a self-signed certificate) for aviary's services; the router's
 # URL says sslmode=disable.
 set -euo pipefail
 D="${TEST_PG_DIR:-${TMPDIR:-/tmp}/jarvis4-test-pg}"
@@ -47,6 +47,14 @@ B="$(bindir)" || {
   if command -v brew > /dev/null; then brew install -q postgresql@17 >&2; else sudo apt-get update -qq >&2 && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql >&2; fi
   B="$(bindir)"
 }
+# pgvector for these binaries: magpie's migrations create the extension (aviary 045adf3d, the conversation search)
+if [ ! -f "$("$B/pg_config" --sharedir 2>/dev/null || echo "/usr/share/postgresql/$("$B/postgres" -V | grep -o '[0-9]*' | head -1)")/extension/vector.control" ]; then
+  if command -v brew > /dev/null; then brew install -q pgvector >&2
+  else
+    major="$("$B/postgres" -V | grep -o '[0-9]*' | head -1)"
+    sudo apt-get update -qq >&2 && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "postgresql-$major-pgvector" >&2
+  fi
+fi
 case "${1:-}" in
   fresh)
     [ -n "${2:-}" ] || { echo "fresh NAME" >&2; exit 2; }

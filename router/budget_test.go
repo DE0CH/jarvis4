@@ -333,3 +333,28 @@ func TestBudgetViewOnEveryReplica(t *testing.T) {
 		t.Fatalf("budget %v fly %v bb %v", b, f, bb)
 	}
 }
+
+// 2026-11-17: the app showed 185 volumes "outside the sessions": every volume Fly still listed, the running sessions'
+// own and the deleted ones in pending_destroy (not billed) among them. Only what is neither counts.
+func TestOnlyLeftoverVolumesAreOutsideTheSessions(t *testing.T) {
+	r := newTestRouter(t)
+	addSession(r, "s1", "running", "", false)
+	r.st.Do(func(d *persisted) { d.Sessions["s1"].MachineID = "m1"; d.Machines["m1"] = "s1" })
+	ms := []flyMachine{{ID: "m1", State: "started"}}
+	vs := []flyVolume{
+		{ID: "vol_live", Name: sessionVolume, State: "created", AttachedMachineID: "m1"},
+		{ID: "vol_gone1", Name: sessionVolume, State: "pending_destroy"},
+		{ID: "vol_gone2", Name: sessionVolume, State: "destroying"},
+		{ID: "vol_left", Name: sessionVolume, State: "created"},
+	}
+	var ids []string
+	for _, o := range r.alsoOnFly(ms, vs) {
+		ids = append(ids, o.ID)
+	}
+	if len(ids) != 1 || ids[0] != "vol_left" {
+		t.Fatalf("outside the sessions: %v", ids)
+	}
+	if n := liveVolumes(vs); n != 2 {
+		t.Fatalf("volumes counted: %d, want the 2 not deleted", n)
+	}
+}

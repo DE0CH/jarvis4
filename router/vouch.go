@@ -118,7 +118,15 @@ func (r *Router) sessionConfig(s *Session) (string, error) {
 	}
 	if s.Ops != nil {
 		c.APIProxy = s.Ops.APIProxy
+		// only a line's first machine fetches the attachments, and the router drops the upload once it has
+		// (DELETE /m/attachments): a later line (a restart onto a new image) carries none, where re-hashing the
+		// dropped files failed its resume with "no such object" (2026-11-17)
+		held := false
+		r.st.Read(func(d *persisted) { _, held = d.Uploads[s.Ops.Upload] }) // a nil map reads as empty
 		for _, f := range s.Ops.Attach {
+			if !held {
+				break
+			}
 			sum, size, err := r.objSha256(uploadKey(s.Ops.Upload, f.Name))
 			if err != nil {
 				return "", fmt.Errorf("attachment %s: %v", f.Name, err)

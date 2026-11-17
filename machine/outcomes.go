@@ -64,7 +64,7 @@ var (
 // outcomeCoreKey: the core's key (a seam for tests)
 var outcomeCoreKey = func() (string, error) { return readTrim(coreKeyPath) }
 
-const outcomeFooter = "This is an automated message from Jarvis."
+const outcomeFooter = "This is Jarvis's checked record of the decision."
 
 // outcomeAsked: one item of the filing, as the session signed it
 type outcomeAsked struct {
@@ -370,10 +370,10 @@ func outcomeText(d Delivery, keys []string) (string, []byte, error) {
 	attested, _ := json.Marshal(rec)
 	var t string
 	if batch {
-		t = fmt.Sprintf("[Inbox outcome] Deyao's Inbox has decided %d of the %d items of the batch this session filed (its summary: %q):\n%s\n%s",
+		t = fmt.Sprintf("Deyao's Inbox has decided %d of the %d items of the batch (its summary: %q):\n%s\n%s",
 			len(lines), len(items), summary, strings.Join(lines, "\n"), outcomeFooter)
 	} else {
-		t = fmt.Sprintf("[Inbox outcome] A request this session filed has been decided. %s %s", lines[0], outcomeFooter)
+		t = fmt.Sprintf("%s %s", lines[0], outcomeFooter)
 	}
 	return t, attested, nil
 }
@@ -444,4 +444,40 @@ func outcomeFresh(d Delivery) Delivery {
 	log.Printf("request-outcome: items %v were told already; delivering %v", outcomeItems(d.Outcomes), outcomeItems(fresh))
 	d.Outcomes = fresh
 	return d
+}
+
+// outcomesDir: the checked outcomes, one file per decided item, for the jarvis-request command that filed it
+// (session-image/bin/jarvis-request blocks until a file of its request's id appears, newer than its filing)
+var outcomesDir = dir + "/outcomes"
+
+// recordOutcome: the delivery's checked text, under each of its items' ids (an Inbox id, or this session's id for an
+// add-store), as <ref>.<unix ns>.json {"ref","outcome","text"}, readable by the session's user
+func recordOutcome(d Delivery, text string, now time.Time) error {
+	if err := os.MkdirAll(outcomesDir, 0o755); err != nil {
+		return err
+	}
+	for _, it := range d.Outcomes {
+		if !outcomeRefRE.MatchString(it.Ref) {
+			return errors.New("request-outcome: not an id")
+		}
+		b, _ := json.Marshal(map[string]string{"ref": it.Ref, "outcome": it.Outcome, "text": text})
+		p := filepath.Join(outcomesDir, fmt.Sprintf("%s.%d.json", it.Ref, now.UnixNano()))
+		if err := os.WriteFile(p+".tmp", b, 0o644); err != nil {
+			return err
+		}
+		if err := os.Rename(p+".tmp", p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// filedByCommand: an outcome of a request jarvis-request filed (requests/…, a proposed session): its command waits for
+// it. A wakeup's, cron's or watch's message denied when it came due has no command waiting: that stays a message.
+func filedByCommand(d Delivery) bool {
+	if d.Request == nil {
+		return false
+	}
+	m := outcomePathRE.FindStringSubmatch(d.Request.Path)
+	return m != nil && (strings.HasPrefix(m[1], "requests/") || m[1] == "sessions")
 }

@@ -7,7 +7,7 @@
   "prompt": { "instructions": "/etc/hermit/config/system-prompt.md", "rules": "/etc/hermit/config/sandbox-rules.md",
               "title": "/etc/hermit/config/title-system.md" },
   "sandbox": {
-    "image": "ghcr.io/de0ch/jarvis4-session-fabric@sha256:05213f790e49050de8e84f4d5aa1139ba32130494103219d08eeb50cf7a25f1a",
+    "image": "ghcr.io/de0ch/jarvis4-session-fabric:sha-ebcdfffd6d18@sha256:f1ed7f060d23a156202604285f60dd7c1c434c1b1ed92cba1a085cc95cd66e67",
     "cpu": 1, "memory": "7Gi", "pids": 32768, "openFiles": 65536,
     "maxActive": 10, "idleMinutes": 525600, "maxLifetimeHours": 8760, "lifetimeGraceMinutes": 60,
     "capacityWaitSeconds": 300, "hostWaitSeconds": 600, "supervisorWaitSeconds": 3600, "startDeadlineSeconds": 4200,

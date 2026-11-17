@@ -1,0 +1,5 @@
+[toolchain]
+# the same toolchain as aviary/ and DE0CH/aviary
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

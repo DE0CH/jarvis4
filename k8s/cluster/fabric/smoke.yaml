@@ -1,0 +1,50 @@
+# A one-shot smoke test of the fabric (docs/PLAN-fabric.md), taken out again once it ran: a sandbox asked of hermit as
+# the spawner asks (caller magpie), its states until its first process runs (an AWS host launched, the gateway, the
+# fabric image), its console, then its forced release and the conversation's files deleted. The machine inside never
+# gets its env (the router's fabric listener is off), so the console stops at the entrypoint's retries: that is enough.
+# Not listed in kustomization.yaml: list it (with a new Job name, a new conversation C, and the podSelector app:
+# fabric-smoke in hermit-in) to run it again. Run 5 (2026-11-17 11:31): host launched in about 1 min from the AMI,
+# the sandbox created on the fabric image, the console read live, released, files deleted.
+apiVersion: batch/v1
+kind: Job
+metadata: { name: fabric-smoke-5, namespace: jarvis4-fabric }
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 2400
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata: { labels: { app: fabric-smoke } }
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      containers:
+        - name: smoke
+          image: curlimages/curl:8.11.1
+          env:
+            - { name: MAGPIE, valueFrom: { secretKeyRef: { name: hermit, key: HERMIT_ACCEPT_MAGPIE } } }
+            - { name: ADMIN, valueFrom: { secretKeyRef: { name: hermit, key: HERMIT_ACCEPT_ADMIN } } }
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              H=http://hermit.jarvis4-fabric.svc.cluster.local; C=0190f6c2-0000-7000-8000-00000000f005
+              M="${MAGPIE%%,*}"; P="aviary-protocol: hermit-core=1"
+              m() { curl -s -H "$P" -H "authorization: Bearer $M" -H 'content-type: application/json' "$@"; }
+              a() { curl -s -H "$P" -H "authorization: Bearer $ADMIN" -H 'aviary-admin: jarvis4@deyaochen.com' -H 'content-type: application/json' "$@"; }
+              sleep 240   # the hermit rollout this test came with
+              for i in $(seq 1 20); do
+                o=$(m -X PUT "$H/v1/conversations/$C/sandbox" -d '{"person":"jarvis4@deyaochen.com"}'); echo "== start: $o" | cut -c1-400
+                case "$o" in *'"id":'*) break ;; esac; sleep 10
+              done
+              S=""; for i in $(seq 1 100); do
+                o=$(m "$H/v1/conversations/$C/sandbox"); echo "$(date -u +%T) $o" | cut -c1-400
+                S=$(echo "$o" | sed -n 's/.*"id":"\([0-9a-f-]*\)".*/\1/p')
+                case "$o" in *'"phase":"supervisor"'*|*'"state":"ready"'*|*'"state":"gone"'*|*no_sandbox*) break ;; esac
+                sleep 15
+              done
+              sleep 60
+              echo "== console of $S"; a "$H/v1/admin/sandboxes/$S/log" | sed 's/\\n/\n/g' | tail -60
+              echo "== hosts"; a "$H/v1/admin/hosts" | cut -c1-1500; echo
+              echo "== release"; a -X POST "$H/v1/admin/sandboxes/$S/release" -d '{"note":"fabric smoke test"}'; echo
+              sleep 30; echo "== delete the files"; m -X DELETE -o /dev/null -w '%{http_code}\n' "$H/v1/workspaces/$C"
+          resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { memory: 64Mi } }
+          securityContext: { runAsNonRoot: true, runAsUser: 100, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }

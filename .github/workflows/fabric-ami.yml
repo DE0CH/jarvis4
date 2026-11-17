@@ -1,0 +1,77 @@
+name: fabric-ami
+# Keeps the fabric hosts' AMI (launch template jarvis4-fabric-host, Deyao's AWS account, eu-central-1) and image bucket in
+# step with what k8s/cluster/fabric/hermit.json pins: the fabric image (sandbox.image), the sandboxd release
+# (fabric.sandboxd), the gVisor release (fabric.runsc) and the hosts' disk (fabric.aws.diskGiB), as YYC AI's
+# hermit-ami workflow does (docs/PLAN-fabric.md). Runs when one of them changed against the parent commit, with the
+# fabric scripts of the aviary commit k8s/cluster/fabric/kustomization.yaml pins for hermit: `infra.sh publish-image`
+# puts the fabric image in the bucket (hermit starts sandboxes on a new image only once it is there), `sync` bakes on a
+# t3.large builder when the template's AMI tags differ from the pins, then `check` must pass.
+# Secrets: FABRIC_AMI_AWS_ACCESS_KEY_ID/_SECRET_ACCESS_KEY (IAM user hermit-ami-ci, aviary infra.sh ci-iam). The fabric
+# image is public: no registry login.
+on:
+  push:
+    branches: [main]
+    paths: ["k8s/cluster/fabric/hermit.json", ".github/workflows/fabric-ami.yml"]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "bake even when the AMI already holds the pins"
+        type: boolean
+        default: false
+
+concurrency:
+  group: fabric-ami
+  cancel-in-progress: false
+
+jobs:
+  ami:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: changed pins
+        id: pins
+        run: |
+          set -euo pipefail
+          f=k8s/cluster/fabric/hermit.json
+          q='[.sandbox.image, .fabric.sandboxd, .fabric.runsc, .fabric.aws.diskGiB]'
+          now=$(jq -c "$q" "$f")
+          before=$(git show HEAD^:"$f" 2>/dev/null | jq -c "$q" 2>/dev/null || echo null)
+          echo "pins now $now, before $before"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] || [ "$now" != "$before" ]; then echo "run=1" >> "$GITHUB_OUTPUT"; else echo "run=0" >> "$GITHUB_OUTPUT"; fi
+          aviary=$(yq -r '.images[] | select(.name == "hermit") | .newTag' k8s/cluster/fabric/kustomization.yaml)
+          [[ $aviary =~ ^[0-9a-f]{12}$ ]] || { echo "::error::hermit's newTag '$aviary' is not an aviary <sha12>"; exit 1; }
+          echo "aviary=$aviary" >> "$GITHUB_OUTPUT"
+      - name: free disk space (the fabric image is about 11 GB unpacked)
+        if: steps.pins.outputs.run == '1'
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      - name: aviary at the pinned commit
+        if: steps.pins.outputs.run == '1'
+        env:
+          AVIARY: ${{ steps.pins.outputs.aviary }}
+        run: |
+          git clone -q --filter=blob:none https://github.com/DE0CH/aviary "$RUNNER_TEMP/aviary"
+          git -C "$RUNNER_TEMP/aviary" checkout -q "$AVIARY"
+          git -C "$RUNNER_TEMP/aviary" log -1 --format='aviary %H %s'
+      - name: crane
+        if: steps.pins.outputs.run == '1'
+        run: curl -fsSL https://github.com/google/go-containerregistry/releases/download/v0.20.6/go-containerregistry_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin crane
+      - name: publish the image, bake if stale, then check
+        if: steps.pins.outputs.run == '1'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.FABRIC_AMI_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.FABRIC_AMI_AWS_SECRET_ACCESS_KEY }}
+          FORCE: ${{ inputs.force && '1' || '' }}
+        run: |
+          set -euo pipefail
+          cfg=k8s/cluster/fabric/hermit.json
+          a="$RUNNER_TEMP/aviary/fabric/aws/infra.sh"
+          bash "$a" --config "$cfg" publish-image
+          bash "$a" --config "$cfg" sync
+          bash "$a" --config "$cfg" check
+          echo "### fabric host AMI" >> "$GITHUB_STEP_SUMMARY"
+          bash "$a" --config "$cfg" current | tee -a "$GITHUB_STEP_SUMMARY"

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -206,5 +207,28 @@ func TestAKernelMachineAfterACopyFlip(t *testing.T) {
 	b.Roster = &forged
 	if _, err := kernelTrustFor(b); err == nil {
 		t.Fatal("a roster the root key didn't sign")
+	}
+}
+
+// 2026-11-17: boot (jarvis-machine prepare) armed the documents' re-read, but deliveries are checked in
+// supervisor-core, another process, where it was never armed: after the 12:40 UTC copy flip every machine started
+// before it refused every wakeup ("no notary challenge") until it was restarted. Each supervisor arms it itself.
+func TestASupervisorCanReadTheKernelsDocumentsAgain(t *testing.T) {
+	old, oldPath := kernelTrustRefresh, kernelTrustPath
+	t.Cleanup(func() { kernelTrustRefresh, kernelTrustPath, kernelTrustAt = old, oldPath, time.Time{} })
+	kernelTrustRefresh, kernelTrustAt = nil, time.Time{}
+	kernelTrustPath = t.TempDir() + "/kernel.json"
+	c := &client{base: "http://127.0.0.1:9", me: "0123456789abcd"}
+
+	armKernelTrustRefresh(c) // an old core line: no kernel trust, nothing to arm
+	if kernelTrustRefresh != nil {
+		t.Fatal("armed on a machine with no kernel trust")
+	}
+	if err := os.WriteFile(kernelTrustPath, []byte(`{"root":"r","notary":"n","machine":"fly-0123456789abcd"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	armKernelTrustRefresh(c)
+	if kernelTrustRefresh == nil {
+		t.Fatal("a kernel machine's supervisor can't read the documents again after a copy flip")
 	}
 }

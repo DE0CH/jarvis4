@@ -401,4 +401,22 @@ func TestAnAttachmentIsSignedByHashAndAttestedIntoTheInputLog(t *testing.T) {
 	if e := attested(listing()); e["sha256"] == want {
 		t.Fatal("a swapped file was attested under the signed hash")
 	}
+
+	// 2026-11-17: the first machine fetched them and the router dropped the upload; a later line (a restart onto a new
+	// image) failed "resume: attachment …: no such object". Only a line's first machine uses them, so a later line's
+	// config carries none.
+	if code, out := mx.do(t, mh, "DELETE", "/m/attachments", ""); code != 200 {
+		t.Fatalf("drop: %d %v", code, out)
+	}
+	var s Session
+	r.st.Do(func(d *persisted) { s = *d.Sessions[sid] })
+	cfg, err := r.sessionConfig(&s)
+	if err != nil {
+		t.Fatalf("a later line's config after the attachments were fetched: %v", err)
+	}
+	var later SessionConfig
+	json.Unmarshal([]byte(cfg), &later)
+	if len(later.Attachments) != 0 || later.Prompt != "what is this?" {
+		t.Fatalf("later line's config %+v", later)
+	}
 }

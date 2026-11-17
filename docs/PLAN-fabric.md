@@ -19,8 +19,8 @@ turn them on:
 | the source image: a fabric session's sources name `FABRIC_SESSION_IMAGE` with `FABRIC_SESSION_IMAGE_SIG` (router), the iPhone app accepts the fabric repo (`KernelChecks.fabricImageRepo`) | pushed; the app needs a TestFlight build; CI pins and signs it (images.yml `fabric-pin`) once the router's manifest has `FABRIC_SESSION_IMAGE` |
 | image `jarvis4-session-fabric` (images.yml job `fabric`, `session-image/fabric/`), `aviary-sandbox`'s bind mode, the env-fetching entrypoint | pushed; bind mode tested (`aviary-sandbox_test.sh`); the new GHCR package must be made public (github-web) before hosts can pull it |
 | hermit-jarvis: the fabric hermit's control hashes in the descriptor (`aviary/src/fabric.rs`, `FABRIC_HERMIT_URL`, `FABRIC_HERMIT_GATEWAY_TOKEN`) | pushed, tests pass (the flow unchanged). No activity forwarding: the fabric hermit's janitor keeps a sandbox whose supervisor answers its health (`silence_check`), and its `idleMinutes`/`maxLifetimeHours` are set past any session |
-| infra: AWS eu-central-1, AMI, hermit + gateway, JuiceFS, bucket | to do |
-| replica end to end (`infra/e2e-aviary.sh` fabric run) | to do |
+| infra: AWS eu-central-1 (AMI, launch template, scaler and AMI-CI users, image bucket, `fabric-ami.yml`), the gateway server, the fabric bucket and its fenced key, the fabric hermit with its database and JuiceFS on the cluster | done 2026-11-17; smoke test passed (`k8s/cluster/fabric/smoke.yaml`: a sandbox asked as the spawner asks, an AWS host in about a minute, the fabric image under gVisor, the console read live, released) |
+| the kernel release (the spawner's fabric runner, its env and network rule), then the router's `FABRIC_HERMIT_URL` and the first fabric session | waiting on Deyao's OK |
 
 This file is the plan and becomes the description as the parts land.
 
@@ -98,6 +98,11 @@ DNAT to the router's fabric listener) with that token, and gets the env plus `JA
 `JARVIS2_MACHINE_ID=x<sandbox id>`. The router checks the token with hermit's `GET /v1/sandbox-token-keys`. Nothing
 in the env is secret; the keys line and the cert are the trust path, as on the other runners.
 
+The one image: hermit.json's `sandbox.image` and the router's `FABRIC_SESSION_IMAGE` name the same
+`jarvis4-session-fabric:sha-…@sha256:…`, and images.yml `fabric-pin` moves both in one commit; `fabric-ami.yml` then
+publishes it to the hosts' bucket and bakes the AMI. A source made before hermit sees the new image published starts on
+nothing (the spawner's `wrong-image`) for those minutes.
+
 The image check: hermit starts the one image its `hermit.json` names, and the spawner's init refuses a sandbox on
 another digest than the source's (`wrong-image`), so a session's sources name the fabric image hermit runs, and a
 resume after a pin moved starts on the new image (the router writes the new source on the current pin, as for Fly).
@@ -156,3 +161,87 @@ image's `/etc/resolv.conf` names public resolvers.
 AWS eu-central-1 on demand: m7i.xlarge USD 0.2415/h per host (two sessions), each host at least 15 min, plus its
 public IPv4 USD 0.005/h and gp3 disk USD 0.0952 per GB-month while it runs; traffic out of AWS USD 0.09/GB (the
 JuiceFS data written to Hetzner included).
+
+## Next: freeze and the time machine (Deyao, 2026-11-17; not built yet)
+
+Two kinds of stopping in hermit's contract (DE0CH/aviary docs/CONTRACTS.md), both optional per deployment:
+
+| Operation | What survives | What comes back |
+|---|---|---|
+| `release` (as today: YYC AI's pause) | `/workspace` and the deployment's mounts | a new sandbox; Claude Code resumes from its transcript |
+| `freeze` (new) | everything: RAM, processes, scratch disk, the mounts | the same sandbox (same id, same machine for the kernel); its processes go on where they stopped |
+
+`POST /v1/conversations/{cid}/sandbox/freeze {"until": optional}` and `…/thaw`; a new state `frozen`, distinct from `gone`;
+the unused `pause`/`resume` routes go (a clean cut). magpie's get-or-start thaws a frozen sandbox. The idle default is
+a `hermit.json` setting: YYC AI keeps release; Jarvis 4's fabric freezes at a turn's end.
+
+Decisions (Deyao, 2026-11-17):
+- The image (RAM and scratch) is encrypted by the fabric hermit with a key of its own (hermit and its hosts are
+  trusted with the session's files already); no kernel change.
+- Images live in AWS S3 in the hosts' region (eu-central-1): no traffic fee, the fastest thaw.
+- `time-machine <duration>` (the agent's tool) freezes with `until`; a message (or any delivery) during it thaws at
+  once and the tool returns early, saying so.
+- A turn that ends with background tasks running keeps the sandbox running (today's `held`), and freezes when they end
+  or when the agent calls the time machine.
+- A thaw the hosts can't restore (a newer gVisor release than the image's, a lost image) falls back to what release
+  gives: the files, a fresh sandbox, the transcript. Upgrades never wait on frozen sessions.
+- Frozen images are kept until the session is thawed or destroyed.
+- Scheduled wakeups and crons stay as they are, for every session, fabric ones included (Deyao, 2026-11-17: more
+  options, and YYC AI keeps its existing logic): the time machine is one more way to wait, not a replacement. A
+  wakeup or cron due for a frozen session thaws it, as a message does.
+- What tells the agent which to use, in Jarvis 4 only (Deyao, 2026-11-17; YYC AI's prompts and skills don't change):
+  the scheduled-wakeup docs (claude-env `schedule-wakeup` skill and CLAUDE.md "Waiting on events") say to prefer the
+  time machine when waiting on CI or anything else outside, and to use a scheduled wakeup or cron when Deyao asked
+  for a specific task at a specific time. That text ships with the tool, in the same change (docs describe the
+  present: until then a session has no time machine to prefer).
+
+Everywhere a session's state shows knows `frozen` (Deyao, 2026-11-17), as a state of its own (and "in the time machine
+until T" when it froze with `until`): the router's session states and its live push (router/livepush.go) to the live
+monitoring dashboard and its iPhone app, the Jarvis 4 iPhone app (ios/) and the web page (app/). A frozen session is
+neither running nor paused there, and the apps' actions on it (Resume, Destroy) thaw or destroy it.
+
+Known limits the tool's description states: frozen means frozen (a local build doesn't advance; the time machine is
+for waiting on something outside), connections to the outside reset at a thaw (another host, another address), and
+both wall time and monotonic time jump by the time spent frozen (measured).
+
+Measured 2026-11-17 (eu-central-1, m7i.xlarge from the fabric AMI, gp3 120 GB at its default throughput, runsc
+precopy-20261102.1; a sandbox with a 7 GiB limit holding N of memory, half random, half text; `runsc checkpoint
+--image-path` to the disk, `aws s3 cp` up, deleted, down, `runsc restore`):
+
+| Memory held | Freeze (checkpoint) | Image | Upload | Download | Thaw (restore) | After the thaw |
+|---|---|---|---|---|---|---|
+| 1.5 GiB | 4.6 s | 1.6 GB | 4.9 s | 2.4 s | 0.4 s | the process went on counting |
+| 6 GiB | 53 s | 6.1 GB | 44 s | 30 s | 1.5 s | the process went on counting |
+
+So a typical session freezes in about 10 s and thaws in about 3 s plus a host (seconds on a warm host, about a minute
+from the AMI). What this shows for the build:
+- The image is not compressed (6 GB held, 6.1 GB written): about 115 MB/s at 6 GB is the gp3 disk's default
+  throughput. Streaming the checkpoint straight to S3 (multipart), as the fork already streams it to a peer for a
+  live migration, skips the disk and the separate upload.
+- Monotonic time did NOT stay continuous: inside the sandbox it ran on through the freeze (19.5 s after 8 ticks at
+  1.5 GiB). Programs see both clocks jump; the tool's description says so.
+- The restore loads the image eagerly and is fast; most of a thaw is the download.
+
+## Next: asking Deyao is a command (Deyao, 2026-11-17; not built yet in aviary)
+
+The rule (CLAUDE.md "Write the minimal algorithm"): asking is an ordinary command that blocks until Deyao answers and
+prints the answer. Everything else follows from that, with no logic of its own:
+
+- `jarvis-request` (Inbox requests: stores, repos, grants, new sessions, batches) already works so (jarvis4 3cc242e7).
+- A question: `ask` shows a question card in the chat and blocks until the answer, which it prints. The card is a
+  component a tool drives, like a page or an email a tool sends, not part of the agent loop (Deyao, 2026-11-17): the
+  chat box steers the turn; the question card belongs to the command that made it. So it is not the harness's:
+  the command talks to magpie through the sandbox's gateway (`POST` a question, a long poll for its answer), magpie
+  keeps the question and its answer apart from turns, the app shows every open question of the conversation, turn
+  or no turn, and neither the supervisor nor the harness takes part. aviary's build, so YYC AI's sessions too. Claude
+  Code's native AskUserQuestion and ExitPlanMode, and Qwen Code's ask_user_question, are turned off (a clean cut).
+- The harness never dismisses a question for the person: no timeout, no parked turn, no "asking" state. A long wait
+  goes to the background like any long command; the chat keeps showing the question; the watchdog keeps firing.
+- The only dismissal is the agent's: cancelling the command. It then has the question's id; `ask status ID` prints the
+  answer or that it still waits.
+- A message Deyao sends before answering does not dismiss the question: it is delivered as any message is during a
+  command (at once when the ask runs in the background, after the answer while it runs in the foreground, or when the
+  harness moves it to the background).
+- Waiting long on an answer: the agent cancels the command and calls the time machine with a condition beside the
+  duration (today one kind: the answer to question ID). The time machine's return says why it returned: the time
+  was up, a message came, or the answer arrived.

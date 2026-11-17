@@ -1,6 +1,6 @@
 package main
 
-// The session-facing API, machine side. Jarvis 1's session scripts (schedule-wakeup.sh, schedule-cron.sh,
+// The session-facing API, machine side. Jarvis 1's session scripts (schedule-wakeup and schedule-cron, now session-image/tools/;
 // lease.py, transcript-search.py, content-sync, retire-session.sh, …) call `$JARVIS_URL/api/...`
 // with Cloudflare Access headers and the session's SESSION_API_TOKEN. In a Jarvis 4 session JARVIS_URL is this
 // proxy (127.0.0.1:7171, served by the supervisor, `jarvis-machine supervisor`): it drops those headers and forwards each request to

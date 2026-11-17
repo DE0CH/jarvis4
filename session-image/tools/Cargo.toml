@@ -1,0 +1,16 @@
+[package]
+name = "jarvis-tools"
+version = "0.1.0"
+edition = "2024"
+description = "A Jarvis 4 session's own tools: schedule-wakeup, schedule-cron (its router crons) and retire-session"
+
+[[bin]]
+name = "jarvis-tools"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
+ureq = { version = "2", default-features = false, features = ["json"] }
+
+[profile.release]
+strip = true

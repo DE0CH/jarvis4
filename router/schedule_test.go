@@ -465,7 +465,8 @@ func TestChatScheduleCountsAsArmed(t *testing.T) {
 	addSession(r, "s1", "paused", "", false)
 	addSession(r, "s2", "running", "", false)
 	r.st.Do(func(d *persisted) { d.Sessions["s1"].Harness = "aviary" })
-	now := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
+	// the real clock: ScheduleDueWithin reads it (a fixed date here failed every run from 13:00 UTC that day on)
+	now := time.Now()
 	at := now.Add(5 * time.Hour)
 	wakes := func(sid string) (w bool) { r.st.Do(func(d *persisted) { w = willWake(d, sid) }); return }
 	if wakes("s1") {

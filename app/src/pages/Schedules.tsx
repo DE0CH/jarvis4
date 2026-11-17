@@ -2,7 +2,7 @@
 // the prompt into the session as a message, resuming it first when it is paused. Into a session holding a sensitive
 // store, each such message waits in the Inbox until Deyao delivers it (signed on the iPhone) or denies it; a per-kind
 // rule on the session lets one kind through (views/Sessions.tsx MessageRules). Only the session arms
-// them (scripts/schedule-wakeup.sh, schedule-cron.sh: its own signed request vouches for the delivery; the router
+// them (schedule-wakeup, schedule-cron: its own signed request vouches for the delivery; the router
 // refuses arming from the app), so this page lists and cancels them (app DECISIONS 76), and Run now delivers one at
 // once as its scheduled firing would, counted as that firing; a cron run skipped after failed attempts (e.g. Fly's
 // machine limit on the resume) is marked missed until one is delivered (Deyao, 2026-11-17).

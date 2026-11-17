@@ -143,10 +143,10 @@ func replayGuard(d Delivery, now time.Time, record bool) error {
 		every := int64(24 * 60 * 60)
 		if body, err := base64.StdEncoding.DecodeString(d.Request.Body); err == nil {
 			var b struct {
-				Every int64 `json:"everySeconds"`
+				Every float64 `json:"everySeconds"` // a float: the router takes 1800.0, and an int64 refused it (2026-11-17)
 			}
 			if json.Unmarshal(body, &b) == nil && b.Every > 0 {
-				every = max(b.Every, 15*60)
+				every = max(int64(b.Every), 15*60)
 			}
 		}
 		if d.Run <= last.Run {
@@ -404,6 +404,10 @@ func deliver(c *client, d Delivery) (string, error) {
 		// Deyao's own words go into the Claude host's input box, typed as his prompt (harness-claude.sh types what
 		// harness-send queues), never as a Jarvis message
 		err = typeIntoHost(text)
+	} else if d.Kind == "request-outcome" && filedByCommand(d) {
+		// a request's outcome is the answer of the jarvis-request command that filed it (it blocks until one is
+		// recorded for its request), never a message into the conversation (Deyao, 2026-11-17)
+		err = recordOutcome(d, text, now)
 	} else {
 		err = sendToHarness(cert.Options.Harness, liveMode(cert), "jarvis", text)
 	}

@@ -223,6 +223,23 @@ func (r *Router) buildHandlers() {
 		w.Write(b)
 	}))
 
+	// the fabric hermit's tokens for the spawner's fabric runner, sealed to it the same way (infra/setup.py
+	// kernel-fabric-credentials; kernel/spawner/fabric.go)
+	mux.Handle("POST /setup/kernel/spawner/fabric-credentials", r.requireSetup(func(w http.ResponseWriter, req *http.Request) {
+		var in json.RawMessage
+		if r.kernel == nil || json.NewDecoder(io.LimitReader(req.Body, 1<<16)).Decode(&in) != nil {
+			writeJSON(w, 400, map[string]string{"error": "{sealed}, on a box with a kernel"})
+			return
+		}
+		b, err := r.kernel.call("spawner", "POST", "/fabric-credentials", in)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(b)
+	}))
+
 	// ---- setting the core up: Reset and Recover (the app, with the master key) -----------------------------
 	app("GET /api/core/identity", func(w http.ResponseWriter, req *http.Request) { r.relayFor(w, req, "GET", "/identity", nil) })
 	// claim and wipe: signed by the master key and checked by the core, so any of Deyao's logins may relay them (the

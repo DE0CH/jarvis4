@@ -146,7 +146,7 @@ type NewSession struct {
 	PermissionMode string         `json:"permissionMode"`
 	Size           string         `json:"size"`
 	Region         string         `json:"region"` // regions.go: "" = the router's default
-	Runner         string         `json:"runner"` // awsrunner.go: aws | fly, "" = DEFAULT_RUNNER
+	Runner         string         `json:"runner"` // awsrunner.go: aws | fly | fabric (fabricrunner.go), "" = DEFAULT_RUNNER
 	Harness        string         `json:"harness"`
 	Stores         []string       `json:"stores"`
 	Repos          string         `json:"repos"`

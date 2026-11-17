@@ -16,8 +16,8 @@ this session as the caller, from the machine's key) and the reason given here, a
                                     one more store for this running session (its machine keeps its keys); once
                                     approved (within 1 h) the supervisor pulls it (a background waiter asks)
   jarvis-request new-session --label TEXT --prompt-file FILE [--stores a,b] [--repos URL,URL] [--model M]
-                  [--size small|medium|large] [--harness claude] [--account NAME] [--request-id ID]
-                  [--attach FILE]… --why TEXT
+                  [--size small|medium|large] [--harness claude] [--runner aws|fly|fabric] [--region lhr|sin|nrt]
+                  [--account NAME] [--request-id ID] [--attach FILE]… --why TEXT
                                     propose a NEW session: it appears in the Inbox like the app's New session and starts
                                     only when Deyao approves it with Face ID (at most 3 waiting).
                                     --account: its Claude account (claude-<name> or <name>; Settings → Claude
@@ -48,18 +48,22 @@ this session as the caller, from the machine's key) and the reason given here, a
   jarvis-request list              this session's requests still waiting
   jarvis-request outcomes          what became of this session's requests (approved, denied, lapsed, dropped, failed)
   jarvis-request wait ID [--timeout SECONDS]
-                                    block until the request (an Inbox id, a batch id, or for add-store this session's
-                                    id) is decided, then print its outcome (default timeout 660 s; exit 0 approved,
-                                    1 anything else, 2 still waiting)
+                                    block until the request (an Inbox id, or for add-store this session's id) has an
+                                    outcome here, then print it (no timeout unless given; exit 0 approved, 1 anything
+                                    else, 2 still waiting at the timeout): for a request whose filing command ended
+                                    before the decision (the session paused meanwhile)
 
 A session asks for itself by default (grant, unlock, add-store; another session by naming it), for repos, and proposes new sessions; --why is required (plain
 text, at most 600 characters, 8 lines). Nothing happens until Deyao allows it; a request goes after 10 minutes.
-Once it is decided, the outcome arrives in this session by itself as a message from Jarvis ("[Inbox outcome] …", per
-item for a batch; a paused session gets it when it runs again), so there is no need to poll; `wait` is for a script
-that must block on it.
+Every filing command BLOCKS until Deyao has decided and prints the decision as its result (exit 0 approved, 1 denied,
+lapsed, dropped or failed; for a batch, 0 only when every item was approved), Jarvis's checked record of it (the
+machine checks the proof an approval leaves: the phone-signed grant, the new cert naming the store, …). An added store
+(add-store, add-repo) is pulled into the supervisor before the command returns. A long wait goes to the background
+like any long command; nothing else tells the session the outcome (Deyao, 2026-11-17).
 Goes through the machine's local proxy ($JARVIS_URL, machine/apiproxy.go), which signs it with the machine key.
 """
 import json, os, subprocess, sys, urllib.error, urllib.request
+from time import time_ns
 
 BASE = os.environ.get("JARVIS_URL", "http://127.0.0.1:7171").rstrip("/")
 # a wrong call says what was wrong in one line instead of printing the manual (--help prints that)
@@ -153,15 +157,51 @@ def repo_store(repo):
     return "github-" + "".join(c if c.isalnum() and c.isascii() else "-" for c in slug).strip("-")
 
 
-def start_await(store):
-    """the approval only lands in the cert: a detached waiter pulls the store's secrets once it does (no second ask; a
-    foreground wait would outlive a tool call's timeout)"""
-    log = os.path.expanduser("~/.jarvis-await-" + "".join(c if c.isalnum() or c in "-_" else "_" for c in store) + ".log")
-    with open(log, "ab") as f:
-        subprocess.Popen(["jarvis-machine", "await-store", store], stdout=f, stderr=f, stdin=subprocess.DEVNULL,
-                         start_new_session=True)
-    print(f"Once he allows {store}, the supervisor pulls it by itself (log: {log}); then run a command with the keys it "
-          "needs as `session-secret --keys K1,K2 --exec CMD` (this shell's env doesn't change).", file=sys.stderr)
+def outcome_files(ref, since_ns=0):
+    """the checked outcomes recorded for ref, newer than since_ns (unix ns), oldest first"""
+    try:
+        names = os.listdir(OUTCOMES)
+    except FileNotFoundError:
+        return []
+    out = []
+    for n in names:
+        r, _, rest = n.partition(".")
+        ns = rest[:-5] if rest.endswith(".json") else ""
+        if r == ref and ns.isdigit() and int(ns) > since_ns:
+            with open(os.path.join(OUTCOMES, n)) as f:
+                out.append((int(ns), json.load(f)))
+    return [o for _, o in sorted(out, key=lambda x: x[0])]
+
+
+def block(refs, since_ns, stores=(), timeout=None):
+    """until every ref has a checked outcome newer than since_ns: print each text once; then the approved stores
+    pulled into the supervisor. Exit code: 0 all approved, 1 any other outcome, 2 the timeout passed"""
+    import time
+    deadline = time.time() + timeout if timeout else None
+    got, shown = {}, set()
+    while True:
+        for r in refs:
+            if r not in got:
+                fs = outcome_files(r, since_ns)
+                if fs:
+                    got[r] = fs[-1]
+                    if fs[-1]["text"] not in shown:
+                        shown.add(fs[-1]["text"])
+                        print(fs[-1]["text"])
+        if len(got) == len(refs):
+            break
+        if deadline and time.time() > deadline:
+            print("still waiting in Deyao's Inbox: " + ", ".join(r for r in refs if r not in got), file=sys.stderr)
+            return 2
+        time.sleep(2)
+    approved = all(o["outcome"] == "approved" for o in got.values())
+    for st in stores:
+        if approved:
+            r = subprocess.run(["jarvis-machine", "await-store", st], stdin=subprocess.DEVNULL)
+            if r.returncode != 0:
+                print(f"{st} was approved but the supervisor did not pull it (jarvis-machine await-store {st})", file=sys.stderr)
+                return 1
+    return 0 if approved else 1
 
 
 def show(o):
@@ -176,27 +216,6 @@ def show(o):
     elif o.get("error"):
         line += " (" + o["error"] + ")"
     print(line)
-
-
-def wait(ref, timeout):
-    """until an outcome names ref (an Inbox id, a session id) or a batch id and nothing of it still waits"""
-    import time
-    deadline = time.time() + timeout
-    while True:
-        outs = [o for o in call("GET", "/api/requests/outcomes")["outcomes"] if ref in (o["ref"], o.get("batch"))]
-        pending = call("GET", "/api/requests")
-        waiting = any(ref in (q["id"], q.get("batch"), q.get("session")) for q in pending["requests"]) or \
-            any(b["id"] == ref for b in pending.get("batches") or [])
-        if outs and not waiting:
-            for o in outs:
-                show(o)
-            return 0 if all(o["outcome"] == "approved" for o in outs) else 1
-        if time.time() > deadline:
-            for o in outs:
-                show(o)
-            print(f"{ref}: still waiting in Deyao's Inbox", file=sys.stderr)
-            return 2
-        time.sleep(5)
 
 
 def main():
@@ -214,7 +233,7 @@ def main():
         t = opt(rest, "--timeout")
         if len(rest) != 1:
             raise SystemExit("wait ID [--timeout SECONDS]")
-        raise SystemExit(wait(rest[0], int(t) if t else 660))
+        raise SystemExit(block([rest[0]], 0, timeout=int(t) if t else None))
     if args[0] == "list":
         out = call("GET", "/api/requests")
         for q in out["requests"]:
@@ -255,21 +274,18 @@ def main():
             if x.get("intent") == "new-session" and "attach" in x:
                 a = x.pop("attach")
                 x["attachments"] = upload([a] if isinstance(a, str) else a)
+        since = time_ns()
         out = call("POST", "/api/requests/batch", {"summary": summary, "items": items})
-        # the added stores are pulled by a waiter each, as for a single add-store
-        for x in items:
-            if x.get("intent") == "add-store" and x.get("store"):
-                start_await(x["store"])
-            elif x.get("intent") == "repo/add" and x.get("repo") and not x.get("noStore"):
-                start_await(repo_store(x["repo"]))  # its store comes in the same approval
+        stores = [x["store"] for x in items if x.get("intent") == "add-store" and x.get("store")] + \
+            [repo_store(x["repo"]) for x in items if x.get("intent") == "repo/add" and x.get("repo") and not x.get("noStore")]
         print(json.dumps(out))
-        if not out.get("id"):  # nothing waits: only messages delivered at once (or a restore filed on its own)
+        refs = [it.get("id") or it.get("session") for it in out.get("items") or [] if not it.get("delivering")]
+        refs = [r for r in refs if r]
+        if not out.get("id") or not refs:  # nothing waits: only messages delivered at once (or a restore filed on its own)
             print("Nothing of it waits in the Inbox as a batch: see each item above.", file=sys.stderr)
             return
-        print("Waiting in Deyao's Inbox as one batch (the Jarvis 4 app); nothing happens until he allows it. The outcome of "
-              f"every item arrives in this session as a message once decided (or block: jarvis-request wait {out.get('id')}).",
-              file=sys.stderr)
-        return
+        print("Waiting for Deyao's decision in his Inbox (the Jarvis 4 app)…", file=sys.stderr, flush=True)
+        raise SystemExit(block(refs, since, stores))
     why = opt(args, "--why")
     new_session = {}
     if args[0] == "new-session":
@@ -278,7 +294,7 @@ def main():
             raise SystemExit("new-session needs --label and --prompt-file")
         with open(pf) as f:
             new_session = {"label": label, "prompt": f.read()}
-        for flag, key in (("--model", "model"), ("--size", "size"), ("--harness", "harness"), ("--account", "account"), ("--request-id", "requestId")):
+        for flag, key in (("--model", "model"), ("--size", "size"), ("--harness", "harness"), ("--runner", "runner"), ("--region", "region"), ("--account", "account"), ("--request-id", "requestId")):
             v = opt(args, flag)
             if v:
                 new_session[key] = v
@@ -296,6 +312,7 @@ def main():
     if not why:
         raise SystemExit("--why TEXT is required: say why this is needed")
     kind, rest = args[0], args[1:]
+    stores, since = [], time_ns()
     if kind == "add-repo" and len(rest) == 1:
         body = {"repo": rest[0], "explanation": why}
         if sensitive:
@@ -304,7 +321,7 @@ def main():
             body["noStore"] = True
         out = call("POST", "/api/requests/repo/add", body)
         if not no_store:
-            start_await(repo_store(rest[0]))
+            stores = [repo_store(rest[0])]
     elif kind == "grant" and len(rest) == 1:
         body = {"holder": rest[0], "explanation": why}
         if days:
@@ -320,7 +337,7 @@ def main():
         out = call("POST", "/api/sessions", dict(new_session, explanation=why))
     elif kind == "add-store" and len(rest) == 1:
         out = call("POST", "/api/requests/add-store", {"store": rest[0], "explanation": why})
-        start_await(rest[0])
+        stores = [rest[0]]
     elif kind in USAGE:
         raise SystemExit(f"jarvis-request {kind}: wrong arguments {rest}; usage: jarvis-request {USAGE[kind]} --why TEXT. "
                          "Nothing was filed.")
@@ -328,8 +345,8 @@ def main():
         raise SystemExit(f"jarvis-request: unknown command {kind!r} (jarvis-request --help lists them). Nothing was filed.")
     print(json.dumps(out))
     ref = out.get("id") or os.environ.get("JARVIS2_SESSION_ID", "")
-    print("Waiting in Deyao's Inbox (the Jarvis 4 app); nothing happens until he allows it. The outcome arrives in this "
-          f"session as a message once decided (or block: jarvis-request wait {ref}).", file=sys.stderr)
+    print("Waiting for Deyao's decision in his Inbox (the Jarvis 4 app)…", file=sys.stderr, flush=True)
+    raise SystemExit(block([ref], since, stores))
 
 
 if __name__ == "__main__":
