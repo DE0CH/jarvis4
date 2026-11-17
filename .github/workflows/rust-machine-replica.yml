@@ -64,7 +64,17 @@ jobs:
           E2E_LOGS: /tmp/e2e-kernel-logs
         run: |
           [ -n "$JARVIS2_FLY_TOKEN" ] || { echo "::error::secret REPLICA_FLY_TOKEN is missing from the GitHub environment 'replica'"; exit 1; }
-          infra/e2e-kernel.sh
+          mkdir -p "$E2E_LOGS"
+          set -o pipefail
+          infra/e2e-kernel.sh 2>&1 | tee "$E2E_LOGS/run.log"
+      - name: the logs' tails as annotations (readable without a GitHub login)
+        if: failure()
+        run: |
+          for f in /tmp/e2e-kernel-logs/run.log /tmp/e2e-kernel-logs/router.log /tmp/e2e-kernel-logs/kernel-spawner.log; do
+            [ -f "$f" ] || continue
+            t="$(tail -c 6000 "$f" | sed -E 's/[A-Za-z0-9+\/]{40,}={0,2}/[b64]/g' | sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g')"
+            echo "::error title=$(basename "$f")::$t"
+          done
       - if: always()
         uses: actions/upload-artifact@v4
         with: { name: e2e-kernel-logs, path: /tmp/e2e-kernel-logs, retention-days: 7, if-no-files-found: ignore }
