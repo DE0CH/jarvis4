@@ -26,8 +26,8 @@ use std::time::{Duration, SystemTime};
 
 /// the spawner's bind of the host's journal (docs/PLAN-aws.md "Logs")
 const HOST_JOURNAL_BIND: &str = "/run/jarvis-host/journal";
-/// a file this far ahead of its push takes no more lines (two fit /run/jarvis, 256 MB)
-const SHIP_FILE_CAP: u64 = 32 << 20;
+/// a file this far ahead of its push takes no more lines (two fit /run/jarvis, 256 MB; tests lower it)
+pub static SHIP_FILE_CAP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(32 << 20);
 const SUPERVISOR_LOG_ROLL: u64 = 2 << 20;
 const OUTPUT_PUSH_EVERY: Duration = Duration::from_secs(2);
 
@@ -43,10 +43,10 @@ static KEEPER_STARTED: LazyLock<SystemTime> = LazyLock::new(SystemTime::now);
 
 /// one {"at","text"} line file supervisor-core pushes to /m/machine-output as source
 pub struct ShipFile {
-    source: &'static str,
-    path: fn() -> PathBuf,
+    pub source: &'static str,
+    pub path: fn() -> PathBuf,
     /// the writer's (the keeper's tee and journal reader): lines not kept since the cap
-    dropped: Mutex<usize>,
+    pub dropped: Mutex<usize>,
 }
 
 pub static OUTPUT_SHIP: ShipFile = ShipFile {
@@ -79,7 +79,7 @@ impl ShipFile {
         let mut dropped = self.dropped.lock().unwrap_or_else(|e| e.into_inner());
         let p = (self.path)();
         if let Ok(md) = std::fs::metadata(&p)
-            && md.len().saturating_sub(read_offset_of(&self.sent_path())) > SHIP_FILE_CAP
+            && md.len().saturating_sub(read_offset_of(&self.sent_path())) > SHIP_FILE_CAP.load(Ordering::Relaxed)
         {
             *dropped += 1;
             return;
@@ -201,54 +201,45 @@ pub fn tee_output() -> Result<()> {
     Ok(())
 }
 
-/// each line of r to out and into f (a line longer than 16 KB is cut into pieces)
-fn tee_lines(r: std::io::PipeReader, out: &Mutex<std::fs::File>, f: &ShipFile) {
-    let mut br = BufReader::with_capacity(16 << 10, r);
-    loop {
-        let buf = match br.fill_buf() {
-            Ok([]) | Err(_) => return,
-            Ok(b) => b,
-        };
-        let (n, line) = match buf.iter().position(|c| *c == b'\n') {
-            Some(i) => (i + 1, buf[..=i].to_vec()),
-            None if buf.len() >= 16 << 10 => (buf.len(), buf.to_vec()),
-            None => {
-                // a partial line: wait for more (or the end)
-                let n = buf.len();
-                let mut more = buf.to_vec();
-                br.consume(n);
-                let mut rest = vec![];
-                let _ = (&mut br)
-                    .take((16 << 10) as u64)
-                    .read_until(b'\n', &mut rest);
-                more.extend_from_slice(&rest);
-                if more.is_empty() {
-                    return;
-                }
-                if let Ok(mut o) = out.lock() {
-                    let _ = o.write_all(&more);
-                }
-                let t = String::from_utf8_lossy(&more)
-                    .trim_end_matches(['\r', '\n'])
-                    .to_string();
-                if !t.is_empty() {
-                    f.add(SystemTime::now(), &t);
-                }
-                if rest.is_empty() {
-                    return;
-                }
-                continue;
-            }
-        };
-        br.consume(n);
+/// each line of r to out and into f (a line longer than 16 KB is cut into pieces of 16 KB, as Go's bufio.ReadSlice cut
+/// them)
+pub fn tee_lines<R: Read, W: Write>(mut r: R, out: &Mutex<W>, f: &ShipFile) {
+    const PIECE: usize = 16 << 10;
+    let mut pending: Vec<u8> = Vec::with_capacity(2 * PIECE);
+    let mut chunk = vec![0u8; PIECE];
+    let emit = |piece: &[u8]| {
         if let Ok(mut o) = out.lock() {
-            let _ = o.write_all(&line);
+            let _ = o.write_all(piece);
         }
-        let t = String::from_utf8_lossy(&line)
-            .trim_end_matches(['\r', '\n'])
-            .to_string();
+        let t = String::from_utf8_lossy(piece).trim_end_matches(['\r', '\n']).to_string();
         if !t.is_empty() {
             f.add(SystemTime::now(), &t);
+        }
+    };
+    loop {
+        // every whole line, or a full piece of one, that pending holds
+        loop {
+            let window = &pending[..pending.len().min(PIECE)];
+            match window.iter().position(|c| *c == b'\n') {
+                Some(i) => {
+                    let piece: Vec<u8> = pending.drain(..=i).collect();
+                    emit(&piece);
+                }
+                None if pending.len() >= PIECE => {
+                    let piece: Vec<u8> = pending.drain(..PIECE).collect();
+                    emit(&piece);
+                }
+                None => break,
+            }
+        }
+        match r.read(&mut chunk) {
+            Ok(0) | Err(_) => {
+                if !pending.is_empty() {
+                    emit(&pending);
+                }
+                return;
+            }
+            Ok(n) => pending.extend_from_slice(&chunk[..n]),
         }
     }
 }
@@ -313,7 +304,12 @@ fn mount_read_only(dev: &str, dir: &Path) -> Result<()> {
 
 /// the device of the partition named ROOT (Flatcar's root filesystem, where its journal is)
 fn root_partition() -> Result<String> {
-    for e in std::fs::read_dir("/sys/class/block")?.flatten() {
+    root_partition_in(Path::new("/sys/class/block"))
+}
+
+/// the ROOT partition, found by its name in sysfs at dir
+pub fn root_partition_in(dir: &Path) -> Result<String> {
+    for e in std::fs::read_dir(dir)?.flatten() {
         let Ok(b) = std::fs::read_to_string(e.path().join("uevent")) else {
             continue;
         };

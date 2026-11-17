@@ -28,7 +28,7 @@ pub fn host_bridge() -> String {
         #[serde(rename = "startedAt")]
         started_at: i64,
     }
-    let dir = std::path::Path::new(paths::CLAUDE_HOME).join(".claude/sessions");
+    let dir = paths::claude_home().join(".claude/sessions");
     let mut es: Vec<E> = std::fs::read_dir(dir)
         .into_iter()
         .flatten()
@@ -46,7 +46,7 @@ pub fn host_bridge() -> String {
 
 /// the session's Claude OAuth access token (never logged or sent anywhere but Anthropic)
 pub fn claude_access_token() -> String {
-    let p = std::path::Path::new(paths::CLAUDE_HOME).join(".claude/.credentials.json");
+    let p = paths::claude_home().join(".claude/.credentials.json");
     std::fs::read(p)
         .map(|b| crate::claudelogin::access_token(&b))
         .unwrap_or_default()

@@ -509,7 +509,7 @@ pub const MODE_FILE: &str = ".claude/.permission-mode";
 /// the mode claude actually runs in, decided exactly as harness-claude.sh decides it: the in-place file when there is
 /// one, else the cert's
 pub fn live_mode(cert: &Cert) -> String {
-    match std::fs::read_to_string(std::path::Path::new(paths::CLAUDE_HOME).join(MODE_FILE)) {
+    match std::fs::read_to_string(paths::claude_home().join(MODE_FILE)) {
         Err(_) => cert_mode(cert).into(),
         Ok(s) if s.trim() == "bypass" => "bypass".into(),
         Ok(_) => "auto".into(),

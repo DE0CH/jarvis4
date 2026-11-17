@@ -100,7 +100,7 @@ fn glob(pattern_dir: &Path, depth_pattern: &[&str]) -> Vec<PathBuf> {
 /// the conversations' files
 pub fn main_transcripts() -> Vec<PathBuf> {
     glob(
-        &Path::new(paths::CLAUDE_HOME).join(".claude/projects"),
+        &paths::claude_home().join(".claude/projects"),
         &["*", "*.jsonl"],
     )
 }
@@ -108,7 +108,7 @@ pub fn main_transcripts() -> Vec<PathBuf> {
 /// their subagents' (<conversation>/subagents/)
 pub fn subagent_transcripts() -> Vec<PathBuf> {
     glob(
-        &Path::new(paths::CLAUDE_HOME).join(".claude/projects"),
+        &paths::claude_home().join(".claude/projects"),
         &["*", "*", "subagents", "*.jsonl"],
     )
 }

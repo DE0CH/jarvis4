@@ -73,6 +73,17 @@ pub const FABRIC_CONSOLE_PATH: &str = "/proc/1/fd/1";
 pub const KEYS_MARK: &str = "JARVIS2-KEYS ";
 pub const CLAUDE_HOME: &str = "/home/claude";
 
+/// claude's home, where the harness keeps its registry and transcripts (tests move it)
+pub static TEST_CLAUDE_HOME: RwLock<Option<PathBuf>> = RwLock::new(None);
+
+pub fn claude_home() -> PathBuf {
+    TEST_CLAUDE_HOME
+        .read()
+        .ok()
+        .and_then(|p| p.clone())
+        .unwrap_or_else(|| PathBuf::from(CLAUDE_HOME))
+}
+
 /// $HOME (Go's os.UserHomeDir)
 pub fn home() -> PathBuf {
     let h = crate::env::get("HOME");
