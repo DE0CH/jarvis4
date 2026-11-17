@@ -178,18 +178,11 @@ struct SessionRow: View {
     .padding(.vertical, 2)
     .accessibilityElement(children: .combine)
     .accessibilityIdentifier("srow-\(m.id)")
+    // no swipe to Pause or Destroy: both went off by mistake too often (Deyao, 2026-11-17); they stay in the
+    // context menu and on the session's page, Pause behind a confirmation
     .swipeActions(edge: .leading) {
-      if busy == nil {
-        if m.state == "started" || m.state == "initialising" {
-          Button("Pause", systemImage: "pause") { Task { await model.pause(m.id) } }.tint(.orange)
-        } else if m.resumable {
-          Button("Resume", systemImage: "play") { Task { await model.resume(m.id) } }.tint(.green)
-        }
-      }
-    }
-    .swipeActions(edge: .trailing) {
-      if busy == nil, m.state != "destroying" {
-        Button("Destroy", systemImage: "trash", role: .destructive) { Task { await model.destroy(m.id) } }
+      if busy == nil, m.state != "started", m.state != "initialising", m.resumable {
+        Button("Resume", systemImage: "play") { Task { await model.resume(m.id) } }.tint(.green)
       }
     }
     .contextMenu { SessionMenu(m: m) }

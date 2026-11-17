@@ -24,9 +24,9 @@ fixes, 34–40 carried over from the old app and still true, 41–43 the web pag
    Tasks, Settings, and the system Search tab. Four tabs plus Search keeps the iPhone free of a "More" tab: Previous sits
    in Sessions' toolbar; Stores, Repos and Machines under Settings; task schedules inside Tasks.
 6. **Sessions is a `NavigationSplitView`**: grouped list (Running / Scheduled / Paused / Failed) beside the selected
-   session's page on iPad, a stack on iPhone. Rows have swipe actions (Pause / Resume, Destroy) and a context menu with the
-   old More menu; the page has every action as a list row, plus Terminal (or Remote) in the toolbar.
-7. **Questions are alerts** (Destroy? Resume with a prompt? Delete permanently with the title typed), errors from a user's
+   session's page on iPad, a stack on iPhone. A paused row swipes to Resume; Pause and Destroy have no swipe (they went off by
+   mistake too often, Deyao 2026-11-17) and sit in the row's context menu (the old More menu) and on the page; the page has every action as a list row, plus Terminal (or Remote) in the toolbar.
+7. **Questions are alerts** (Destroy? Pause? (the app only; the web page pauses at once) Resume with a prompt? Delete permanently with the title typed), errors from a user's
    action are one alert, and a short note ("Session id copied") appears at the bottom for three seconds. Pull to refresh
    on every list (Apple's pattern; Jarvis 1's dashboard rules don't apply to this app).
 8. **The Face ID reviews are sheets** (`Review/`): New session, an approval, a grant, an unlock, a repo key. Cancel (or

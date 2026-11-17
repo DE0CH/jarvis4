@@ -5,7 +5,10 @@ import UIKit
 
 extension AppModel {
   // ---- sessions ----
+  /// Pause asks first, as Resume and Destroy do (Deyao, 2026-11-17: the app only; the web page pauses at once)
   func pause(_ id: String) async {
+    let t = session(id)?.title ?? id
+    guard await confirm("Pause “\(t)”?", "The machine stops; Resume brings back the same conversation and files.", action: "Pause session") else { return }
     await pendUntil("s:" + id, "Pausing…", 120, action: { try await RouterClient.shared.call("POST", "api/sessions/\(id)/pause") },
                     until: { ["paused", "failed"].contains($0.session(id)?.state ?? "") })
   }

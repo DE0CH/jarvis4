@@ -324,6 +324,11 @@ final class Jarvis4UITests: JarvisUITestCase {
     }
     sleep(2)
     shot("session-created")
+    // a row's swipes offer neither Destroy nor Pause (they went off by mistake); both live on the session's page
+    row.swipeLeft()
+    XCTAssertFalse(app.buttons["Destroy"].waitForExistence(timeout: 3), "[\(tag)] no swipe to Destroy")
+    row.swipeRight()
+    XCTAssertFalse(app.buttons["Pause"].waitForExistence(timeout: 3), "[\(tag)] no swipe to Pause")
     row.tap()
     guard arrives(el("grants-\(sid)"), 20, "the session's page") else { return }
     shot("session-detail")
@@ -413,6 +418,7 @@ final class Jarvis4UITests: JarvisUITestCase {
     // ---- pause → transcript → resume with a prompt (a one-time input the phone signs: the approval shows it)
     guard wait(el("pause-\(sid)"), 60, "Pause") else { return }
     el("pause-\(sid)").tap()
+    answer("Pause session")
     shot("pausing")
     guard wait(el("resume-\(sid)"), 120, "paused") else { return }
     shot("paused")
@@ -438,6 +444,7 @@ final class Jarvis4UITests: JarvisUITestCase {
 
     // ---- permission mode (signed) and resume with the latest image (the approval opens by itself)
     el("pause-\(sid)").tap()
+    answer("Pause session")
     guard wait(el("resume-\(sid)"), 120, "paused again") else { return }
     webResumeFromInbox(sid)
     el("more-\(sid)").tap()
