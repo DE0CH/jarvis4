@@ -45,6 +45,8 @@ var modelCatalog = []ModelChoice{
 	{"aviary/claude-opus-5-5", "Opus 5.5", "aviary"},
 	{"aviary/claude-fable-5-2", "Fable 5.2", "aviary"},
 	{"aviary/z-ai/glm-5.3", "GLM 5.3 — $1.40 / $4.40", "aviary"},
+	{"aviary/deepseek/deepseek-v4.1-flash-1017", "DeepSeek V4.1 Flash — $0.30 / $1.20", "aviary"},
+	{"aviary/moonshotai/kimi-k3.1-pro", "Kimi K3.1 Pro — $2.00 / $10.00", "aviary"},
 	{"dsh/deepseek/deepseek-v4-pro-0813", "DeepSeek V4 Pro — $0.66 / $1.98", "dsh"},
 	{"dsh/deepseek/deepseek-v4.1-flash-1017", "DeepSeek V4.1 Flash — $0.15 / $0.60", "dsh"},
 }
