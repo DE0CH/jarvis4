@@ -4,7 +4,7 @@
 # gets its env (the router's fabric listener is off), so the console stops at the entrypoint's retries: that is enough.
 apiVersion: batch/v1
 kind: Job
-metadata: { name: fabric-smoke-2, namespace: jarvis4-fabric }
+metadata: { name: fabric-smoke-3, namespace: jarvis4-fabric }
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 2400
