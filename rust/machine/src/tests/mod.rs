@@ -16,3 +16,4 @@ pub mod vouch;
 pub mod watchdogs;
 pub mod restore;
 pub mod jarvis1import;
+pub mod apiproxy;
