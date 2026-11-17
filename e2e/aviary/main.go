@@ -488,7 +488,7 @@ func magpieText() string {
 	for _, id := range ids {
 		_, t := call("GET", os.Getenv("E2E_MAGPIE")+"/v1/admin/conversations/"+id+"/transcript", nil, hdr...)
 		all += "\n" + string(t)
-		_, ev := call("GET", os.Getenv("E2E_MAGPIE")+"/v1/admin/conversations/"+id+"/events?limit=500", nil, hdr...)
+		_, ev := call("GET", os.Getenv("E2E_MAGPIE")+"/v1/admin/conversations/"+id+"/events?after=0&limit=500", nil, hdr...)
 		all += "\n" + string(ev)
 	}
 	return all
