@@ -281,6 +281,24 @@ var (
 	kernelTrustAt      time.Time
 )
 
+// armKernelTrustRefresh: let this process read the kernel's documents again when a delivered input's challenge isn't
+// the notary's it knows. Boot arms it in prepare; each supervisor arms its own, as deliveries are checked there
+// (2026-11-17: never armed in supervisor-core, a copy flip left every running machine refusing every wakeup).
+func armKernelTrustRefresh(c *client) {
+	if _, ok := readKernelTrust(); !ok {
+		return // an old core line: no notary to learn
+	}
+	kernelTrustMu.Lock()
+	defer kernelTrustMu.Unlock()
+	kernelTrustRefresh = func() (kernelTrust, error) {
+		keys, err := ownKeys()
+		if err != nil {
+			return kernelTrust{}, err
+		}
+		return refreshKernelTrust(c, c.me, keys)
+	}
+}
+
 // refreshKernelTrust: the documents again, checked as at boot; the trust they give replaces kernel.json (the
 // serving copy's notary and roster after a copy flip)
 func refreshKernelTrust(c *client, me string, keys map[string]string) (kernelTrust, error) {

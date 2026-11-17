@@ -89,6 +89,7 @@ func superviseCore() error {
 	if err != nil {
 		return err
 	}
+	armKernelTrustRefresh(c) // kernelboot.go: a copy flip's new notary is learnt where deliveries are checked
 	usr1 := make(chan os.Signal, 1)
 	signal.Notify(usr1, syscall.SIGUSR1)
 	go func() { // the keeper's teardown (a stop signal): upload, most important first, then end
@@ -146,6 +147,7 @@ func superviseNormal() error {
 	if err != nil {
 		return err
 	}
+	armKernelTrustRefresh(c) // kernelboot.go: a copy flip's new notary is learnt where deliveries are checked
 	workers = newWorkerCount(workersState)
 	go serveWorkerCount(workers) // workers.go: the hook's notifications
 	for !booted() {
