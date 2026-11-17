@@ -99,6 +99,11 @@ func TestFabricEnvEndpoint(t *testing.T) {
 	if r.sourceImage(&Session{Runner: "fabric"}) != os.Getenv("FABRIC_SESSION_IMAGE") || r.sourceImage(&Session{Runner: "fly"}) != r.cfg.SessionImage {
 		t.Fatal("the source image by runner")
 	}
+	for _, g := range sessionRunners() {
+		if g.ID == "fabric" {
+			t.Fatal("New session offers the fabric before a session boots on it")
+		}
+	}
 	t.Setenv("FABRIC_HERMIT_URL", "")
 	if validRunner("fabric") || len(sessionRunners()) != 2 {
 		t.Fatal("the fabric offered without a hermit")
