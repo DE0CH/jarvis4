@@ -202,7 +202,7 @@ neither running nor paused there, and the apps' actions on it (Resume, Destroy) 
 
 Known limits the tool's description states: frozen means frozen (a local build doesn't advance; the time machine is
 for waiting on something outside), connections to the outside reset at a thaw (another host, another address), and
-wall time jumps (monotonic time doesn't).
+both wall time and monotonic time jump by the time spent frozen (measured).
 
 Measured 2026-11-17 (eu-central-1, m7i.xlarge from the fabric AMI, gp3 120 GB at its default throughput, runsc
 precopy-20261102.1; a sandbox with a 7 GiB limit holding N of memory, half random, half text; `runsc checkpoint
