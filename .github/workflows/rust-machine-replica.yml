@@ -3,9 +3,12 @@ name: rust-machine-replica
 # part, each crate replacing its Go part once it passes that part's tests and the e2e replica): the session image the
 # router pins now, with only jarvis-machine swapped for rust/machine's build (session-image/rust-machine.Dockerfile,
 # ghcr.io/de0ch/jarvis4-session:rust-<sha12>), through a kernel line's life on real Fly machines (infra/e2e-kernel.sh:
-# a new session on the kernel, pause with its snapshot, resume restoring it, destroy). Run by hand; deleted with
-# machine/ at the cut.
+# a new session on the kernel, pause with its snapshot, resume restoring it, destroy). Runs on every push to main that
+# changes rust/ (or by hand); deleted with machine/ at the cut.
 on:
+  push:
+    branches: [main]
+    paths: [rust/**, session-image/rust-machine.Dockerfile, infra/e2e-kernel.sh, e2e/kernel/**, .github/workflows/rust-machine-replica.yml]
   workflow_dispatch:
 permissions:
   contents: read
