@@ -2,6 +2,9 @@
 # the spawner asks (caller magpie), its states until its first process runs (an AWS host launched, the gateway, the
 # fabric image), its console, then its forced release and the conversation's files deleted. The machine inside never
 # gets its env (the router's fabric listener is off), so the console stops at the entrypoint's retries: that is enough.
+# Not listed in kustomization.yaml: list it (with a new Job name, a new conversation C, and the podSelector app:
+# fabric-smoke in hermit-in) to run it again. Run 5 (2026-11-17 11:31): host launched in about 1 min from the AMI,
+# the sandbox created on the fabric image, the console read live, released, files deleted.
 apiVersion: batch/v1
 kind: Job
 metadata: { name: fabric-smoke-5, namespace: jarvis4-fabric }
