@@ -69,12 +69,13 @@ jobs:
           (cd rust && cargo build --release --locked -p e2e-kernel)
           rust/target/release/e2e-kernel 2>&1 | tee "$E2E_LOGS/run.log"
       - name: the logs' tails as annotations (readable without a GitHub login)
-        if: failure()
+        if: always()
         run: |
+          lvl=notice; [ "${{ job.status }}" = success ] || lvl=error
           for f in /tmp/e2e-kernel-logs/run.log /tmp/e2e-kernel-logs/router.log /tmp/e2e-kernel-logs/kernel-spawner.log; do
             [ -f "$f" ] || continue
             t="$(tail -c 6000 "$f" | sed -E 's/[A-Za-z0-9+\/]{40,}={0,2}/[b64]/g' | sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g')"
-            echo "::error title=$(basename "$f")::$t"
+            echo "::$lvl title=$(basename "$f")::$t"
           done
       - if: always()
         uses: actions/upload-artifact@v4
