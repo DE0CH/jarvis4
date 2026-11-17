@@ -62,8 +62,15 @@ pub fn session_peer(uid: u32) -> bool {
 
 /// this process runs as root (the keeper and both supervisors on the image)
 pub fn privileged() -> bool {
-    Uid::effective().is_root()
+    match TEST_PRIVILEGED.load(std::sync::atomic::Ordering::SeqCst) {
+        1 => false,
+        2 => true,
+        _ => Uid::effective().is_root(),
+    }
 }
+
+/// tests: 1 = not root, 2 = root, 0 = as this process is
+pub static TEST_PRIVILEGED: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
 /// A command the supervisor runs for the session. As root it goes through `jarvis-machine unprotected`, which takes
 /// user claude's identity for good and the default OOM score, then execs it; otherwise (a CLI command, the tests) it

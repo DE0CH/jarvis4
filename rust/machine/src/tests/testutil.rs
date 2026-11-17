@@ -138,6 +138,9 @@ fn reset_seams() {
         a.store(v, std::sync::atomic::Ordering::SeqCst);
     }
     crate::claudelogin::CREDS_SYNC_ON.store(false, std::sync::atomic::Ordering::SeqCst);
+    *crate::supervisor::TEST_TREE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    crate::session::TEST_PRIVILEGED.store(0, std::sync::atomic::Ordering::SeqCst);
+    crate::supervisorlog::SUPERVISOR_LOG_ROLL.store(2 << 20, std::sync::atomic::Ordering::SeqCst);
     *crate::volume::TEST_VOLUME
         .lock()
         .unwrap_or_else(|e| e.into_inner()) = None;

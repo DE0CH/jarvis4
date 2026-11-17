@@ -223,8 +223,15 @@ pub fn keeper_is_init() -> bool {
     }
 }
 
+/// tests: the process tree (pid → children) and the tmux panes instead of /proc and tmux
+pub type TestTree = (HashMap<i32, Vec<i32>>, Vec<i32>);
+pub static TEST_TREE: std::sync::Mutex<Option<TestTree>> = std::sync::Mutex::new(None);
+
 /// pid → its children, from /proc
 pub fn children() -> HashMap<i32, Vec<i32>> {
+    if let Some((k, _)) = TEST_TREE.lock().ok().and_then(|g| g.clone()) {
+        return k;
+    }
     let mut out: HashMap<i32, Vec<i32>> = HashMap::new();
     let root = crate::memory::proc_root();
     for e in std::fs::read_dir(&root).into_iter().flatten().flatten() {
@@ -249,6 +256,9 @@ pub fn children() -> HashMap<i32, Vec<i32>> {
 /// the pid of every pane's process (the Claude host runs in tmux session `claude`, whose server is not a child of the
 /// launcher)
 pub fn tmux_panes() -> Vec<i32> {
+    if let Some((_, p)) = TEST_TREE.lock().ok().and_then(|g| g.clone()) {
+        return p;
+    }
     match session_command("tmux", &["list-panes", "-a", "-F", "#{pane_pid}"]).output() {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
             .split_whitespace()

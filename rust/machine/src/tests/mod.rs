@@ -20,3 +20,5 @@ pub mod task;
 pub mod testutil;
 pub mod vouch;
 pub mod watchdogs;
+pub mod r1;
+pub mod supervisor;

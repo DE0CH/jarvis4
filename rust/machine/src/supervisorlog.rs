@@ -16,7 +16,8 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 /// rotate once everything is pushed and the file is this big
-const SUPERVISOR_LOG_ROLL: u64 = 2 << 20;
+pub static SUPERVISOR_LOG_ROLL: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(2 << 20);
 const LOG_PUSH_EVERY: Duration = Duration::from_secs(2);
 pub const MAX_LOG_LINE: usize = 2000;
 const MAX_LOG_BATCH: usize = 500;
@@ -137,7 +138,7 @@ pub fn push_log_once(c: &Client) -> Result<()> {
         return Err(e);
     }
     if let Ok(md) = std::fs::metadata(&p)
-        && md.len() >= SUPERVISOR_LOG_ROLL
+        && md.len() >= SUPERVISOR_LOG_ROLL.load(std::sync::atomic::Ordering::SeqCst)
         && off >= md.len()
     {
         let old = std::path::PathBuf::from(format!("{}.old", p.display()));
