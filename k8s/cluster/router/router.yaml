@@ -86,8 +86,8 @@ spec:
             # router-fabric, k3s ServiceLB). Nothing of the fabric runs, and New session offers no fabric, until
             # FABRIC_HERMIT_URL is set; the tokens are Secret router-secrets-fabric (router-secrets.py --part router-fabric)
             - { name: FABRIC_MACHINE_ADDR, value: ":3128" }
-            - { name: FABRIC_SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session-fabric:latest" }
-            - { name: FABRIC_SESSION_IMAGE_SIG, value: "" }
+            - { name: FABRIC_SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session-fabric:sha-80f147fa4549@sha256:a64650328ab808f9dee2295e17619020f51de37ddee534fe7b2a6dabde957e49" }
+            - { name: FABRIC_SESSION_IMAGE_SIG, value: "MEUCIA/ZkjUoZp1rtnV6TUB7J2nrCVk5xmr4Yq3MKA2uGbQlAiEA1XPg4sGcQt/6MBdPdJhn3jtobLGEDrMDCD3Ymjfer+s=" }
           # SOPS-encrypted to the cluster's age key (k8s/cluster/secrets, infra/router-secrets.py --box cluster).
           # router-secrets-github stays LAST: with a key in several envFrom sources the last one wins
           envFrom: [{ secretRef: { name: router-secrets, optional: true } }, { secretRef: { name: router-secrets-backup, optional: true } }, { secretRef: { name: router-secrets-flyorgs, optional: true } }, { secretRef: { name: router-secrets-flypersonal, optional: true } }, { secretRef: { name: router-secrets-flyvolumes, optional: true } }, { secretRef: { name: router-secrets-browserbase, optional: true } }, { secretRef: { name: router-secrets-devices, optional: true } }, { secretRef: { name: router-secrets-livepush, optional: true } }, { secretRef: { name: router-secrets-runners, optional: true } }, { secretRef: { name: router-db } }, { secretRef: { name: router-secrets-objects } }, { secretRef: { name: router-seal } }, { secretRef: { name: router-secrets-aws, optional: true } }, { secretRef: { name: router-secrets-fabric, optional: true } }, { secretRef: { name: router-secrets-github, optional: true } }]
