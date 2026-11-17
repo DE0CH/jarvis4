@@ -189,6 +189,11 @@ Decisions (Deyao, 2026-11-17):
 - Scheduled wakeups and crons stay as they are, for every session, fabric ones included (Deyao, 2026-11-17: more
   options, and YYC AI keeps its existing logic): the time machine is one more way to wait, not a replacement. A
   wakeup or cron due for a frozen session thaws it, as a message does.
+- What tells the agent which to use, in Jarvis 4 only (Deyao, 2026-11-17; YYC AI's prompts and skills don't change):
+  the scheduled-wakeup docs (claude-env `schedule-wakeup` skill and CLAUDE.md "Waiting on events") say to prefer the
+  time machine when waiting on CI or anything else outside, and to use a scheduled wakeup or cron when Deyao asked
+  for a specific task at a specific time. That text ships with the tool, in the same change (docs describe the
+  present: until then a session has no time machine to prefer).
 
 Known limits the tool's description states: frozen means frozen (a local build doesn't advance; the time machine is
 for waiting on something outside), connections to the outside reset at a thaw (another host, another address), and
