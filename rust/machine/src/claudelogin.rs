@@ -25,16 +25,24 @@ use std::time::{Duration, Instant};
 
 const CREDS_POLL_WAIT: Duration = Duration::from_secs(50);
 const CREDS_RETRY: Duration = Duration::from_secs(10);
-/// a lock held for a refresh that never answered is released (the CLI's own stale limit is 60 s)
-const LOCK_HOLD_MAX: Duration = Duration::from_secs(45);
+use std::sync::atomic::AtomicU64;
+
+/// the waits, in ms (tests shorten them): a lock held for a refresh that never answered is released (the CLI's own
+/// stale limit is 60 s); a profile fetch claude began with the old token may write the old record back (recheck); for
+/// Claude Code to stop Remote Control once the account under it changed (drop); for the /remote-control menu (a host in
+/// a turn shows it after the turn); the poll of every wait
+pub static LOCK_HOLD_MAX_MS: AtomicU64 = AtomicU64::new(45_000);
 const SWITCH_LOCK_WAIT: Duration = Duration::from_secs(15);
-const SWITCH_POLL: Duration = Duration::from_secs(1);
-/// a profile fetch claude began with the old token may write the old record back
-const RECHECK_AFTER: Duration = Duration::from_secs(15);
-/// for Claude Code to stop Remote Control once the account under it changed
-const RC_DROP_WAIT: Duration = Duration::from_secs(90);
-/// for the /remote-control menu (a host in a turn shows it after the turn)
-const RC_MENU_WAIT: Duration = Duration::from_secs(180);
+pub static SWITCH_POLL_MS: AtomicU64 = AtomicU64::new(1000);
+pub static RECHECK_AFTER_MS: AtomicU64 = AtomicU64::new(15_000);
+pub static RC_DROP_WAIT_MS: AtomicU64 = AtomicU64::new(90_000);
+pub static RC_MENU_WAIT_MS: AtomicU64 = AtomicU64::new(180_000);
+/// how often supervisor-normal looks for boot's marker (ms)
+pub static MARKER_POLL_MS: AtomicU64 = AtomicU64::new(2000);
+
+fn ms(a: &AtomicU64) -> Duration {
+    Duration::from_millis(a.load(Ordering::Relaxed))
+}
 /// how long Remote Control has to come up after Enable (ms; tests shorten it)
 pub static RC_UP_WAIT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(90_000);
 
@@ -200,13 +208,20 @@ pub fn merge_account(account: &str) -> Result<()> {
     write_atomic(&p, gojson::marshal(&cur).as_bytes())
 }
 
-/// tests replace the marker's effect
-pub static TEST_NO_SYNC: AtomicBool = AtomicBool::new(false);
+/// tests count the starts here instead of leaving the marker
+pub static TEST_STARTS: Mutex<Option<usize>> = Mutex::new(None);
+/// tests stand in for the sync supervisor-normal starts
+pub static TEST_RUN_SYNC: Mutex<Option<std::sync::Arc<dyn Fn() + Send + Sync>>> = Mutex::new(None);
+/// tests name the account Anthropic's profile endpoint answers (uuid, email)
+pub static TEST_PROFILE: Mutex<Option<(String, String)>> = Mutex::new(None);
 
 /// tells supervisor-normal to run creds_sync for the machine's life: boot (or an account switch) leaves the marker,
 /// supervisor-normal starts it once booted
 pub fn start_creds_sync() {
-    if TEST_NO_SYNC.load(Ordering::SeqCst) {
+    if let Ok(mut g) = TEST_STARTS.lock()
+        && let Some(n) = g.as_mut()
+    {
+        *n += 1;
         return;
     }
     if let Err(e) = util::write_file(&paths::claude_login_on(), b"1", 0o644) {
@@ -216,7 +231,7 @@ pub fn start_creds_sync() {
     logf!("claude login: the supervisor keeps the pair in step (long poll on the router)");
 }
 
-static CREDS_SYNC_ON: AtomicBool = AtomicBool::new(false);
+pub static CREDS_SYNC_ON: AtomicBool = AtomicBool::new(false);
 
 /// creds_sync as soon as boot leaves the marker. Boot writes it after booted (its login fetch takes seconds), so it is
 /// watched for the machine's life, not looked at once when booted (YYC AI on Jarvis 3, 2026-10-20). A session with no
@@ -224,10 +239,17 @@ static CREDS_SYNC_ON: AtomicBool = AtomicBool::new(false);
 pub fn start_creds_sync_on_marker() {
     while !CREDS_SYNC_ON.load(Ordering::SeqCst) {
         if paths::claude_login_on().exists() {
-            std::thread::spawn(creds_sync);
+            match TEST_RUN_SYNC.lock().ok().and_then(|g| g.clone()) {
+                Some(f) => {
+                    std::thread::spawn(move || f());
+                }
+                None => {
+                    std::thread::spawn(creds_sync);
+                }
+            }
             return;
         }
-        util::sleep(Duration::from_secs(2));
+        util::sleep(ms(&MARKER_POLL_MS));
     }
 }
 
@@ -377,8 +399,8 @@ impl Syncer {
     /// push this machine's own newer pair (its claude refreshed by itself), then one long poll and its answer
     pub fn step(&mut self) -> Result<()> {
         let local = std::fs::read(creds_path()).unwrap_or_default();
-        if self.lock_gen != 0 && self.locked_at.is_some_and(|t| t.elapsed() > LOCK_HOLD_MAX) {
-            logf!("claude login: no pair 45s after the refresh notice: lock released");
+        if self.lock_gen != 0 && self.locked_at.is_some_and(|t| t.elapsed() > ms(&LOCK_HOLD_MAX_MS)) {
+            logf!("claude login: no pair {} after the refresh notice: lock released", crate::keeper::dur_text(ms(&LOCK_HOLD_MAX_MS)));
             self.release();
         }
         // a pair with no refresh token is the router's own: this machine's claude can't have refreshed it, so there is
@@ -507,7 +529,7 @@ pub fn after_switch(l: &RouterLogin, _c: &Client) {
             }
         }
     }
-    util::sleep(RECHECK_AFTER);
+    util::sleep(ms(&RECHECK_AFTER_MS));
     if local_account() != want {
         match merge_account(&l.account) {
             Err(e) => logf!("claude login: ~/.claude.json: {e:#}"),
@@ -527,6 +549,9 @@ pub fn after_switch(l: &RouterLogin, _c: &Client) {
 
 /// the account Anthropic's profile endpoint names for a token → (uuid, email)
 pub fn profile_of(token: &str) -> Result<(String, String)> {
+    if let Some(p) = TEST_PROFILE.lock().ok().and_then(|g| g.clone()) {
+        return Ok(p);
+    }
     let auth = format!("Bearer {token}");
     let (st, b) = crate::https::get(
         OAUTH_PROFILE_URL,
@@ -601,7 +626,7 @@ pub fn enable_remote_control(old_bridge: &str) {
         logf!("claude login: no Remote Control before the switch: nothing to bring back");
         return;
     }
-    if !wait_until(RC_DROP_WAIT, || {
+    if !wait_until(ms(&RC_DROP_WAIT_MS), || {
         pane_text().contains(RC_CHANGED_TEXT) || live_bridge() != old_bridge
     }) {
         logf!("claude login: Remote Control is still up 1m30s after the switch: left as it is");
@@ -620,7 +645,7 @@ pub fn enable_remote_control(old_bridge: &str) {
         util::sleep(Duration::from_millis(300));
         let _ = send_keys(&["Enter"]);
     }
-    if !wait_until(RC_MENU_WAIT, || pane_text().contains(RC_ENABLE_TEXT)) {
+    if !wait_until(ms(&RC_MENU_WAIT_MS), || pane_text().contains(RC_ENABLE_TEXT)) {
         logf!("claude login: the /remote-control menu didn't show within 3m0s");
         return;
     }
@@ -644,7 +669,7 @@ pub fn wait_until(d: Duration, mut ok: impl FnMut() -> bool) -> bool {
         if Instant::now() > end {
             return false;
         }
-        util::sleep(SWITCH_POLL);
+        util::sleep(ms(&SWITCH_POLL_MS));
     }
 }
 

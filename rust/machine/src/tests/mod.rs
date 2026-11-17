@@ -17,3 +17,4 @@ pub mod watchdogs;
 pub mod restore;
 pub mod jarvis1import;
 pub mod apiproxy;
+pub mod claudelogin;

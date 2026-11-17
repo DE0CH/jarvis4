@@ -118,6 +118,20 @@ fn reset_seams() {
     *crate::deliver::TEST_CHANNEL
         .write()
         .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::claudelogin::TEST_STARTS.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::claudelogin::TEST_RUN_SYNC.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::claudelogin::TEST_PROFILE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    for (a, v) in [
+        (&crate::claudelogin::LOCK_HOLD_MAX_MS, 45_000),
+        (&crate::claudelogin::SWITCH_POLL_MS, 1000),
+        (&crate::claudelogin::RECHECK_AFTER_MS, 15_000),
+        (&crate::claudelogin::RC_DROP_WAIT_MS, 90_000),
+        (&crate::claudelogin::RC_MENU_WAIT_MS, 180_000),
+        (&crate::claudelogin::MARKER_POLL_MS, 2000),
+    ] {
+        a.store(v, std::sync::atomic::Ordering::SeqCst);
+    }
+    crate::claudelogin::CREDS_SYNC_ON.store(false, std::sync::atomic::Ordering::SeqCst);
     *crate::claudelogin::TEST_PANE
         .lock()
         .unwrap_or_else(|e| e.into_inner()) = None;
