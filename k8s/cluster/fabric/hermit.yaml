@@ -35,7 +35,7 @@ spec:
           restartPolicy: Always
           # hermit's container starts only once the volume is mounted (and keeps it: a bind made at its start holds
           # the FUSE mount; a later remount reaches it through HostToContainer)
-          startupProbe: { exec: { command: [sh, -c, 'mountpoint -q /jfs && test -d /jfs/ws'] }, periodSeconds: 2, failureThreshold: 150 }
+          startupProbe: { exec: { command: [sh, -c, 'grep -q " /jfs fuse" /proc/mounts && test -d /jfs/ws'] }, periodSeconds: 2, failureThreshold: 150 }
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -48,7 +48,8 @@ spec:
                 "$HERMIT_JUICEFS_META_URL" /jfs &
               pid=$!
               # the conversations' workspaces' folder (hermit makes ws/<id> in it, not it)
-              until mountpoint -q /jfs || ! kill -0 "$pid" 2>/dev/null; do sleep 1; done
+              # (the image has no mountpoint(1))
+              until grep -q " /jfs fuse" /proc/mounts || ! kill -0 "$pid" 2>/dev/null; do sleep 1; done
               mkdir -p /jfs/ws
               wait "$pid"
           env:
