@@ -186,8 +186,9 @@ Decisions (Deyao, 2026-11-17):
 - A thaw the hosts can't restore (a newer gVisor release than the image's, a lost image) falls back to what release
   gives: the files, a fresh sandbox, the transcript. Upgrades never wait on frozen sessions.
 - Frozen images are kept until the session is thawed or destroyed.
-- For fabric sessions, freeze and the time machine replace Jarvis 4's idle pause, scheduled wakeups and crons (a clean
-  cut); Fly and AWS sessions keep them.
+- Scheduled wakeups and crons stay as they are, for every session, fabric ones included (Deyao, 2026-11-17: more
+  options, and YYC AI keeps its existing logic): the time machine is one more way to wait, not a replacement. A
+  wakeup or cron due for a frozen session thaws it, as a message does.
 
 Known limits the tool's description states: frozen means frozen (a local build doesn't advance; the time machine is
 for waiting on something outside), connections to the outside reset at a thaw (another host, another address), and
