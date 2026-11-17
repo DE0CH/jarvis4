@@ -4,6 +4,8 @@
 //!
 //! Not ported here: `IdealKeys` (hash-to-curve, kernel/h2c), which only the kernel needs; it comes with the kernel.
 
+pub mod gv;
+pub mod h2c;
 pub mod perm;
 
 use jarvis_sig::{Doc, strict_json};
