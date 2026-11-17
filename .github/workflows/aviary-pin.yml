@@ -15,6 +15,9 @@ name: aviary-pin
 # already pinned and pins nothing.
 # `pin` then pushes to main with the pin deploy key (environment `release`), which starts images.yml (the session
 # image) and aviary.yml (hermit-jarvis). DE0CH/deyao-ai's chat-pin.yml pins pigeon and magpie of the same releases.
+# Started by aviary's release (its publish job dispatches this workflow: aviary repo variable PIN_DISPATCH, secret
+# PIN_DISPATCH_TOKEN = fine-grained token "aviary-pin-dispatch", Actions write on this repo only); the schedule is the
+# fallback, and GitHub runs it only every few hours under load.
 on:
   schedule: [{ cron: "*/15 * * * *" }]
   workflow_dispatch:
