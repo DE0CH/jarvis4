@@ -259,3 +259,41 @@ jobs:
           git commit -qam "images: pin $T${B:+ + session base $(echo "$B" | grep -o "base-sha-[0-9a-f]*")} [skip ci]"
           for i in 1 2 3 4 5; do git push -q origin HEAD:main && exit "$krc"; git pull -q --rebase origin main; done
           exit 1
+  # the fabric image's pin (docs/PLAN-fabric.md), apart from the pin job so a failed fabric build never holds the
+  # session image back: FABRIC_SESSION_IMAGE in the router's manifest (a fabric session's sources name it) with CI's
+  # signature for the phone (FABRIC_SESSION_IMAGE_SIG), and every manifest under k8s/cluster/fabric/ that names the
+  # image (the fabric hermit starts that digest). Nothing to do until the router's manifest has the line.
+  fabric-pin:
+    needs: [fabric, pin]
+    if: github.ref == 'refs/heads/main'
+    environment: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, ssh-key: "${{ secrets.PIN_DEPLOY_KEY }}" }
+      - name: pin the fabric image and sign it for the phone
+        env: { CI_IMAGE_KEY: "${{ secrets.CI_IMAGE_KEY }}" }
+        run: |
+          set -e
+          T="sha-${GITHUB_SHA::12}"
+          git fetch -q origin main && git reset -q --hard origin/main
+          RF=k8s/cluster/router/router.yaml
+          grep -q "name: FABRIC_SESSION_IMAGE," "$RF" || { echo "no FABRIC_SESSION_IMAGE in $RF: nothing to pin"; exit 0; }
+          F="$(infra/image-digest.sh "ghcr.io/de0ch/jarvis4-session-fabric:$T")"
+          # never over a newer pin
+          cur="$(grep -hoE 'jarvis4-session-fabric:sha-[0-9a-f]{12}' "$RF" | head -1 | grep -oE '[0-9a-f]{12}$' || true)"
+          if [ -n "$cur" ] && full="$(git rev-parse -q --verify "$cur^{commit}")" && [ "$full" != "$GITHUB_SHA" ] \
+             && git merge-base --is-ancestor "$GITHUB_SHA" "$full"; then echo "main already pins a newer fabric image ($cur)"; exit 0; fi
+          files="$RF $(grep -rlE 'ghcr.io/de0ch/jarvis4-session-fabric:' k8s/cluster/fabric 2>/dev/null || true)"
+          for f in $files; do
+            sed -i -E "s#ghcr.io/de0ch/jarvis4-session-fabric:(latest|sha-[0-9a-f]{12}(@sha256:[0-9a-f]{64})?)#$F#g" "$f"
+          done
+          k="$(mktemp)"; printf '%s\n' "$CI_IMAGE_KEY" > "$k"
+          SIG="$(printf '%s' "jarvis2-session-image $F" | openssl dgst -sha256 -sign "$k" | base64 -w0)"; rm -f "$k"
+          sed -i -E "s#(name: FABRIC_SESSION_IMAGE_SIG, value: \")[^\"]*#\1$SIG#" "$RF"
+          grep -q "FABRIC_SESSION_IMAGE_SIG, value: \"$SIG\"" "$RF" || { echo "$RF has no FABRIC_SESSION_IMAGE_SIG line"; exit 1; }
+          git diff --quiet && exit 0
+          git config user.name "jarvis4-ci"; git config user.email "ci@jarvis4.invalid"
+          git commit -qam "images: pin the fabric image $T [skip ci]"
+          for i in 1 2 3 4 5; do git push -q origin HEAD:main && exit 0; git pull -q --rebase origin main; done
+          exit 1
