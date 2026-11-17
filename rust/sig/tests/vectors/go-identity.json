@@ -1,0 +1,56 @@
+{
+  "root": "BFysjYj4E3/wibejLPZVWHk6CW501Jv6GzNPAqEXrBQo9r0A9yl5X49pizhb8SRW0HhgLtseI0vwZBd3aUu3db4=",
+  "roster": {
+    "payload": "{\"kind\":\"kernel-roster\",\"copy\":\"green\",\"members\":[{\"role\":\"merger\",\"signingKey\":\"BE6pWcWwi4mergwDCmtMUqh8ZeemeAPIZCdqqo4mWCNkbsI7UQ7I+9v+qkjwqx6iBBiDoHmp7LbCKOQzrARsL4Y=\",\"agreementKey\":\"BJ863ezehN6r83NtyJ+/FjN6OcIjEij8DaAi1dQxQlYuTqdh0ikF/uHRy5pQ7olwLJlqd7TgJe8YjysONGVwOyI=\"},{\"role\":\"mover\",\"signingKey\":\"BKMYlhmzFK9UUPKwo1ZT4jrdwqb/vXTHaKYOrBpV+M/lDXOnP6qbRX3ZvJbZlSTkdc6p45feAPAUtyyFaCUhrWA=\",\"agreementKey\":\"BO5KFSIDY+kDRuLGmkhElo4NvrlOJaAtY9aWR/cTISXYAzIAn12RUpgkiVh0fidq4ciqkiGQXQc/5kK/CscFSaM=\"},{\"role\":\"notary\",\"signingKey\":\"BPR/GOeNn96Zhzqi1RyVdUZ2zmA3mHlzZNxwBaIqqvEt6Z5eYOxRap8cN5kLxtKZWFUpSXGwCSkA3HRDV4uKcGc=\",\"agreementKey\":\"BLutOB/tqcQ9e40jJ+01KQnmE3CuF0R3j05PbljxAfGL28hBhaHaKMN+mAiNOGYlu/LFUeFajb3XOszmICbAF8c=\"},{\"role\":\"secrets\",\"signingKey\":\"BG9FBoSMobsjHOLlzk5kQQdZ6UcID/YJwN+2r+5slH3N1pvmvXZlDFt+6BV2A5/0jA+3byhJ25KO/yCc5jytORY=\",\"agreementKey\":\"BOPR68cfwfgC+VXh4znWdyyze13lvsvHzNcsSpSG/vi34LrD0fwOTiWKA/6679/HcoEljN/HuIW5PYY/9ITdpJw=\"}],\"retired\":[{\"role\":\"mover\",\"signingKey\":\"BESD0eYuVEWpHPXMpRtCpGPyHRyyI5n+hIFt8WX+Hyuz0oCiJtXtvYK38zSgpgf+6BIOI8M+4b8rlGooKfRY8SU=\",\"agreementKey\":\"BO3111hdejp7eHxyen/jtUEpsa9T1zoQ+oT/GoFeJ4PQhMBNmvWNswjGM0jjOBPIT+mFmp4jlYSezl5DcONOG3Q=\"},{\"role\":\"notary\",\"signingKey\":\"BM/uC1l3FAzWBFHRMkK79+EHDSoqkSf0uDEhh5ueHQrtH1K+7vg2qzNc7GEVcnRdG1VrpNJefazSeaD726RZjas=\",\"agreementKey\":\"BAjBQ3Vullgfyn+nkCnCnQkcHgx7mvydzbS91hxI3px1fiPbqzcl6mSi8f65vcqU+/hF4N+zRpiCgAnCdQux3bo=\"}],\"secretsBoot\":{\"role\":\"secrets\",\"signingKey\":\"BNwB+/tw7Z1OH/A0uHFn+Z8X3hhcEFJbYcOFRoRA4phpSr1vcM1i2Px5UsTfVPVuLx7IENBUSsQ2qO/Vg+0cAIY=\",\"agreementKey\":\"BP4f/O0ScmLXXIycWafJ3bnjN+jDU3xs1x3bUH6jpHT/dwkNfJOUoYx+YNzFN28s16ubL8kgpzHlqpn3f/6RYMg=\"}}",
+    "sig": "MEYCIQDh7HuksMv4Z9NAnTd3J70oJsFN28IaOV1fZh8JH+DSNwIhAK4iUgFL1P7cNcmgyrjzPRX+mkYUrVy5VoZuew7FKVVk"
+  },
+  "payload": "{\"kind\":\"kernel-roster\",\"copy\":\"green\",\"members\":[{\"role\":\"merger\",\"signingKey\":\"BE6pWcWwi4mergwDCmtMUqh8ZeemeAPIZCdqqo4mWCNkbsI7UQ7I+9v+qkjwqx6iBBiDoHmp7LbCKOQzrARsL4Y=\",\"agreementKey\":\"BJ863ezehN6r83NtyJ+/FjN6OcIjEij8DaAi1dQxQlYuTqdh0ikF/uHRy5pQ7olwLJlqd7TgJe8YjysONGVwOyI=\"},{\"role\":\"mover\",\"signingKey\":\"BKMYlhmzFK9UUPKwo1ZT4jrdwqb/vXTHaKYOrBpV+M/lDXOnP6qbRX3ZvJbZlSTkdc6p45feAPAUtyyFaCUhrWA=\",\"agreementKey\":\"BO5KFSIDY+kDRuLGmkhElo4NvrlOJaAtY9aWR/cTISXYAzIAn12RUpgkiVh0fidq4ciqkiGQXQc/5kK/CscFSaM=\"},{\"role\":\"notary\",\"signingKey\":\"BPR/GOeNn96Zhzqi1RyVdUZ2zmA3mHlzZNxwBaIqqvEt6Z5eYOxRap8cN5kLxtKZWFUpSXGwCSkA3HRDV4uKcGc=\",\"agreementKey\":\"BLutOB/tqcQ9e40jJ+01KQnmE3CuF0R3j05PbljxAfGL28hBhaHaKMN+mAiNOGYlu/LFUeFajb3XOszmICbAF8c=\"},{\"role\":\"secrets\",\"signingKey\":\"BG9FBoSMobsjHOLlzk5kQQdZ6UcID/YJwN+2r+5slH3N1pvmvXZlDFt+6BV2A5/0jA+3byhJ25KO/yCc5jytORY=\",\"agreementKey\":\"BOPR68cfwfgC+VXh4znWdyyze13lvsvHzNcsSpSG/vi34LrD0fwOTiWKA/6679/HcoEljN/HuIW5PYY/9ITdpJw=\"}],\"retired\":[{\"role\":\"mover\",\"signingKey\":\"BESD0eYuVEWpHPXMpRtCpGPyHRyyI5n+hIFt8WX+Hyuz0oCiJtXtvYK38zSgpgf+6BIOI8M+4b8rlGooKfRY8SU=\",\"agreementKey\":\"BO3111hdejp7eHxyen/jtUEpsa9T1zoQ+oT/GoFeJ4PQhMBNmvWNswjGM0jjOBPIT+mFmp4jlYSezl5DcONOG3Q=\"},{\"role\":\"notary\",\"signingKey\":\"BM/uC1l3FAzWBFHRMkK79+EHDSoqkSf0uDEhh5ueHQrtH1K+7vg2qzNc7GEVcnRdG1VrpNJefazSeaD726RZjas=\",\"agreementKey\":\"BAjBQ3Vullgfyn+nkCnCnQkcHgx7mvydzbS91hxI3px1fiPbqzcl6mSi8f65vcqU+/hF4N+zRpiCgAnCdQux3bo=\"}],\"secretsBoot\":{\"role\":\"secrets\",\"signingKey\":\"BNwB+/tw7Z1OH/A0uHFn+Z8X3hhcEFJbYcOFRoRA4phpSr1vcM1i2Px5UsTfVPVuLx7IENBUSsQ2qO/Vg+0cAIY=\",\"agreementKey\":\"BP4f/O0ScmLXXIycWafJ3bnjN+jDU3xs1x3bUH6jpHT/dwkNfJOUoYx+YNzFN28s16ubL8kgpzHlqpn3f/6RYMg=\"}}",
+  "unsorted": {
+    "kind": "",
+    "copy": "green",
+    "members": [
+      {
+        "role": "mover",
+        "signingKey": "BKMYlhmzFK9UUPKwo1ZT4jrdwqb/vXTHaKYOrBpV+M/lDXOnP6qbRX3ZvJbZlSTkdc6p45feAPAUtyyFaCUhrWA=",
+        "agreementKey": "BO5KFSIDY+kDRuLGmkhElo4NvrlOJaAtY9aWR/cTISXYAzIAn12RUpgkiVh0fidq4ciqkiGQXQc/5kK/CscFSaM="
+      },
+      {
+        "role": "secrets",
+        "signingKey": "BG9FBoSMobsjHOLlzk5kQQdZ6UcID/YJwN+2r+5slH3N1pvmvXZlDFt+6BV2A5/0jA+3byhJ25KO/yCc5jytORY=",
+        "agreementKey": "BOPR68cfwfgC+VXh4znWdyyze13lvsvHzNcsSpSG/vi34LrD0fwOTiWKA/6679/HcoEljN/HuIW5PYY/9ITdpJw="
+      },
+      {
+        "role": "notary",
+        "signingKey": "BPR/GOeNn96Zhzqi1RyVdUZ2zmA3mHlzZNxwBaIqqvEt6Z5eYOxRap8cN5kLxtKZWFUpSXGwCSkA3HRDV4uKcGc=",
+        "agreementKey": "BLutOB/tqcQ9e40jJ+01KQnmE3CuF0R3j05PbljxAfGL28hBhaHaKMN+mAiNOGYlu/LFUeFajb3XOszmICbAF8c="
+      },
+      {
+        "role": "merger",
+        "signingKey": "BE6pWcWwi4mergwDCmtMUqh8ZeemeAPIZCdqqo4mWCNkbsI7UQ7I+9v+qkjwqx6iBBiDoHmp7LbCKOQzrARsL4Y=",
+        "agreementKey": "BJ863ezehN6r83NtyJ+/FjN6OcIjEij8DaAi1dQxQlYuTqdh0ikF/uHRy5pQ7olwLJlqd7TgJe8YjysONGVwOyI="
+      }
+    ],
+    "retired": [
+      {
+        "role": "notary",
+        "signingKey": "BM/uC1l3FAzWBFHRMkK79+EHDSoqkSf0uDEhh5ueHQrtH1K+7vg2qzNc7GEVcnRdG1VrpNJefazSeaD726RZjas=",
+        "agreementKey": "BAjBQ3Vullgfyn+nkCnCnQkcHgx7mvydzbS91hxI3px1fiPbqzcl6mSi8f65vcqU+/hF4N+zRpiCgAnCdQux3bo="
+      },
+      {
+        "role": "mover",
+        "signingKey": "BESD0eYuVEWpHPXMpRtCpGPyHRyyI5n+hIFt8WX+Hyuz0oCiJtXtvYK38zSgpgf+6BIOI8M+4b8rlGooKfRY8SU=",
+        "agreementKey": "BO3111hdejp7eHxyen/jtUEpsa9T1zoQ+oT/GoFeJ4PQhMBNmvWNswjGM0jjOBPIT+mFmp4jlYSezl5DcONOG3Q="
+      }
+    ],
+    "secretsBoot": {
+      "role": "secrets",
+      "signingKey": "BNwB+/tw7Z1OH/A0uHFn+Z8X3hhcEFJbYcOFRoRA4phpSr1vcM1i2Px5UsTfVPVuLx7IENBUSsQ2qO/Vg+0cAIY=",
+      "agreementKey": "BP4f/O0ScmLXXIycWafJ3bnjN+jDU3xs1x3bUH6jpHT/dwkNfJOUoYx+YNzFN28s16ubL8kgpzHlqpn3f/6RYMg="
+    }
+  },
+  "phone": "BPbvPZx9XYSQOjPsCiYA6bmWVAt/4Gzbw53ogGP7wyQe16L1YuRFgh6RadAcvSP+nrIeRZpjgTZX7lV+SD5wqfE=",
+  "secrets": "BFnNvDzO2bMzDEQLEQXVeyup56HOcHWiVlysOugESxdRDucvgtWNV1alYHv/aSNzFpjmQuwwpcNYoQuWGPSiAaA=",
+  "storeKey": "BK6aj33jzFel2WVJ1EDAQkDkObS8FgMxnrMgnLkaognkhsm2eOt+7buiTjm0X/GJUdBMTAOTdSQhjHxNU3Ft46I=",
+  "plain": "a \u003cb\u003e \u0026 c \u2028\u2029 é",
+  "escaped": "\"a \\u003cb\\u003e \\u0026 c \\u2028\\u2029 é\""
+}
