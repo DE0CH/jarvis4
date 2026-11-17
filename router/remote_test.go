@@ -295,9 +295,25 @@ func TestAviaryRemote(t *testing.T) {
 		json.Unmarshal(w.Body.Bytes(), &out)
 		return w.Code, out
 	}
+	// before the machine names its conversation: the chat's front page
 	if code, out := get("/api/sessions/sAV/remote"); code != 200 || out["webUrl"] != chatURL || out["harness"] != "aviary" || out["token"] != nil || out["pairUrl"] != nil {
 		t.Fatalf("%d %v", code, out)
 	}
+	// once it does (the gateway's conversationId, the registry's sessionId): that conversation's page in the chat
+	const conv = "0b6f1c2e-6c1d-4c84-9a57-3f1e2d4c5b6a"
+	convURL := chatURL + "h/srv_conversations/workspace/wks_" + conv
+	r.st.Do(func(d *persisted) {
+		d.Sessions["sAV"].Live = &Liveness{Reg: &Registry{SessionID: conv}}
+	})
+	if code, out := get("/api/sessions/sAV/remote"); code != 200 || out["webUrl"] != convURL {
+		t.Fatalf("the remote opens the session's own conversation: %d %v", code, out)
+	}
+	// the placeholder before the gateway knows its conversation ("aviary") is no conversation
+	r.st.Do(func(d *persisted) { d.Sessions["sAV"].Live.Reg.SessionID = "aviary" })
+	if _, out := get("/api/sessions/sAV/remote"); out["webUrl"] != chatURL {
+		t.Fatalf("%v", out)
+	}
+	r.st.Do(func(d *persisted) { d.Sessions["sAV"].Live.Reg.SessionID = conv })
 	code, out := get("/api/remotes?harness=aviary")
 	ss := out["sessions"].([]any)
 	if code != 200 || len(ss) != 3 {
@@ -313,7 +329,7 @@ func TestAviaryRemote(t *testing.T) {
 	if byID["sAN"] != nil {
 		t.Fatalf("a new session not yet approved is not listed: %v", byID["sAN"])
 	}
-	if s := byID["sAV"]; s["webUrl"] != chatURL || s["model"] != "aviary/claude-opus-5-5" || s["error"] != nil {
+	if s := byID["sAV"]; s["webUrl"] != convURL || s["model"] != "aviary/claude-opus-5-5" || s["error"] != nil {
 		t.Fatalf("%v", s)
 	}
 	if s := byID["sAP"]; s["state"] != "paused" || s["webUrl"] != nil {

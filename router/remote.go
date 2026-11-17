@@ -10,7 +10,8 @@ package main
 //   dsh       DeepSeek Harness web (harness-dsh.sh): its web UI on the same origin; Cloudflare Access is its only
 //             gate (dsh-front.js hands dsh's launch token to a request Access admitted; nothing for the router to read)
 //   aviary    no front end of its own: its conversation is in Jarvis 4's chat web app at chat.deyaochen.com (aviary's
-//             pigeon and magpie, DE0CH/deyao-ai), so its remote is that address (nothing to read)
+//             pigeon and magpie, DE0CH/deyao-ai), so its remote is that conversation's page there (aviaryConvURL: the
+//             id from the machine's status, nothing to read)
 // The router reads those secrets on demand through a grant for holder "remote" (grants.go): its own key, so
 // Deyao can let the router read a session's remote without giving it the terminal. Never in /api/state.
 //
@@ -35,6 +36,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const remoteHolder = "remote"
@@ -49,8 +52,23 @@ func dshWebURL(id string) string { return "https://dsh.deyaochen.com/s/" + id + 
 
 func webOriginHarness(h string) bool { return h == "dsh" }
 
-// chatURL: where an aviary session's conversation is (Jarvis 4's chat web app; aviary/README.md)
+// chatURL: Jarvis 4's chat web app, where an aviary session's conversation is (aviary/README.md)
 const chatURL = "https://chat.deyaochen.com/"
+
+// aviaryConvURL: the session's own conversation in the chat. The machine reports its id (the gateway's conversationId,
+// the registry's sessionId); pigeon names its one host srv_conversations and a conversation's workspace wks_<id>
+// (DE0CH/aviary crates/pigeon/src/paseo/mapping.rs), the app's page for it is /h/<host>/workspace/<workspace>. Before
+// the machine names a conversation (the gateway's placeholder "aviary"), the chat's front page.
+func aviaryConvURL(reg *Registry) string {
+	if reg == nil {
+		return chatURL
+	}
+	id, err := uuid.Parse(reg.SessionID)
+	if err != nil {
+		return chatURL
+	}
+	return chatURL + "h/srv_conversations/workspace/wks_" + id.String()
+}
 
 // the commands the remote holder runs (bash -lc as the session user)
 const (
@@ -115,7 +133,14 @@ func parseRemote(harness, id, stdout string) RemoteInfo {
 // only an address: nothing to read)
 func (r *Router) RemoteInfo(s Session) RemoteInfo {
 	if s.Harness == "aviary" {
-		return RemoteInfo{WebURL: chatURL, Harness: s.Harness}
+		var reg *Registry
+		r.st.Do(func(d *persisted) {
+			if x := d.Sessions[s.ID]; x != nil && x.Live != nil && x.Live.Reg != nil {
+				c := *x.Live.Reg
+				reg = &c
+			}
+		})
+		return RemoteInfo{WebURL: aviaryConvURL(reg), Harness: s.Harness}
 	}
 	if s.Harness == "dsh" {
 		return RemoteInfo{WebURL: dshWebURL(s.ID), Harness: s.Harness}
