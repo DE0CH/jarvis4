@@ -67,8 +67,13 @@ func TestLiveDoc(t *testing.T) {
 		addSession(r, id, "started", "m"+id, false)
 		reg(id, "idle", 0, int64(i))
 	}
+	for i := 0; i < 10; i++ { // past liveMax: the oldest idle ones are left out
+		id := "y" + string(rune('a'+i))
+		addSession(r, id, "started", "m"+id, false)
+		reg(id, "idle", 0, int64(i))
+	}
 	doc := r.liveDoc(now)
-	if doc.Total != 27 || len(doc.Sessions) != liveMax {
+	if doc.Total != 37 || len(doc.Sessions) != liveMax {
 		t.Fatalf("total %d, %d sessions", doc.Total, len(doc.Sessions))
 	}
 	var order []string

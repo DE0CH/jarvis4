@@ -22,7 +22,7 @@ import (
 
 const (
 	livePushEvery = 5 * time.Second
-	liveMax       = 16 // the most the dashboard's biggest layout shows
+	liveMax       = 32 // the most the dashboard's biggest layout shows (its right display: two columns of 16; Deyao, 2026-11-17)
 )
 
 type liveSession struct {
