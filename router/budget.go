@@ -193,6 +193,17 @@ func volumeGone(state string) bool {
 	return state == "destroyed" || state == "pending_destroy" || state == "destroying"
 }
 
+// liveVolumes: the volumes Fly still keeps (and bills), the deleted ones left out
+func liveVolumes(vs []flyVolume) int {
+	n := 0
+	for _, v := range vs {
+		if !volumeGone(v.State) {
+			n++
+		}
+	}
+	return n
+}
+
 // hourlyMachineCost: $/hour while started in region (a stopped machine bills cents a month for its rootfs: ignored)
 func hourlyMachineCost(g *flyGuest, region string) float64 {
 	if g == nil {
@@ -462,8 +473,19 @@ func (r *Router) alsoOnFly(ms []flyMachine, vs []flyVolume) []flyOther {
 			out = append(out, flyOther{"machine", sessionsApp, m.ID, m.Name, m.State, m.Region, m.CreatedAt, detail})
 		}
 	})
+	var live map[string]bool // the machines sessions run on now: their volumes are the sessions'
+	r.st.Read(func(d *persisted) {
+		live = map[string]bool{}
+		for _, s := range d.Sessions {
+			if s.MachineID != "" {
+				live[s.MachineID] = true
+			}
+		}
+	})
 	for _, v := range vs {
-		if v.State == "destroyed" {
+		// deleted (pending_destroy: not billed) or a running session's own: not outside the sessions (2026-11-17: the
+		// app showed 185, 177 of them deleted and 8 the sessions')
+		if volumeGone(v.State) || live[v.AttachedMachineID] {
 			continue
 		}
 		at := " · not attached"
@@ -490,7 +512,7 @@ func (r *Router) budgetTick(fly flyReader, aws awsCoster, now time.Time, capUSD,
 		return budgetActions{}, nil, err
 	}
 	vs, verr := fly.Volumes()
-	view := map[string]any{"apps": 1, "app": sessionsApp, "machines": len(ms), "volumes": len(vs), "other": r.alsoOnFly(ms, vs), "error": nil, "checkedAt": now.UTC()}
+	view := map[string]any{"apps": 1, "app": sessionsApp, "machines": len(ms), "volumes": liveVolumes(vs), "other": r.alsoOnFly(ms, vs), "error": nil, "checkedAt": now.UTC()}
 	if verr != nil {
 		view["error"] = "volumes: " + verr.Error()
 	}
