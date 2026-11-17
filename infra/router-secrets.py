@@ -56,6 +56,12 @@ manifest so it restarts with the new Secret. SRC is `env:VAR` (default `env:KEY`
   --part postgres-app  postgres-app.enc.yaml, Secret jarvis4-db-router (basic-auth) in jarvis4-db — username=router and
                  password: the database owner, made at initdb (the same password is JARVIS4_DB_ROUTER_PASSWORD in the
                  infra store, for the router's own copy; docs/STATE.md)
+  --part router-fabric  router-fabric.enc.yaml, Secret router-secrets-fabric — FABRIC_HERMIT_TOOLS_TOKEN,
+                 FABRIC_HERMIT_MAGPIE_TOKEN (router/fabricrunner.go)
+  --part fabric  k8s/cluster/fabric/secrets/hermit.enc.yaml, Secret hermit in jarvis4-fabric — the fabric hermit's env
+                 (HERMIT_*: database, token keys, its callers' tokens, the fabric's TLS, the AWS scaler's key, JuiceFS)
+                 and the JuiceFS bucket for its sidecar (JFS_BUCKET, JFS_ACCESS_KEY, JFS_SECRET_KEY)
+  --part fabric-db-hermit / fabric-db-jfs  basic-auth Secrets (username, password) of fabric-db's two roles
 Only for secrets that can't reach a code push (Deyao, 2026-10-09); the pods get them as env (envFrom) or files. Prints
 names only, never a value."""
 import hashlib, json, os, re, subprocess, sys, tempfile, urllib.parse
@@ -68,7 +74,8 @@ BOXES = {  # box → (age recipient file, secrets dir, {part: manifest path unde
         "browserbase": RT, "devices": RT, "livepush": RT, "runners": RT, "alloy": None, "tunnel": None, "postgres": None, "postgres-app": None,
         "icloud-index": "services/icloud-index/icloud-index.yaml",
         "icloud-session": "services/icloud-index/icloud-index.yaml",
-        "db": RT, "objects": RT, "seal": RT, "wg-b": RT, "aws": RT, "wg-aws": RT}),
+        "db": RT, "objects": RT, "seal": RT, "wg-b": RT, "aws": RT, "wg-aws": RT,
+        "router-fabric": RT, "fabric": "fabric/hermit.yaml", "fabric-db-hermit": None, "fabric-db-jfs": None}),
 }
 RNS = "jarvis4-router"
 PARTS = {  # part → (file, Secret name, annotation, namespace)
@@ -100,7 +107,16 @@ PARTS |= {  # the services' parts live next to them (k8s/cluster/services/secret
     "icloud-session": ("icloud-session.enc.yaml", "icloud-index-session", "jarvis2/secrets-rev-icloud-session", SVC),
 }
 PART_DIRS = {p: "k8s/cluster/services/secrets" for p in ("icloud-index", "icloud-session")}
-SECRET_TYPES = {"postgres-app": "kubernetes.io/basic-auth"}  # CloudNativePG's initdb secret is basic-auth
+FNS = "jarvis4-fabric"
+PARTS |= {  # the fabric (docs/PLAN-fabric.md): its parts live in k8s/cluster/fabric/secrets, applied with that tree
+    "router-fabric": ("router-fabric.enc.yaml", "router-secrets-fabric", "jarvis2/secrets-rev-fabric", RNS),
+    "fabric": ("hermit.enc.yaml", "hermit", "jarvis2/secrets-rev-fabric", FNS),
+    "fabric-db-hermit": ("fabric-db-hermit.enc.yaml", "fabric-db-hermit", None, FNS),
+    "fabric-db-jfs": ("fabric-db-jfs.enc.yaml", "fabric-db-jfs", None, FNS),
+}
+PART_DIRS |= {p: "k8s/cluster/fabric/secrets" for p in ("fabric", "fabric-db-hermit", "fabric-db-jfs")}
+SECRET_TYPES = {"postgres-app": "kubernetes.io/basic-auth", "fabric-db-hermit": "kubernetes.io/basic-auth",
+                "fabric-db-jfs": "kubernetes.io/basic-auth"}  # CloudNativePG's initdb secret is basic-auth
 
 
 def main():

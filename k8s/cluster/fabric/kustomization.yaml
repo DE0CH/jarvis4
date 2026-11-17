@@ -6,6 +6,7 @@ resources:
   - namespace.yaml
   - db.yaml
   - hermit.yaml
+  - secrets
 images:
   # the aviary release (one commit for hermit and sandboxd: hermit.json fabric.sandboxd names the same release)
   - { name: hermit, newName: ghcr.io/de0ch/hermit, newTag: "ac8332ac4302" }
