@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -23,7 +24,7 @@ func TestRequestOutcomes(t *testing.T) {
 	grantReq := signedRequest(mine, "m1", "POST", "/m/api/requests/grant", []byte(`{"holder":"terminal","minutes":5,"explanation":"see it"}`))
 	d := Delivery{Kind: "request-outcome", Request: grantReq, Outcomes: []OutcomeItem{{Item: 0, Outcome: "denied", Ref: "q0a1"}}}
 	text, attested, err := deliveryText(d, keys)
-	if err != nil || !strings.HasPrefix(text, "[Inbox outcome] A request this session filed has been decided. DENIED: a grant letting \"terminal\" into this session for 5 min (Inbox q0a1).") {
+	if err != nil || !strings.HasPrefix(text, "DENIED: a grant letting \"terminal\" into this session for 5 min (Inbox q0a1).") {
 		t.Fatalf("%q %v", text, err)
 	}
 	// the same bytes router/outcomes.go outcomeAttested makes (TestOutcomeAttestedBytes there)
@@ -157,5 +158,43 @@ func TestRequestOutcomesKernel(t *testing.T) {
 	}
 	if s, err := outcomeResult(outcomeAsked{Intent: "repo/add", Repo: "DE0CH/x"}, OutcomeItem{Outcome: "approved", Ref: "q1"}, Cert{}); err != nil || !strings.Contains(s, "Jarvis's report") {
 		t.Fatalf("%q %v", s, err)
+	}
+}
+
+// a checked outcome becomes a file per item for the command that filed it, never a message (Deyao, 2026-11-17)
+func TestRecordOutcomeForTheCommand(t *testing.T) {
+	old := outcomesDir
+	outcomesDir = t.TempDir() + "/outcomes"
+	defer func() { outcomesDir = old }()
+	now := time.Unix(1794900000, 5)
+	d := Delivery{Kind: "request-outcome", Outcomes: []OutcomeItem{{Item: 0, Outcome: "approved", Ref: "q0a1"}, {Item: 1, Outcome: "denied", Ref: "q0a2"}}}
+	if err := recordOutcome(d, "the checked text", now); err != nil {
+		t.Fatal(err)
+	}
+	for ref, want := range map[string]string{"q0a1": "approved", "q0a2": "denied"} {
+		b, err := os.ReadFile(fmt.Sprintf("%s/%s.%d.json", outcomesDir, ref, now.UnixNano()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var o map[string]string
+		if json.Unmarshal(b, &o) != nil || o["ref"] != ref || o["outcome"] != want || o["text"] != "the checked text" {
+			t.Fatalf("%s: %s", ref, b)
+		}
+	}
+	if err := recordOutcome(Delivery{Outcomes: []OutcomeItem{{Ref: "../x"}}}, "t", now); err == nil {
+		t.Fatal("a ref that is no id")
+	}
+}
+
+// the filings whose outcome goes to the command that filed them, and those that stay messages
+func TestFiledByCommand(t *testing.T) {
+	for path, want := range map[string]bool{
+		"/m/api/requests/add-store": true, "/m/api/requests/batch": true, "/m/api/actions/requests/grant": true,
+		"/m/api/sessions": true, "/m/api/sessions/s1/wakeup": false, "/m/api/sessions/s1/crons": false,
+		"/m/api/sessions/s1/watches": false,
+	} {
+		if got := filedByCommand(Delivery{Request: &SignedRequest{Path: path}}); got != want {
+			t.Fatalf("%s: %v", path, got)
+		}
 	}
 }

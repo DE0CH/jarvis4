@@ -404,6 +404,10 @@ func deliver(c *client, d Delivery) (string, error) {
 		// Deyao's own words go into the Claude host's input box, typed as his prompt (harness-claude.sh types what
 		// harness-send queues), never as a Jarvis message
 		err = typeIntoHost(text)
+	} else if d.Kind == "request-outcome" && filedByCommand(d) {
+		// a request's outcome is the answer of the jarvis-request command that filed it (it blocks until one is
+		// recorded for its request), never a message into the conversation (Deyao, 2026-11-17)
+		err = recordOutcome(d, text, now)
 	} else {
 		err = sendToHarness(cert.Options.Harness, liveMode(cert), "jarvis", text)
 	}
