@@ -138,7 +138,12 @@ pub fn workers_hook() {
     if std::io::stdin().take(4 << 20).read_to_end(&mut b).is_err() {
         return;
     }
-    let Some(ev) = worker_event_of(&b) else {
+    notify(&b);
+}
+
+/// the hook's stdin, as a notification to the supervisor (nothing when there is nothing to tell or nobody listens)
+pub fn notify(b: &[u8]) {
+    let Some(ev) = worker_event_of(b) else {
         return;
     };
     let Ok(mut conn) = std::os::unix::net::UnixStream::connect(paths::workers_sock()) else {

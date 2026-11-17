@@ -33,6 +33,13 @@ impl HarnessLog {
         HarnessLog::new(Box::new(FileLog::new("harness")))
     }
 
+    /// tests: the last refill moved back by d
+    #[cfg(test)]
+    pub fn backdate(&self, d: std::time::Duration) {
+        let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        g.2 -= d;
+    }
+
     pub fn line(&self, s: &str) {
         if !HARNESS_LINE_TAG.is_match(s) {
             return;
