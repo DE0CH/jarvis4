@@ -1534,7 +1534,9 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      says; with one, it first finishes the pause (the final snapshot, the same one again if the machine took it, then
      the kill) and resumes from it, on the same tap. A kill the core refuses (403) leaves it failed with the error.
      *Kills* that fail on the way (502: Fly's API timing out; the core not answering) are tried again 4 times, 30 s
-     apart; refusals are final. *Destroy* never restores anything, so when the core refuses the snapshot claim it kills
+     apart; refusals are final. The same on a kernel line (`kernelKillUp`: until 2026-11-17 it retried only
+     not-destroyed, so one Fly reset, "fly inspect: … EOF", failed the pause of "Video editing session crash audit").
+     *Destroy* never restores anything, so when the core refuses the snapshot claim it kills
      without one: the core still destroys the machine, the router's own copy of the snapshot (checked against the
      machine's key when it arrived) is archived to the Storage Box as usual, and the record (`snapshotNote`,
      `archive.unverified`, `session.json` `snapshotUnverified`) says "from an earlier core, not verified by this core";

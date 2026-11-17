@@ -427,13 +427,24 @@ func (r *Router) kernelKillUp(machine string, snapshot map[string]any) (sig.Doc,
 	}
 	var d sig.Doc
 	var err error
+	transient := 0
 	for i := 0; ; i++ {
 		d, err = r.kernel.Doc("spawner", "/kill", in)
 		var ke *KernelError
-		if err == nil || !(errors.As(err, &ke) && ke.Reason == spawner.ReasonNotDestroyed) || i > 120 {
-			break
+		isKE := errors.As(err, &ke)
+		switch {
+		case err == nil:
+		case isKE && ke.Reason == spawner.ReasonNotDestroyed && i <= 120:
+			time.Sleep(kernelKillStep)
+			continue
+		// failed on the way (Fly reset one request: "fly inspect: … EOF", 2026-11-17): tried again like a core kill
+		case (!isKE || ke.Status >= 500) && transient < killTransientTries:
+			transient++
+			log.Printf("kernel kill %s: %v; trying again (%d of %d)", machine, err, transient, killTransientTries)
+			time.Sleep(killTransientStep)
+			continue
 		}
-		time.Sleep(kernelKillStep)
+		break
 	}
 	if err != nil {
 		return sig.Doc{}, err

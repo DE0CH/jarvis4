@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -926,5 +927,46 @@ func TestARestoringLineWhoseFirstMachineNeverBootsRestoresTheArchiveAgain(t *tes
 	}
 	if rec := rg.r.record(old.sid); len(rec.Restored) != 1 || rec.Restored[0].Session != nsid {
 		t.Fatalf("restored %+v", rec.Restored)
+	}
+}
+
+// failKills: the kernel client's first n spawner /kill calls answer 502 as the spawner did when Fly reset its inspect
+// (2026-11-17, "Video editing session crash audit": one EOF failed the pause)
+type failKills struct {
+	n    int
+	next http.RoundTripper
+}
+
+func (f *failKills) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method == "POST" && strings.HasSuffix(req.URL.Path, "/kill") && f.n > 0 {
+		f.n--
+		return &http.Response{StatusCode: 502, Body: io.NopCloser(strings.NewReader(`fly inspect: Get "https://api.machines.dev/v1/apps/x/machines/y": EOF`)),
+			Header: http.Header{}, Request: req}, nil
+	}
+	return f.next.RoundTrip(req)
+}
+
+// a kernel kill that fails on the way (Fly reset one request) is tried again like a core kill, and gives up after
+// as many tries
+func TestAKernelKillThatFailsOnTheWayIsTriedAgain(t *testing.T) {
+	fastKills(t)
+	rg, k, sid, m1 := lostRig(t)
+	ft := &failKills{n: killTransientTries, next: http.DefaultTransport}
+	rg.r.kernel.http = &http.Client{Transport: ft}
+	if _, err := rg.r.kernelKill(sid, m1.ID, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if ft.n != 0 || k.Fly.Machine(m1.ID).State != "destroyed" {
+		t.Fatalf("%d failures left, machine %s", ft.n, k.Fly.Machine(m1.ID).State)
+	}
+
+	rg2, k2, sid2, m2 := lostRig(t)
+	ft2 := &failKills{n: killTransientTries + 1, next: http.DefaultTransport}
+	rg2.r.kernel.http = &http.Client{Transport: ft2}
+	if _, err := rg2.r.kernelKill(sid2, m2.ID, false, false); err == nil || !strings.Contains(err.Error(), "HTTP 502") {
+		t.Fatalf("err %v", err)
+	}
+	if ft2.n != 0 || k2.Fly.Machine(m2.ID).State == "destroyed" {
+		t.Fatalf("%d failures left, machine %s", ft2.n, k2.Fly.Machine(m2.ID).State)
 	}
 }
