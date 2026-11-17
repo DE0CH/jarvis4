@@ -265,7 +265,9 @@ jobs:
   # image (the fabric hermit starts that digest). Nothing to do until the router's manifest has the line.
   fabric-pin:
     needs: [fabric, pin]
-    if: github.ref == 'refs/heads/main'
+    # also after a pin job that failed on the kernel's check (changed inputs, no Kernel-Release yet): it pushed the
+    # router and session pins before failing
+    if: always() && github.ref == 'refs/heads/main' && needs.fabric.result == 'success'
     environment: release
     runs-on: ubuntu-latest
     steps:
