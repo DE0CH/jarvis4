@@ -1,11 +1,11 @@
 [package]
-name = "jarvis-schedule"
+name = "jarvis-tools"
 version = "0.1.0"
 edition = "2024"
-description = "schedule-wakeup and schedule-cron: a Jarvis 4 session arms, lists and cancels its own router crons"
+description = "A Jarvis 4 session's own tools: schedule-wakeup, schedule-cron (its router crons) and retire-session"
 
 [[bin]]
-name = "jarvis-schedule"
+name = "jarvis-tools"
 path = "src/main.rs"
 
 [dependencies]

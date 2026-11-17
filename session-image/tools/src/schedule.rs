@@ -1,14 +1,13 @@
 //! schedule-wakeup and schedule-cron: a Jarvis 4 session arms, lists and cancels its own router crons
-//! (router/schedule.go, docs/API.md "Wakeups and crons"). One binary; the name it runs under picks the command
-//! (`schedule-wakeup`, `schedule-cron`, or `jarvis-schedule wakeup|cron …`).
+//! (router/schedule.go, docs/API.md "Wakeups and crons").
 //!
 //! Every wakeup repeats (Deyao, 2026-11-17): `schedule-wakeup` arms a router cron whose first firing is the given time
-//! and which then fires every period until cancelled. The calls go to `$JARVIS_URL/api/sessions/$SESSION_ID/crons`:
-//! the machine's local proxy signs each with the machine key and forwards it to the router (/m/api).
+//! and which then fires every period until cancelled. The calls go to `$JARVIS_URL/api/sessions/$SESSION_ID/crons`.
 //!
 //! Periods and delays are whole seconds: the session machine reads `everySeconds` from the signed request, and a
 //! fractional `1800.0` (the shell scripts' Python float) once made it refuse every run after the first.
 
+use crate::{call, session_url};
 use serde_json::{Map, Value, json};
 use std::process::ExitCode;
 
@@ -19,7 +18,7 @@ const MAX_EVERY: u64 = 90 * 24 * 60 * 60;
 
 /// What a command line asks the router for.
 #[derive(Debug, PartialEq)]
-enum Action {
+pub enum Action {
     List,
     Cancel(String),
     CancelAll,
@@ -48,7 +47,7 @@ fn secs(s: &str) -> Option<u64> {
     (total >= 1.0).then_some(total as u64)
 }
 
-fn wakeup_action(args: &[String]) -> Result<Action, String> {
+pub fn wakeup_action(args: &[String]) -> Result<Action, String> {
     match args.first().map(String::as_str) {
         Some("--list") | Some("--show") => return Ok(Action::List),
         Some("--cancel") => {
@@ -104,7 +103,7 @@ fn wakeup_action(args: &[String]) -> Result<Action, String> {
     Ok(Action::Arm(Value::Object(b)))
 }
 
-fn cron_action(args: &[String]) -> Result<Action, String> {
+pub fn cron_action(args: &[String]) -> Result<Action, String> {
     match args.first().map(String::as_str) {
         Some("--list") => return Ok(Action::List),
         Some("--cancel") => {
@@ -156,28 +155,11 @@ fn cron_action(args: &[String]) -> Result<Action, String> {
     Ok(Action::Arm(Value::Object(b)))
 }
 
-/// One call to the session's crons API; the body comes back whatever the status (as `curl -sS` printed it).
-fn call(method: &str, url: &str, body: Option<&Value>) -> Result<String, String> {
-    let req = ureq::request(method, url).set("Content-Type", "application/json");
-    let res = match body {
-        Some(b) => req.send_json(b),
-        None => req.call(),
-    };
-    match res {
-        Ok(r) | Err(ureq::Error::Status(_, r)) => r
-            .into_string()
-            .map_err(|e| format!("reading the answer: {e}")),
-        Err(e) => Err(format!("jarvis request failed: {e}")),
-    }
-}
-
-fn run(action: Action) -> Result<ExitCode, String> {
-    let base = std::env::var("JARVIS_URL").unwrap_or_default();
-    let sid = std::env::var("SESSION_ID").unwrap_or_default();
-    if base.is_empty() || sid.is_empty() {
-        return Err("not a Jarvis 4 session (no JARVIS_URL/SESSION_ID) — on the Mac / a web pod use CronCreate/ScheduleWakeup".into());
-    }
-    let url = format!("{}/api/sessions/{sid}/crons", base.trim_end_matches('/'));
+pub fn run(action: Action) -> Result<ExitCode, String> {
+    let url = session_url(
+        "crons",
+        "on the Mac / a web pod use CronCreate/ScheduleWakeup",
+    )?;
     match action {
         Action::List => println!("{}", call("GET", &url, None)?),
         Action::Cancel(n) => println!("{}", call("DELETE", &format!("{url}/{n}"), None)?),
@@ -200,38 +182,6 @@ fn run(action: Action) -> Result<ExitCode, String> {
         }
     }
     Ok(ExitCode::SUCCESS)
-}
-
-fn main() -> ExitCode {
-    let mut args: Vec<String> = std::env::args().collect();
-    let argv0 = args.remove(0);
-    let mut cmd = std::path::Path::new(&argv0)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("")
-        .to_string();
-    if cmd == "jarvis-schedule" {
-        cmd = if args.is_empty() {
-            String::new()
-        } else {
-            format!("schedule-{}", args.remove(0))
-        };
-    }
-    let action = match cmd.as_str() {
-        "schedule-wakeup" => wakeup_action(&args),
-        "schedule-cron" => cron_action(&args),
-        _ => Err(
-            "usage: jarvis-schedule wakeup|cron … (or run it as schedule-wakeup / schedule-cron)"
-                .into(),
-        ),
-    };
-    match action.and_then(run) {
-        Ok(code) => code,
-        Err(e) => {
-            eprintln!("ERROR: {e}");
-            ExitCode::FAILURE
-        }
-    }
 }
 
 #[cfg(test)]
