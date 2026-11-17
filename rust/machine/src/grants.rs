@@ -41,7 +41,7 @@ pub struct ExecRequest {
     /// unix seconds
     pub at: i64,
     /// only a phone grant may allow this request (raising the session to bypass)
-    #[serde(rename = "phoneOnly")]
+    #[serde(rename = "phoneOnly", skip_serializing_if = "std::ops::Not::not")]
     pub phone_only: bool,
 }
 
