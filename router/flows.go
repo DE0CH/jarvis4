@@ -303,6 +303,19 @@ func flyMachineLimit(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "machine limit")
 }
 
+// flyLimitText: Fly's org machine limit as a known error (Deyao, 2026-11-17: "this kind of error should be a known
+// error … identify this as out of limit on the fly"): said in these words wherever it surfaces (a failed start, a
+// wakeup's DM, a missed run), never as Fly's raw 422. It keeps "machine limit", so flyMachineLimit still matches it.
+const flyLimitText = "Fly's machine limit is reached: the Fly org already has as many machines as Fly allows it, so no new one starts until another session pauses or Fly raises the limit"
+
+// knownError: an error as Deyao reads it: the known text for Fly's machine limit, else the error itself (trimmed)
+func knownError(err error) string {
+	if flyMachineLimit(err) {
+		return flyLimitText
+	}
+	return trimTo(err.Error(), 300)
+}
+
 // killUntilDestroyed: the core's kill (one Fly destroy) again until Fly reports the machine destroyed (409 before).
 // A core from before R2 waited inside its kill. A kill that failed on the way (Fly's API timing out, 502, or the core
 // not answering) is tried again too, a few times over a few minutes: on 2026-10-15 one Fly destroy timeout left
@@ -376,6 +389,11 @@ func (r *Router) startAndCertify(sid string, approval *Doc) {
 		})
 	}
 	if err != nil {
+		if flyMachineLimit(err) {
+			log.Printf("start %s: %v", sid, err)
+			fail("start: " + flyLimitText)
+			return
+		}
 		fail("start: " + err.Error())
 		return
 	}

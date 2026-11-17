@@ -864,16 +864,25 @@ func (r *Router) scheduleTick(now time.Time) {
 				log.Printf("[schedule] %s: %v — next tick", key, err)
 				return
 			}
+			again := ""
+			if it.kind == "c" {
+				again = " It is marked missed on the session's Schedules page: Run now delivers it."
+			}
+			// Fly's org machine limit is a known error (Deyao, 2026-11-17): skipped and told at once, in its own
+			// words; retrying in minutes only fails again, and Run now is there once a machine is free
+			if flyMachineLimit(err) {
+				log.Printf("[schedule] %s: %v — skipped at once", key, err)
+				schedRun.forget(key)
+				r.dropFailed(it.sid, it.kind, it.name, it.armedAt, err)
+				r.DM(fmt.Sprintf("%s could not be delivered: %s.%s", what, flyLimitText, again))
+				return
+			}
 			drop := schedRun.failed(key, time.Now())
 			log.Printf("[schedule] %s failed (drop=%v): %v", key, drop, err)
 			switch {
 			case drop:
 				r.dropFailed(it.sid, it.kind, it.name, it.armedAt, err)
-				again := ""
-				if it.kind == "c" {
-					again = " It is marked missed on the session's Schedules page: Run now delivers it."
-				}
-				r.DM(fmt.Sprintf("%s could not be delivered after %d attempts: %s.%s", what, scheduleMaxAttempt, trimTo(err.Error(), 300), again))
+				r.DM(fmt.Sprintf("%s could not be delivered after %d attempts: %s.%s", what, scheduleMaxAttempt, knownError(err), again))
 			}
 		}()
 	}
@@ -894,7 +903,7 @@ func (r *Router) dropFailed(sid, kind, name string, armedAt int64, cause error) 
 			}
 		case "c":
 			if c := s.Crons[name]; c != nil && c.ArmedAt == armedAt {
-				c.Missed = &Missed{At: time.Now().UnixMilli(), Run: c.Runs + 1, Error: trimTo(cause.Error(), 300)}
+				c.Missed = &Missed{At: time.Now().UnixMilli(), Run: c.Runs + 1, Error: knownError(cause)}
 				if next, ok := advanceCron(c, time.Now()); ok {
 					c.NextAt = next
 				} else {
@@ -1083,11 +1092,11 @@ func (r *Router) RunNow(sid, kind, name string) error {
 			if kind == "c" {
 				r.st.Do(func(d *persisted) {
 					if s := d.Schedules[sid]; s != nil && s.Crons[name] != nil && s.Crons[name].ArmedAt == armedAt {
-						s.Crons[name].Missed = &Missed{At: time.Now().UnixMilli(), Run: run, Error: trimTo(err.Error(), 300)}
+						s.Crons[name].Missed = &Missed{At: time.Now().UnixMilli(), Run: run, Error: knownError(err)}
 					}
 				})
 			}
-			r.DM(fmt.Sprintf("Run now: %s could not be delivered: %s", what, trimTo(err.Error(), 300)))
+			r.DM(fmt.Sprintf("Run now: %s could not be delivered: %s", what, knownError(err)))
 			return
 		}
 		log.Printf("[schedule] %s: Run now delivered", key)

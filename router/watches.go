@@ -364,7 +364,7 @@ func (r *Router) deliverWatch(sid, name string, armedAt int64, key string) {
 	log.Printf("[watch] %s %q delivery failed (drop=%v): %v", sid, name, drop, err)
 	r.st.Do(func(d *persisted) {
 		if s := d.Schedules[sid]; s != nil && s.Watches[name] != nil && s.Watches[name].ArmedAt == armedAt {
-			s.Watches[name].LastError = trimTo("delivery: "+err.Error(), 300)
+			s.Watches[name].LastError = "delivery: " + knownError(err)
 		}
 	})
 	if drop {
@@ -379,7 +379,7 @@ func (r *Router) deliverWatch(sid, name string, armedAt int64, key string) {
 				label = sessionTitle(*s)
 			}
 		})
-		r.DM(fmt.Sprintf("Watch “%s” of session “%s” (%s) could not be delivered after %d attempts: %s", name, label, w.Outcome, scheduleMaxAttempt, trimTo(err.Error(), 300)))
+		r.DM(fmt.Sprintf("Watch “%s” of session “%s” (%s) could not be delivered after %d attempts: %s", name, label, w.Outcome, scheduleMaxAttempt, knownError(err)))
 	}
 }
 

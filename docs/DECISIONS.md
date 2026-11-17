@@ -3115,3 +3115,12 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      (nothing the machine can check tells Deyao's press from a router replay without a Face ID per press); keeping a
      failed one-shot wakeup as missed (they are only armed by images from before every wakeup became a cron, and a
      kept past-due wakeup would hold the session from auto-pause).
+     **Fly's machine limit is a known error** (Deyao, same day: "the error messages should say it, and it shouldn't
+     tell me after five failed attempts, but identify this as out of limit on the fly"). Fly's 422 "Your organization
+     has reached its machine limit" is recognised by its text (`flows.go` `flyMachineLimit`; the kernel's spawner
+     passes it on as a plain "fly" refusal, and the router reads it without a kernel change): a start fails at once with
+     `flyLimitText` ("Fly's machine limit is reached: …") instead of the kernel spawn's retries or Fly's raw JSON; a
+     wakeup or cron firing that meets it is skipped on the first failure (no back-off, no 5 attempts), a cron's run
+     marked missed with that text and a DM sent at once; the 5-attempt DMs, a missed run's reason, a watch's last
+     error and a failed Run now all say it in those words (`knownError`). A core line's start still waits out the limit
+     up to 3 h first (`machineLimitWait`), as before.

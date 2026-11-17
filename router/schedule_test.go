@@ -345,25 +345,26 @@ func TestAutopilotVetoDoesNotDeadlock(t *testing.T) {
 func TestCronSkippedIsMissedThenRunNow(t *testing.T) {
 	r := newTestRouter(t)
 	dms := captureDM(t)
-	f := &fakeDelivery{err: errors.New(`Fly POST /machines -> 422: "Your organization has reached its machine limit"`)}
+	f := &fakeDelivery{err: errors.New(`the session didn't start (state "failed" start: kernel spawner: HTTP 502 fly create: POST /machines: HTTP 422 {"error":"Your organization has reached its machine limit. Please contact billing@fly.io"})`)}
 	f.install(t)
 	addSession(r, "s6", "paused", "", false)
 	r.ArmCron("s6", &Cron{Name: "check", Prompt: "do", Every: 3600, TZ: "UTC", NextAt: time.Now().Add(-time.Minute).UnixMilli(), ArmedAt: 1, Signed: signed("check")})
-	at := time.Now()
-	for i := 0; i < scheduleMaxAttempt; i++ {
-		r.scheduleTick(at)
-		waitIdle(t)
-		at = at.Add(9 * time.Minute)
-	}
+	// Fly's machine limit is a known error: the first failure skips the run, marks it missed in its own words and DMs
+	// at once (Deyao, 2026-11-17: "it shouldn't tell me after five failed attempts")
+	r.scheduleTick(time.Now())
+	waitIdle(t)
 	cs, _ := r.ListCrons("s6")
-	if len(cs) != 1 || cs[0].Missed == nil || cs[0].Missed.Run != 1 || !strings.Contains(cs[0].Missed.Error, "machine limit") || cs[0].Runs != 0 {
-		t.Fatalf("not marked missed: %+v", cs)
+	if len(cs) != 1 || cs[0].Missed == nil || cs[0].Missed.Run != 1 || cs[0].Missed.Error != flyLimitText || cs[0].Runs != 0 || cs[0].NextAt <= time.Now().UnixMilli() {
+		t.Fatalf("not marked missed at once: %+v", cs)
 	}
 	if v := cronView(cs[0]); v["missed"] == nil {
 		t.Fatalf("view without missed: %v", v)
 	}
-	if len(dms()) != 1 || !strings.Contains(dms()[0], "Run now") {
+	if len(dms()) != 1 || !strings.Contains(dms()[0], "Fly's machine limit is reached") || !strings.Contains(dms()[0], "Run now") || strings.Contains(dms()[0], "attempts") || strings.Contains(dms()[0], "422") {
 		t.Fatalf("dms %q", dms())
+	}
+	if len(f.got()) != 0 {
+		t.Fatalf("delivered %q", f.got())
 	}
 
 	f.mu.Lock()
@@ -513,5 +514,18 @@ func TestChatScheduleCountsAsArmed(t *testing.T) {
 	}
 	if err := r.SetChatSchedule("nope", &at, now); !errors.Is(err, errNoSession) {
 		t.Fatalf("unknown session: %v", err)
+	}
+}
+
+// knownError: Fly's machine limit in its own words, anything else as it is
+func TestKnownErrorFlyLimit(t *testing.T) {
+	if got := knownError(errors.New(`start: kernel spawner: HTTP 502 fly create: POST /machines: HTTP 422 {"error":"Your organization has reached its machine limit. Please contact billing@fly.io"}`)); got != flyLimitText {
+		t.Fatal(got)
+	}
+	if !flyMachineLimit(errors.New("start: " + flyLimitText)) {
+		t.Fatal("the known text no longer reads as the machine limit")
+	}
+	if got := knownError(errors.New("boom")); got != "boom" {
+		t.Fatal(got)
 	}
 }

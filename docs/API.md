@@ -781,7 +781,9 @@ session and ends with it.
 | `PUT /api/sessions/:id/chat-schedule` | hermit-jarvis only in practice: `{nextAt: RFC 3339 or null}` → `{ok}`. An aviary session's wakeups are magpie's schedules (Deyao, 2026-11-17; `ChatSchedule`): magpie fires them and hermit-jarvis resumes the session; the router never fires one, but counts it as armed (a paused session keeps its runners, the session's retire answers 409 `pending`, auto-pause leaves it running within 10 min of it) and shows `chatScheduleIso` in the session's view. 400 for a session that is not aviary. |
 
 Delivery failures back off and, after 5 attempts, drop a wakeup (a cron skips that occurrence and marks it
-`missed: {at, atIso, run, error}` in its view until a later run is delivered) with a DM. A message
+`missed: {at, atIso, run, error}` in its view until a later run is delivered) with a DM. Fly's org machine limit is a known
+error (DECISIONS 267): the first failure that meets it skips the run (marked missed, error "Fly's machine limit is
+reached: …") and DMs at once, without the back-off. A message
 held for Deyao counts as handed over: the wakeup is done (the cron advances), and the message queue delivers it once
 approved or tells the session (an Inbox outcome of the request that armed it) when it is denied, lapses or fails.
 

@@ -256,6 +256,13 @@ func (r *Router) kernelSpawn(sid string) {
 		}
 		// Fly's host for the volume was full (the spawner deleted that volume: a new spawn is a new volume, on another
 		// host), Fly failed, or the answer was lost (the machine it made, if any, is found and adopted or destroyed)
+		// Fly's org machine limit is known, not a hiccup (Deyao, 2026-11-17): said at once in its own words, no
+		// retries; a wakeup's firing marks its run missed and Run now delivers it once a machine is free (schedule.go)
+		if flyMachineLimit(err) {
+			log.Printf("[kernel] spawn for %s: %v", sid, err)
+			fail("start: " + flyLimitText)
+			return
+		}
 		again := !isKE || ke.Reason == spawner.ReasonHostFull || ke.Reason == spawner.ReasonFly || ke.Reason == spawner.ReasonAWS
 		if !again || try >= kernelSpawnTries {
 			fail("start: " + err.Error())
