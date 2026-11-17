@@ -297,6 +297,8 @@ func parseRegistry(raw string) *Registry {
 		AuthFailed: failed[sid], CredsExpiresAt: credsExp, SessionsInside: len(entries),
 		OneShotDone: oneShotDone, Refusals: refusals, Workers: parseWorkers(workersPart, sid),
 		AccountSection: hasAccount, AccountProof: proof, Harness: parseHarness(harnessPart),
-		LastHumanAt: parseHuman(humanPart)[sid], HumanSection: hasHuman,
+		// the aviary harness's transcripts never mark a person's prompt (its messages come through the supervisor's
+		// stdin with no origin): the machine knows none, so the session keeps the hour (autopilot.go idlePauseFor)
+		LastHumanAt: parseHuman(humanPart)[sid], HumanSection: hasHuman && str(host, "harness") != "aviary",
 	}
 }

@@ -1,0 +1,370 @@
+//! What the ported tests share: the one lock, a fresh HOME and machine directory, test keys, a fake router that checks
+//! each request's machine signature (apiproxy_test.go fakeRouter).
+
+use crate::client::Client;
+use crate::crypto::{Keys, SignedDoc, sha256_hex};
+use crate::grants::{Exec, ExecRequest};
+use crate::{env, gojson, paths, rt};
+use axum::body::Body;
+use axum::extract::Request;
+use axum::http::StatusCode;
+use axum::response::Response;
+use jarvis_sig::Signer;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, MutexGuard};
+
+static LOCK: Mutex<()> = Mutex::new(());
+
+/// one test at a time, with a fresh HOME (env HOME) and machine directory; everything reset when it ends
+pub struct TestEnv {
+    _g: MutexGuard<'static, ()>,
+    pub root: PathBuf,
+    pub home: PathBuf,
+}
+
+static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn tempdir() -> PathBuf {
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let p = std::env::temp_dir().join(format!("jm-test-{}-{n}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&p);
+    std::fs::create_dir_all(&p).unwrap();
+    p
+}
+
+impl TestEnv {
+    pub fn new() -> TestEnv {
+        let g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_seams();
+        let root = tempdir();
+        let (home, dir) = (root.join("home"), root.join("run"));
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        paths::set_dir(&dir);
+        env::set("HOME", Some(home.to_str().unwrap()));
+        // never this machine's own identity: code gated on it acts on the real session (a freeze is kill(-1, STOP))
+        for k in [
+            "FLY_MACHINE_ID",
+            "JARVIS2_MACHINE_ID",
+            "JARVIS2_RUNNER",
+            "JARVIS2_URL",
+            "JARVIS2_CORE_KEY",
+        ] {
+            env::set(k, None);
+        }
+        TestEnv { _g: g, root, home }
+    }
+
+    /// the machine's private key on disk (the client signs with it)
+    pub fn machine_key(&self) -> Keys {
+        let k = Keys::generate();
+        std::fs::write(paths::priv_path(), k.private_json()).unwrap();
+        std::fs::write(paths::keys_path(), k.public_json()).unwrap();
+        k
+    }
+}
+
+impl Drop for TestEnv {
+    fn drop(&mut self) {
+        reset_seams();
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+fn reset_seams() {
+    env::reset();
+    for k in [
+        "FLY_MACHINE_ID",
+        "JARVIS2_MACHINE_ID",
+        "JARVIS2_RUNNER",
+        "JARVIS2_URL",
+        "JARVIS2_CORE_KEY",
+    ] {
+        env::set(k, None);
+    }
+    crate::snapdirect::DIRECT_TRIES.store(4, std::sync::atomic::Ordering::SeqCst);
+    crate::snapdirect::DIRECT_BACKOFF_MS.store(2000, std::sync::atomic::Ordering::SeqCst);
+    crate::snapdirect::RANGE_SIZE.store(16 << 20, std::sync::atomic::Ordering::SeqCst);
+    *crate::supervisor::TEST_FREEZE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::snapstream::TEST_CERT_FILE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::grants::TEST_CERT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::outcomes::TEST_CORE_KEY
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::apiproxy::TEST_CORE_KEY
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::snapshot::TEST_BOOTED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::memory::TEST_SIGNALS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::stall::TEST_SHELL_JOBS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::deliver::TEST_CHANNEL
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::claudelogin::TEST_STARTS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::claudelogin::TEST_RUN_SYNC
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::claudelogin::TEST_PROFILE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    for (a, v) in [
+        (&crate::claudelogin::LOCK_HOLD_MAX_MS, 45_000),
+        (&crate::claudelogin::SWITCH_POLL_MS, 1000),
+        (&crate::claudelogin::RECHECK_AFTER_MS, 15_000),
+        (&crate::claudelogin::RC_DROP_WAIT_MS, 90_000),
+        (&crate::claudelogin::RC_MENU_WAIT_MS, 180_000),
+        (&crate::claudelogin::MARKER_POLL_MS, 2000),
+    ] {
+        a.store(v, std::sync::atomic::Ordering::SeqCst);
+    }
+    crate::claudelogin::CREDS_SYNC_ON.store(false, std::sync::atomic::Ordering::SeqCst);
+    crate::kernelboot::set_refresh_for_test(None);
+    crate::livesync::reset_live_syncer();
+    *crate::supervisor::TEST_KEEPER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::keeper::TEST_HARNESS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    crate::kernelboot::KERNEL_TRUST_EVERY_MS.store(10_000, std::sync::atomic::Ordering::SeqCst);
+    *crate::supervisor::TEST_TREE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    crate::session::TEST_PRIVILEGED.store(0, std::sync::atomic::Ordering::SeqCst);
+    crate::supervisorlog::SUPERVISOR_LOG_ROLL.store(2 << 20, std::sync::atomic::Ordering::SeqCst);
+    *crate::volume::TEST_VOLUME
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    crate::boot::PULL_TRIES.store(300, std::sync::atomic::Ordering::SeqCst);
+    crate::boot::PULL_WAIT_MS.store(2000, std::sync::atomic::Ordering::SeqCst);
+    crate::boot::BOOT_REPORT_WAIT_MS.store(2000, std::sync::atomic::Ordering::SeqCst);
+    *crate::apptitle::TEST_CODE_SESSIONS_URL
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    crate::restore::CHANGES_TIMEOUT_MS.store(60_000, std::sync::atomic::Ordering::SeqCst);
+    *crate::restore::CHANGES_SCRIPT
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::claudelogin::TEST_PANE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::claudelogin::TEST_KEYS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    crate::claudelogin::RC_UP_WAIT_MS.store(90_000, std::sync::atomic::Ordering::SeqCst);
+    crate::rcwatch::RC_STEP_WAIT_MS.store(30_000, std::sync::atomic::Ordering::SeqCst);
+    *crate::deliver::PREDECESSOR_KEY
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = String::new();
+    crate::deliver::RESTORED_ARCHIVE.store(false, std::sync::atomic::Ordering::SeqCst);
+    crate::snapshot::FROZEN.store(false, std::sync::atomic::Ordering::SeqCst);
+    crate::snapshot::FULL_SNAPSHOT.store(false, std::sync::atomic::Ordering::SeqCst);
+    *crate::snapstream::SIGNED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = Default::default();
+    *crate::memory::PROC_ROOT
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::stall::CLAUDE_SESSIONS
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::pressure::GUARD_LOG_PATH
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *paths::PREDECESSOR_TMP
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::task::TASKS_ROOT
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *paths::TEST_CLAUDE_HOME
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::keeper::TEST_KEEPER_DIR
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::supervisorlog::TEST_LOG
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    crate::output::SHIP_FILE_CAP.store(32 << 20, std::sync::atomic::Ordering::SeqCst);
+    crate::snapshot::PROGRESS_POST_EVERY_MS.store(3000, std::sync::atomic::Ordering::SeqCst);
+    crate::snapshot::PROGRESS_LOG_EVERY_MS.store(10_000, std::sync::atomic::Ordering::SeqCst);
+    crate::secrets::HELD.set_for_test(Default::default());
+}
+
+/// a test key pair (grants_test.go tkey)
+pub struct Tkey(pub Signer);
+
+pub fn new_key() -> Tkey {
+    Tkey(Signer::generate())
+}
+
+impl Tkey {
+    pub fn public(&self) -> String {
+        self.0.public_key()
+    }
+
+    /// v marshalled (as Go's json.Marshal) and signed
+    pub fn doc<T: serde::Serialize>(&self, v: &T) -> SignedDoc {
+        let b = gojson::marshal(v);
+        SignedDoc {
+            sig: self.0.sign(b.as_bytes()),
+            payload: b,
+        }
+    }
+
+    pub fn req(&self, r: &ExecRequest) -> Exec {
+        let b = gojson::marshal(r);
+        Exec {
+            sig: self.0.sign(b.as_bytes()),
+            request: b,
+            grant: None,
+        }
+    }
+}
+
+/// what the fake router's handler gets
+#[derive(Debug, Clone)]
+pub struct Req {
+    pub method: String,
+    pub path: String,
+    pub query: String,
+    pub headers: axum::http::HeaderMap,
+    pub body: Vec<u8>,
+}
+
+/// what it answers
+pub struct Ans {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+pub fn ans(status: u16, body: impl Into<Vec<u8>>) -> Ans {
+    Ans {
+        status,
+        headers: vec![],
+        body: body.into(),
+    }
+}
+
+pub fn ok_json(v: serde_json::Value) -> Ans {
+    ans(200, gojson::marshal(&v))
+}
+
+type Handler = Arc<dyn Fn(Req) -> Ans + Send + Sync>;
+
+/// A router on 127.0.0.1 that answers 401 unless the request carries machine m1's signature by `key` over its method,
+/// decoded path, time and body; the client the tests use against it
+pub struct FakeRouter {
+    pub url: String,
+    handle: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for FakeRouter {
+    fn drop(&mut self) {
+        self.handle.abort();
+    }
+}
+
+impl FakeRouter {
+    /// a server that answers unsigned requests too (a bucket's presigned URLs beside the router's routes): the handler
+    /// sees whether the machine's signature checked in the "X-Checked" header
+    pub fn open(key: &str, h: impl Fn(Req) -> Ans + Send + Sync + 'static) -> FakeRouter {
+        Self::serve(key, true, Arc::new(h))
+    }
+
+    pub fn new(key: &str, h: impl Fn(Req) -> Ans + Send + Sync + 'static) -> FakeRouter {
+        Self::serve(key, false, Arc::new(h))
+    }
+
+    fn serve(key: &str, open: bool, h: Handler) -> FakeRouter {
+        let key = key.to_string();
+        rt::block_on(async move {
+            let ln = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}", ln.local_addr().unwrap());
+            let app = axum::Router::new().fallback(move |req: Request| {
+                let (h, key) = (h.clone(), key.clone());
+                async move {
+                    let (parts, body) = req.into_parts();
+                    let body = axum::body::to_bytes(body, 1 << 30).await.unwrap().to_vec();
+                    let path = crate::util::path_unescape(parts.uri.path());
+                    let t = parts
+                        .headers
+                        .get("X-Time")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("");
+                    let sig = parts
+                        .headers
+                        .get("X-Sig")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("");
+                    let me = parts
+                        .headers
+                        .get("X-Machine")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("");
+                    let sum = if sig.is_empty() {
+                        String::new()
+                    } else {
+                        sha256_hex(&body)
+                    };
+                    let msg = format!("{} {} {t} {sum}", parts.method, path);
+                    let stream_msg = format!("{} {} {t} stream", parts.method, path);
+                    let good = me == "m1"
+                        && (jarvis_sig::verify(&key, msg.as_bytes(), sig)
+                            || jarvis_sig::verify(&key, stream_msg.as_bytes(), sig));
+                    if !good && !open {
+                        let mut r = Response::new(Body::empty());
+                        *r.status_mut() = StatusCode::UNAUTHORIZED;
+                        return r;
+                    }
+                    let mut headers = parts.headers.clone();
+                    if good {
+                        headers.insert("X-Checked", axum::http::HeaderValue::from_static("1"));
+                    }
+                    let req = Req {
+                        method: parts.method.to_string(),
+                        path,
+                        query: parts.uri.query().unwrap_or("").to_string(),
+                        headers,
+                        body,
+                    };
+                    let a = tokio::task::spawn_blocking(move || h(req)).await.unwrap();
+                    let mut r = Response::new(Body::from(a.body));
+                    *r.status_mut() = StatusCode::from_u16(a.status).unwrap();
+                    for (k, v) in a.headers {
+                        r.headers_mut().insert(
+                            axum::http::HeaderName::from_bytes(k.as_bytes()).unwrap(),
+                            axum::http::HeaderValue::from_str(&v).unwrap(),
+                        );
+                    }
+                    r
+                }
+            });
+            let handle = tokio::spawn(async move {
+                let _ = axum::serve(ln, app).await;
+            });
+            FakeRouter { url, handle }
+        })
+    }
+
+    /// a client of this router as machine m1
+    pub fn client(&self) -> Client {
+        Client::with_url(&self.url, "m1")
+    }
+}

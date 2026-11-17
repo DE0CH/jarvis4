@@ -222,6 +222,34 @@ from the AMI). What this shows for the build:
   1.5 GiB). Programs see both clocks jump; the tool's description says so.
 - The restore loads the image eagerly and is fast; most of a thaw is the download.
 
+### How a frozen image travels (engineering design, 2026-11-17)
+
+Hosts hold no standing AWS credentials and may only read `images/*` through the VPC endpoint; that stays. So:
+
+- **Freeze:** hermit makes a fresh 256-bit key for this freeze and STS credentials (`GetFederationToken`, 1 hour) whose
+  session policy allows only `s3:PutObject` on `frozen/<sandbox>/<freeze id>` in the hosts' bucket, and calls
+  sandboxd `POST /v1/sandboxes/{name}/freeze` with both. sandboxd records the sandbox the way a migration sends it:
+  `runsc checkpoint --migrate-to 127.0.0.1:<port>` streams its memory (the fork's pre-copy stream, which only ever
+  flows one way) into `sandboxd stream-sink | sandboxd seal | aws s3 cp - <key>` (seal.rs: AES-256-GCM in 1 MiB
+  frames, the frame index as the nonce, the last frame marked; a streamed multipart upload of unknown length). Nothing
+  of the sandbox's memory touches the host's tmpfs or disk, and the 64 KiB request bound holds. Once it stopped, its
+  scratch file follows as `tar --sparse | sandboxd seal | aws s3 cp - <key>.scratch`. It then deletes the sandbox. hermit keeps the key sealed under its own key in its database and marks the sandbox `frozen`
+  (no host, no slot).
+- **Thaw:** hermit places the sandbox like a start (any host; its spec and address travel as in a migration) and calls
+  `POST /v1/sandboxes/{name}/thaw` with the key and read-only credentials for those objects; sandboxd puts back the
+  scratch file (`aws s3 cp <key>.scratch - | sandboxd open | tar -x`), starts `runsc restore --migrate-listen` as a
+  migration's receive does, and replays the recorded stream into it (`aws s3 cp <key> - | sandboxd open | sandboxd
+  stream-source`). A restore the host can't do
+  (another gVisor release, a lost object) is a release instead: the files stay, a new sandbox starts, Claude Code
+  resumes from its transcript.
+- Checked 2026-11-17 with the fork (precopy-20261102.1, systrap): a container counting once a second was recorded by
+  `runsc checkpoint --migrate-to` into `sandboxd stream-sink` (484 531 bytes, its End record seen), deleted, and
+  replayed by `sandboxd stream-source` into `runsc restore --migrate-listen`: it went on counting from where it
+  stopped.
+- The object goes once the thaw succeeded or the session is destroyed; nothing else deletes it. The scaler's IAM user
+  gets `sts:GetFederationToken` and `s3:PutObject`/`GetObject`/`DeleteObject` on `frozen/*` (the session policy narrows
+  each token to one object); the AMI gets the AWS CLI.
+
 ## Next: asking Deyao is a command (Deyao, 2026-11-17; not built yet in aviary)
 
 The rule (CLAUDE.md "Write the minimal algorithm"): asking is an ordinary command that blocks until Deyao answers and

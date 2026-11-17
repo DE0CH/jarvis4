@@ -23,6 +23,12 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+mod identity;
+pub use identity::{
+    Component, Error as IdentityError, Identity, Roster, Trust, check_identity, open_roster,
+    store_key,
+};
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("bad signature")]
@@ -77,6 +83,15 @@ impl Signer {
             .map_err(|_| Error::NotP256)
     }
 
+    /// The key as PKCS#8 PEM (what openssl genpkey writes; the e2e's box and root keys)
+    pub fn to_pkcs8_pem(&self) -> String {
+        use p256::pkcs8::{EncodePrivateKey, LineEnding};
+        SecretKey::from(&self.key)
+            .to_pkcs8_pem(LineEnding::LF)
+            .map(|z| z.to_string())
+            .unwrap_or_default()
+    }
+
     /// The raw 32-byte scalar (the machine keeps its private halves this way)
     pub fn from_scalar(b: &[u8]) -> Result<Self, Error> {
         SigningKey::from_slice(b)
@@ -102,9 +117,9 @@ impl Signer {
             .as_bytes())
     }
 
-    /// `v` marshalled and signed
+    /// `v` marshalled as Go's `json.Marshal` would ([`go_json`]) and signed
     pub fn sign_json<T: Serialize>(&self, v: &T) -> Result<Doc, Error> {
-        let payload = serde_json::to_string(v)?;
+        let payload = go_json(v)?;
         let sig = self.sign(payload.as_bytes());
         Ok(Doc { payload, sig })
     }
@@ -151,6 +166,29 @@ impl Doc {
         }
         strict_json(self.payload.as_bytes())
     }
+}
+
+/// `v` as Go's `json.Marshal` writes it: serde_json's compact form with `<`, `>`, `&`, U+2028 and U+2029 escaped as
+/// `\u003c` …, as Go escapes them (a Go reader re-marshalling a document gets the same bytes). These characters
+/// only ever stand inside JSON strings, so replacing them in the output is exact. Floats: keep them out of signed
+/// documents (Go and serde write some exponents differently).
+pub fn go_json<T: Serialize + ?Sized>(v: &T) -> Result<String, Error> {
+    let s = serde_json::to_string(v)?;
+    if !s.contains(['<', '>', '&', '\u{2028}', '\u{2029}']) {
+        return Ok(s);
+    }
+    let mut out = String::with_capacity(s.len() + 16);
+    for c in s.chars() {
+        match c {
+            '<' => out.push_str("\\u003c"),
+            '>' => out.push_str("\\u003e"),
+            '&' => out.push_str("\\u0026"),
+            '\u{2028}' => out.push_str("\\u2028"),
+            '\u{2029}' => out.push_str("\\u2029"),
+            c => out.push(c),
+        }
+    }
+    Ok(out)
 }
 
 /// Decode refusing trailing data (unknown fields: the type's `deny_unknown_fields`)

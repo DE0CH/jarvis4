@@ -117,6 +117,8 @@ jobs:
           echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
           (cd aviary && (rustup show active-toolchain || rustup toolchain install))
           sudo apt-get update -qq && sudo apt-get install -y -qq wireguard-tools iproute2 iptables > /dev/null
+      - name: the replica's stand-ins answer as the real services do (e2e/aviary unit tests)
+        run: cd e2e && go test ./aviary/
       - name: the replica (infra/e2e-aviary.sh) on the candidate
         env:
           JARVIS2_FLY_TOKEN: ${{ secrets.REPLICA_FLY_TOKEN }}

@@ -66,6 +66,7 @@ import json, os, subprocess, sys, urllib.error, urllib.request
 from time import time_ns
 
 BASE = os.environ.get("JARVIS_URL", "http://127.0.0.1:7171").rstrip("/")
+OUTCOMES = "/run/jarvis/outcomes"  # the checked outcomes the supervisor records (machine/outcomes.go outcomesDir)
 # a wrong call says what was wrong in one line instead of printing the manual (--help prints that)
 USAGE = {"add-repo": "add-repo OWNER/NAME [--sensitive] [--no-store]", "grant": "grant HOLDER [--minutes N | --days N]",
          "unlock": "unlock", "new-session": "new-session --label TEXT --prompt-file FILE [...]",

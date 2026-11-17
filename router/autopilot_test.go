@@ -697,4 +697,10 @@ func TestParseHuman(t *testing.T) {
 	if g == nil || g.HumanSection || g.LastHumanAt != 0 {
 		t.Fatalf("an old image: %+v", g)
 	}
+	// the aviary harness: its transcripts never mark a person's prompt, so the machine reports none for it and the
+	// session keeps the hour (a session on it paused minutes after every turn, Deyao 2026-11-17)
+	g = parseRegistry(strings.Replace(raw, `"status":"idle",`, `"status":"idle","harness":"aviary",`, 1))
+	if g == nil || g.HumanSection {
+		t.Fatalf("the aviary harness: %+v", g)
+	}
 }

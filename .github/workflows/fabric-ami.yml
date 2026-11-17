@@ -5,7 +5,8 @@ name: fabric-ami
 # hermit-ami workflow does (docs/PLAN-fabric.md). Runs when one of them changed against the parent commit, with the
 # fabric scripts of the aviary commit k8s/cluster/fabric/kustomization.yaml pins for hermit: `infra.sh publish-image`
 # puts the fabric image in the bucket (hermit starts sandboxes on a new image only once it is there), `sync` bakes on a
-# t3.large builder when the template's AMI tags differ from the pins, then `check` must pass.
+# t3.large builder when the template's AMI tags differ from the pins, then `check` must pass. images.yml's fabric-pin
+# job dispatches it after each new pin: its pin commits say [skip ci], which no push trigger here would see.
 # Secrets: FABRIC_AMI_AWS_ACCESS_KEY_ID/_SECRET_ACCESS_KEY (IAM user hermit-ami-ci, aviary infra.sh ci-iam). The fabric
 # image is public: no registry login.
 on:

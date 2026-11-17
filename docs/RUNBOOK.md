@@ -674,8 +674,9 @@ DECISIONS 232): a store's Versions page and its restore work as before, with no 
 carries secrets' receipt; each key removed gets a delete marker carrying secrets' receipt of the delete, so a Recover
 from the bucket leaves it out).
 
-Testing it on real Fly from a session: `session-secret --keys JARVIS2_FLY_TOKEN --exec infra/e2e-kernel.sh` (a new
-session on the kernel, its boot from its documents, pause into a source with its snapshot, resume, destroy).
+Testing it on real Fly from a session, in a checkout of this repo: `session-secret --keys JARVIS2_FLY_TOKEN --exec
+e2e-kernel` (rust/e2e-kernel, in the session image; e2e/kernel plays the iPhone: the roster, a Reset, the root grant,
+a new session on the kernel, its boot from its documents, pause into a source with its snapshot, resume, destroy).
 
 ## Rebuilding a box
 

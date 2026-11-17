@@ -284,19 +284,32 @@ func sessionModel() string {
 // openRouterKey: the OPENROUTER_API of the run's store, which only the stand-in OpenRouter takes.
 const openRouterKey = "e2e-openrouter"
 
+// writeJSON and jsonError answer as Anthropic's API does, with Content-Type application/json: Claude Code parses a
+// non-streamed body by its content type (Go's sniffed text/plain failed its model check, main_test.go).
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
+}
+
+func jsonError(w http.ResponseWriter, body string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	io.WriteString(w, body)
+}
+
 func serveModel(w http.ResponseWriter, req *http.Request) {
 	openRouter := strings.HasPrefix(req.URL.Path, "/openrouter/")
 	p := strings.TrimPrefix(strings.TrimPrefix(req.URL.Path, "/openrouter"), "/model")
 	if openRouter && strings.HasSuffix(p, "/count_tokens") { // OpenRouter has no count_tokens (404, 2026-11-12)
-		http.Error(w, `{"error":{"message":"Not Found","code":404}}`, 404)
+		jsonError(w, `{"error":{"message":"Not Found","code":404}}`, 404)
 		return
 	}
 	if strings.HasSuffix(p, "/count_tokens") {
-		json.NewEncoder(w).Encode(map[string]int{"input_tokens": 10})
+		writeJSON(w, map[string]int{"input_tokens": 10})
 		return
 	}
 	if req.Method != http.MethodPost || !strings.HasSuffix(p, "/v1/messages") {
-		http.Error(w, `{"type":"error","error":{"type":"not_found_error","message":"e2e stand-in"}}`, 404)
+		jsonError(w, `{"type":"error","error":{"type":"not_found_error","message":"e2e stand-in"}}`, 404)
 		return
 	}
 	var in map[string]any
@@ -313,12 +326,12 @@ func serveModel(w http.ResponseWriter, req *http.Request) {
 		thinking, _ := in["thinking"].(map[string]any)
 		if req.Header.Get("Authorization") != "Bearer "+openRouterKey || !strings.Contains(model, "/") || len(order) == 0 || thinking["type"] == "disabled" {
 			log.Printf("openrouter: refused (auth %q, model %q, provider %v, thinking %v)", req.Header.Get("Authorization"), model, provider, thinking)
-			http.Error(w, `{"type":"error","error":{"type":"invalid_request_error","message":"e2e stand-in OpenRouter"}}`, 400)
+			jsonError(w, `{"type":"error","error":{"type":"invalid_request_error","message":"e2e stand-in OpenRouter"}}`, 400)
 			return
 		}
 	} else if strings.Contains(model, "/") || req.Header.Get("Authorization") == "Bearer "+openRouterKey {
 		log.Printf("model: refused, an OpenRouter call reached the Claude stand-in (model %q)", model)
-		http.Error(w, `{"type":"error","error":{"type":"invalid_request_error","message":"e2e: not a Claude call"}}`, 400)
+		jsonError(w, `{"type":"error","error":{"type":"invalid_request_error","message":"e2e: not a Claude call"}}`, 400)
 		return
 	}
 	// As Anthropic treats a subscription login: a call whose system prompt does not begin with Claude Code's identity
@@ -327,7 +340,7 @@ func serveModel(w http.ResponseWriter, req *http.Request) {
 	if sys := systemText(in); !openRouter && !strings.HasPrefix(req.UserAgent(), "claude-cli/") &&
 		!strings.HasPrefix(sys, "You are Claude Code") && !strings.HasPrefix(sys, "You are a Claude agent") {
 		log.Printf("model: refused, no Claude Code identity (user agent %q)", req.UserAgent())
-		http.Error(w, `{"type":"error","error":{"type":"rate_limit_error","message":"Error"}}`, 429)
+		jsonError(w, `{"type":"error","error":{"type":"rate_limit_error","message":"Error"}}`, 429)
 		return
 	}
 	kind, content := reply(in)
@@ -368,7 +381,7 @@ func serveModel(w http.ResponseWriter, req *http.Request) {
 		usage["input_tokens"] = 1000
 	}
 	if s, _ := in["stream"].(bool); !s {
-		json.NewEncoder(w).Encode(map[string]any{"id": id, "type": "message", "role": "assistant", "model": in["model"],
+		writeJSON(w, map[string]any{"id": id, "type": "message", "role": "assistant", "model": in["model"],
 			"content": content, "stop_reason": stop, "stop_sequence": nil, "usage": usage})
 		return
 	}
@@ -622,8 +635,11 @@ func main() {
 		}
 		resp.Body.Close()
 	}
+	// the session's name: the conversation's title from its start, kept as a rename (hermit-jarvis's create, Deyao,
+	// 2026-11-17), so the title model's title never replaces it
+	label := "e2e aviary " + token
 	var created struct{ ID string }
-	must("POST", router+"/api/sessions", map[string]any{"label": "e2e aviary", "harness": "aviary", "size": "small",
+	must("POST", router+"/api/sessions", map[string]any{"label": label, "harness": "aviary", "size": "small",
 		"model": sessionModel(), "prompt": "E2E-RUN " + token,
 		"attachments": map[string]any{"uploadId": uploadID, "files": []map[string]any{{"name": shot, "isImage": true}}}}, &created)
 	var aID, aKind string
@@ -681,13 +697,16 @@ func main() {
 	if t := magpieText(); !strings.Contains(t, `"path":"uploads/`+shot+`"`) || strings.Contains(t, "[attached image:") {
 		log.Fatalf("FAIL: magpie's first message does not carry the screenshot as its image (uploads/%s), or names it as a path in its text", shot)
 	}
-	step("the conversation has its title, which the session's card gets")
+	step("the conversation's title is the session's name (never the title model's), which the session's card gets")
 	waitFor("the title in magpie", 3*time.Minute, func() bool {
-		return strings.Contains(magpieText(), `"title":"E2E-TITLE `+token+`"`)
+		return strings.Contains(magpieText(), `"title":"`+label+`"`)
 	})
+	if strings.Contains(magpieText(), `"title":"E2E-TITLE `+token+`"`) {
+		log.Fatalf("FAIL: the title model replaced the session's name as the conversation's title")
+	}
 	waitFor("the title on the session (the router's aiTitle)", 4*time.Minute, func() bool {
 		s, _ := readSession(created.ID)
-		return s != nil && s.AiTitle == "E2E-TITLE "+token
+		return s != nil && s.AiTitle == label
 	})
 	step("the wakeup the tool armed arrives as a later turn")
 	waitFor("the wakeup's answer in magpie", 5*time.Minute, func() bool { return strings.Contains(magpieText(), "E2E-WOKE "+token) })

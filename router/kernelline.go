@@ -299,8 +299,7 @@ func (r *Router) kernelSpawn(sid string) {
 			op.note(id, fmt.Sprintf("the spawner has the machine's keys and its cert (%.0f s after the spawn)", time.Since(spawned).Seconds()))
 			break
 		}
-		var ke *KernelError
-		if !(errors.As(err, &ke) && (ke.Reason == spawner.ReasonNotStarted || ke.Reason == spawner.ReasonFly || ke.Reason == spawner.ReasonAWS)) || time.Now().After(deadline) {
+		if !initWaits(err) || time.Now().After(deadline) {
 			r.kernelKillUp(id, nil)
 			fail("start: " + err.Error())
 			return
@@ -329,6 +328,25 @@ func (r *Router) kernelSpawn(sid string) {
 	}
 	op.note(id, "the spawner's cert for "+id+" is notarized and the line's grant is on it; it boots now")
 	go r.lcAwaitBoot(op, sid, id)
+}
+
+// initWaits: whether a spawn goes on waiting for its machine's keys after the spawner's answer err. It waits while the
+// machine is still coming up (not started yet, or its runner briefly unreachable); a machine the spawner reports
+// destroyed never starts, so the start fails at once with why (a fabric sandbox whose start failed at hermit left its
+// session "booting" for the whole 10 minutes, 2026-11-17). The spawner says it as "machine X is destroyed, not
+// started" under ReasonNotStarted (kernel/spawner/spawner.go Init).
+func initWaits(err error) bool {
+	var ke *KernelError
+	if !errors.As(err, &ke) {
+		return false
+	}
+	switch ke.Reason {
+	case spawner.ReasonNotStarted:
+		return !strings.Contains(ke.Msg, " is destroyed, not started")
+	case spawner.ReasonFly, spawner.ReasonAWS:
+		return true
+	}
+	return false
 }
 
 // kernelSpawnTries: how many spawns a start makes (each a new volume: one on a full host is deleted by the spawner)
@@ -427,13 +445,24 @@ func (r *Router) kernelKillUp(machine string, snapshot map[string]any) (sig.Doc,
 	}
 	var d sig.Doc
 	var err error
+	transient := 0
 	for i := 0; ; i++ {
 		d, err = r.kernel.Doc("spawner", "/kill", in)
 		var ke *KernelError
-		if err == nil || !(errors.As(err, &ke) && ke.Reason == spawner.ReasonNotDestroyed) || i > 120 {
-			break
+		isKE := errors.As(err, &ke)
+		switch {
+		case err == nil:
+		case isKE && ke.Reason == spawner.ReasonNotDestroyed && i <= 120:
+			time.Sleep(kernelKillStep)
+			continue
+		// failed on the way (Fly reset one request: "fly inspect: … EOF", 2026-11-17): tried again like a core kill
+		case (!isKE || ke.Status >= 500) && transient < killTransientTries:
+			transient++
+			log.Printf("kernel kill %s: %v; trying again (%d of %d)", machine, err, transient, killTransientTries)
+			time.Sleep(killTransientStep)
+			continue
 		}
-		time.Sleep(kernelKillStep)
+		break
 	}
 	if err != nil {
 		return sig.Doc{}, err

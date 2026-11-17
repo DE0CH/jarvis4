@@ -4,9 +4,11 @@
 # package ghcr.io/de0ch/jarvis4-session as tag base-sha-<commit>; the pin job moves session-image/Dockerfile's BASE.
 # Size: Fly refuses an image that needs more than 8 GiB ON DISK once unpacked (block-rounded, not tar bytes; the
 # machine is destroyed before it boots), and the CI checks the final image against 8.0e9. Trim in the same RUN that installs.
-# age-plugin-tag: lets sops encrypt to an age1tag1 recipient (a Secure Enclave key); age ships it as source only
+# age-plugin-tag: lets sops encrypt to an age1tag1 recipient (a Secure Enclave key); age ships it as source only.
+# actionlint (8 MB): checks a GitHub workflow before it is pushed (lessons/108: a `${{ }}` in a flow mapping)
 FROM golang:1.25-bookworm AS ageplugin
-RUN GOBIN=/out go install filippo.io/age/extra/age-plugin-tag@v1.3.2
+RUN GOBIN=/out go install filippo.io/age/extra/age-plugin-tag@v1.3.2 \
+ && GOBIN=/out go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
@@ -48,6 +50,7 @@ RUN curl -fsSL -o /usr/local/bin/sops "https://github.com/getsops/sops/releases/
 RUN curl -fsSL "https://github.com/benbjohnson/litestream/releases/download/v0.5.17/litestream-0.5.17-linux-x86_64.tar.gz" \
   | tar -xz -C /usr/local/bin litestream && chmod +x /usr/local/bin/litestream
 COPY --from=ageplugin /out/age-plugin-tag /usr/local/bin/age-plugin-tag
+COPY --from=ageplugin /out/actionlint /usr/local/bin/actionlint
 # Go toolchain: the official release tarball, newest at build time
 RUN curl -fsSL "https://go.dev/dl/$(curl -fsSL 'https://go.dev/VERSION?m=text' | head -1).linux-amd64.tar.gz" | tar -C /usr/local -xz \
  && ln -s /usr/local/go/bin/go /usr/local/bin/go && ln -s /usr/local/go/bin/gofmt /usr/local/bin/gofmt
