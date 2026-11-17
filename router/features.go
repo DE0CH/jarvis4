@@ -75,6 +75,7 @@ func (r *Router) startFeatures() {
 	go r.awsLogLoop()        // awslogs.go: the AWS machines' log lines to the shipper
 	go r.consoleLoop()       // awslogs.go: the AWS instances' serial consoles (the leader)
 	go r.lostLoop()          // lostmachine.go: machines that stopped without Jarvis doing it
+	go r.neverBootedLoop()   // neverbooted.go: a machine that never boots fails its session
 	go r.kernelVolumesLoop() // kernelline.go: a killed kernel machine's volume left, killed again until it is gone
 }
 

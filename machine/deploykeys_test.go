@@ -87,6 +87,16 @@ func TestDeployKeysGiveEachRepoItsOwnKey(t *testing.T) {
 	if !strings.HasPrefix(string(cfg), sshConfigBegin) || !strings.Contains(string(cfg), "Host other\n") {
 		t.Fatalf("ssh config:\n%s", cfg)
 	}
+	// the files by ~/ (the user's own home, whatever its path), never the machine's absolute home: the aviary sandbox
+	// sees this home as another user's /home/sandbox
+	for _, want := range []string{"IdentityFile ~/" + deployKeyDir + "/DE0CH__jarvis2.pub\n", "UserKnownHostsFile ~/" + githubKnownHosts + "\n"} {
+		if !strings.Contains(string(cfg), want) {
+			t.Errorf("ssh config lacks %q:\n%s", want, cfg)
+		}
+	}
+	if strings.Contains(string(cfg), home) {
+		t.Errorf("ssh config names the absolute home %s:\n%s", home, cfg)
+	}
 	if _, err := exec.LookPath("ssh"); err == nil {
 		out, err := exec.Command("ssh", "-F", filepath.Join(home, ".ssh", "config"), "-G", "github.com-jarvis2-de0ch-jarvis2").Output()
 		if err != nil {
@@ -94,7 +104,7 @@ func TestDeployKeysGiveEachRepoItsOwnKey(t *testing.T) {
 		}
 		g := string(out)
 		for _, want := range []string{"hostname github.com\n", "user git\n", "identitiesonly yes\n", "stricthostkeychecking true\n",
-			"identityfile " + filepath.Join(home, deployKeyDir, "DE0CH__jarvis2.pub") + "\n", "identityagent " + sshAgentSock + "\n", "userknownhostsfile " + filepath.Join(home, githubKnownHosts) + "\n"} {
+			"identityagent " + sshAgentSock + "\n", "/" + githubKnownHosts + "\n"} {
 			if !strings.Contains(g, want) {
 				t.Errorf("ssh -G lacks %q", want)
 			}

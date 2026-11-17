@@ -163,6 +163,12 @@ func (r *Router) registerSupervisorLog(m machineRoute) {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
 			return
 		}
+		for _, l := range lines { // neverbooted.go: a machine that says it refuses to start fails its session
+			if why := refusedInLog(l.Text); why != "" {
+				r.bootFailed(machine, why)
+				break
+			}
+		}
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
 }

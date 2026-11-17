@@ -9,7 +9,10 @@ package main
 //
 //   - the key in its ssh-agent, and its PUBLIC half in ~/.ssh/jarvis2-deploy/<owner>__<name>.pub;
 //   - an SSH host alias github.com-jarvis2-<slug> → github.com with that key only (IdentityFile = the public half,
-//     IdentitiesOnly, IdentityAgent = the supervisor's agent) and GitHub's published host keys pinned
+//     IdentitiesOnly, IdentityAgent = the supervisor's agent) and GitHub's published host keys pinned; both files
+//     named under `~/`, which ssh takes from the user's passwd home: an aviary session's agent runs in the sandbox
+//     (aviary-sandbox) as another user whose home /home/sandbox is the machine's /home/claude, so an absolute
+//     /home/claude/… path names nothing there ("No ED25519 host key is known for github.com", 2026-11-17)
 //     (StrictHostKeyChecking, its own known_hosts file);
 //   - git rewrites from https://github.com/<owner>/<name>.git and git@github.com:<owner>/<name>.git to the alias,
 //     so clone, pull and push of that repo go over SSH with its key, with no setup in the session.
@@ -128,7 +131,7 @@ func setupDeployKeys(secrets map[string]string) error {
 			return err
 		}
 		fmt.Fprintf(&block, "Host %s\n  HostName github.com\n  User git\n  IdentityFile %s\n  IdentitiesOnly yes\n  IdentityAgent %s\n  UserKnownHostsFile %s\n  StrictHostKeyChecking yes\n",
-			k.Alias, f, sshAgentSock, filepath.Join(home, githubKnownHosts))
+			k.Alias, "~/"+deployKeyDir+"/"+filepath.Base(f), sshAgentSock, "~/"+githubKnownHosts)
 	}
 	block.WriteString(sshConfigEnd + "\n")
 	if err := writeSSHConfig(filepath.Join(home, ".ssh", "config"), block.String()); err != nil {
