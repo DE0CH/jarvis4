@@ -418,6 +418,7 @@ pub fn tunnel_proof(c: &Client) -> String {
 
 // ---- the harness's env, built from vouched values only ---------------------------------------------------------
 
+#[cfg(test)]
 /// The clean env plus exactly what the cert, the secrets and the format exceptions give. first_machine: the first
 /// machine of a new line (the first prompt and its attachments are its alone).
 pub fn harness_env(

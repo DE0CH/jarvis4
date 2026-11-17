@@ -14,6 +14,7 @@ use std::time::{Duration, SystemTime};
 /// the router refuses more
 const LIVE_SYNC_MAX_BYTES: u64 = 256 << 20;
 
+#[cfg(test)]
 pub type SendFnPub = SendFn;
 type SendFn = Box<dyn Fn(&str, &[u8]) -> Result<()> + Send + Sync>;
 
@@ -27,6 +28,7 @@ pub struct LiveSyncer {
 
 static LIVE: Mutex<Option<Arc<LiveSyncer>>> = Mutex::new(None);
 
+#[cfg(test)]
 /// tests: the next live_syncer_for makes a new one
 pub fn reset_live_syncer() {
     *LIVE.lock().unwrap_or_else(|e| e.into_inner()) = None;

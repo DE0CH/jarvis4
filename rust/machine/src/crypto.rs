@@ -82,11 +82,6 @@ pub fn load_private() -> Result<Keys> {
     })
 }
 
-/// base64 DER ECDSA signature over sha256(payload)
-pub fn sign(k: &Signer, payload: &[u8]) -> String {
-    k.sign(payload)
-}
-
 pub fn verify(public: &str, payload: &[u8], sig: &str) -> bool {
     jarvis_sig::verify(public, payload, sig)
 }

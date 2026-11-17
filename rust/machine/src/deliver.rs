@@ -109,6 +109,7 @@ struct Delivered {
     at: i64,
 }
 
+#[cfg(test)]
 /// check AND record (tests, and any caller with nothing to do between)
 pub fn not_replayed(d: &Delivery, now: i64) -> Result<()> {
     replay_guard(d, now, true)
@@ -686,29 +687,6 @@ pub fn size_mem_gb(size: &str) -> i64 {
         return 0;
     }
     n
-}
-
-/// the size's Fly guest (cpu kind, cpus, memory MB)
-pub fn size_guest(size: &str) -> (&'static str, i64, i64) {
-    let gb = size_mem_gb(size);
-    match gb {
-        0 => ("", 0, 0),
-        g if g <= 8 => ("shared", g, g * 1024),
-        g if g <= 16 => ("shared", 8, g * 1024),
-        g => ("performance", (g / 8).max(8), g * 1024),
-    }
-}
-
-/// the size Upgrade moves to, twice the memory (a session with no size runs medium)
-pub fn next_size(size: &str) -> String {
-    let mut gb = size_mem_gb(size);
-    if gb == 0 {
-        gb = named_size("medium");
-    }
-    match NAMED_SIZES.iter().find(|(_, n)| *n == 2 * gb) {
-        Some((name, _)) => name.to_string(),
-        None => format!("{}gb", 2 * gb),
-    }
 }
 
 /// "large (8 GB)", "16 GB"

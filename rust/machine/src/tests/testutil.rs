@@ -20,7 +20,6 @@ pub struct TestEnv {
     _g: MutexGuard<'static, ()>,
     pub root: PathBuf,
     pub home: PathBuf,
-    pub dir: PathBuf,
 }
 
 static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -53,12 +52,7 @@ impl TestEnv {
         ] {
             env::set(k, None);
         }
-        TestEnv {
-            _g: g,
-            root,
-            home,
-            dir,
-        }
+        TestEnv { _g: g, root, home }
     }
 
     /// the machine's private key on disk (the client signs with it)

@@ -306,6 +306,7 @@ pub fn unpack_file(p: &Path) -> Result<usize> {
     r
 }
 
+#[cfg(test)]
 /// a snapshot's files into $HOME
 pub fn unpack_reader<R: Read>(r: R) -> Result<usize> {
     unpack_with(r, None)

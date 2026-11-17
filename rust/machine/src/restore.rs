@@ -9,7 +9,7 @@
 
 use crate::cert::Cert;
 use crate::client::Client;
-use crate::crypto::{SignedDoc, sha256_hex, verify, verify_doc};
+use crate::crypto::{SignedDoc, verify, verify_doc};
 use crate::session::session_command;
 use crate::vouch::Vouched;
 use crate::{gojson, logf, paths, util};
@@ -286,8 +286,9 @@ pub fn check_restore_cert(
     Ok(old)
 }
 
+#[cfg(test)]
 pub fn check_snapshot_sig(signing_key: &str, body: &[u8], sig: &str) -> Result<()> {
-    if !verify(signing_key, sha256_hex(body).as_bytes(), sig) {
+    if !verify(signing_key, crate::crypto::sha256_hex(body).as_bytes(), sig) {
         bail!("the snapshot isn't signed by the machine its cert names");
     }
     Ok(())

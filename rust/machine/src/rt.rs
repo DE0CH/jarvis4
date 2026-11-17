@@ -15,10 +15,6 @@ static RT: LazyLock<Runtime> = LazyLock::new(|| {
         .unwrap_or_else(|e| panic!("tokio runtime: {e}"))
 });
 
-pub fn rt() -> &'static Runtime {
-    &RT
-}
-
 /// Run `f` on the runtime from a plain thread (or a `spawn_blocking` thread) and wait for it
 pub fn block_on<F: Future>(f: F) -> F::Output {
     match tokio::runtime::Handle::try_current() {

@@ -417,6 +417,7 @@ static REFRESH: Mutex<RefreshState> = Mutex::new(RefreshState {
 pub static KERNEL_TRUST_EVERY_MS: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(10_000);
 
+#[cfg(test)]
 /// tests: the re-read replaced (None: none armed), and the last one forgotten
 pub fn set_refresh_for_test(f: Option<Refresh>) {
     if let Ok(mut s) = REFRESH.lock() {
@@ -425,6 +426,7 @@ pub fn set_refresh_for_test(f: Option<Refresh>) {
     }
 }
 
+#[cfg(test)]
 pub fn refresh_armed() -> bool {
     REFRESH.lock().map(|s| s.refresh.is_some()).unwrap_or(false)
 }

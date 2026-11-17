@@ -294,11 +294,13 @@ impl Keeper {
         }
     }
 
+    #[cfg(test)]
     /// the harness's state as the status report reads it
     pub(crate) fn harness_state(&self) -> HarnessState {
         self.lock().state.clone()
     }
 
+    #[cfg(test)]
     /// what a stop signal does first: the loops end
     pub(crate) fn stop(&self) {
         self.lock().stopping = true;

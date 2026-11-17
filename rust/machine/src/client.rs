@@ -4,7 +4,7 @@
 use crate::crypto::{load_private, sha256_hex};
 use crate::routerdial::{Connector, router_transport};
 use crate::{gojson, machine_id, paths, rt};
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Result, anyhow, bail};
 use bytes::Bytes;
 use futures_util::TryStreamExt;
 use http_body_util::{BodyExt, Full, StreamBody, combinators::BoxBody};
@@ -350,11 +350,6 @@ impl Client {
             })
         })
     }
-
-    /// A plain (unsigned) request to any URL (the bucket's presigned URLs) through this client's pool
-    pub fn plain_http() -> HClient<hyper_util::client::legacy::connect::HttpConnector, Body> {
-        HClient::builder(TokioExecutor::new()).build_http()
-    }
 }
 
 /// A response body read as a std::io::Read from a plain thread
@@ -408,14 +403,4 @@ impl<R: Read> Read for HashingReader<R> {
         self.n += n as u64;
         Ok(n)
     }
-}
-
-/// the error's text (a helper for callers that pass errors on as text)
-pub fn err_text(e: &anyhow::Error) -> String {
-    format!("{e:#}")
-}
-
-#[allow(dead_code)]
-fn _ctx(r: Result<()>) -> Result<()> {
-    r.context("")
 }

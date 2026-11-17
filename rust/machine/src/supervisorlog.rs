@@ -38,10 +38,6 @@ impl FileLog {
     pub fn new(tag: &str) -> FileLog {
         FileLog { tag: tag.into() }
     }
-
-    pub fn line(&self, text: &str) {
-        append_line(&self.tag, text);
-    }
 }
 
 impl Write for FileLog {

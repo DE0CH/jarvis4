@@ -112,13 +112,6 @@ pub fn go_float_f(x: f64) -> String {
     format!("{x}")
 }
 
-/// sorted keys of a map
-pub fn sorted_keys<V>(m: &std::collections::HashMap<String, V>) -> Vec<String> {
-    let mut k: Vec<String> = m.keys().cloned().collect();
-    k.sort();
-    k
-}
-
 /// Go's url.PathEscape: one path segment, escaped (unreserved characters and $&+:=@ stay)
 pub fn path_escape(s: &str) -> String {
     let mut out = String::new();

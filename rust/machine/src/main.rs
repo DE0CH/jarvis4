@@ -15,8 +15,6 @@
 //! the cert and the secrets are core-signed, and the predecessor's snapshot is signed by the predecessor's own key,
 //! taken from the predecessor's core-signed cert. The router only relays.
 
-#![allow(dead_code)] // while the port is under way: removed once every Go file is ported
-
 mod apiproxy;
 mod apptitle;
 mod attachments;
