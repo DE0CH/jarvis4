@@ -5,7 +5,9 @@
 # Not listed in kustomization.yaml: list it (with a new Job name, a new conversation C, and the podSelector app:
 # fabric-smoke in hermit-in) to run it again. Run 5 (2026-11-17 11:31): host launched in about 1 min from the AMI,
 # the sandbox created on the fabric image, the console read live, released, files deleted. Run 6: after images.yml's
-# fabric pin dispatches fabric-ami (the pinned image was never in the hosts' bucket: every boot got a 403).
+# fabric pin dispatches fabric-ami (the pinned image was never in the hosts' bucket: every boot got a 403). Run 6
+# (2026-11-17 19:15): a fresh host in 1 min, the 4 GB image fetched from the bucket and the sandbox running the
+# machine's entrypoint at 19:18:20 (3 min), released, files deleted.
 apiVersion: batch/v1
 kind: Job
 metadata: { name: fabric-smoke-6, namespace: jarvis4-fabric }
