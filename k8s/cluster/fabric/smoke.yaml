@@ -4,10 +4,11 @@
 # gets its env (the router's fabric listener is off), so the console stops at the entrypoint's retries: that is enough.
 # Not listed in kustomization.yaml: list it (with a new Job name, a new conversation C, and the podSelector app:
 # fabric-smoke in hermit-in) to run it again. Run 5 (2026-11-17 11:31): host launched in about 1 min from the AMI,
-# the sandbox created on the fabric image, the console read live, released, files deleted.
+# the sandbox created on the fabric image, the console read live, released, files deleted. Run 6: after images.yml's
+# fabric pin dispatches fabric-ami (the pinned image was never in the hosts' bucket: every boot got a 403).
 apiVersion: batch/v1
 kind: Job
-metadata: { name: fabric-smoke-5, namespace: jarvis4-fabric }
+metadata: { name: fabric-smoke-6, namespace: jarvis4-fabric }
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 2400
@@ -26,11 +27,11 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              H=http://hermit.jarvis4-fabric.svc.cluster.local; C=0190f6c2-0000-7000-8000-00000000f005
+              H=http://hermit.jarvis4-fabric.svc.cluster.local; C=0190f6c2-0000-7000-8000-00000000f006
               M="${MAGPIE%%,*}"; P="aviary-protocol: hermit-core=1"
               m() { curl -s -H "$P" -H "authorization: Bearer $M" -H 'content-type: application/json' "$@"; }
               a() { curl -s -H "$P" -H "authorization: Bearer $ADMIN" -H 'aviary-admin: jarvis4@deyaochen.com' -H 'content-type: application/json' "$@"; }
-              sleep 240   # the hermit rollout this test came with
+              sleep 30   # the network policy that lets it in
               for i in $(seq 1 20); do
                 o=$(m -X PUT "$H/v1/conversations/$C/sandbox" -d '{"person":"jarvis4@deyaochen.com"}'); echo "== start: $o" | cut -c1-400
                 case "$o" in *'"id":'*) break ;; esac; sleep 10
