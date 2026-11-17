@@ -19,15 +19,15 @@ import (
 
 // ---- objects ---------------------------------------------------------------------------------------------------
 
-// Object: "sink", "source-<32 hex>" or a machine: "fly-<Fly machine id>" or "aws-<EC2 instance id>" (DECISIONS: the
-// AWS runner, docs/PLAN-aws.md)
+// Object: "sink", "source-<32 hex>" or a machine: "fly-<Fly machine id>", "aws-<EC2 instance id>" (DECISIONS: the
+// AWS runner, docs/PLAN-aws.md) or "fabric-x<the sandbox's id at the fabric hermit, 32 hex>" (docs/PLAN-fabric.md)
 type Object string
 
 const Sink Object = "sink"
 
 var (
 	sourceRE  = regexp.MustCompile(`^source-[0-9a-f]{32}$`)
-	machineRE = regexp.MustCompile(`^(fly-[0-9a-f]{8,32}|aws-i-[0-9a-f]{8,17})$`)
+	machineRE = regexp.MustCompile(`^(fly-[0-9a-f]{8,32}|aws-i-[0-9a-f]{8,17}|fabric-x[0-9a-f]{32})$`)
 	imageRE   = regexp.MustCompile(`^[a-z0-9./-]+(:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@sha256:[0-9a-f]{64}$`)
 	hex64RE   = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
@@ -45,7 +45,7 @@ func (o Object) Kind() string {
 	return ""
 }
 
-// Runner: where a machine object runs, "fly" or "aws" ("" for the sink and a source)
+// Runner: where a machine object runs, "fly", "aws" or "fabric" ("" for the sink and a source)
 func (o Object) Runner() string {
 	if o.Kind() != "machine" {
 		return ""
@@ -53,7 +53,7 @@ func (o Object) Runner() string {
 	return strings.SplitN(string(o), "-", 2)[0]
 }
 
-// MachineID: the runner's id of a machine object (a Fly machine id, an EC2 instance id)
+// MachineID: the runner's id of a machine object (a Fly machine id, an EC2 instance id, x<a sandbox's id>)
 func (o Object) MachineID() string { return strings.SplitN(string(o), "-", 2)[1] }
 
 // Keys: an object's public keys

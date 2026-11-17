@@ -70,6 +70,8 @@ type CreateInput struct {
 	Source   string
 	// WireGuard: an AWS machine's (nil on Fly, whose private network the machine reaches the router over)
 	WireGuard *WireGuard
+	// Fabric: a fabric machine's (nil on the other runners): the session's conversation at hermit
+	Fabric *FabricInput
 }
 
 // flyRunner: the Fly API as a Runner: a volume, then the machine on it (a create that fails deletes the volume)

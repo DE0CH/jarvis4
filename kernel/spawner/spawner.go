@@ -63,6 +63,7 @@ const (
 	maxDiskGB    = 500
 	infoFlyToken = "jarvis2/fly-token"
 	infoAWSKey   = "jarvis4/aws-credentials"
+	infoFabric   = "jarvis4/fabric-credentials"
 )
 
 // The reasons of the spawner's refusals the router acts on (the error answer's "reason", serve.FailBecause)
@@ -71,6 +72,9 @@ const (
 	ReasonFly          = "fly"             // 502: Fly refused or didn't answer; the call may be made again
 	ReasonNoAWSKey     = "no-aws-key"      // 503: the setup session (or the app's Recover) sends the AWS key again
 	ReasonAWS          = "aws"             // 502: EC2 refused or didn't answer; the call may be made again
+	ReasonNoFabricKey  = "no-fabric-key"   // 503: the setup session (or the app's Recover) sends hermit's tokens again
+	ReasonFabric       = "fabric"          // 502: the fabric hermit refused or didn't answer; the call may be made again
+	ReasonFabricBusy   = "fabric-busy"     // 409: the session's conversation already has a sandbox the spawner made
 	ReasonHostFull     = "host-full"       // 502: Fly's 412 volume_placement_capacity; the volume is deleted, spawn again
 	ReasonUnknown      = "unknown-machine" // 404: not a machine the spawner made
 	ReasonNotStarted   = "not-started"     // 409: init before the runner says started (AWS: before the keys line)
@@ -83,16 +87,18 @@ const (
 
 // Machine: one the spawner made
 type Machine struct {
-	ID       string     `json:"id"`
-	Runner   string     `json:"runner,omitempty"` // "aws", or "" for Fly (state from before the AWS runner)
-	Source   doc.Object `json:"source"`
-	Content  doc.Source `json:"content"`          // the source's image and settings (its snapshot is the predecessor's)
-	Volume   string     `json:"volume,omitempty"` // its volume, until Fly deleted it
-	Keys     *doc.Keys  `json:"keys,omitempty"`   // once init read them
-	Image    string     `json:"image,omitempty"`
-	Cert     *sig.Doc   `json:"cert,omitempty"`     // (source, fly-M, ⊤)
-	KillCert *sig.Doc   `json:"killCert,omitempty"` // (fly-M, source-y, ⊤), or a kill record for one never up
-	Killed   bool       `json:"killed,omitempty"`   // destroyed on Fly by a kill or a destroy
+	ID      string     `json:"id"`
+	Runner  string     `json:"runner,omitempty"` // "aws", or "" for Fly (state from before the AWS runner)
+	Source  doc.Object `json:"source"`
+	Content doc.Source `json:"content"`          // the source's image and settings (its snapshot is the predecessor's)
+	Volume  string     `json:"volume,omitempty"` // its volume, until Fly deleted it
+	// Conversation: a fabric machine's conversation at hermit (the session's files); its sandbox is looked up by it
+	Conversation string    `json:"conversation,omitempty"`
+	Keys         *doc.Keys `json:"keys,omitempty"` // once init read them
+	Image        string    `json:"image,omitempty"`
+	Cert         *sig.Doc  `json:"cert,omitempty"`     // (source, fly-M, ⊤)
+	KillCert     *sig.Doc  `json:"killCert,omitempty"` // (fly-M, source-y, ⊤), or a kill record for one never up
+	Killed       bool      `json:"killed,omitempty"`   // destroyed on Fly by a kill or a destroy
 }
 
 type Spawner struct {
@@ -100,14 +106,17 @@ type Spawner struct {
 	// op: every call holds it shared; the handoff and the takeover hold it alone, so no call is halfway through
 	// when the state moves
 	op        sync.RWMutex
-	cont      *serve.Continuity // its mode in the copy flip (path + ".mode")
-	token     string            // the Fly token (memory only), handed over with the machines
-	awsKey    *AWSCredentials   // the AWS key (memory only), handed over with the machines
+	cont      *serve.Continuity  // its mode in the copy flip (path + ".mode")
+	token     string             // the Fly token (memory only), handed over with the machines
+	awsKey    *AWSCredentials    // the AWS key (memory only), handed over with the machines
+	fabricKey *FabricCredentials // the fabric hermit's tokens (memory only), handed over with the machines
 	s         *sig.Signer
 	agreement *ecdh.PrivateKey
 	trust     *sig.Trust
 	fly       Fly
 	aws       *AWSAPI
+	fabric    *FabricAPI        // nil: no fabric runner (SetFabric)
+	fabricEnv map[string]string // what every fabric machine's env gets (the router's address at the fabric's egress address)
 	env       map[string]string // what every Fly machine's config env gets (the router's address); the roster and the root key are added per spawn
 	awsEnv    map[string]string // the same for an AWS machine (the router's address on the tailnet)
 	path      string
@@ -146,6 +155,23 @@ func Open(path string, c *sig.Component, t *sig.Trust, fly Fly, aws *AWSAPI, env
 	return sp, nil
 }
 
+// SetFabric: the fabric runner (docs/PLAN-fabric.md) and the env every fabric machine gets, before the spawner
+// serves. Without it a spawn on the fabric is refused.
+func (sp *Spawner) SetFabric(f *FabricAPI, env map[string]string) {
+	f.conv = sp.conversationOf
+	sp.fabric, sp.fabricEnv = f, env
+}
+
+// conversationOf: the conversation of a fabric machine the spawner made ("" for any other id)
+func (sp *Spawner) conversationOf(id string) string {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	if m := sp.machines[id]; m != nil {
+		return m.Conversation
+	}
+	return ""
+}
+
 // save: the state, atomically (callers hold mu)
 func (sp *Spawner) save() error {
 	b, _ := json.Marshal(state{Machines: sp.machines})
@@ -173,8 +199,14 @@ func flyFail(what string, err error) error {
 		return serve.FailBecause(503, ReasonNoFlyToken, "%v", err)
 	case errors.Is(err, errNoAWSCredentials):
 		return serve.FailBecause(503, ReasonNoAWSKey, "%v", err)
+	case errors.Is(err, errNoFabric):
+		return serve.FailBecause(503, ReasonNoFabricKey, "%v", err)
 	case errors.Is(err, errNotYet):
 		return serve.FailBecause(409, ReasonNotStarted, "%v", err)
+	}
+	var fe *FabricError
+	if errors.As(err, &fe) {
+		return serve.FailBecause(502, ReasonFabric, "fabric %s: %v", what, err)
 	}
 	var ae *AWSError
 	if errors.As(err, &ae) {
@@ -190,20 +222,47 @@ func orFly(runner string) string {
 	return runner
 }
 
-// runnerOf: the runner of a machine id: an EC2 instance id (i-…) is AWS's, anything else Fly's
+// runnerOf: the runner of a machine id: an EC2 instance id (i-…) is AWS's, x<32 hex> (a sandbox's id) the fabric's,
+// anything else Fly's (a Fly machine id is hex only)
 func runnerOf(id string) string {
-	if strings.HasPrefix(id, "i-") {
+	switch {
+	case strings.HasPrefix(id, "i-"):
 		return "aws"
+	case fabricIDRE.MatchString(id):
+		return "fabric"
 	}
 	return "fly"
 }
 
 // runner: the API of a machine id's runner
 func (sp *Spawner) runner(id string) Runner {
-	if runnerOf(id) == "aws" && sp.aws != nil {
+	switch r := runnerOf(id); {
+	case r == "aws" && sp.aws != nil:
 		return sp.aws
+	case r == "fabric" && sp.fabric != nil:
+		return sp.fabric
+	case r == "fabric":
+		return noFabric{}
 	}
 	return flyRunner{sp.fly}
+}
+
+// noFabric: the runner of a fabric machine on a spawner without the fabric runner: every call fails, none reaches Fly
+type noFabric struct{}
+
+func (noFabric) Create(CreateInput) (string, string, error) { return "", "", errNoFabric }
+func (noFabric) Inspect(string) (FlyMachine, error)         { return FlyMachine{}, errNoFabric }
+func (noFabric) Init(string) (MachineKeys, error)           { return MachineKeys{}, errNoFabric }
+func (noFabric) Destroy(string) error                       { return errNoFabric }
+func (noFabric) DeleteVolume(string) error                  { return errNoFabric }
+
+// machineImageDigest: the digest of the image a machine of this runner may run: the fabric's image on the fabric,
+// the session image elsewhere; "" for any other reference
+func machineImageDigest(runner, ref string) string {
+	if runner == "fabric" {
+		return fabricImageDigest(ref)
+	}
+	return imageDigest(ref)
 }
 
 // object: the machine's object, "<runner>-<id>"
@@ -236,6 +295,32 @@ func (sp *Spawner) SetAWSCredentials(sealed sig.Sealed) (any, error) {
 	sp.mu.Unlock()
 	log.Printf("AWS key set")
 	return map[string]string{"kind": "aws-key-set"}, nil
+}
+
+// SetFabricCredentials: FabricCredentials sealed to the spawner's agreement key
+func (sp *Spawner) SetFabricCredentials(sealed sig.Sealed) (any, error) {
+	sp.op.RLock()
+	defer sp.op.RUnlock()
+	if err := sp.serving(); err != nil {
+		return nil, err
+	}
+	if sp.fabric == nil {
+		return nil, serve.Fail(503, "this spawner has no fabric runner")
+	}
+	plain, err := sig.OpenSealed(sp.agreement, sealed, infoFabric)
+	if err != nil {
+		return nil, serve.Fail(400, "can't open the fabric credentials")
+	}
+	var v FabricCredentials
+	if json.Unmarshal(plain, &v) != nil || !v.ok() {
+		return nil, serve.Fail(400, "need magpieToken, adminToken, admin and person")
+	}
+	sp.fabric.Configure(v)
+	sp.mu.Lock()
+	sp.fabricKey = &v
+	sp.mu.Unlock()
+	log.Printf("fabric credentials set")
+	return map[string]string{"kind": "fabric-credentials-set"}, nil
 }
 
 // SetFlyToken: {"FLY_API_TOKEN": …} sealed to the spawner's agreement key
@@ -271,7 +356,8 @@ type SpawnInput struct {
 	Region    string       `json:"region"`
 	Size      string       `json:"size"`
 	DiskGB    int          `json:"diskGb"`
-	Runner    string       `json:"runner,omitempty"` // "aws" or "fly" ("" = fly: the router from before the AWS runner)
+	Runner    string       `json:"runner,omitempty"` // "aws", "fabric" or "fly" ("" = fly: the router from before the AWS runner)
+	Fabric    *FabricInput `json:"fabric,omitempty"` // a fabric machine's conversation at hermit
 	// WireGuard: an AWS machine's way to the router, which the router makes per spawn (aws.go WireGuard)
 	WireGuard *WireGuard `json:"wireguard,omitempty"`
 }
@@ -296,7 +382,11 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 	if err != nil || c.Succ.Kind() != "source" {
 		return nil, serve.Fail(400, "a spawn is from a cert into a source")
 	}
-	if imageDigest(c.Source.Image) == "" {
+	if in.Runner == "fabric" {
+		if fabricImageDigest(c.Source.Image) == "" {
+			return nil, serve.Fail(400, "the source's image isn't %s pinned by digest", FabricRepo)
+		}
+	} else if imageDigest(c.Source.Image) == "" {
 		return nil, serve.Fail(400, "the source's image isn't %s pinned by digest", SessionRepo)
 	}
 	kind, cpus, mem := sizeGuest(in.Size)
@@ -326,15 +416,29 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 			return nil, serve.Fail(400, "%v", err)
 		}
 		run = sp.aws
+	case "fabric":
+		if sp.fabric == nil {
+			return nil, serve.Fail(503, "this spawner has no fabric runner")
+		}
+		if in.Fabric == nil {
+			return nil, serve.Fail(400, "a fabric machine needs its conversation")
+		}
+		if err := in.Fabric.Check(); err != nil {
+			return nil, serve.Fail(400, "%v", err)
+		}
+		run = sp.fabric
 	default:
-		return nil, serve.Fail(400, "runner: aws or fly")
+		return nil, serve.Fail(400, "runner: aws, fabric or fly")
 	}
 	base := sp.env
-	if in.Runner == "aws" {
+	switch in.Runner {
+	case "aws":
 		base = sp.awsEnv
+	case "fabric":
+		base = sp.fabricEnv
 	}
 	if base == nil {
-		return nil, serve.Fail(503, "the spawner has no router address for its %s machines (KERNEL_MACHINE_URL, KERNEL_AWS_MACHINE_URL)", orFly(in.Runner))
+		return nil, serve.Fail(503, "the spawner has no router address for its %s machines (KERNEL_MACHINE_URL, KERNEL_AWS_MACHINE_URL, KERNEL_FABRIC_MACHINE_URL)", orFly(in.Runner))
 	}
 	rd := sp.trust.Doc()
 	if rd == nil {
@@ -348,7 +452,7 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 		env[k] = v
 	}
 	id, vid, err := run.Create(CreateInput{Image: c.Source.Image, Region: in.Region, Guest: guest, MemoryMB: mem, Env: env,
-		DiskGB: in.DiskGB, Source: string(c.Succ), WireGuard: in.WireGuard})
+		DiskGB: in.DiskGB, Source: string(c.Succ), WireGuard: in.WireGuard, Fabric: in.Fabric})
 	if err != nil {
 		if code, st := flyStatus(err); code == 412 && st == "volume_placement_capacity" {
 			// the volume's host has no room for this machine; a volume is pinned to its host, so a new spawn (a new
@@ -362,11 +466,20 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 		return nil, flyFail("create", err)
 	}
 	runner := ""
-	if runnerOf(id) == "aws" {
-		runner = "aws"
+	if r := runnerOf(id); r != "fly" {
+		runner = r
 	}
 	m := &Machine{ID: id, Runner: runner, Source: c.Succ, Content: *c.Source, Volume: vid}
+	if in.Fabric != nil && runner == "fabric" {
+		m.Conversation = in.Fabric.Conversation
+	}
 	sp.mu.Lock()
+	// hermit answers a conversation's sandbox that is already there: a machine the spawner made before, from another
+	// source. It is not this source's, and one session's files never get a second machine.
+	if old := sp.machines[id]; old != nil {
+		sp.mu.Unlock()
+		return nil, serve.FailBecause(409, ReasonFabricBusy, "the conversation's sandbox %s is the machine made from %s", id, old.Source)
+	}
 	sp.machines[id] = m
 	err = sp.save()
 	sp.mu.Unlock()
@@ -374,7 +487,13 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 		return nil, err
 	}
 	log.Printf("machine %s created from %s (%s)", id, c.Succ, c.Source.Image)
-	return map[string]any{"kind": "created", "id": id, "source": c.Succ, "volume": vid}, nil
+	out := map[string]any{"kind": "created", "id": id, "source": c.Succ, "volume": vid}
+	if runner == "fabric" {
+		// hermit's contract carries no environment to a sandbox: the router serves it to the machine
+		// (docs/PLAN-fabric.md "The machine's environment")
+		out["env"] = env
+	}
+	return out, nil
 }
 
 // Init: one try at reading a created machine's keys (409 while it isn't up yet: the router retries) → its cert
@@ -400,7 +519,7 @@ func (sp *Spawner) Init(id string) (sig.Doc, error) {
 	if fm.State != "started" {
 		return sig.Doc{}, serve.FailBecause(409, ReasonNotStarted, "machine %s is %s, not started", id, fm.State)
 	}
-	if reportedDigest(fm.Image) != imageDigest(m.Content.Image) {
+	if d := machineImageDigest(runnerOf(id), m.Content.Image); d == "" || reportedDigest(fm.Image) != d {
 		return sig.Doc{}, serve.FailBecause(409, ReasonWrongImage, "machine %s runs %s, not its source's %s", id, fm.Image, m.Content.Image)
 	}
 	k, err := sp.runner(id).Init(id)
@@ -578,8 +697,8 @@ func (sp *Spawner) Destroy(id string) (any, error) {
 				return nil, serve.FailBecause(404, ReasonUnknown, "machine %s isn't one the spawner made", id)
 			}
 			m = &Machine{ID: id, Source: doc.Object(fm.Source)}
-			if runnerOf(id) == "aws" {
-				m.Runner = "aws"
+			if r := runnerOf(id); r != "fly" {
+				m.Runner = r
 			}
 		}
 		vol, err := sp.destroyOnFly(id)
@@ -613,6 +732,7 @@ type handed struct {
 	Machines map[string]*Machine `json:"machines"`
 	FlyToken string              `json:"flyToken,omitempty"`
 	AWSKey   *AWSCredentials     `json:"awsKey,omitempty"`
+	Fabric   *FabricCredentials  `json:"fabric,omitempty"`
 }
 
 func (sp *Spawner) Decide(r sig.Roster) error {
@@ -633,7 +753,7 @@ func (sp *Spawner) Handoff(roster string) ([]byte, error) {
 	}
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
-	return json.Marshal(handed{Machines: sp.machines, FlyToken: sp.token, AWSKey: sp.awsKey})
+	return json.Marshal(handed{Machines: sp.machines, FlyToken: sp.token, AWSKey: sp.awsKey, Fabric: sp.fabricKey})
 }
 
 // Takeover: the predecessor's machines replace this volume's (saved before it serves), and its Fly token
@@ -662,6 +782,10 @@ func (sp *Spawner) Takeover(id string, state []byte) error {
 		sp.aws.Configure(*h.AWSKey)
 		sp.awsKey = h.AWSKey
 	}
+	if err == nil && h.Fabric != nil && sp.fabric != nil {
+		sp.fabric.Configure(*h.Fabric)
+		sp.fabricKey = h.Fabric
+	}
 	sp.mu.Unlock()
 	if err != nil {
 		return err
@@ -684,6 +808,11 @@ func Register(s *serve.Server, sp *Spawner) {
 		Sealed sig.Sealed `json:"sealed"`
 	}) (any, error) {
 		return sp.SetAWSCredentials(in.Sealed)
+	})
+	serve.Handle(s, "POST /fabric-credentials", func(in struct {
+		Sealed sig.Sealed `json:"sealed"`
+	}) (any, error) {
+		return sp.SetFabricCredentials(in.Sealed)
 	})
 	serve.Handle(s, "POST /spawn", func(in SpawnInput) (any, error) { return sp.Spawn(in) })
 	serve.Handle(s, "POST /init", func(in struct {

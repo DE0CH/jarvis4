@@ -24,6 +24,11 @@ func main() {
 		if err != nil {
 			return err
 		}
+		// the fabric runner (docs/PLAN-fabric.md): the fabric hermit's address inside the cluster, and the router's
+		// address as a fabric machine reaches it (the fabric's egress address)
+		if h, u := os.Getenv("KERNEL_FABRIC_HERMIT_URL"), os.Getenv("KERNEL_FABRIC_MACHINE_URL"); h != "" && u != "" {
+			sp.SetFabric(spawner.NewFabricAPI(h), map[string]string{"JARVIS2_URL": u})
+		}
 		spawner.Register(s, sp)
 		return nil
 	})
