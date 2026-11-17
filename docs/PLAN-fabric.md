@@ -221,3 +221,23 @@ from the AMI). What this shows for the build:
 - Monotonic time did NOT stay continuous: inside the sandbox it ran on through the freeze (19.5 s after 8 ticks at
   1.5 GiB). Programs see both clocks jump; the tool's description says so.
 - The restore loads the image eagerly and is fast; most of a thaw is the download.
+
+## Next: asking Deyao is a command (Deyao, 2026-11-17; not built yet in aviary)
+
+The rule (CLAUDE.md "Write the minimal algorithm"): asking is an ordinary command that blocks until Deyao answers and
+prints the answer. Everything else follows from that, with no logic of its own:
+
+- `jarvis-request` (Inbox requests: stores, repos, grants, new sessions, batches) already works so (jarvis4 3cc242e7).
+- A question: `ask` (aviary's supervisor CLI, through `/run/supervisor/agent.sock`, like `send-file`) shows the question
+  card in the chat and blocks until the answer, which it prints. aviary's build, so YYC AI's sessions too. Claude
+  Code's native AskUserQuestion and ExitPlanMode, and Qwen Code's ask_user_question, are turned off (a clean cut).
+- The harness never dismisses a question for the person: no timeout, no parked turn, no "asking" state. A long wait
+  goes to the background like any long command; the chat keeps showing the question; the watchdog keeps firing.
+- The only dismissal is the agent's: cancelling the command. It then has the question's id; `ask status ID` prints the
+  answer or that it still waits.
+- A message Deyao sends before answering does not dismiss the question: it is delivered as any message is during a
+  command (at once when the ask runs in the background, after the answer while it runs in the foreground, or when the
+  harness moves it to the background).
+- Waiting long on an answer: the agent cancels the command and calls the time machine with a condition beside the
+  duration (today one kind: the answer to question ID). The time machine's return says why it returned: the time
+  was up, a message came, or the answer arrived.
