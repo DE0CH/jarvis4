@@ -242,6 +242,10 @@ Hosts hold no standing AWS credentials and may only read `images/*` through the 
   stream-source`). A restore the host can't do
   (another gVisor release, a lost object) is a release instead: the files stay, a new sandbox starts, Claude Code
   resumes from its transcript.
+- Checked 2026-11-17 with the fork (precopy-20261102.1, systrap): a container counting once a second was recorded by
+  `runsc checkpoint --migrate-to` into `sandboxd stream-sink` (484 531 bytes, its End record seen), deleted, and
+  replayed by `sandboxd stream-source` into `runsc restore --migrate-listen`: it went on counting from where it
+  stopped.
 - The object goes once the thaw succeeded or the session is destroyed; nothing else deletes it. The scaler's IAM user
   gets `sts:GetFederationToken` and `s3:PutObject`/`GetObject`/`DeleteObject` on `frozen/*` (the session policy narrows
   each token to one object); the AMI gets the AWS CLI.
