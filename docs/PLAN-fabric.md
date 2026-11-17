@@ -222,6 +222,23 @@ from the AMI). What this shows for the build:
   1.5 GiB). Programs see both clocks jump; the tool's description says so.
 - The restore loads the image eagerly and is fast; most of a thaw is the download.
 
+### How a frozen image travels (engineering design, 2026-11-17)
+
+Hosts hold no AWS credentials and may only read `images/*` through the VPC endpoint; that stays. So:
+
+- **Freeze:** hermit creates an S3 multipart upload under `frozen/<sandbox>/<freeze id>` in the hosts' bucket, makes a
+  fresh 256-bit key for this freeze, and calls sandboxd `POST /v1/sandboxes/{name}/freeze` with the key and enough
+  presigned UploadPart URLs (128 MiB parts) for the sandbox's memory limit plus its scratch in use (`scratchUsed`).
+  sandboxd stops the sandbox with `runsc checkpoint --image-path` on its tmpfs, streams the image and the scratch file
+  (sparse-aware) through AES-256-GCM in 1 MiB chunks (ring; chunk counter as the nonce, the last chunk marked), PUTs
+  each part with curl, deletes the sandbox and answers the parts' ETags. hermit completes the upload, keeps the key
+  sealed under its own key in its database, and marks the sandbox `frozen` (no host, no slot).
+- **Thaw:** hermit places the sandbox like a start (any host, its spec and address travel as in a migration),
+  presigns a GET for the object and calls `POST /v1/sandboxes/{name}/thaw` with it and the key; sandboxd downloads,
+  decrypts, puts back the scratch and `runsc restore`s. A restore the host can't do (another gVisor release, a lost
+  object) is a release instead: the files stay, a new sandbox starts, Claude Code resumes from its transcript.
+- The object goes once the thaw succeeded or the session is destroyed; nothing else deletes it.
+
 ## Next: asking Deyao is a command (Deyao, 2026-11-17; not built yet in aviary)
 
 The rule (CLAUDE.md "Write the minimal algorithm"): asking is an ordinary command that blocks until Deyao answers and
