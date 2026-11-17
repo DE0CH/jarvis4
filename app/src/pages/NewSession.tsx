@@ -12,6 +12,7 @@ import { Badge, BadgeList, Button, CheckTiles, Flex, FoldLine, Lbl, Muted, P, Pi
 import { BtnLabel } from "../ui/bits";
 import { Page, useDone } from "../ui/page";
 import { loadContentStores, type ContentStore } from "../views/Content";
+import { formModel } from "../lib/newsession";
 
 // what the router's safeName makes of a file name (router/uploads.go): a basename, whitespace → "_"
 const safeName = (raw: string) => {
@@ -97,7 +98,10 @@ export function NewSession() {
   const [runner, setRunner] = useState("");
   // the models of the chosen harness (the router swaps a model of another harness for that harness's default)
   const models = MODELS.filter((m) => (m.harness || "claude") === harness);
-  useEffect(() => { setModel((m) => (models.some((x) => x.id === m) ? m : models[0]?.id || "")); }, [harness, models.map((m) => m.id).join(",")]);
+  // the router's default for the harness until a model is picked by hand (lib/newsession.ts)
+  const modelPicked = useRef(false), modelDefault = useStore((s) => s.modelDefaults[harness]);
+  const pickModel = (id: string) => { modelPicked.current = true; setModel(id); };
+  useEffect(() => { setModel((m) => formModel(m, modelPicked.current, models.map((x) => x.id), modelDefault)); }, [harness, models.map((m) => m.id).join(","), modelDefault]);
   // the Claude account (router/claudeaccounts.go): the default pre-picked; fixed for the session's life
   const [accounts, setAccounts] = useState<ClaudeAccounts | null>(null), [account, setAccount] = useState("");
   useEffect(() => { loadClaudeAccounts().then((a) => { setAccounts(a); setAccount((cur) => cur || a.default); }, () => setAccounts({ default: "", accounts: [] })); }, []);
@@ -228,7 +232,7 @@ export function NewSession() {
           <RadioTiles id="ns-harness" min={280} max={2} value={harness} onChange={setHarness} options={HARNESSES} />
         </Setting>
         {models.length > 0 && <Setting id="ns-row-model" label="Model" open={open === "model"} onToggle={() => toggle("model")} summary={models.find((m) => m.id === model)?.label || model}>
-          <RadioTiles id="ns-model" value={model} onChange={setModel} options={models.map((m) => ({ value: m.id, title: m.label || m.id, sub: m.id }))} />
+          <RadioTiles id="ns-model" value={model} onChange={pickModel} options={models.map((m) => ({ value: m.id, title: m.label || m.id, sub: m.id }))} />
         </Setting>}
         {SIZES.length > 0 && <Setting id="ns-row-size" label="Machine" open={open === "size"} onToggle={() => toggle("size")} summary={[cap(size), SIZES.find((z) => z.id === size)?.label].filter(Boolean).join(", ")}>
           <RadioTiles id="ns-size" value={size} onChange={setSize} options={SIZES.map((z) => ({ value: z.id, title: cap(z.id), sub: z.label }))} />

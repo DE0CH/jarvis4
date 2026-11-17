@@ -64,6 +64,8 @@ final class AppModel {
   var runners: [Choice] = []
   var defaultRunner = ""
   var models: [Choice] = []
+  /// each harness's default model (GET api/models `defaults`): New session shows it until a model is picked
+  var modelDefaults: [String: String] = [:]
   /// the stores each harness brings (GET api/policy): the router adds them, the pickers don't offer them
   var policy: [String: [String]] = [:]
   var records = Loaded<Rec>()
@@ -211,13 +213,23 @@ final class AppModel {
     let r = RouterClient.shared
     if let j = try? await r.get("api/sizes") { sizes = j["sizes"].array.map(Choice.init) }
     if let j = try? await r.get("api/regions") { regions = j["regions"].array.map(Choice.init); defaultRegion = j["default"].string ?? ""; runners = j["runners"].array.map(Choice.init); defaultRunner = j["defaultRunner"].string ?? "" }
-    if let j = try? await r.get("api/models") { models = j["models"].array.map(Choice.init) }
-    if let j = try? await r.get("api/policy") { policy = (j["harnesses"].object ?? [:]).mapValues { $0["stores"].strings } }
+    await loadOffers()
     await loadStores()
   }
 
-  /// back in the foreground: refresh at once (also where an expired login gets noticed)
-  func foreground() { Task { await refresh() } }
+  /// what New session offers, which a new router may change: the models, their defaults and the harnesses' stores
+  func loadOffers() async {
+    let r = RouterClient.shared
+    if let j = try? await r.get("api/models") {
+      models = j["models"].array.map(Choice.init)
+      modelDefaults = (j["defaults"].object ?? [:]).compactMapValues(\.string)
+    }
+    if let j = try? await r.get("api/policy") { policy = (j["harnesses"].object ?? [:]).mapValues { $0["stores"].strings } }
+  }
+
+  /// back in the foreground: refresh at once (also where an expired login gets noticed), with what a new router may
+  /// offer differently (the web page's same rule)
+  func foreground() { Task { await refresh(); await loadOffers() } }
 
   // ---- api/state, coalesced: a call while one runs gets ONE follow-up that starts after it ----
   func refresh() async { await stateRun?.run() }

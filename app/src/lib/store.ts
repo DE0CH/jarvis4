@@ -26,14 +26,14 @@ export type AskRow = { label: string; value: string; id?: string };
 export type Confirm = { title: string; detail?: string; rows?: AskRow[]; action: string; danger?: boolean; input?: AskInput; resolve: (ok: boolean, text: string) => void };
 type Store = {
   state: State; tab: Tab; pending: Map<string, string>; records: Loaded<Rec>; stores: Loaded<CoreStore>; machines: Loaded<Machine>; flyOrgs: { orgs: FlyOrgView[]; attention: number; configError: string };
-  toasts: Toast[]; confirm: (Confirm & { id: number }) | null; sizes: Choice[]; regions: Choice[]; defaultRegion: string; runners: Choice[]; defaultRunner: string; models: Choice[]; refreshing: boolean; policy: Policy;
+  toasts: Toast[]; confirm: (Confirm & { id: number }) | null; sizes: Choice[]; regions: Choice[]; defaultRegion: string; runners: Choice[]; defaultRunner: string; models: Choice[]; modelDefaults: Record<string, string>; refreshing: boolean; policy: Policy;
   tasks: TasksState;
 };
 const empty = <T,>(): Loaded<T> => ({ loading: false, loaded: false, items: [], err: null });
 const S: Store = {
   state: { sessions: [], approvals: [], core: { up: false } },
   tab: "sessions", pending: new Map(), records: empty(), stores: empty(), machines: empty(), flyOrgs: { orgs: [], attention: 0, configError: "" },
-  sizes: [], regions: [], defaultRegion: "", runners: [], defaultRunner: "", models: [], refreshing: false, toasts: [], confirm: null, policy: {},
+  sizes: [], regions: [], defaultRegion: "", runners: [], defaultRunner: "", models: [], modelDefaults: {}, refreshing: false, toasts: [], confirm: null, policy: {},
   tasks: { loading: false, loaded: false, data: { templates: [], instances: [], schedules: [] }, err: null },
 };
 const listeners = new Set<() => void>();
@@ -162,7 +162,7 @@ export function start() {
 
 // what New session offers, which a new router may change: the models and each harness's stores
 function loadOffers() {
-  api<{ models: Choice[] }>("GET", "api/models").then((j) => { S.models = j.models || []; emit(); }).catch(() => {});
+  api<{ models: Choice[]; defaults?: Record<string, string> }>("GET", "api/models").then((j) => { S.models = j.models || []; S.modelDefaults = j.defaults || {}; emit(); }).catch(() => {});
   loadPolicy().then((p) => { S.policy = p; emit(); }).catch(() => {});
 }
 

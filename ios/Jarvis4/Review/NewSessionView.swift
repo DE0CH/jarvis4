@@ -24,6 +24,8 @@ struct NewSessionView: View {
   @State private var prompt = ""
   @State private var label = ""
   @State private var modelId = ""
+  /// a model was picked by hand: the router's default no longer moves it (Model/FormModel.swift)
+  @State private var modelPicked = false
   @State private var size = "medium"
   /// "" = the router's default region
   @State private var region = ""
@@ -93,6 +95,7 @@ struct NewSessionView: View {
     .onChange(of: model.policy) { defaultHarness() }
     .onChange(of: harness) { pickModel() }
     .onChange(of: model.models) { pickModel() }
+    .onChange(of: model.modelDefaults) { pickModel() }
     .onChange(of: model.repos) { defaultRepo() }
   }
 
@@ -232,7 +235,7 @@ struct NewSessionView: View {
   @ViewBuilder private var optionsSection: some View {
     Section {
       if !models.isEmpty {
-        Picker("Model", selection: $modelId) { ForEach(models) { m in Text(m.label ?? m.id).tag(m.id) } }
+        Picker("Model", selection: Binding(get: { modelId }, set: { modelPicked = true; modelId = $0 })) { ForEach(models) { m in Text(m.label ?? m.id).tag(m.id) } }
           .accessibilityIdentifier("ns-model")
       }
       if !model.sizes.isEmpty {
@@ -291,7 +294,9 @@ struct NewSessionView: View {
     repoDefaulted = true
     if let r = model.repos.first(where: { $0.repo.caseInsensitiveCompare(Self.defaultRepo) == .orderedSame }), !repos.contains(r.name) { toggleRepo(r) }
   }
-  private func pickModel() { if !models.contains(where: { $0.id == modelId }) { modelId = models.first?.id ?? "" } }
+  private func pickModel() {
+    modelId = FormModel.pick(current: modelId, picked: modelPicked, offered: models.map(\.id), default: model.modelDefaults[harness])
+  }
   private func apply(_ list: [StoreView]) {
     let first = stores.isEmpty
     stores = list

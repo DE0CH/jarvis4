@@ -12,6 +12,17 @@ func check(_ ok: Bool, _ what: String) {
 func checks() async {
   // the crash of build 1039 (2026-10-13): an ASWebAuthenticationSession that can't present calls its completion
   // handler and also returns false from start(); signIn resumed its continuation from both and the app trapped
+  // New session's model follows the router's default until one is picked by hand (Deyao, 2026-11-17)
+  let offered = ["aviary/claude-opus-5-5", "aviary/claude-fable-5-2"]
+  check(FormModel.pick(current: "aviary/claude-fable-5-2", picked: false, offered: offered, default: "aviary/claude-opus-5-5")
+        == "aviary/claude-opus-5-5", "a model the form put there itself follows a new default")
+  check(FormModel.pick(current: "aviary/claude-fable-5-2", picked: true, offered: offered, default: "aviary/claude-opus-5-5")
+        == "aviary/claude-fable-5-2", "a model picked by hand stays while the harness offers it")
+  check(FormModel.pick(current: "claude-fable-5-2", picked: true, offered: offered, default: "aviary/claude-opus-5-5")
+        == "aviary/claude-opus-5-5", "a picked model another harness's: the default")
+  check(FormModel.pick(current: "", picked: false, offered: offered, default: nil) == "aviary/claude-opus-5-5",
+        "no default named: the first model")
+
   let a = await ResumeOnce<String?>.run(failed: nil) { done in done("callback"); return false }
   check(a == "callback", "callback, then start() false: one answer, the callback's (no double resume)")
 
