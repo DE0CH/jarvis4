@@ -65,6 +65,10 @@ for m in json.load(sys.stdin):
     if m.get("state") != "destroyed" and ((m.get("config") or {}).get("env") or {}).get("JARVIS2_URL") == want:
         print(m["id"], " ".join(x.get("volume", "") for x in ((m.get("config") or {}).get("mounts") or [])))' "$MURL" \
     | while read -r m vols; do
+        # the machine's own log (the harness, the supervisor, Claude Code's exits) into the run's logs before it goes
+        mkdir -p "$LOGS"
+        FLY_API_TOKEN="$JARVIS2_FLY_TOKEN" timeout 90 flyctl logs -a jarvis4-sessions --machine "$m" --no-tail \
+          > "$LOGS/machine-$m.log" 2>&1
         curl -fsS -o /dev/null -X DELETE -H "Authorization: Bearer $JARVIS2_FLY_TOKEN" \
           "https://api.machines.dev/v1/apps/jarvis4-sessions/machines/$m?force=true" && echo "e2e-aviary: destroyed machine $m"
         for v in $vols; do
