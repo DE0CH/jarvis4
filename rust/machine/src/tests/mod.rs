@@ -8,6 +8,7 @@ pub mod deploykeys;
 pub mod fabric;
 pub mod grants;
 pub mod jarvis1import;
+pub mod keeper;
 pub mod kernelboot;
 pub mod misc;
 pub mod outcomes;

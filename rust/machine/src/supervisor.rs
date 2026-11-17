@@ -206,13 +206,22 @@ pub fn harness_pid() -> i32 {
 
 /// the keeper (the supervisors' parent), never stopped or killed by the supervisor itself
 pub fn keeper_pid() -> i32 {
+    if let Some((p, _)) = TEST_KEEPER.lock().ok().and_then(|g| *g) {
+        return p;
+    }
     nix::unistd::getppid().as_raw()
 }
+
+/// tests: the keeper's pid and whether it is init
+pub static TEST_KEEPER: std::sync::Mutex<Option<(i32, bool)>> = std::sync::Mutex::new(None);
 
 /// The keeper is pid 1 of this pid namespace. On an AWS instance it is (docker runs the image's entrypoint as the
 /// container's init). On Fly, pid 1 is Fly's own init, and a supervisor sees ppid 1 only once its keeper died and it
 /// was re-parented there. Told apart by pid 1's executable: the keeper is this very binary.
 pub fn keeper_is_init() -> bool {
+    if let Some((_, i)) = TEST_KEEPER.lock().ok().and_then(|g| *g) {
+        return i;
+    }
     let root = crate::memory::proc_root();
     match (
         std::fs::metadata(root.join("1/exe")),

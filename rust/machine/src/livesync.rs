@@ -8,7 +8,7 @@ use crate::{gojson, logf, paths, util};
 use anyhow::{Result, bail};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 /// the router refuses more
@@ -25,7 +25,12 @@ pub struct LiveSyncer {
     state: Option<PathBuf>,
 }
 
-static LIVE: OnceLock<LiveSyncer> = OnceLock::new();
+static LIVE: Mutex<Option<Arc<LiveSyncer>>> = Mutex::new(None);
+
+/// tests: the next live_syncer_for makes a new one
+pub fn reset_live_syncer() {
+    *LIVE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
 
 fn mtime_text(t: SystemTime) -> String {
     let d = t.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default();
@@ -39,14 +44,15 @@ fn parse(s: &str) -> Option<time::OffsetDateTime> {
 }
 
 /// this process's syncer, sending through c
-pub fn live_syncer_for(c: &Client) -> &'static LiveSyncer {
-    LIVE.get_or_init(|| {
+pub fn live_syncer_for(c: &Client) -> Arc<LiveSyncer> {
+    let mut g = LIVE.lock().unwrap_or_else(|e| e.into_inner());
+    g.get_or_insert_with(|| {
         let c = c.clone();
         let sent = std::fs::read(paths::live_sent_path())
             .ok()
             .and_then(|b| gojson::unmarshal(&b).ok())
             .unwrap_or_default();
-        LiveSyncer::new(
+        Arc::new(LiveSyncer::new(
             Box::new(move |name, body| {
                 let r = c.raw("POST", "/m/live-transcript", body, &[("X-Name", name)])?;
                 if r.status != 200 {
@@ -59,8 +65,9 @@ pub fn live_syncer_for(c: &Client) -> &'static LiveSyncer {
             }),
             Some(paths::live_sent_path()),
             sent,
-        )
+        ))
     })
+    .clone()
 }
 
 fn glob(pattern_dir: &Path, depth_pattern: &[&str]) -> Vec<PathBuf> {

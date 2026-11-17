@@ -139,6 +139,13 @@ fn reset_seams() {
     }
     crate::claudelogin::CREDS_SYNC_ON.store(false, std::sync::atomic::Ordering::SeqCst);
     crate::kernelboot::set_refresh_for_test(None);
+    crate::livesync::reset_live_syncer();
+    *crate::supervisor::TEST_KEEPER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::keeper::TEST_HARNESS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
     crate::kernelboot::KERNEL_TRUST_EVERY_MS.store(10_000, std::sync::atomic::Ordering::SeqCst);
     *crate::supervisor::TEST_TREE
         .lock()

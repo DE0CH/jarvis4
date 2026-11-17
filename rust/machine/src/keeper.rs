@@ -49,6 +49,15 @@ use std::time::{Duration, Instant};
 /// Jarvis 1's entrypoint: the harness
 pub const BASE_ENTRY: &str = "/usr/local/bin/entrypoint.sh";
 const HARNESS_BACKOFF0: Duration = Duration::from_secs(1);
+
+/// tests: the harness's entry, its first backoff and the secrets it starts with
+pub struct TestHarness {
+    pub entry: PathBuf,
+    pub backoff0: Duration,
+    pub secrets: HashMap<String, String>,
+}
+
+pub static TEST_HARNESS: Mutex<Option<TestHarness>> = Mutex::new(None);
 const HARNESS_BACKOFF_MAX: Duration = Duration::from_secs(60);
 /// up this long: the backoff starts again at 1 s
 const HARNESS_STABLE: Duration = Duration::from_secs(600);
@@ -128,12 +137,7 @@ pub fn keeper() -> Result<()> {
             std::thread::park();
         }
     }
-    let k = Arc::new(Keeper {
-        mu: Mutex::new(KeeperState::default()),
-        stop_cv: Condvar::new(),
-        core_end: (Mutex::new(false), Condvar::new()),
-        hlog: Arc::new(HarnessLog::supervisor()),
-    });
+    let k = Arc::new(Keeper::new());
     use signal_hook::consts::*;
     let mut sigs = signal_hook::iterator::Signals::new([SIGTERM, SIGINT, SIGHUP, SIGQUIT])?;
     // job control on a keeper with no terminal: caught and dropped
@@ -281,6 +285,26 @@ fn protect_from_oom() {
 }
 
 impl Keeper {
+    pub(crate) fn new() -> Keeper {
+        Keeper {
+            mu: Mutex::new(KeeperState::default()),
+            stop_cv: Condvar::new(),
+            core_end: (Mutex::new(false), Condvar::new()),
+            hlog: Arc::new(HarnessLog::supervisor()),
+        }
+    }
+
+    /// the harness's state as the status report reads it
+    pub(crate) fn harness_state(&self) -> HarnessState {
+        self.lock().state.clone()
+    }
+
+    /// what a stop signal does first: the loops end
+    pub(crate) fn stop(&self) {
+        self.lock().stopping = true;
+        self.stop_cv.notify_all();
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, KeeperState> {
         self.mu.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -505,8 +529,12 @@ impl Keeper {
 
     /// the harness (Jarvis 1's entrypoint, then harness-*.sh), as user claude in its own session, started again
     /// whenever it ends
-    fn harness_loop(&self, spec: HarnessSpec) {
-        let mut backoff = HARNESS_BACKOFF0;
+    pub(crate) fn harness_loop(&self, spec: HarnessSpec) {
+        let (entry, backoff0) = match TEST_HARNESS.lock().ok().as_deref().and_then(Option::as_ref) {
+            Some(t) => (t.entry.to_string_lossy().into_owned(), t.backoff0),
+            None => (BASE_ENTRY.to_string(), HARNESS_BACKOFF0),
+        };
+        let mut backoff = backoff0;
         let mut n: i64 = 1;
         loop {
             if self.is_stopping() {
@@ -520,7 +548,7 @@ impl Keeper {
             }
             let mut env = spec.env(&self.secrets());
             env.push(format!("JARVIS_HARNESS_START={n}"));
-            let mut cmd = unprotected_setsid(BASE_ENTRY, &[]);
+            let mut cmd = unprotected_setsid(&entry, &[]);
             cmd.env_clear()
                 .envs(env.iter().filter_map(|kv| kv.split_once('=')));
             if let Ok(out) = harness_stdout(self.hlog.clone())
@@ -598,7 +626,7 @@ impl Keeper {
                 return;
             }
             if up > HARNESS_STABLE {
-                backoff = HARNESS_BACKOFF0;
+                backoff = backoff0;
             }
             let next = util::format_rfc3339(util::unix_now() + backoff.as_secs() as i64);
             self.set_state(|s| s.next_start = next.clone());
@@ -617,6 +645,9 @@ impl Keeper {
 
     /// what the supervisor holds now, for the harness's env (boot-env, answered to the keeper only: secrets.rs)
     fn secrets(&self) -> HashMap<String, String> {
+        if let Some(t) = TEST_HARNESS.lock().ok().as_deref().and_then(Option::as_ref) {
+            return t.secrets.clone();
+        }
         match ask_secrets(
             &SecretsReq {
                 op: "boot-env".into(),
@@ -702,11 +733,13 @@ impl Keeper {
     }
 }
 
-/// a command for the session in its own session (setsid): as root through `unprotected --setsid`; otherwise as it is
+/// a command for the session in its own session (setsid): as root through `unprotected --setsid`; otherwise in its
+/// own process group (setsid needs unsafe code here; the group is what kill_group ends)
 fn unprotected_setsid(name: &str, args: &[&str]) -> Command {
     if !privileged() {
+        use std::os::unix::process::CommandExt;
         let mut c = Command::new(name);
-        c.args(args);
+        c.args(args).process_group(0);
         return c;
     }
     let mut c = Command::new("/proc/self/exe");
