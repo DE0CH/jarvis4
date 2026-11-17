@@ -1,0 +1,34 @@
+#!/bin/bash
+# fabric-entrypoint (as root, the fabric sandbox's first process; docs/PLAN-fabric.md): makes the sandbox a session
+# machine. hermit's boot environment carries only the proxy URL with the sandbox's token
+# (http://sbx:<hst1 token>@<egress address>:3128); the router serves the machine's env (its source, the kernel's
+# roster and root key, its own address, JARVIS2_RUNNER=fabric, JARVIS2_MACHINE_ID) to that token at the same address.
+# Then the session image's own boot, with that env and nothing of hermit's (the fabric gives direct egress: no proxy).
+set -euo pipefail
+proxy="${HTTP_PROXY:-${http_proxy:-}}"
+[[ "$proxy" =~ ^http://sbx:(hst1\.[A-Za-z0-9._-]+)@([0-9.]+:[0-9]+)/?$ ]] \
+  || { echo "fabric-entrypoint: no sandbox token in the boot environment's proxy URL" >&2; exec sleep infinity; }
+token="${BASH_REMATCH[1]}" at="${BASH_REMATCH[2]}"
+for v in HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY no_proxy; do unset "$v"; done
+envfile=/run/fabric-env.json
+for try in $(seq 1 120); do
+  # the token goes to curl on stdin (a config line), never on its command line
+  if printf 'header = "authorization: Bearer %s"\n' "$token" \
+     | curl -fsS --max-time 10 -K - "http://$at/fabric/env" -o "$envfile.tmp" 2> /run/fabric-env.err; then
+    mv "$envfile.tmp" "$envfile"; break
+  fi
+  echo "fabric-entrypoint: the machine's env (try $try): $(cat /run/fabric-env.err)" >&2
+  sleep 5
+done
+[ -s "$envfile" ] || { echo "fabric-entrypoint: the router never served the machine's env" >&2; exec sleep infinity; }
+# the env's names and values as exec env arguments (python: no shell quoting of values)
+exec python3 -I -c '
+import json, os, re, sys
+env = json.load(open(sys.argv[1]))["env"]
+for k, v in env.items():
+    if not re.fullmatch(r"[A-Z][A-Z0-9_]*", k) or "\0" in v:
+        sys.exit("fabric-entrypoint: a bad name in the env: " + k)
+    os.environ[k] = v
+os.environ["HOME"] = "/root"
+os.execv("/usr/local/bin/jarvis-machine", ["jarvis-machine", "boot"])
+' "$envfile"

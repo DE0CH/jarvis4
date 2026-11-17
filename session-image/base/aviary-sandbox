@@ -15,6 +15,10 @@
 #   the root     an overlay over the image (/data/aviary/upper-<digest12>: what the agent installs with apt stays
 #                while the session lives, as a sandbox's root does), entered with pivot_root; the machine's own root
 #                is unmounted from the namespace, so the agent sees the image's files and tools, not the machine's
+#                On a fabric machine (docs/PLAN-fabric.md) the fabric image carries the sandbox image unpacked at
+#                AVIARY_SANDBOX_IMAGE_DIR, its config beside it (<dir>.config): nothing is fetched, and the root is a
+#                bind of that directory, writable because the fabric's own root (sandboxd's overlay over the image)
+#                is; gVisor refuses an overlay whose upper directory is not in memory, so none is made inside it
 #   the start    the image's Entrypoint (supervisor-keeper) as PID 1 of a PID namespace, in the image's WorkingDir,
 #                with the image's Env plus the gateway's boot environment: what a container runtime does
 #
@@ -40,10 +44,14 @@ store="${AVIARY_SANDBOX_STORE:-/data/aviary}"
 image="$(python3 -I -c 'import json,sys;print(json.load(open(sys.argv[1])).get("sandbox",""))' "${AVIARY_PINS:-/usr/local/share/aviary.json}")"
 [[ "$image" =~ ^[a-z0-9./-]+@sha256:[0-9a-f]{64}$ ]] || { echo "aviary-sandbox: no sandbox image by digest in the aviary pins ($image)" >&2; exit 1; }
 id="${image##*@sha256:}"; id="${id:0:12}"
-img="$store/image-$id"
+img="${AVIARY_SANDBOX_IMAGE_DIR:-$store/image-$id}"
 
 fetch() {
   [ -e "$img.ok" ] && return 0
+  if [ -n "${AVIARY_SANDBOX_IMAGE_DIR:-}" ]; then
+    [ -d "$img/home/sandbox" ] && [ -s "$img.config" ] && return 0
+    echo "aviary-sandbox: no sandbox image at $img (with $img.config)" >&2; return 1
+  fi
   mkdir -p "$store"
   find "$store" -mindepth 1 -maxdepth 1 ! -name "upper-$id" -exec rm -rf {} +
   local attempt
@@ -81,8 +89,13 @@ if [ "${AVIARY_SANDBOX_INNER:-}" != 1 ]; then
 fi
 
 new=/run/aviary-sandbox-root
-mkdir -p "$new" "$store/upper-$id/up" "$store/upper-$id/work"
-mount -t overlay overlay -o "lowerdir=$img,upperdir=$store/upper-$id/up,workdir=$store/upper-$id/work" "$new"
+mkdir -p "$new"
+if [ -n "${AVIARY_SANDBOX_IMAGE_DIR:-}" ]; then
+  mount --bind "$img" "$new"
+else
+  mkdir -p "$store/upper-$id/up" "$store/upper-$id/work"
+  mount -t overlay overlay -o "lowerdir=$img,upperdir=$store/upper-$id/up,workdir=$store/upper-$id/work" "$new"
+fi
 mount -t proc proc "$new/proc"
 mount --rbind /sys "$new/sys"
 mount --rbind /dev "$new/dev"

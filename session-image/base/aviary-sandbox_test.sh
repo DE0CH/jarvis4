@@ -144,6 +144,25 @@ want "installed-before=yes" "what the agent installed is gone at the next start"
 [ -z "$(findmnt -rn -o TARGET | grep aviary-sandbox-root || true)" ] || fail "the sandbox's root is mounted on the machine's side"
 echo "ok: the sandbox is the image: its entrypoint, environment, root and home links; the volume's ~/workspace and ~/artifacts; Jarvis's session commands"
 
+# ---- a fabric machine (docs/PLAN-fabric.md): the image unpacked in the fabric image, its config beside it; nothing is
+# fetched, the root is a bind of that directory (gVisor refuses the overlay), what is installed goes into it
+fab="$t/fabric"; mkdir -p "$fab"
+mount -t tmpfs tmpfs "$fab"   # the fabric's own writable root (sandboxd's overlay over the fabric image)
+cp -a "$src" "$fab/aviary-sandbox"; cp "$t/config.json" "$fab/aviary-sandbox.config"
+calls_before="$(wc -l < "$t/crane.calls")"
+rc=0; AVIARY_SANDBOX_IMAGE_DIR="$fab/aviary-sandbox" bash "$here/aviary-sandbox" "$t/boot.env" "$home/workspace/repo" || rc=$?
+[ "$rc" = 7 ] || fail "the fabric sandbox did not end with the image's entrypoint's status (7): $rc"
+want "pid=1" "(fabric) the image's entrypoint is not PID 1"
+want "boot-env=from-the-boot" "(fabric) the boot environment is not passed on"
+want "machine-root=gone; mnt=" "(fabric) the machine's root is visible in the sandbox"
+want "workspace=volume" "(fabric) the sandbox's ~/workspace is not the machine's home"
+want "installed-before=no" "(fabric) the image's root is not clean at the first start"
+[ "$(cat "$fab/aviary-sandbox/etc/installed")" = yes ] || fail "(fabric) what the agent installs is not in the fabric's root"
+[ "$(wc -l < "$t/crane.calls")" = "$calls_before" ] || fail "(fabric) the image was fetched"
+if AVIARY_SANDBOX_IMAGE_DIR="$t/nowhere" bash "$here/aviary-sandbox" "$t/boot.env" "$home/workspace/repo" 2> "$t/err"; then fail "(fabric) a missing image dir started"; fi
+grep -q "no sandbox image at" "$t/err" || fail "(fabric) no word on the missing image: $(cat "$t/err")"
+echo "ok: on the fabric the sandbox is the image carried in the fabric image, bound, not fetched or overlaid"
+
 # ---- both ways aviary-home moves the machine's ~/.claude: the atomic exchange, and the copy a new machine's overlay
 # root needs (it refuses to rename a directory that comes from several image layers: the first replica run, 2026-11-14)
 for way in exchange copy; do
