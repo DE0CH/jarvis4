@@ -30,26 +30,26 @@ type ModelChoice struct {
 }
 
 var modelCatalog = []ModelChoice{
-	{"claude-fable-5-2", "Fable 5.2", "claude"},
 	{"claude-opus-5-5", "Opus 5.5", "claude"},
+	{"claude-fable-5-2", "Fable 5.2", "claude"},
 	{"openrouter/z-ai/glm-5.3", "GLM 5.3 — $0.90 / $2.82", "opencode"},
 	{"openrouter/moonshotai/kimi-k3", "Kimi K3 — $1.70 / $8.50", "opencode"},
 	{"openrouter/deepseek/deepseek-v4-pro-0813", "DeepSeek V4 Pro — $0.66 / $1.98", "opencode"},
 	{"openrouter/deepseek/deepseek-v4.1-flash", "DeepSeek V4.1 Flash — $0.15 / $0.60", "opencode"},
 	{"openrouter/qwen/qwen3-coder-next", "Qwen3 Coder Next — $0.12 / $0.80", "opencode"},
 	{"openrouter/minimax/minimax-m3", "MiniMax M3 — $0.30 / $1.20", "opencode"},
-	{"openclaw/claude-fable-5-2", "Fable 5.2", "openclaw"},
 	{"openclaw/claude-opus-5-5", "Opus 5.5", "openclaw"},
-	{"paseo/claude-fable-5-2", "Fable 5.2", "paseo-claude"},
+	{"openclaw/claude-fable-5-2", "Fable 5.2", "openclaw"},
 	{"paseo/claude-opus-5-5", "Opus 5.5", "paseo-claude"},
-	{"aviary/claude-fable-5-2", "Fable 5.2", "aviary"},
+	{"paseo/claude-fable-5-2", "Fable 5.2", "paseo-claude"},
 	{"aviary/claude-opus-5-5", "Opus 5.5", "aviary"},
+	{"aviary/claude-fable-5-2", "Fable 5.2", "aviary"},
 	{"aviary/z-ai/glm-5.3", "GLM 5.3 — $1.40 / $4.40", "aviary"},
 	{"dsh/deepseek/deepseek-v4-pro-0813", "DeepSeek V4 Pro — $0.66 / $1.98", "dsh"},
 	{"dsh/deepseek/deepseek-v4.1-flash-1017", "DeepSeek V4.1 Flash — $0.15 / $0.60", "dsh"},
 }
 
-// the first model of each harness is its default
+// the first model of each harness is its default: Opus 5.5 for the Claude ones (Deyao, 2026-11-17)
 var harnessInfo = map[string]map[string]string{
 	"claude":       {"label": "Claude Code", "detail": "Claude subscription · Claude app"},
 	"opencode":     {"label": "OpenCode · OpenRouter", "detail": "Paseo app + web UI"},

@@ -12,17 +12,17 @@ import (
 
 func TestSessionModel(t *testing.T) {
 	cases := []struct{ harness, in, want string }{
-		{"claude", "", "claude-fable-5-2"},
+		{"claude", "", "claude-opus-5-5"},
 		{"claude", "claude-opus-5-5", "claude-opus-5-5"},
 		{"opencode", "", "openrouter/z-ai/glm-5.3"},
 		{"opencode", "openrouter/moonshotai/kimi-k3", "openrouter/moonshotai/kimi-k3"},
 		{"opencode", "claude-opus-5-5", "openrouter/z-ai/glm-5.3"}, // the shell picked another harness than the form's model
-		{"openclaw", "claude-opus-5-5", "openclaw/claude-fable-5-2"},
+		{"openclaw", "claude-opus-5-5", "openclaw/claude-opus-5-5"},
 		{"openclaw", "openclaw/claude-opus-5-5", "openclaw/claude-opus-5-5"},
-		{"paseo-claude", "", "paseo/claude-fable-5-2"},
+		{"paseo-claude", "", "paseo/claude-opus-5-5"},
 		{"paseo-claude", "paseo/claude-opus-5-5", "paseo/claude-opus-5-5"},
-		{"paseo-claude", "claude-opus-5-5", "paseo/claude-fable-5-2"},
-		{"aviary", "", "aviary/claude-fable-5-2"},
+		{"paseo-claude", "claude-opus-5-5", "paseo/claude-opus-5-5"},
+		{"aviary", "", "aviary/claude-opus-5-5"},
 		{"aviary", "aviary/z-ai/glm-5.3", "aviary/z-ai/glm-5.3"}, // GLM 5.3 on OpenRouter beside the Claude models (Deyao, 2026-11-12)
 	}
 	for _, c := range cases {
@@ -51,7 +51,7 @@ func TestModelsList(t *testing.T) {
 			t.Fatal("a harness outside the policy is listed")
 		}
 	}
-	if _, ok := all["harnesses"].(map[string]any)["openclaw"]; ok || all["default"] != "claude-fable-5-2" {
+	if _, ok := all["harnesses"].(map[string]any)["openclaw"]; ok || all["default"] != "claude-opus-5-5" {
 		t.Fatalf("%v", all)
 	}
 	// a new session starts on aviary when the policy offers it (Deyao, 2026-11-13), else on Claude Code
@@ -59,7 +59,7 @@ func TestModelsList(t *testing.T) {
 		t.Fatalf("no aviary in the policy: %v", all["defaultHarness"])
 	}
 	r.policy.Harnesses["aviary"] = HarnessPolicy{}
-	if av := get(""); av["defaultHarness"] != "aviary" || av["default"] != "aviary/claude-fable-5-2" {
+	if av := get(""); av["defaultHarness"] != "aviary" || av["default"] != "aviary/claude-opus-5-5" {
 		t.Fatalf("%v %v", av["defaultHarness"], av["default"])
 	}
 	delete(r.policy.Harnesses, "aviary")
@@ -313,7 +313,7 @@ func TestAviaryRemote(t *testing.T) {
 	if byID["sAN"] != nil {
 		t.Fatalf("a new session not yet approved is not listed: %v", byID["sAN"])
 	}
-	if s := byID["sAV"]; s["webUrl"] != chatURL || s["model"] != "aviary/claude-fable-5-2" || s["error"] != nil {
+	if s := byID["sAV"]; s["webUrl"] != chatURL || s["model"] != "aviary/claude-opus-5-5" || s["error"] != nil {
 		t.Fatalf("%v", s)
 	}
 	if s := byID["sAP"]; s["state"] != "paused" || s["webUrl"] != nil {
