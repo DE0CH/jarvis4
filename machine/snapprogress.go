@@ -144,7 +144,7 @@ func (p *snapProgress) end(err error) {
 // as it goes so a long walk shows too
 func measureSnapshot(n *atomic.Int64) {
 	home, _ := os.UserHomeDir()
-	for _, rel := range snapshotPaths {
+	for _, rel := range statePaths() {
 		root := filepath.Join(home, rel)
 		if _, err := os.Lstat(root); err != nil {
 			continue

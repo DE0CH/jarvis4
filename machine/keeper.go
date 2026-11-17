@@ -328,6 +328,9 @@ func keeper() error {
 		log.Printf("REFUSING TO START: the boot steps: %v", err)
 		select {}
 	}
+	if onFabric() && privileged() {
+		go k.announceKeys() // the fabric's spawner reads it from the sandbox's console through hermit
+	}
 	if onAWS() && privileged() {
 		go k.announceKeys()
 		go k.shipHostJournal() // output.go
@@ -491,6 +494,14 @@ func (k *keeperT) normalLoop() {
 	k.childLoop("supervisor-normal", "--normal", time.Minute, nil, &k.normal)
 }
 
+// keysConsole: where the keys line goes: the sandbox's console on the fabric, the serial console on AWS
+func keysConsole() string {
+	if onFabric() {
+		return fabricConsolePath
+	}
+	return consolePath
+}
+
 // announceKeys: on an AWS instance nothing runs jarvis2-init: the spawner reads the keys from the serial console
 // (kernel/spawner/aws.go), so the keeper writes them there, and lets boot go on as init would, once boot has made
 // them; again every 20 s until the cert is in (the console's newest output must still hold the line when the
@@ -502,7 +513,7 @@ func (k *keeperT) announceKeys() {
 			if _, err := os.Stat(goPath); err != nil {
 				os.WriteFile(goPath, []byte(time.Now().UTC().Format(time.RFC3339)), 0o644)
 			}
-			if f, err := os.OpenFile(consolePath, os.O_WRONLY, 0); err == nil {
+			if f, err := os.OpenFile(keysConsole(), os.O_WRONLY, 0); err == nil {
 				fmt.Fprintf(f, "\n%s%s\n", keysMark, bytes.TrimSpace(b))
 				f.Close()
 			} else {

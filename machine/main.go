@@ -61,16 +61,17 @@ import (
 )
 
 const (
-	dir         = "/run/jarvis"
-	keysPath    = dir + "/keys.json"      // public halves, printed by init for the core (through Fly exec)
-	coreKeyPath = dir + "/core-key"       // the core's key, from the machine's Fly config (the core set it)
-	coreKeyEnv  = "JARVIS2_CORE_KEY"      // the core that created this machine puts its signing key here
-	goPath      = dir + "/init-requested" // init ran (Fly), or the keeper announced the keys (AWS)
-	consolePath = "/dev/ttyS0"            // an AWS instance's serial console (GetConsoleOutput)
-	keysMark    = "JARVIS2-KEYS "         // the console line's mark (kernel/spawner/aws.go)
-	certPath    = dir + "/cert.json"
-	bootedPath  = dir + "/booted"      // written once the boot is done (cert, snapshot, secrets, repos): the harness starts next
-	clientPath  = dir + "/client.json" // the router URL + this machine's id, for later commands
+	dir               = "/run/jarvis"
+	keysPath          = dir + "/keys.json"      // public halves, printed by init for the core (through Fly exec)
+	coreKeyPath       = dir + "/core-key"       // the core's key, from the machine's Fly config (the core set it)
+	coreKeyEnv        = "JARVIS2_CORE_KEY"      // the core that created this machine puts its signing key here
+	goPath            = dir + "/init-requested" // init ran (Fly), or the keeper announced the keys (AWS)
+	consolePath       = "/dev/ttyS0"            // an AWS instance's serial console (GetConsoleOutput)
+	fabricConsolePath = "/proc/1/fd/1"          // a fabric sandbox's console: its first process's stdout, which sandboxd keeps
+	keysMark          = "JARVIS2-KEYS "         // the console line's mark (kernel/spawner/aws.go)
+	certPath          = dir + "/cert.json"
+	bootedPath        = dir + "/booted"      // written once the boot is done (cert, snapshot, secrets, repos): the harness starts next
+	clientPath        = dir + "/client.json" // the router URL + this machine's id, for later commands
 )
 
 // privPath: the private halves, never leave the machine (a var: tests point it away from a host that is itself a
@@ -270,7 +271,7 @@ func initCmd() error {
 // machineID: this machine's id as its runner knows it: the EC2 instance id the instance's unit read (AWS), else
 // Fly's; "" when this isn't a session machine (a test, a dev box)
 func machineID() string {
-	if onAWS() {
+	if onAWS() || onFabric() {
 		return os.Getenv("JARVIS2_MACHINE_ID")
 	}
 	return os.Getenv("FLY_MACHINE_ID")
@@ -281,11 +282,41 @@ func machineObject(id string) doc.Object {
 	if onAWS() {
 		return doc.Object("aws-" + id)
 	}
+	if onFabric() {
+		return doc.Object("fabric-" + id)
+	}
 	return doc.Object("fly-" + id)
 }
 
 // onAWS: started by the spawner's AWS runner (the instance's unit sets JARVIS2_RUNNER=aws)
 func onAWS() bool { return os.Getenv("JARVIS2_RUNNER") == "aws" }
+
+// onFabric: a gVisor sandbox on aviary's fabric (docs/PLAN-fabric.md): the fabric image's entrypoint sets
+// JARVIS2_RUNNER=fabric and JARVIS2_MACHINE_ID (x<the sandbox's id>) with the env the router serves it
+func onFabric() bool { return os.Getenv("JARVIS2_RUNNER") == "fabric" }
+
+// fabricStatePaths: what a fabric machine's snapshot holds: the small files, the Jarvis records among them (the
+// grants, the line's keys, what was delivered). The directories (the conversations, the workspace, the artifacts,
+// the harnesses' state) stay on the fabric's network filesystem, where the next machine of the session finds them;
+// the records travel signed as on every runner, so a successor never takes an older grant or delivery list from the
+// shared disk.
+func fabricStatePaths() []string {
+	var out []string
+	for _, rel := range snapshotPaths {
+		if snapshotFiles[rel] {
+			out = append(out, rel)
+		}
+	}
+	return out
+}
+
+// statePaths: what this machine's snapshot holds, in snapshotPaths' order
+func statePaths() []string {
+	if onFabric() {
+		return fabricStatePaths()
+	}
+	return snapshotPaths
+}
 
 func keygen() error {
 	if err := sudo("install", "-d", "-o", "claude", "-m", "755", dir); err != nil {
@@ -680,7 +711,7 @@ func writeSnapshot(w io.Writer) (string, int64, error) {
 	}
 	tw := tar.NewWriter(gz)
 	copyBuf := make([]byte, 256<<10) // fewer reads of a large file than io.Copy's 32 KB
-	for _, rel := range snapshotPaths {
+	for _, rel := range statePaths() {
 		root := filepath.Join(home, rel)
 		if _, err := os.Lstat(root); err != nil {
 			continue
