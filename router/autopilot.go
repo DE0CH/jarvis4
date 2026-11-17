@@ -243,7 +243,7 @@ func (r *Router) registerAutopilot(app appRoute, m machineRoute) {
 		var in TermSnap
 		json.Unmarshal(body, &in)
 		var session string
-		r.st.Do(func(d *persisted) {
+		r.st.Read(func(d *persisted) {
 			if s := d.Sessions[d.Machines[machine]]; s != nil && s.MachineID == machine {
 				session = s.ID
 			}

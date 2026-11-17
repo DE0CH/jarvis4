@@ -964,7 +964,7 @@ func (r *Router) waitStarted(sid string) error {
 }
 
 func (r *Router) sessionState(sid string) (state string, sensitive bool) {
-	r.st.Do(func(d *persisted) {
+	r.st.Read(func(d *persisted) {
 		if s := d.Sessions[sid]; s != nil {
 			state = s.State
 			if s.Cert != nil {

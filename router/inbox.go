@@ -546,7 +546,7 @@ func approvalItem(d *persisted, a *Approval) InboxItem {
 // resume stays paused, an add-store is dropped); the caller asks again if it still needs it.
 func (r *Router) expireApprovals(now time.Time) {
 	var old []string
-	r.st.Do(func(d *persisted) {
+	r.st.Read(func(d *persisted) {
 		for id, a := range d.Approvals {
 			if !now.Before(approvalDeadline(d, a)) {
 				old = append(old, id)

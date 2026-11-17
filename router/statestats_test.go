@@ -160,3 +160,77 @@ func TestStateCatchUp(t *testing.T) {
 		t.Fatalf("%d versions listed (%v)", n, err)
 	}
 }
+
+// Read: the other replica's change is seen, nothing is written or marshalled, and the records are read whole (a Do)
+// when the copy can't be caught up
+func TestStateRead(t *testing.T) {
+	url := testDBURL(t)
+	ctx := context.Background()
+	open := func() *State {
+		db, err := OpenDB(ctx, url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(db.Close)
+		st, err := OpenState(ctx, db, t.TempDir(), testSeal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st
+	}
+	version := func(st *State) (v int64) {
+		if err := st.sdb.db.pool.QueryRow(ctx, "SELECT v FROM state_version WHERE id = 1").Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	a, b := open(), open()
+	state := ""
+	b.Read(func(d *persisted) {}) // its copy is of no version yet: a Do
+	if b.load.reads != 0 || b.load.reloads != 1 {
+		t.Fatalf("the first Read: %+v", b.load)
+	}
+	a.Do(func(d *persisted) { d.Sessions["s1"] = &Session{ID: "s1", State: "started"} })
+	v := version(a)
+	b.Read(func(d *persisted) { state = d.Sessions["s1"].State })
+	b.Read(func(d *persisted) { state += " " + d.Sessions["s1"].State })
+	if state != "started started" {
+		t.Fatalf("b read %q", state)
+	}
+	if l := b.load; l.reads != 2 || l.catchUps != 1 || l.reloads != 1 || l.writes != 0 || l.n != 3 {
+		t.Fatalf("b's load: %+v", l)
+	}
+	if version(a) != v {
+		t.Fatal("a Read wrote")
+	}
+	// a Read holds no lock the other replica's Do waits for
+	held, done := make(chan bool), make(chan bool)
+	go b.Read(func(d *persisted) { held <- true; <-done })
+	<-held
+	a.Do(func(d *persisted) { d.Sessions["s1"].State = "pausing" })
+	done <- true
+	b.Read(func(d *persisted) { state = d.Sessions["s1"].State })
+	if state != "pausing" {
+		t.Fatalf("b read %q after a's change", state)
+	}
+	// an unlisted version (a router from before state_changes): the Read is a Do, which reads everything again
+	if _, err := a.sdb.db.pool.Exec(ctx, `UPDATE sessions SET doc = jsonb_set(doc, '{label}', '"old router"') WHERE id = 's1'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.sdb.db.pool.Exec(ctx, "UPDATE state_version SET v = v + 1 WHERE id = 1"); err != nil {
+		t.Fatal(err)
+	}
+	reads, label := b.load.reads, ""
+	b.Read(func(d *persisted) { label = d.Sessions["s1"].Label })
+	if label != "old router" || b.load.reads != reads || b.load.reloads != 2 {
+		t.Fatalf("after an unlisted version b read %q: %+v", label, b.load)
+	}
+	// a fn that changes a record all the same: the next Do writes it
+	b.Read(func(d *persisted) { d.Sessions["s1"].DiskGB = 9 })
+	b.Do(func(d *persisted) {})
+	a.Do(func(d *persisted) {
+		if d.Sessions["s1"].DiskGB != 9 {
+			t.Fatal("a change made in a Read was lost")
+		}
+	})
+}

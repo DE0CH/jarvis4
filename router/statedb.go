@@ -8,7 +8,8 @@ package main
 //
 // Several replicas: every Do takes the state_version row, and a replica whose copy is older reads again only the
 // records the others changed since (catchUp, from the state_changes list every write adds to), never all of them
-// unless a version's changes aren't listed. The log says once a minute what the Do's cost (statestats.go).
+// unless a version's changes aren't listed. A fn that only looks is a Read (state.go): no marshal, no write. The
+// log says once a minute what the Do's cost and who asked most (statestats.go).
 //
 // Where each field of persisted goes: stateTables (a map → its table, one row per key; Records → records, one row per
 // position; anything else → a settings row named after its JSON key). state.json is read once, at the first start

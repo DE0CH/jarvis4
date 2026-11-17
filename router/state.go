@@ -184,9 +184,70 @@ type State struct {
 // stateWriteError, which the HTTP handlers answer as a 503 to their caller (stateWriteGuard) and which ends this
 // replica otherwise (a job in flight is then carried on by another replica: its holder marks it neither done nor
 // failed, jobs.go jobUnlock).
-func (s *State) Do(fn func(d *persisted)) {
+func (s *State) Do(fn func(d *persisted)) { s.do(doCaller(), fn) }
+
+// Read runs fn on the records as the database has them, for a fn that only looks: nothing is marshalled or written
+// and the other replicas' Do's aren't waited for (a Do marshals every record to find what its fn changed, which is
+// most of what a Do costs: the callers that ask most and change nothing use Read). The copy is brought up to the
+// database's version first (catchUp, in a snapshot); when that can't be done here (all the records must be read
+// again) it is a Do. A fn that changes a record all the same loses nothing: the next Do writes it.
+func (s *State) Read(fn func(d *persisted)) {
+	who := doCaller()
+	if !s.read(who, fn) {
+		s.do(who, fn)
+	}
+}
+
+func (s *State) read(who string, fn func(d *persisted)) bool {
+	asked := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sdb == nil {
+		fn(&s.data) // a State that was never opened (a test's frozen stand-in)
+		return true
+	}
+	if s.sdb.ver < 0 {
+		return false
+	}
+	got := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ok := false
+	err := pgx.BeginTxFunc(ctx, s.sdb.db.pool, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
+		var ver int64
+		if err := tx.QueryRow(ctx, "SELECT v FROM state_version WHERE id = 1").Scan(&ver); err != nil {
+			return err
+		}
+		if ver == s.sdb.ver {
+			ok = true
+			return nil
+		}
+		t := time.Now()
+		caught, err := s.catchUp(ctx, tx, s.sdb.ver, ver)
+		if err != nil || !caught {
+			return err
+		}
+		s.sdb.ver, ok = ver, true
+		s.load.catchUps++
+		s.load.reload += time.Since(t)
+		return nil
+	})
+	if err != nil {
+		s.sdb.ver = -1 // a catch-up cut short: the copy is read whole again by the Do this becomes
+		return false
+	}
+	if !ok {
+		return false
+	}
+	fn(&s.data)
+	s.load.reads++
+	s.load.done(who, asked, got)
+	return true
+}
+
+func (s *State) do(who string, fn func(d *persisted)) {
 	var failed [][2]string
-	s.doLocked(doCaller(), func(d *persisted) {
+	s.doLocked(who, func(d *persisted) {
 		fn(d)
 		failed = stampFailures(d, time.Now().UTC()) // failures.go: a failed session says why and since when
 	})

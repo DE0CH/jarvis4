@@ -106,7 +106,7 @@ func (r *Router) liveDoc(now time.Time) liveDocument {
 		busy bool
 	}
 	var rows []row
-	r.st.Do(func(d *persisted) {
+	r.st.Read(func(d *persisted) {
 		for _, s := range d.Sessions {
 			wakes := willWake(d, s.ID)
 			if s.State == "paused" && wakes {

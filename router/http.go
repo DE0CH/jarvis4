@@ -970,7 +970,7 @@ func (r *Router) requireMachine(fn func(w http.ResponseWriter, req *http.Request
 			return
 		}
 		var key string
-		r.st.Do(func(d *persisted) {
+		r.st.Read(func(d *persisted) {
 			if s := d.Started[machine]; s != nil {
 				key = s.SigningKey
 			}

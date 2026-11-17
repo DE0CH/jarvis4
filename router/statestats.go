@@ -28,6 +28,7 @@ func doCaller() string {
 type doLoad struct {
 	since    time.Time
 	n        int
+	reads    int           // of n: Reads (nothing marshalled or written, the other replicas not waited for)
 	waited   time.Duration // asking → holding this replica's lock, in all
 	maxWait  time.Duration
 	held     time.Duration // holding this replica's lock, in all
@@ -96,10 +97,10 @@ func (l *doLoad) done(who string, asked, got time.Time) {
 
 func (l *doLoad) line(end time.Time) string {
 	ms := func(d time.Duration) int64 { return d.Milliseconds() }
-	return fmt.Sprintf("state: last %s: %d changes asked for, holding the lock %d ms in all (%d ms of it waiting for the other replicas, "+
+	return fmt.Sprintf("state: last %s: %d changes asked for (%d of them only reads), holding the lock %d ms in all (%d ms of it waiting for the other replicas, "+
 		"%d reloads and %d catch-ups %d ms, %d writes and every marshal %d ms); they waited %d ms in all for it here, the longest %d ms; "+
 		"the records are %d rows, %d bytes; asked most by %s",
-		end.Sub(l.since).Round(time.Second), l.n, ms(l.held), ms(l.rowLock), l.reloads, l.catchUps, ms(l.reload), l.writes, ms(l.write),
+		end.Sub(l.since).Round(time.Second), l.n, l.reads, ms(l.held), ms(l.rowLock), l.reloads, l.catchUps, ms(l.reload), l.writes, ms(l.write),
 		ms(l.waited), ms(l.maxWait), l.rows, l.bytes, l.top())
 }
 

@@ -44,7 +44,7 @@ func (r *Router) checkMachineSignature(m machineSigRequest, now time.Time) (sid,
 		return "", "", "", "time too far off"
 	}
 	var key string
-	r.st.Do(func(d *persisted) {
+	r.st.Read(func(d *persisted) {
 		if s := d.Started[m.Machine]; s != nil {
 			key = s.SigningKey
 		}

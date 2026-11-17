@@ -373,7 +373,7 @@ func (r *Router) wireKernel(k *KernelClient) {
 // servingCopy: the kernel copy that serves (persisted.KernelCopy; "" = blue)
 func (r *Router) servingCopy() string {
 	c := "blue"
-	r.st.Do(func(d *persisted) {
+	r.st.Read(func(d *persisted) {
 		if d.KernelCopy == "green" {
 			c = "green"
 		}

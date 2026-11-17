@@ -3089,5 +3089,12 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      back that far (5000 versions). The log says once a minute what the Do's cost and which lines asked most
      (`statestats.go`, "state: last 1m0s: …"): the measurement that was missing. Also: Reject on an approval that
      is gone answers 200 `{ok, gone}` like every other deny (the phone's second try after a timeout was told "no
-     such approval"). *Not chosen*: one replica (a deploy would stop the router); a version column on every row
+     such approval"). Measured live after it (2.1 MB of records in 1326 rows, about 700 Do's a minute over the two
+     replicas): a catch-up 13 ms where a reload was 185 ms; what was left was the marshal of every record that each
+     Do makes to find what its fn changed, 31 ms a Do, with four Do's in five changing nothing. So `State.Read`
+     for a fn that only looks: no marshal, no write, no wait for the other replica (a snapshot read of the version,
+     a catch-up when it moved); the callers the log named as asking most use it (the machine signature check of
+     every `/m` call, `servingCopy`, `sessionState`, the live push, the Inbox's expiry look). A fn that changes a
+     record in a Read loses nothing (the next Do writes it), so a wrong conversion costs a late write, not a lost
+     one. *Not chosen*: one replica (a deploy would stop the router); a version column on every row
      (a deleted row has none to read).
