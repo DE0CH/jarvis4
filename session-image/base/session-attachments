@@ -27,7 +27,9 @@ for it in items:
                 chunk = r.read(1 << 20)
                 if not chunk: break
                 out.write(chunk)
-        (images if it.get("isImage") else files).append(dest)
+        # a file is named from the home (~/uploads/…): an aviary sandbox has the machine's home at another path
+        if it.get("isImage"): images.append(dest)
+        else: files.append("~/uploads/" + name)
     except Exception as e:
         sys.stderr.write(f"[attachments] attachment download failed: {name}: {e}\n")
 parts = []

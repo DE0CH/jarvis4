@@ -65,12 +65,31 @@ fi
 
 # ---------------------------------------------------------------- aviary (aviary-gateway) --------
 if [ "$HARNESS" = aviary ]; then
-  # images: these go in as paths Claude Code can read (the machine's files are the agent's)
-  for i in "${IMGS[@]:-}"; do [ -n "$i" ] && TEXT="$TEXT
-[attached image: $i]"; done
+  # images: uploaded to magpie for the session's person (the gateway's /jarvis/upload) and sent as the turn's images,
+  # so the chat shows them as Deyao's own uploads and magpie puts each in /workspace/uploads; an upload the gateway
+  # refuses goes in as a path instead (in the sandbox the machine's home is $HOME, so ~/…)
+  IDS=()
+  for i in "${IMGS[@]:-}"; do
+    [ -n "$i" ] || continue
+    name="$(basename "$i")"
+    up="$(curl -s -m 300 --noproxy '*' -w '\n%{http_code}' -H 'aviary-upload-kind: image' \
+      -H "aviary-upload-name: $(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$name")" \
+      -H "content-type: $(python3 -c 'import mimetypes,sys; print(mimetypes.guess_type(sys.argv[1])[0] or "application/octet-stream")' "$i")" \
+      --data-binary @"$i" http://127.0.0.1:3128/jarvis/upload)"
+    code="${up##*$'\n'}"; up="${up%$'\n'*}"
+    id=""; [ "$code" = 201 ] && id="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["uploadId"])' <<< "$up" 2>/dev/null)"
+    if [ -n "$id" ]; then IDS+=("$id")
+    else echo "harness-send: the image $name was not uploaded (${code:-no answer}: $up); sent as its path" >&2
+      TEXT="$TEXT
+[attached image: ${i/#"$HOME"\//'~/'}]"
+    fi
+  done
+  # the first prompt's "Attached images:" line (session-attachments) heads the paths; with every image attached it heads nothing
+  [ "${#IDS[@]}" = "${#IMGS[@]}" ] && [ "${#IDS[@]}" -gt 0 ] && TEXT="${TEXT%Attached images:}" && TEXT="${TEXT%"${TEXT##*[![:space:]]}"}"
+  [ -n "$TEXT" ] || TEXT="See the attached image(s)."
   # the id makes a repeat the same turn: the delivery's own (HARNESS_SEND_ID: the inbox file, the first prompt), so a
   # retried delivery is never a second turn while a cron's same text each day is a new one
-  body="$(HARNESS_SEND_ID="${HARNESS_SEND_ID:-}" python3 -c 'import json,os,sys,uuid; print(json.dumps({"id": "jarvis-" + (os.environ["HARNESS_SEND_ID"] or uuid.uuid4().hex), "text": sys.stdin.read()}))' <<< "$TEXT")"
+  body="$(HARNESS_SEND_ID="${HARNESS_SEND_ID:-}" python3 -c 'import json,os,sys,uuid; print(json.dumps({"id": "jarvis-" + (os.environ["HARNESS_SEND_ID"] or uuid.uuid4().hex), "text": sys.stdin.read(), "images": sys.argv[1:]}))' "${IDS[@]}" <<< "$TEXT")"
   out="$(curl -s -m 40 --noproxy '*' -w '\n%{http_code}' -H 'content-type: application/json' --data-binary "$body" http://127.0.0.1:3128/jarvis/deliver)"
   code="${out##*$'\n'}"; out="${out%$'\n'*}"
   case "$code" in
