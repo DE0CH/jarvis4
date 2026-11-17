@@ -81,10 +81,17 @@ spec:
             - { name: FLY_BUDGET_WARN_USD, value: "45" }
             - { name: BROWSERBASE_BUDGET_USD, value: "10" }
             - { name: BROWSERBASE_BUDGET_WARN_USD, value: "8" }
+            # the fabric runner (router/fabricrunner.go, docs/PLAN-fabric.md): its listener for the fabric machines
+            # (/m and GET /fabric/env), reached through the fabric gateway at a node's private address (Service
+            # router-fabric, k3s ServiceLB). Nothing of the fabric runs, and New session offers no fabric, until
+            # FABRIC_HERMIT_URL is set; the tokens are Secret router-secrets-fabric (router-secrets.py --part router-fabric)
+            - { name: FABRIC_MACHINE_ADDR, value: ":3128" }
+            - { name: FABRIC_SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session-fabric:latest" }
+            - { name: FABRIC_SESSION_IMAGE_SIG, value: "" }
           # SOPS-encrypted to the cluster's age key (k8s/cluster/secrets, infra/router-secrets.py --box cluster).
           # router-secrets-github stays LAST: with a key in several envFrom sources the last one wins
-          envFrom: [{ secretRef: { name: router-secrets, optional: true } }, { secretRef: { name: router-secrets-backup, optional: true } }, { secretRef: { name: router-secrets-flyorgs, optional: true } }, { secretRef: { name: router-secrets-flypersonal, optional: true } }, { secretRef: { name: router-secrets-flyvolumes, optional: true } }, { secretRef: { name: router-secrets-browserbase, optional: true } }, { secretRef: { name: router-secrets-devices, optional: true } }, { secretRef: { name: router-secrets-livepush, optional: true } }, { secretRef: { name: router-secrets-runners, optional: true } }, { secretRef: { name: router-db } }, { secretRef: { name: router-secrets-objects } }, { secretRef: { name: router-seal } }, { secretRef: { name: router-secrets-aws, optional: true } }, { secretRef: { name: router-secrets-github, optional: true } }]
-          ports: [{ containerPort: 8080 }]
+          envFrom: [{ secretRef: { name: router-secrets, optional: true } }, { secretRef: { name: router-secrets-backup, optional: true } }, { secretRef: { name: router-secrets-flyorgs, optional: true } }, { secretRef: { name: router-secrets-flypersonal, optional: true } }, { secretRef: { name: router-secrets-flyvolumes, optional: true } }, { secretRef: { name: router-secrets-browserbase, optional: true } }, { secretRef: { name: router-secrets-devices, optional: true } }, { secretRef: { name: router-secrets-livepush, optional: true } }, { secretRef: { name: router-secrets-runners, optional: true } }, { secretRef: { name: router-db } }, { secretRef: { name: router-secrets-objects } }, { secretRef: { name: router-seal } }, { secretRef: { name: router-secrets-aws, optional: true } }, { secretRef: { name: router-secrets-fabric, optional: true } }, { secretRef: { name: router-secrets-github, optional: true } }]
+          ports: [{ containerPort: 8080 }, { name: fabric, containerPort: 3128 }]
           readinessProbe: { httpGet: { path: /readyz, port: 8080 }, periodSeconds: 2, failureThreshold: 1 }
           volumeMounts: [{ name: data, mountPath: /data }, { name: sigs, mountPath: /sigs, readOnly: true }]
           resources: { requests: { cpu: 200m, memory: 256Mi }, limits: { memory: 1Gi } }
@@ -114,6 +121,9 @@ spec:
     # the machines, through m-gateway
     - from: [{ podSelector: { matchLabels: { app: m-gateway } } }]
       ports: [{ port: 8081 }]
+    # the fabric machines, through the fabric gateway (SNAT to its private address) and ServiceLB's pods
+    - from: [{ ipBlock: { cidr: 10.77.0.0/16 } }, { ipBlock: { cidr: 10.42.0.0/16 } }]
+      ports: [{ port: 3128 }]
   egress:
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }, podSelector: { matchLabels: { k8s-app: kube-dns } } }]
       ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
@@ -126,11 +136,25 @@ spec:
     # the iCloud index and the watch runner (k8s/cluster/services)
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis4-services } } }]
       ports: [{ port: 8091 }, { port: 8095 }]
+    # the fabric hermit (k8s/cluster/fabric)
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis4-fabric } } }]
+      ports: [{ port: 8080 }]
     # the AWS machines' log shipper (k8s/cluster/obs/aws-log-shipper.yaml)
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis2-obs } }, podSelector: { matchLabels: { app: aws-log-shipper } } }]
       ports: [{ port: 3100 }]
     - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16] } }]
       ports: [{ port: 443 }]
+---
+# the fabric machines' way in (router/fabricrunner.go): k3s ServiceLB binds 3128 on every node's addresses (the nodes'
+# firewall admits nothing from outside; the private guard admits the fabric gateway), and the gateway forwards the
+# sandboxes' 10.204.1.1:3128 to one node's private address (hermit.json fabric.egressTarget)
+apiVersion: v1
+kind: Service
+metadata: { name: router-fabric, namespace: jarvis4-router }
+spec:
+  type: LoadBalancer
+  selector: { app: router }
+  ports: [{ name: fabric, port: 3128, targetPort: 3128 }]
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
