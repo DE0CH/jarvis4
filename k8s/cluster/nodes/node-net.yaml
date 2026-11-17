@@ -6,6 +6,9 @@
 #   - the private guard (infra/cloud-init.sh jarvis2-private-guard: on the private interface only answers come in) lets
 #     new connections in from the other nodes' private and k3s0 addresses, and /etc/jarvis2/private-allow keeps them
 #     for the guard's next boot
+#   - the fabric (docs/PLAN-fabric.md): its hosts' and sandboxes' range (FABRIC_ROUTE) over the Network's gateway, which
+#     routes it to the fabric gateway server, and the guard admits that server (EXTRA_ALLOW: what it forwards into the
+#     cluster, the sandboxes' router calls and the hosts' JuiceFS metadata, carries its private address)
 # It runs in the host's namespaces (nsenter into PID 1), privileged: what Flux applies is already cluster admin
 # (docs/PLAN-cluster.md), so this adds no new power, only puts the host's network under git like the rest.
 apiVersion: v1
@@ -25,14 +28,17 @@ data:
   GATEWAY: "10.77.0.1"
   PRIVATE_PREFIX: "10.77."
   K3S_RANGE: "10.254.254.0/24"
+  FABRIC_ROUTE: "10.204.0.0/15"
+  EXTRA_ALLOW: "10.77.0.250"
   node-net.sh: |
     set -u
     IF="$(ip -o -4 addr show | awk -v p=" $PRIVATE_PREFIX" 'index($0, p) {print $2; exit}')"
     [ -n "$IF" ] || { echo "no private interface"; exit 0; }
     ip route replace "$K3S_RANGE" via "$GATEWAY" dev "$IF" onlink
+    [ -z "${FABRIC_ROUTE:-}" ] || ip route replace "$FABRIC_ROUTE" via "$GATEWAY" dev "$IF" onlink
     iptables -t mangle -L JARVIS2-PRIVATE -n >/dev/null 2>&1 || { echo "no private guard on this node"; exit 0; }
     mkdir -p /etc/jarvis2; touch /etc/jarvis2/private-allow
-    for a in $NODES; do
+    for a in $NODES ${EXTRA_ALLOW:-}; do
       iptables -t mangle -C JARVIS2-PRIVATE -s "$a" -j RETURN 2>/dev/null || iptables -t mangle -I JARVIS2-PRIVATE 1 -s "$a" -j RETURN
       grep -qw "$a" /etc/jarvis2/private-allow || echo "$a" >> /etc/jarvis2/private-allow
     done
@@ -64,7 +70,9 @@ spec:
             - |
               while true; do
                 nsenter -t 1 -m -u -i -n -- env NODES="$(cat /cfg/NODES)" GATEWAY="$(cat /cfg/GATEWAY)" \
-                  PRIVATE_PREFIX="$(cat /cfg/PRIVATE_PREFIX)" K3S_RANGE="$(cat /cfg/K3S_RANGE)" sh -c "$(cat /cfg/node-net.sh)"
+                  PRIVATE_PREFIX="$(cat /cfg/PRIVATE_PREFIX)" K3S_RANGE="$(cat /cfg/K3S_RANGE)" \
+                  FABRIC_ROUTE="$(cat /cfg/FABRIC_ROUTE 2>/dev/null)" EXTRA_ALLOW="$(cat /cfg/EXTRA_ALLOW 2>/dev/null)" \
+                  sh -c "$(cat /cfg/node-net.sh)"
                 sleep 60
               done
           volumeMounts: [{ name: cfg, mountPath: /cfg, readOnly: true }]
