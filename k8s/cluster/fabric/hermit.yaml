@@ -20,7 +20,7 @@ spec:
   template:
     metadata:
       labels: { app: hermit }
-      annotations: { jarvis2/secrets-rev-fabric: "" }
+      annotations: { jarvis2/secrets-rev-fabric: "381adfc1b6cc" }
     spec:
       serviceAccountName: hermit
       enableServiceLinks: false
@@ -70,7 +70,11 @@ spec:
               trap 'umount -l /jfs 2>/dev/null; exit 0' TERM INT
               juicefs mount --no-usage-report --all-squash 1000:1000 --cache-size 0 --open-cache 0 \
                 "$HERMIT_JUICEFS_META_URL" /jfs &
-              wait $!
+              pid=$!
+              # the conversations' workspaces' folder (hermit makes ws/<id> in it, not it)
+              until mountpoint -q /jfs || ! kill -0 "$pid" 2>/dev/null; do sleep 1; done
+              mkdir -p /jfs/ws
+              wait "$pid"
           env:
             - { name: META_PASSWORD, valueFrom: { secretKeyRef: { name: hermit, key: HERMIT_JUICEFS_META_PASSWORD } } }
           envFrom: [{ secretRef: { name: hermit } }]
