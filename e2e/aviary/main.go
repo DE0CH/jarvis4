@@ -605,8 +605,11 @@ func main() {
 		"account": `{"oauthAccount":{"accountUuid":"e2e-account","emailAddress":"e2e@example.com"}}`, "relogin": true}, nil)
 
 	step("a session with the harness aviary and a first prompt; the phone signs its source")
+	// the session's name: the conversation's title from its start, kept as a rename (hermit-jarvis's create, Deyao,
+	// 2026-11-17), so the title model's title never replaces it
+	label := "e2e aviary " + token
 	var created struct{ ID string }
-	must("POST", router+"/api/sessions", map[string]any{"label": "e2e aviary", "harness": "aviary", "size": "small",
+	must("POST", router+"/api/sessions", map[string]any{"label": label, "harness": "aviary", "size": "small",
 		"model": sessionModel(), "prompt": "E2E-RUN " + token}, &created)
 	var aID, aKind string
 	var challenge sig.Doc
@@ -653,13 +656,16 @@ func main() {
 		t := magpieText()
 		return strings.Contains(t, "E2E-DONE "+token) && strings.Contains(t, "E2E-OUT-"+token)
 	})
-	step("the conversation has its title, which the session's card gets")
+	step("the conversation's title is the session's name (never the title model's), which the session's card gets")
 	waitFor("the title in magpie", 3*time.Minute, func() bool {
-		return strings.Contains(magpieText(), `"title":"E2E-TITLE `+token+`"`)
+		return strings.Contains(magpieText(), `"title":"`+label+`"`)
 	})
+	if strings.Contains(magpieText(), `"title":"E2E-TITLE `+token+`"`) {
+		log.Fatalf("FAIL: the title model replaced the session's name as the conversation's title")
+	}
 	waitFor("the title on the session (the router's aiTitle)", 4*time.Minute, func() bool {
 		s, _ := readSession(created.ID)
-		return s != nil && s.AiTitle == "E2E-TITLE "+token
+		return s != nil && s.AiTitle == label
 	})
 	step("the wakeup the tool armed arrives as a later turn")
 	waitFor("the wakeup's answer in magpie", 5*time.Minute, func() bool { return strings.Contains(magpieText(), "E2E-WOKE "+token) })
