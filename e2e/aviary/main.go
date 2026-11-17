@@ -274,19 +274,32 @@ func sessionModel() string {
 // openRouterKey: the OPENROUTER_API of the run's store, which only the stand-in OpenRouter takes.
 const openRouterKey = "e2e-openrouter"
 
+// writeJSON and jsonError answer as Anthropic's API does, with Content-Type application/json: Claude Code parses a
+// non-streamed body by its content type (Go's sniffed text/plain failed its model check, main_test.go).
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
+}
+
+func jsonError(w http.ResponseWriter, body string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	io.WriteString(w, body)
+}
+
 func serveModel(w http.ResponseWriter, req *http.Request) {
 	openRouter := strings.HasPrefix(req.URL.Path, "/openrouter/")
 	p := strings.TrimPrefix(strings.TrimPrefix(req.URL.Path, "/openrouter"), "/model")
 	if openRouter && strings.HasSuffix(p, "/count_tokens") { // OpenRouter has no count_tokens (404, 2026-11-12)
-		http.Error(w, `{"error":{"message":"Not Found","code":404}}`, 404)
+		jsonError(w, `{"error":{"message":"Not Found","code":404}}`, 404)
 		return
 	}
 	if strings.HasSuffix(p, "/count_tokens") {
-		json.NewEncoder(w).Encode(map[string]int{"input_tokens": 10})
+		writeJSON(w, map[string]int{"input_tokens": 10})
 		return
 	}
 	if req.Method != http.MethodPost || !strings.HasSuffix(p, "/v1/messages") {
-		http.Error(w, `{"type":"error","error":{"type":"not_found_error","message":"e2e stand-in"}}`, 404)
+		jsonError(w, `{"type":"error","error":{"type":"not_found_error","message":"e2e stand-in"}}`, 404)
 		return
 	}
 	var in map[string]any
@@ -303,12 +316,12 @@ func serveModel(w http.ResponseWriter, req *http.Request) {
 		thinking, _ := in["thinking"].(map[string]any)
 		if req.Header.Get("Authorization") != "Bearer "+openRouterKey || !strings.Contains(model, "/") || len(order) == 0 || thinking["type"] == "disabled" {
 			log.Printf("openrouter: refused (auth %q, model %q, provider %v, thinking %v)", req.Header.Get("Authorization"), model, provider, thinking)
-			http.Error(w, `{"type":"error","error":{"type":"invalid_request_error","message":"e2e stand-in OpenRouter"}}`, 400)
+			jsonError(w, `{"type":"error","error":{"type":"invalid_request_error","message":"e2e stand-in OpenRouter"}}`, 400)
 			return
 		}
 	} else if strings.Contains(model, "/") || req.Header.Get("Authorization") == "Bearer "+openRouterKey {
 		log.Printf("model: refused, an OpenRouter call reached the Claude stand-in (model %q)", model)
-		http.Error(w, `{"type":"error","error":{"type":"invalid_request_error","message":"e2e: not a Claude call"}}`, 400)
+		jsonError(w, `{"type":"error","error":{"type":"invalid_request_error","message":"e2e: not a Claude call"}}`, 400)
 		return
 	}
 	// As Anthropic treats a subscription login: a call whose system prompt does not begin with Claude Code's identity
@@ -317,7 +330,7 @@ func serveModel(w http.ResponseWriter, req *http.Request) {
 	if sys := systemText(in); !openRouter && !strings.HasPrefix(req.UserAgent(), "claude-cli/") &&
 		!strings.HasPrefix(sys, "You are Claude Code") && !strings.HasPrefix(sys, "You are a Claude agent") {
 		log.Printf("model: refused, no Claude Code identity (user agent %q)", req.UserAgent())
-		http.Error(w, `{"type":"error","error":{"type":"rate_limit_error","message":"Error"}}`, 429)
+		jsonError(w, `{"type":"error","error":{"type":"rate_limit_error","message":"Error"}}`, 429)
 		return
 	}
 	kind, content := reply(in)
@@ -358,7 +371,7 @@ func serveModel(w http.ResponseWriter, req *http.Request) {
 		usage["input_tokens"] = 1000
 	}
 	if s, _ := in["stream"].(bool); !s {
-		json.NewEncoder(w).Encode(map[string]any{"id": id, "type": "message", "role": "assistant", "model": in["model"],
+		writeJSON(w, map[string]any{"id": id, "type": "message", "role": "assistant", "model": in["model"],
 			"content": content, "stop_reason": stop, "stop_sequence": nil, "usage": usage})
 		return
 	}
