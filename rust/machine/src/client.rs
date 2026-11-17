@@ -176,6 +176,55 @@ impl Client {
         })
     }
 
+    /// Like raw, with a query string (unsigned: the router signs the path only) and the path sent escaped
+    /// (`path` decoded, as the router checks the signature)
+    pub fn signed_do(
+        &self,
+        method: &str,
+        path: &str,
+        escaped: &str,
+        query: &str,
+        body: &[u8],
+        content_type: &str,
+    ) -> Result<Resp> {
+        let mut hdr = self.signed(method, path, &sha256_hex(body))?;
+        if !content_type.is_empty() {
+            hdr.push(("Content-Type".into(), content_type.into()));
+        }
+        let mut url_path = escaped.to_string();
+        if !query.is_empty() {
+            url_path = format!("{url_path}?{query}");
+        }
+        let body = Bytes::copy_from_slice(body);
+        let fut = async {
+            let resp = self
+                .send(
+                    method,
+                    &url_path,
+                    hdr,
+                    full(body.clone()),
+                    Some(body.len() as u64),
+                )
+                .await?;
+            let status = resp.status().as_u16();
+            let headers = resp.headers().clone();
+            let body = resp.into_body().collect().await?.to_bytes().to_vec();
+            Ok::<_, anyhow::Error>(Resp {
+                status,
+                headers,
+                body,
+            })
+        };
+        rt::block_on(async {
+            match self.timeout {
+                Some(t) => tokio::time::timeout(t, fut)
+                    .await
+                    .map_err(|_| anyhow!("{method} {path}: timeout"))?,
+                None => fut.await,
+            }
+        })
+    }
+
     /// A JSON request: `input` marshalled (None: no body), a 200's body decoded into `T` (as Go's json.Unmarshal)
     pub fn json<I: Serialize, T: DeserializeOwned>(
         &self,

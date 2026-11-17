@@ -17,14 +17,63 @@
 
 #![allow(dead_code)] // while the port is under way: removed once every Go file is ported
 
+mod apiproxy;
+mod apptitle;
+mod attachments;
+mod autoaccept;
+mod boot;
+mod cert;
+mod chanpipe;
+mod claudelogin;
 mod client;
 mod crypto;
+mod deliver;
+mod deploykeys;
+mod disk;
+mod downgrade;
 mod gojson;
+mod grants;
+mod guard;
+mod harnesses;
+mod harnesslog;
+mod https;
+mod jarvis1import;
+mod keeper;
+mod kernelboot;
+mod livesync;
+mod memory;
+mod messages;
+mod oomguard;
+mod outcomes;
+mod output;
 mod paths;
+mod peer;
+mod pressure;
+mod putkey;
+mod rcwatch;
+mod restore;
+mod rollback;
 mod routerdial;
 mod rt;
+mod screen;
+mod secrets;
+mod session;
+mod signrequest;
+mod snapdirect;
 mod snapformat;
+mod snapshot;
+mod snapstream;
+mod stall;
+mod status;
+mod stores;
+mod supervisor;
+mod supervisorlog;
+mod task;
+mod teardown;
 mod util;
+mod volume;
+mod vouch;
+mod workers;
 
 use anyhow::{Result, bail};
 
@@ -33,7 +82,7 @@ const USAGE: &str = "usage: jarvis-machine boot | init | stores [--json] | put-k
 /// Go's log package with the "[jarvis] " prefix: one line to stderr
 #[macro_export]
 macro_rules! logf {
-    ($($a:tt)*) => {{ eprintln!("[jarvis] {}", format!($($a)*)); }};
+    ($($a:tt)*) => {{ $crate::supervisorlog::log_line(&format!($($a)*)); }};
 }
 
 /// this machine's id as its runner knows it: the EC2 instance id the instance's unit read (AWS), else Fly's; "" when
@@ -70,8 +119,47 @@ fn run(args: &[String]) -> Result<()> {
     let Some(cmd) = args.get(1) else {
         bail!("{USAGE}");
     };
-    #[allow(clippy::match_single_binding)] // the commands arrive as their files are ported
+    let rest = &args[2.min(args.len())..];
+    let one = |what: &str| -> Result<String> {
+        match rest {
+            [n] => Ok(n.clone()),
+            _ => bail!("usage: jarvis-machine {what} <name>"),
+        }
+    };
     match cmd.as_str() {
+        "boot" => keeper::keeper(),
+        "prepare" => boot::prepare_cmd(), // keeper.rs starts it, as user claude
+        "init" => boot::init_cmd(),
+        "add-store" => boot::add_store(&one("add-store")?),
+        // after `jarvis-request add-store`: no second ask, only the wait and the pull
+        "await-store" => boot::await_store(&one("await-store")?),
+        "stores" => stores::stores_cmd(rest),
+        "put-key" => putkey::put_key_cmd(rest, false),
+        "delete-key" => putkey::put_key_cmd(rest, true),
+        "downgrade" => downgrade::downgrade(&downgrade::downgrade_args(rest)?),
+        // supervisor.rs: supervisor-core and supervisor-normal, started (and restarted) by the keeper, each in a
+        // session of its own
+        "supervisor" => {
+            let _ = nix::unistd::setsid();
+            match rest.first().map(String::as_str) {
+                Some("--core") if rest.len() == 1 => supervisor::supervise_core(),
+                Some("--normal") if rest.len() == 1 => supervisor::supervise_normal(),
+                _ => bail!(
+                    "usage: jarvis-machine supervisor --core|--normal (the keeper starts them)"
+                ),
+            }
+        }
+        // session.rs: a command for the session: back under the OOM killer, as user claude, then exec
+        "unprotected" => session::unprotected(rest),
+        // session.rs: a signal to every process of user claude (kill -1 as claude)
+        "signal-session" => session::signal_session_cmd(rest),
+        "workers-hook" => {
+            workers::workers_hook(); // a Claude Code hook; never fails
+            Ok(())
+        }
+        "allow" => grants::allow_cmd(rest),
+        // a request for a service outside Jarvis 4, signed with the machine key
+        "sign-request" => signrequest::sign_request_cmd(rest),
         c => bail!("unknown command {c}"),
     }
 }

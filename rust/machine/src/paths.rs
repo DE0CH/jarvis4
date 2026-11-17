@@ -42,7 +42,6 @@ under! {
     client_path = "client.json";
     /// the private halves, never leave the machine
     priv_path = "private.json";
-    predecessor_tmp = "predecessor.tar.gz";
     restore_tmp = "restore.tar.gz";
     final_snapshot = "final-snapshot.tar.gz";
     final_snapshot_sig = "final-snapshot.sig";
@@ -79,4 +78,15 @@ pub fn home() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/"))
+}
+
+/// where the predecessor's snapshot lands while it is checked (a machine with a volume: on the volume)
+pub static PREDECESSOR_TMP: RwLock<Option<PathBuf>> = RwLock::new(None);
+
+pub fn predecessor_tmp() -> PathBuf {
+    PREDECESSOR_TMP
+        .read()
+        .ok()
+        .and_then(|p| p.clone())
+        .unwrap_or_else(|| dir().join("predecessor.tar.gz"))
 }
