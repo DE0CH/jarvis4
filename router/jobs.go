@@ -173,7 +173,9 @@ func (r *Router) carryOn(j *jobRow) {
 		op := r.lcBegin(j.Session, "pause")
 		op.machine(s.MachineID)
 		op.note("", "carried on by another router replica: its holder stopped (the pause runs again from the snapshot)")
-		go r.pauseRun(j.Session, s.MachineID, nil, unlock, op)
+		var a struct{ Restart bool }
+		json.Unmarshal(j.Args, &a)
+		go r.pauseRun(j.Session, s.MachineID, nil, a.Restart, unlock, op)
 	case j.Kind == "starting" && s.Kernel != nil:
 		go r.kernelContinue(j.Session, unlock)
 	case j.Kind == "mode" && s.State == "started":

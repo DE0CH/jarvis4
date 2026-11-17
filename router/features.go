@@ -39,6 +39,7 @@ func (r *Router) registerFeatures(app appRoute, m machineRoute, public publicRou
 	r.registerOutcomes(m)                   // outcomes.go: a session reads what became of its requests
 	r.registerMessages(app)                 // messages.go: messages held for Deyao to deliver or deny, his per-kind rules
 	r.registerVouch(app, m)                 // vouch.go: /m/config, /m/restore-cert, deliveries, the input log
+	r.registerRunners(app, m)               // runners.go: Hetzner runners, each its session's (before sessionapi.go's /m/api/ catch-all)
 	r.registerMachines(app)                 // machines.go: every Fly machine of the app; Destroy for one with no session
 	r.registerContent(app, m)               // content.go: content stores (Storage Box folders) for the app and the sessions
 	r.registerClaudeLogin(app, m, public)   // claudelogin.go: the Claude login, its refresh, Re-login, the usage quota

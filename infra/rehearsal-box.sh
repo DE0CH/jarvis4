@@ -10,7 +10,7 @@
 # backup read key is the admin S3 key, in user-data only (a narrowed one is Console-only), and its FLY_READ_TOKEN a
 # fresh read-only narrowing of JARVIS2_FLY_TOKEN (infra/fly-read-token.sh), as production's. All of it rides in the box's
 # user-data (cloud-init's SYNC_YAML/EXTRA_MANIFEST), none in git.
-# Env: HCLOUD_TOKEN (project runners), JARVIS2_FLY_TOKEN, JARVIS2_SETUP_KEY, CF_JARVIS2_INFRA_TOKEN, CLOUDFLARE_API,
+# Env: HCLOUD_TOKEN (project runners: the infra store's HETZNER_RUNNERS_ROUTER_TOKEN), JARVIS2_FLY_TOKEN, JARVIS2_SETUP_KEY, CF_JARVIS2_INFRA_TOKEN, CLOUDFLARE_API,
 #      HETZNER_S3_*. Optional: REHEARSAL_NAME (the base name, default jarvis2-rehearsal), REHEARSAL_RUN (the run id,
 #      digits; default the unix time), REHEARSAL_REF (the commit Flux applies; default origin/main), SERVER_TYPE (cx23),
 #      REHEARSAL_LOGS, KEEP=1 (no teardown on exit).

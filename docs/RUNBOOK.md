@@ -730,7 +730,7 @@ Storage Box copies. Nothing else waits on it; the router reports search unreacha
 `infra/rehearse-recover.sh` proves Reset → backups → failure → Recover → a session, on a REAL throwaway control box
 built the way production's is (`infra/cloudflare.py`, `BOX_KIND=control infra/create.sh` with `PRIVATE_IP=none`,
 `infra/cloud-init.sh`, Flux applying `./k8s/control/apps` with the production images at a pinned commit; no services
-box, so search and watches don't answer there), in the Hetzner project **runners** (`HCLOUD_TOKEN`). It never
+box, so search and watches don't answer there), in the Hetzner project **runners** (`HCLOUD_TOKEN` = the infra store's `HETZNER_RUNNERS_ROUTER_TOKEN`; its server carries the running session's label, so the Machines tab lists it under that session and it goes with it, DECISIONS 265). It never
 touches the production box, core, router, tunnel, Access apps, WireGuard peer or bucket. About 45 minutes; one
 cx23 for about an hour plus a second one for the rebuild (EUR 0.01056/h each; IPv6-only, no IPv4), a few minutes of small Fly
 machines. Run it from a setup session (needs `JARVIS2_FLY_TOKEN`, `JARVIS2_SETUP_KEY`, `CF_JARVIS2_INFRA_TOKEN`,

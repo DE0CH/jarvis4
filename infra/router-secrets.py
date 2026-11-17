@@ -24,6 +24,9 @@ manifest so it restarts with the new Secret. SRC is `env:VAR` (default `env:KEY`
   --part devices router-devices.enc.yaml — CF_DEVICE_TOKENS_API only (router/devices.go)
   --part livepush  router-livepush.enc.yaml — LIVE_PUSH_URL and LIVE_PUSH_SECRET: where the router POSTs Deyao's running
                  sessions for a live dashboard panel, and the header secret it sends (router/livepush.go)
+  --part runners router-runners.enc.yaml, Secret router-secrets-runners — HETZNER_RUNNERS_TOKEN only: the Read & Write
+                 API token `jarvis4-router` of the Hetzner Cloud project runners, the only one sessions' runners are
+                 made and deleted with (router/runners.go)
   --part alloy   alloy.enc.yaml, Secret alloy in jarvis2-obs — GRAFANA_LOGS_URL/USER, GRAFANA_METRICS_URL/USER,
                  GRAFANA_WRITE_TOKEN: the host's Grafana Alloy reads it (infra/alloy/; no pod uses it)
   --part icloud-index  (k8s/cluster/services/secrets) icloud-index.enc.yaml, Secret icloud-index-secrets — OPENROUTER_API,
@@ -62,7 +65,7 @@ RT = "router/router.yaml"  # under k8s/cluster/
 BOXES = {  # box → (age recipient file, secrets dir, {part: manifest path under k8s/<box>/})
     "cluster": ("keys/cluster-age.pub", "k8s/cluster/secrets", {
         "": RT, "wg": RT, "backup": RT, "github": RT, "flyorgs": RT, "flypersonal": RT, "flyvolumes": RT,
-        "browserbase": RT, "devices": RT, "livepush": RT, "alloy": None, "tunnel": None, "postgres": None, "postgres-app": None,
+        "browserbase": RT, "devices": RT, "livepush": RT, "runners": RT, "alloy": None, "tunnel": None, "postgres": None, "postgres-app": None,
         "icloud-index": "services/icloud-index/icloud-index.yaml",
         "icloud-session": "services/icloud-index/icloud-index.yaml",
         "db": RT, "objects": RT, "seal": RT, "wg-b": RT, "aws": RT, "wg-aws": RT}),
@@ -78,6 +81,7 @@ PARTS = {  # part → (file, Secret name, annotation, namespace)
     "flyvolumes": ("router-flyvolumes.enc.yaml", "router-secrets-flyvolumes", "jarvis2/secrets-rev-flyvolumes", RNS),
     "browserbase": ("router-browserbase.enc.yaml", "router-secrets-browserbase", "jarvis2/secrets-rev-browserbase", RNS),
     "devices": ("router-devices.enc.yaml", "router-secrets-devices", "jarvis2/secrets-rev-devices", RNS),
+    "runners": ("router-runners.enc.yaml", "router-secrets-runners", "jarvis2/secrets-rev-runners", RNS),
     "livepush": ("router-livepush.enc.yaml", "router-secrets-livepush", "jarvis2/secrets-rev-livepush", RNS),  # router/livepush.go
     "wg-b": ("router-wg-b.enc.yaml", "router-wg-b", "jarvis2/secrets-rev-wg-b", RNS),  # m-gateway-1's peer jarvis4-gw-b
     "seal": ("router-seal.enc.yaml", "router-seal", "jarvis2/secrets-rev-seal", RNS),  # the router's seal key (router/sealed.go)

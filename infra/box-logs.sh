@@ -3,7 +3,7 @@
 # Hetzner's rescue system: a throwaway SSH key, rescue mode, a reset, SSH in over IPv6, the box's root disk mounted
 # read-only, then its bootstrap log (/var/log/jarvis2-bootstrap.log), cloud-init's output and the last of the journal
 # (k3s, warp-svc, alloy; persistent on the two-box layout) are printed; then the box reboots into its own system.
-#   HCLOUD_PROJECT_TOKEN   the project's token (production: HETZNER_JARVIS2_MOCK_API; rehearsals: HCLOUD_TOKEN)
+#   HCLOUD_PROJECT_TOKEN   the project's token (production: HETZNER_JARVIS2_MOCK_API; rehearsals: HETZNER_RUNNERS_ROUTER_TOKEN)
 #   CONFIRM=yes            required: the box RESETS twice. A control box's cores come back empty (Recover); never for a
 #                          box that serves, only one that never came up or is already lost.
 # A box that does come up ships the same logs to Grafana (infra/alloy/box.alloy): look there first.

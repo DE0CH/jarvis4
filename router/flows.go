@@ -973,11 +973,15 @@ func orState(state string) string {
 
 // ---- pause ---------------------------------------------------------------------------------------------
 
-func (r *Router) Pause(id string) error { return r.pauseWith(id, nil) }
+func (r *Router) Pause(id string) error { return r.pauseAs(id, nil, false) }
 
-// pauseWith: next = a handover's next machine, started as soon as the old one is told to stop (handover.go)
-func (r *Router) pauseWith(id string, next *nextMachine) error {
-	unlock, err := r.lock(id, "pausing")
+// pauseWith: the pause of a restart (an Upgrade, a bigger machine or disk): the session starts again right after, so
+// its runners stay (runners.go). next = a handover's next machine, started as soon as the old one is told to stop
+// (handover.go)
+func (r *Router) pauseWith(id string, next *nextMachine) error { return r.pauseAs(id, next, true) }
+
+func (r *Router) pauseAs(id string, next *nextMachine, restart bool) error {
+	unlock, err := r.lockArgs(id, "pausing", map[string]bool{"restart": restart})
 	if err != nil {
 		return err
 	}
@@ -998,13 +1002,13 @@ func (r *Router) pauseWith(id string, next *nextMachine) error {
 	r.setState(id, "pausing", "")
 	op := r.lcBegin(id, "pause") // lifecycle.go
 	op.machine(s.MachineID)
-	go r.pauseRun(id, s.MachineID, next, unlock, op)
+	go r.pauseRun(id, s.MachineID, next, restart, unlock, op)
 	return nil
 }
 
 // pauseRun: the pause's work under its job (jobs.go); run again by a replica carrying on a job whose holder died (the
 // final snapshot is taken once: a machine signs only one; the kill answers the same cert)
-func (r *Router) pauseRun(id, machine string, next *nextMachine, unlock func(), op *lcHandle) {
+func (r *Router) pauseRun(id, machine string, next *nextMachine, restart bool, unlock func(), op *lcHandle) {
 	defer unlock()
 	defer op.endFromState()
 	if !r.finalSnapshotAndKillNext(id, machine, next) { // snapsafe.go: kept, failed and DMed
@@ -1016,6 +1020,9 @@ func (r *Router) pauseRun(id, machine string, next *nextMachine, unlock func(), 
 			x.State, x.MachineID, x.PausedAt, x.Status = "paused", "", &now, ""
 		}
 	})
+	if !restart {
+		r.runnersAfterPause(id, op) // runners.go: they go unless a wakeup or cron is armed
+	}
 }
 
 // ---- resume ----------------------------------------------------------------------------------------------
@@ -1339,6 +1346,7 @@ func (r *Router) destroyRun(id string, s Session, o destroyOpts, unlock func(), 
 			op.note("", "the line ended: the core's burn cert")
 		}
 	}
+	r.endRunners(id, op, "destroyed") // runners.go
 	op.note("", "the session becomes a record")
 	op.end("done", "")
 	r.st.Do(func(d *persisted) {

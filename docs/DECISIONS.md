@@ -3064,3 +3064,18 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      store (a rotation), by `noStore`, by an ask that makes the store sensitive, and by Deyao or the setup session.
      When the core refuses the add-store (the list names a key whose store a Recover didn't bring back), the ask is
      the key request after all.
+265. **A runner belongs to a session** (Deyao, 2026-11-17: "runners need to be owned by a session, just like fly
+     sandboxes so I can see orphaned or leaking runner machines"). The Hetzner servers sessions make for heavy work
+     (project runners) were made by each session with the project's token from the `default` store and a label only
+     the script set: Jarvis 4 showed none of them and nothing ended them. Now the router holds the project's only
+     token (`HETZNER_RUNNERS_TOKEN`, part `runners`; API token `jarvis4-router`) and a session asks it for a runner
+     (`/m/api/sessions/ID/runners`, `router/runners.go`): the router sets the label `session=<id>`, so no server is
+     made without an owner. Destroy deletes the session's runners. A pause deletes them unless a wakeup, cron or
+     watch is armed (Deyao: "Delete on idle pause. Kept when theres scheduled wakeup"); the pause inside a restart,
+     an Upgrade or a move to a bigger machine or disk keeps them (`pauseWith`, the job's `restart` argument). The
+     Machines tab lists every server of the project with its session and its monthly price, and what stands out in
+     amber with Delete: no session label, a session gone or destroyed, a paused session nothing will wake. The
+     router keeps no list of its own (Hetzner's labels are the record), so a server made with any other token
+     shows too. A runner Hetzner doesn't delete never fails the pause or destroy: it stays on the view, standing
+     out. *Not chosen*: sessions keeping the token with Jarvis 4 only reading the project (an owner by convention
+     only); keeping runners across every pause (they are billed by the hour and nothing would end them).

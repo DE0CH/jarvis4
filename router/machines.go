@@ -236,8 +236,9 @@ func (r *Router) registerMachines(app appRoute) {
 		}
 		now := time.Now()
 		orgs, configErr := r.flyOrgsOverview(ms, now)
+		runners, runnerAttention := r.runnersForMachines() // runners.go: the Hetzner runners, each with its session
 		writeJSON(w, 200, map[string]any{"app": sessionsApp, "org": ownFlyOrg, "machines": r.machinesView(ms, now), "orgs": orgs,
-			"attention": flyAttentionCount(orgs), "configError": configErr, "checkedAt": now.UTC()})
+			"runners": runners, "attention": flyAttentionCount(orgs) + runnerAttention, "configError": configErr, "checkedAt": now.UTC()})
 	})
 	app("POST /api/machines/{id}/destroy", func(w http.ResponseWriter, req *http.Request) {
 		if err := r.DestroyOrphan(req.PathValue("id")); err != nil {

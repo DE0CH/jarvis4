@@ -198,7 +198,12 @@ export type Machine = { id: string; name: string; state: string; region: string;
 export type FlyVolumeView = { id: string; name: string; state: string; region: string; sizeGb: number; attachedTo: string; created: string; attention: string };
 export type FlyAppView = { app: string; label: string; own: boolean; status: string; machines: Machine[]; volumes: FlyVolumeView[]; error: string };
 export type FlyOrgView = { org: string; via: string; error: string; checkedAt: string; apps: FlyAppView[] };
-export type MachinesOverview = { app: string; org: string; machines: Machine[]; orgs: FlyOrgView[]; attention: number; configError: string; checkedAt: string };
+// a Hetzner runner (router/runners.go): a session's throwaway server in the project "runners". `sessionId` = its
+// owner ("" = none); `attention`: why it stands out (no session, a session gone, a paused one nothing will wake);
+// `deletable`: Delete is offered (only for one that stands out)
+export type Runner = { id: number; name: string; status: string; type: string; guest: string; location: string; ipv6: string; created: string; monthly: string; labels?: Record<string, string>; sessionId: string; sessionState?: string; attention?: string; deletable?: boolean };
+export type RunnersView = { project: string; runners: Runner[]; attention: number; error?: string };
+export type MachinesOverview = { app: string; org: string; machines: Machine[]; orgs: FlyOrgView[]; runners?: RunnersView | null; attention: number; configError: string; checkedAt: string };
 export type SignedDoc = { payload: string; sig: string };
 export type ApprovalKind = "new-session" | "resume-upgrade" | "add-store" | "kernel-source" | "kernel-add-store";
 export type Approval = {

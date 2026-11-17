@@ -2,6 +2,8 @@
 // Jarvis's own app (jarvis4-sessions) with each machine's session or "No session", and the other apps read-only (an org
 // read through Jarvis 1 says so). Whatever stands out is flagged in amber. Destroy only for a machine of this Jarvis's
 // own app that belongs to no session; the router re-checks that and destroys it through the core's kill.
+// Last: the Hetzner runners (project "runners", router/runners.go), each with the session that owns it; one with no
+// session, a session that is gone or a paused session nothing will wake is flagged and can be deleted.
 import SwiftUI
 
 struct MachinesView: View {
@@ -38,6 +40,7 @@ struct MachinesView: View {
           Text("A paused session has no machine.")
         }
         ForEach(Array(orgs.enumerated()), id: \.offset) { _, org in OrgSections(org: org) }
+        if doc["runners"]["project"].string != nil { RunnersSection(doc: doc["runners"]) }
       }
     }
     .overlay { if !model.machines.loaded && model.machines.error == nil { ProgressView("Loading…") } }
@@ -79,6 +82,77 @@ private struct OrgSections: View {
         Text([app["label"].text ?? "Unused", Fmt.plural(machines.count, "machine"), Fmt.plural(volumes.count, "volume"), app["status"].text].compactMap { $0 }.joined(separator: " · "))
       }
       .accessibilityIdentifier("app-\(app["app"].string ?? "")")
+    }
+  }
+}
+
+/// the Hetzner runners: one row each, with its session
+private struct RunnersSection: View {
+  let doc: JSON
+  var body: some View {
+    let runners = doc["runners"].array
+    Section {
+      if let e = doc["error"].text { ErrorRow(text: e) }
+      ForEach(Array(runners.enumerated()), id: \.offset) { _, r in RunnerRow(r: r) }
+      if runners.isEmpty && doc["error"].text == nil { Text("No runners").foregroundStyle(.secondary) }
+    } header: {
+      HStack {
+        Text("Hetzner")
+        Text(doc["project"].string ?? "").monospaced()
+      }
+    } footer: {
+      Text("A runner goes with its session: on Destroy, and on a pause with no wakeup or cron armed.")
+    }
+    .accessibilityIdentifier("runners")
+  }
+}
+
+private struct RunnerRow: View {
+  @Environment(AppModel.self) private var model
+  let r: JSON
+  private var id: String { r["id"].int.map(String.init) ?? "" }
+  private var name: String { r["name"].string ?? id }
+  private var canDelete: Bool { r["deletable"].bool == true }
+
+  var body: some View {
+    let status = r["status"].string ?? "unknown"
+    VStack(alignment: .leading, spacing: 3) {
+      HStack {
+        Label(name, systemImage: "server.rack").font(.headline)
+        Spacer()
+        if let p = model.pending["runner:" + id] { StatusPill(text: p, color: .orange, spinning: true) }
+        else { StatusPill(text: status, color: status == "running" ? .green : status == "off" ? .secondary : .orange) }
+      }
+      if let sid = r["sessionId"].text {
+        LabeledContent("Session", value: model.session(sid)?.title ?? sid).font(.subheadline)
+          .accessibilityElement(children: .combine).accessibilityIdentifier("runner-session-\(id)")
+      } else {
+        Text("No session").font(.subheadline.weight(.medium)).foregroundStyle(.orange)
+      }
+      if let a = r["attention"].text { Label(a, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange) }
+      Text([r["type"].text, r["guest"].text, r["location"].text, r["monthly"].text].compactMap { $0 }.joined(separator: " · "))
+        .font(.footnote).foregroundStyle(.secondary)
+      if let c = r["created"].string?.isoDate { LabeledContent("Created", value: Fmt.ago(c)).font(.footnote) }
+      if let ip = r["ipv6"].text { Text(ip).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled) }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("runner-\(id)")
+    .swipeActions {
+      if canDelete { Button("Delete", systemImage: "trash", role: .destructive) { Task { await delete() } } }
+    }
+    .contextMenu {
+      if canDelete { Button("Delete", systemImage: "trash", role: .destructive) { Task { await delete() } } }
+    }
+  }
+  private func delete() async {
+    await model.exclusive("runner:" + id) {
+      guard await model.confirm("Delete runner \(name)?", "The server and its disk go; nothing is kept.", action: "Delete runner", destructive: true) else { return }
+      model.pend("runner:" + id, "Deleting…")
+      defer { model.pend("runner:" + id, nil) }
+      do {
+        try await RouterClient.shared.call("POST", "api/runners/\(id)/delete")
+        await model.loadMachines()
+      } catch { model.fail(error, "Could not delete: ") }
     }
   }
 }

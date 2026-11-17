@@ -26,7 +26,7 @@
 # Access app for the rehearsal's service token only). The kit is the public TEST master key, so the bucket holds
 # nothing secret: dummy values, and a Fly token narrowed as production's AND expiring after 6 h.
 #
-# Env: HCLOUD_TOKEN (project runners), JARVIS2_FLY_TOKEN, JARVIS2_SETUP_KEY, CF_JARVIS2_INFRA_TOKEN, CLOUDFLARE_API,
+# Env: HCLOUD_TOKEN (project runners: the infra store's HETZNER_RUNNERS_ROUTER_TOKEN), JARVIS2_FLY_TOKEN, JARVIS2_SETUP_KEY, CF_JARVIS2_INFRA_TOKEN, CLOUDFLARE_API,
 #      HETZNER_S3_* (the admin key of project Cloud Code). Optional: REHEARSAL_NAME (default jarvis2-rehearsal),
 #      REHEARSAL_REF (the commit Flux applies; default origin/main), SERVER_TYPE (cx23), SKIP_REBUILD=1.
 # Prints no secret. Logs: $REHEARSAL_LOGS (default /tmp/jarvis2-rehearsal-logs).

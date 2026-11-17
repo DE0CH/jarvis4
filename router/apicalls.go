@@ -474,6 +474,8 @@ var callRules = map[string]callRule{
 	"POST /api/leases/{name}/take-over":           callBody,
 	"GET /api/machines":                           callBody,
 	"POST /api/machines/{id}/destroy":             callBody,
+	"GET /api/runners":                            callBody, // runners.go: the Hetzner runners, each with its session
+	"POST /api/runners/{id}/delete":               callBody, // only a runner no session at work owns
 	"GET /api/models":                             callBody,
 	"GET /api/policy":                             callBody,
 	"GET /api/build":                              callBody, // the web page's build (its index.html's hash)

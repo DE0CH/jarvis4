@@ -4,7 +4,7 @@
 import { buildSeen } from "./build";
 import { useSyncExternalStore } from "react";
 import { AppState, Platform } from "react-native";
-import { api, coreStores, loadPolicy, RUN_ACTIVE, type Choice, type CoreStore, type Policy, type Rec, type State, type TasksOverview, type Machine, type FlyOrgView, type MachinesOverview, type InboxItem, type InboxBatch } from "./api";
+import { api, coreStores, loadPolicy, RUN_ACTIVE, type Choice, type CoreStore, type Policy, type Rec, type State, type TasksOverview, type Machine, type FlyOrgView, type MachinesOverview, type RunnersView, type InboxItem, type InboxBatch } from "./api";
 import { stateFrom } from "./state";
 import { inboxEntries } from "./messages";
 
@@ -25,14 +25,14 @@ export type AskInput = { heading: string; label: string; placeholder?: string; n
 export type AskRow = { label: string; value: string; id?: string };
 export type Confirm = { title: string; detail?: string; rows?: AskRow[]; action: string; danger?: boolean; input?: AskInput; resolve: (ok: boolean, text: string) => void };
 type Store = {
-  state: State; tab: Tab; pending: Map<string, string>; records: Loaded<Rec>; stores: Loaded<CoreStore>; machines: Loaded<Machine>; flyOrgs: { orgs: FlyOrgView[]; attention: number; configError: string };
+  state: State; tab: Tab; pending: Map<string, string>; records: Loaded<Rec>; stores: Loaded<CoreStore>; machines: Loaded<Machine>; flyOrgs: { orgs: FlyOrgView[]; attention: number; configError: string }; hzRunners: RunnersView | null;
   toasts: Toast[]; confirm: (Confirm & { id: number }) | null; sizes: Choice[]; regions: Choice[]; defaultRegion: string; runners: Choice[]; defaultRunner: string; models: Choice[]; modelDefaults: Record<string, string>; refreshing: boolean; policy: Policy;
   tasks: TasksState;
 };
 const empty = <T,>(): Loaded<T> => ({ loading: false, loaded: false, items: [], err: null });
 const S: Store = {
   state: { sessions: [], approvals: [], core: { up: false } },
-  tab: "sessions", pending: new Map(), records: empty(), stores: empty(), machines: empty(), flyOrgs: { orgs: [], attention: 0, configError: "" },
+  tab: "sessions", pending: new Map(), records: empty(), stores: empty(), machines: empty(), flyOrgs: { orgs: [], attention: 0, configError: "" }, hzRunners: null,
   sizes: [], regions: [], defaultRegion: "", runners: [], defaultRunner: "", models: [], modelDefaults: {}, refreshing: false, toasts: [], confirm: null, policy: {},
   tasks: { loading: false, loaded: false, data: { templates: [], instances: [], schedules: [] }, err: null },
 };
@@ -190,6 +190,7 @@ export const loadMachines = coalesce(async () => {
   try {
     const j = await api<MachinesOverview>("GET", "api/machines");
     S.flyOrgs = { orgs: j.orgs || [], attention: j.attention || 0, configError: j.configError || "" };
+    S.hzRunners = j.runners || null;
     S.machines = { ...S.machines, items: j.machines || [], err: null, loaded: true };
   }
   catch (e: any) { S.machines = { ...S.machines, err: e.message }; }

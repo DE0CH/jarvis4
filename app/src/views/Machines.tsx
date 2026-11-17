@@ -5,7 +5,9 @@
 // core's kill). Every other app and org is read-only: jarvis2-370 reads from Fly, personal from Jarvis 1's
 // list. A machine that stands out (stopped, failed, stuck, no session, an app no Jarvis uses) or a volume attached
 // to nothing shows why in amber, and the count heads the page.
-import { api, ago, REGION, sessionTitle, type Machine, type FlyAppView, type FlyOrgView, type FlyVolumeView } from "../lib/api";
+// Below the Fly orgs: the Hetzner runners (project "runners", router/runners.go), each with the session that owns it;
+// one with no session, a session that is gone or a paused session nothing will wake shows why in amber and has Delete.
+import { api, ago, REGION, sessionTitle, type Machine, type FlyAppView, type FlyOrgView, type FlyVolumeView, type Runner, type RunnersView } from "../lib/api";
 import { useStore, getStore, ask, exclusive, pend, failed, setTab, loadMachines, toast } from "../lib/store";
 import { BadgeList, Callout, Card, Flex, Heading, Lbl, Muted, P, Pill, Row, Rows, Spinner } from "../ui/kit";
 import { PButton } from "../ui/bits";
@@ -133,8 +135,69 @@ function OrgSection({ o }: { o: FlyOrgView }) {
   );
 }
 
+function deleteRunner(x: Runner) {
+  return exclusive("runner:" + x.id, async () => {
+    const ok = await ask({ title: "Delete runner?", danger: true, action: "Delete runner",
+      rows: [{ label: "Runner", value: x.name }, { label: "Session", value: x.sessionId || "None" }, { label: "Why", value: x.attention || "" }],
+      detail: "The server and its disk go; nothing is kept." });
+    if (!ok) return;
+    pend("runner:" + x.id, "Deleting…");
+    try {
+      await api("POST", "api/runners/" + x.id + "/delete");
+      await loadMachines();
+    } catch (e: any) { failed(e, "Could not delete: "); }
+    finally { pend("runner:" + x.id, null); }
+  });
+}
+
+function RunnerCard({ x }: { x: Runner }) {
+  const sessions = useStore((s) => s.state.sessions), pending = useStore((s) => s.pending);
+  const s = x.sessionId ? (sessions || []).find((y) => y.id === x.sessionId) : null;
+  const labels = Object.entries(x.labels || {}).map(([k, v]) => (v ? `${k}=${v}` : k));
+  return (
+    <Card id={"runner-" + x.id} dim={pending.has("runner:" + x.id)} data={{ runner: String(x.id), runnerSession: x.sessionId, attention: x.attention ? "1" : "0" }}>
+      <Flex justify="space-between" align="flex-start" gap={2} mb={1}>
+        <Heading size={3} style={{ flex: 1 }}>{x.name}</Heading>
+        <Pill kind={x.status === "running" ? "ok" : x.status === "off" ? "dim" : "wait"}>{x.status || "unknown"}</Pill>
+      </Flex>
+      {!!x.attention && <P size={2} mb={1} color="amber" weight="medium" id={"runner-attention-" + x.id}>{x.attention}</P>}
+      <Rows>
+        {s
+          ? <Row label="Session"><P size={2} color="blue" onPress={() => setTab("sessions")} id={"runner-session-" + x.id} data={{ sessionLink: x.sessionId }}>{sessionTitle(s) + " ›"}</P></Row>
+          : <Row label="Session" id={"runner-nosession-" + x.id}>{x.sessionId || "None"}</Row>}
+        {!!s && <Row label="Session is">{x.sessionState || s.state}</Row>}
+        <Row label="Size">{[x.type, x.guest].filter(Boolean).join(" · ")}</Row>
+        {!!x.monthly && <Row label="Cost">{x.monthly}</Row>}
+        {!!x.location && <Row label="Location">{x.location}</Row>}
+        <Row label="Created">{createdText(x.created)}</Row>
+        {!!x.ipv6 && <Row label="Address" mono selectable>{x.ipv6}</Row>}
+        {labels.length > 0 && <Row label="Labels">{labels.join(", ")}</Row>}
+      </Rows>
+      {!!x.deletable && (
+        <Flex gap={2} pt={3} style={{ marginTop: "auto" }}>
+          <PButton pkey={"runner:" + x.id} color="red" variant="soft" onPress={() => deleteRunner(x)} label="Delete" />
+        </Flex>)}
+    </Card>
+  );
+}
+
+function RunnersSection({ rv }: { rv: RunnersView }) {
+  return (
+    <Flex dir="column" mt={6} data={{ runnersProject: rv.project }}>
+      <Lbl mt={0}>{"Hetzner project " + rv.project}</Lbl>
+      <Rows>
+        <Row label="Runners" id="runners-total">{String(rv.runners.length)}</Row>
+        <Row label="Stand out" id="runners-attention">{rv.attention > 0 ? <Pill kind="wait">{String(rv.attention)}</Pill> : <Pill kind="ok">none</Pill>}</Row>
+      </Rows>
+      <Muted mt={1}>A runner goes with its session: on Destroy, and on a pause with no wakeup or cron armed.</Muted>
+      {!!rv.error && <P size={2} color="red">{"Could not list the runners: " + rv.error}</P>}
+      {rv.runners.length > 0 && <Cards mt={8}>{rv.runners.map((x) => <RunnerCard key={x.id} x={x} />)}</Cards>}
+    </Flex>
+  );
+}
+
 export function Machines() {
-  const ms = useStore((s) => s.machines), fo = useStore((s) => s.flyOrgs);
+  const ms = useStore((s) => s.machines), fo = useStore((s) => s.flyOrgs), rv = useStore((s) => s.hzRunners);
   if (!ms.loaded) return ms.err ? <P size={2} color="red">{"Could not list machines: " + ms.err}</P> : <Flex gap={2} align="center"><Spinner /><Muted>Loading…</Muted></Flex>;
   const total = fo.orgs.reduce((t, o) => t + o.apps.reduce((u, a) => u + a.machines.length, 0), 0);
   return (
@@ -142,12 +205,14 @@ export function Machines() {
       <Rows id="machines-summary">
         <Row label="Orgs"><BadgeList items={fo.orgs.map((o) => o.org)} /></Row>
         <Row label="Machines" id="machines-total">{String(total)}</Row>
+        {!!rv && <Row label="Runners">{String(rv.runners.length)}</Row>}
         <Row label="Stand out" id="machines-attention" data={{ machinesAttention: String(fo.attention) }}>{fo.attention > 0 ? <Pill kind="wait">{String(fo.attention)}</Pill> : <Pill kind="ok">none</Pill>}</Row>
       </Rows>
-      <Muted mt={2}>Destroy: jarvis4-sessions machines with no session only.</Muted>
+      <Muted mt={2}>Destroy: jarvis4-sessions machines with no session only. Delete: runners with no session at work only.</Muted>
       {!!fo.configError && <P size={2} color="red" mt={2}>{fo.configError}</P>}
       {!!ms.err && <P size={2} color="red" mt={2}>{"Could not refresh: " + ms.err}</P>}
       {fo.orgs.map((o) => <OrgSection key={o.org} o={o} />)}
+      {!!rv && <RunnersSection rv={rv} />}
     </>
   );
 }
