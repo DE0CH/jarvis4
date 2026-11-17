@@ -52,7 +52,12 @@ type Files = BTreeMap<String, Vec<u8>>;
 
 /// a fake router serving one import: the manifest at /m/restore-snapshot, its files at /m/import-file/<name>, and
 /// taking the wakeups and crons the machine arms
-fn import_router(key: &str, files: &Files, order: &[String], tamper: Files) -> (FakeRouter, Vec<u8>, Arc<Mutex<Vec<String>>>) {
+fn import_router(
+    key: &str,
+    files: &Files,
+    order: &[String],
+    tamper: Files,
+) -> (FakeRouter, Vec<u8>, Arc<Mutex<Vec<String>>>) {
     let man = serde_json::json!({"kind": "jarvis1-import", "v": 1, "session": "j1abc",
         "files": order.iter().map(|n| serde_json::json!({"name": n, "sha256": sha256_hex(&files[n]), "size": files[n].len()})).collect::<Vec<_>>()});
     let mb = crate::gojson::marshal(&man).into_bytes();
@@ -63,10 +68,19 @@ fn import_router(key: &str, files: &Files, order: &[String], tamper: Files) -> (
             return ans(200, m2.clone());
         }
         if let Some(n) = r.path.strip_prefix("/m/import-file/") {
-            return ans(200, tamper.get(n).or_else(|| f2.get(n)).cloned().unwrap_or_default());
+            return ans(
+                200,
+                tamper
+                    .get(n)
+                    .or_else(|| f2.get(n))
+                    .cloned()
+                    .unwrap_or_default(),
+            );
         }
         if r.path.starts_with("/m/api/sessions/s1/") {
-            a2.lock().unwrap().push(format!("{} {}", r.path, String::from_utf8_lossy(&r.body)));
+            a2.lock()
+                .unwrap()
+                .push(format!("{} {}", r.path, String::from_utf8_lossy(&r.body)));
             return ans(200, r#"{"ok":true}"#);
         }
         ans(404, "")
@@ -81,7 +95,10 @@ fn j1_files(home: &Path) -> (Files, Vec<String>) {
         Ent::Dir("workspace/claude-env/"),
         Ent::File("workspace/claude-env/README.md", "readme"),
         Ent::Sym("workspace/claude-env/link", "README.md"),
-        Ent::Hard("workspace/claude-env/hard", "workspace/claude-env/README.md"),
+        Ent::Hard(
+            "workspace/claude-env/hard",
+            "workspace/claude-env/README.md",
+        ),
         Ent::Sym("workspace/escape", &esc),
         Ent::File("workspace/escape/authorized_keys", "through a symlink"),
         Ent::File("../evil", "outside"),
@@ -106,14 +123,24 @@ fn j1_files(home: &Path) -> (Files, Vec<String>) {
         ("artifacts.tar.gz".to_string(), art),
     ]
     .into();
-    let order = ["session.json", "manifest.txt", "claude.json", &format!("{T_UUID}.jsonl"), "artifacts.tar.gz", "workspace.tar.gz"]
-        .map(String::from)
-        .to_vec();
+    let order = [
+        "session.json",
+        "manifest.txt",
+        "claude.json",
+        &format!("{T_UUID}.jsonl"),
+        "artifacts.tar.gz",
+        "workspace.tar.gz",
+    ]
+    .map(String::from)
+    .to_vec();
     (files, order)
 }
 
 fn restore_cert(machine: &str, sha: &str) -> crate::cert::Cert {
-    v2(&format!(r#"{{"v":1,"restore":{{"machine":"{machine}","sha256":"{sha}"}}}}"#), "")
+    v2(
+        &format!(r#"{{"v":1,"restore":{{"machine":"{machine}","sha256":"{sha}"}}}}"#),
+        "",
+    )
 }
 
 #[test]
@@ -129,18 +156,51 @@ fn jarvis1_import_restores_what_the_cert_names() {
     let v = vouch(&cert).unwrap();
     restore_archived(&c, "", "m1", &mut cert, &v).unwrap();
     let read = |rel: &str| std::fs::read_to_string(home.join(rel)).unwrap_or_default();
-    assert!(read("workspace/claude-env/README.md") == "readme" && read("artifacts/record.md") == "# record", "tarballs not in place");
-    assert_eq!(std::fs::read_link(home.join("workspace/claude-env/link")).unwrap().to_str(), Some("README.md"));
+    assert!(
+        read("workspace/claude-env/README.md") == "readme"
+            && read("artifacts/record.md") == "# record",
+        "tarballs not in place"
+    );
+    assert_eq!(
+        std::fs::read_link(home.join("workspace/claude-env/link"))
+            .unwrap()
+            .to_str(),
+        Some("README.md")
+    );
     assert_eq!(read("workspace/claude-env/hard"), "readme", "hard link");
-    assert!(!home.join(".ssh/authorized_keys").exists(), "wrote through a symlink");
-    assert!(!home.join(".bashrc").exists(), "wrote outside the tarball's root");
-    assert!(!home.parent().unwrap().join("evil").exists(), "wrote outside home");
+    assert!(
+        !home.join(".ssh/authorized_keys").exists(),
+        "wrote through a symlink"
+    );
+    assert!(
+        !home.join(".bashrc").exists(),
+        "wrote outside the tarball's root"
+    );
+    assert!(
+        !home.parent().unwrap().join("evil").exists(),
+        "wrote outside home"
+    );
     let cj: serde_json::Value = serde_json::from_str(&read(".claude.json")).unwrap();
-    assert!(cj["machineID"] == "m-old" && cj.get("oauthAccount").is_none() && cj.get("userID").is_none() && cj.get("projects").is_some(), "{cj}");
+    assert!(
+        cj["machineID"] == "m-old"
+            && cj.get("oauthAccount").is_none()
+            && cj.get("userID").is_none()
+            && cj.get("projects").is_some(),
+        "{cj}"
+    );
     // the transcripts wait for the repos, then go under the working dir's project
     place_imported_transcripts();
-    let slug = format!("-{}-workspace-claude-env", home.display().to_string().trim_matches('/').replace('/', "-"));
-    assert!(!read(&format!(".claude/projects/{slug}/{T_UUID}.jsonl")).is_empty(), "transcript not placed");
+    let slug = format!(
+        "-{}-workspace-claude-env",
+        home.display()
+            .to_string()
+            .trim_matches('/')
+            .replace('/', "-")
+    );
+    assert!(
+        !read(&format!(".claude/projects/{slug}/{T_UUID}.jsonl")).is_empty(),
+        "transcript not placed"
+    );
     // the record's wakeup (long past) fires soon; the cron keeps its period and time of day; its missed run fires soon
     rearm_jarvis1(&c, "s1");
     let a = armed.lock().unwrap().clone();
@@ -156,13 +216,22 @@ fn jarvis1_import_restores_what_the_cert_names() {
         assert!(all.contains(want), "armed lacks {want}: {all}");
     }
     let note = read("artifacts/jarvis1-import/rearmed.txt");
-    assert!(note.contains("passed while paused") && note.contains("watch_x") && !read("artifacts/jarvis1-import/session.json").is_empty(), "{note}");
+    assert!(
+        note.contains("passed while paused")
+            && note.contains("watch_x")
+            && !read("artifacts/jarvis1-import/session.json").is_empty(),
+        "{note}"
+    );
     assert!(!home.join(".jarvis1-import").exists(), "staging dir left");
 }
 
 #[test]
 fn jarvis1_import_refuses_other_bytes() {
-    for n in ["workspace.tar.gz".to_string(), format!("{T_UUID}.jsonl"), "claude.json".to_string()] {
+    for n in [
+        "workspace.tar.gz".to_string(),
+        format!("{T_UUID}.jsonl"),
+        "claude.json".to_string(),
+    ] {
         let e = TestEnv::new();
         let key = e.machine_key();
         let (files, order) = j1_files(&e.home);
@@ -171,13 +240,24 @@ fn jarvis1_import_refuses_other_bytes() {
         if n == "workspace.tar.gz" {
             other = tgz(&[Ent::File("workspace/claude-env/README.md", "swapped")]);
         }
-        let (srv, mb, _) = import_router(&key.sig.public_key(), &files, &order, [(n.clone(), other)].into());
+        let (srv, mb, _) = import_router(
+            &key.sig.public_key(),
+            &files,
+            &order,
+            [(n.clone(), other)].into(),
+        );
         let mut cert = restore_cert("j1abc", &sha256_hex(&mb));
         let v = vouch(&cert).unwrap();
         let r = restore_archived(&srv.client(), "", "m1", &mut cert, &v);
-        assert!(format!("{:#}", r.as_ref().unwrap_err()).contains("not the bytes the cert names"), "{n}: {r:?}");
+        assert!(
+            format!("{:#}", r.as_ref().unwrap_err()).contains("not the bytes the cert names"),
+            "{n}: {r:?}"
+        );
         if n == "workspace.tar.gz" {
-            assert!(!e.home.join("workspace/claude-env/README.md").exists(), "swapped workspace moved into place");
+            assert!(
+                !e.home.join("workspace/claude-env/README.md").exists(),
+                "swapped workspace moved into place"
+            );
         }
     }
     // a manifest whose hash isn't the cert's: refused before anything is fetched
@@ -188,20 +268,35 @@ fn jarvis1_import_refuses_other_bytes() {
     let mut cert = restore_cert("j1abc", &"a".repeat(64));
     let v = vouch(&cert).unwrap();
     let r = restore_archived(&srv.client(), "", "m1", &mut cert, &v);
-    assert!(format!("{:#}", r.as_ref().unwrap_err()).contains("isn't the one the cert names"), "{r:?}");
+    assert!(
+        format!("{:#}", r.as_ref().unwrap_err()).contains("isn't the one the cert names"),
+        "{r:?}"
+    );
     // a manifest for another Jarvis 1 session than the cert names is not an import (and not a signed snapshot)
     let mut cert = restore_cert("other", &sha256_hex(&mb));
     let v = vouch(&cert).unwrap();
-    assert!(restore_archived(&srv.client(), "", "m1", &mut cert, &v).is_err(), "imported a manifest naming another session");
+    assert!(
+        restore_archived(&srv.client(), "", "m1", &mut cert, &v).is_err(),
+        "imported a manifest naming another session"
+    );
 }
 
 #[test]
 fn j1_fix_url_and_remotes() {
     let e = TestEnv::new();
     for (inp, want) in [
-        ("https://x-access-token:ghp_abc@github.com/DE0CH/claude-env.git", "https://github.com/DE0CH/claude-env.git"),
-        ("https://github.com/de0ch/claude-env", "https://github.com/de0ch/claude-env.git"),
-        ("https://github.com/DE0CH/YCC.git", "https://github.com/DE0CH/YCC.git"),
+        (
+            "https://x-access-token:ghp_abc@github.com/DE0CH/claude-env.git",
+            "https://github.com/DE0CH/claude-env.git",
+        ),
+        (
+            "https://github.com/de0ch/claude-env",
+            "https://github.com/de0ch/claude-env.git",
+        ),
+        (
+            "https://github.com/DE0CH/YCC.git",
+            "https://github.com/DE0CH/YCC.git",
+        ),
         ("git@github.com:DE0CH/x.git", "git@github.com:DE0CH/x.git"),
         ("https://gitlab.com/a/b", "https://gitlab.com/a/b"),
     ] {
@@ -216,10 +311,20 @@ fn j1_fix_url_and_remotes() {
         c.output().unwrap()
     };
     git(&["init", "-q", repo.to_str().unwrap()]);
-    git(&["-C", repo.to_str().unwrap(), "remote", "add", "origin", "https://u:secret@github.com/DE0CH/r"]);
+    git(&[
+        "-C",
+        repo.to_str().unwrap(),
+        "remote",
+        "add",
+        "origin",
+        "https://u:secret@github.com/DE0CH/r",
+    ]);
     j1_fix_remotes(&ws);
     let out = git(&["-C", repo.to_str().unwrap(), "remote", "get-url", "origin"]);
-    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "https://github.com/DE0CH/r.git");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "https://github.com/DE0CH/r.git"
+    );
 }
 
 #[test]
@@ -233,8 +338,17 @@ fn j1_schedule_keeps_future_times() {
     );
     let (arms, notes) = j1_schedule(rec.as_bytes(), "s1", now);
     assert_eq!(arms.len(), 2, "{arms:?}");
-    assert!(arms[0].body["name"] == "d" && arms[0].body["at"] == next && arms[0].body.get("until").is_none() && arms[1].body["at"] == at, "{arms:?}");
-    assert!(notes.len() == 1 && notes[0].contains(r#"cron "c": ended"#), "{notes:?}");
+    assert!(
+        arms[0].body["name"] == "d"
+            && arms[0].body["at"] == next
+            && arms[0].body.get("until").is_none()
+            && arms[1].body["at"] == at,
+        "{arms:?}"
+    );
+    assert!(
+        notes.len() == 1 && notes[0].contains(r#"cron "c": ended"#),
+        "{notes:?}"
+    );
 }
 
 #[test]
@@ -247,9 +361,16 @@ fn a_successor_with_no_snapshot_imports_again() {
     let mut cert = restore_cert("j1abc", &sha256_hex(&mb));
     cert.pred_id = "m0".into();
     reimport_jarvis1(&c, &vouch(&cert).unwrap()).unwrap();
-    assert_eq!(std::fs::read_to_string(e.home.join("workspace/claude-env/README.md")).unwrap(), "readme", "not imported again");
+    assert_eq!(
+        std::fs::read_to_string(e.home.join("workspace/claude-env/README.md")).unwrap(),
+        "readme",
+        "not imported again"
+    );
     let bad = restore_cert("j1abc", &"c".repeat(64));
-    assert!(reimport_jarvis1(&c, &vouch(&bad).unwrap()).is_err(), "took a manifest the cert doesn't name");
+    assert!(
+        reimport_jarvis1(&c, &vouch(&bad).unwrap()).is_err(),
+        "took a manifest the cert doesn't name"
+    );
 }
 
 /// the import's staging dir and the volume-backed state dirs are different filesystems: a move copies across
@@ -268,7 +389,15 @@ fn move_across_filesystems() {
     let dst = other.join("d");
     move_across(&src, &dst).unwrap();
     assert_eq!(std::fs::read_to_string(dst.join("sub/f")).unwrap(), "x");
-    assert_eq!(std::fs::metadata(dst.join("sub/f")).unwrap().permissions().mode() & 0o777, 0o640, "mode not kept");
+    assert_eq!(
+        std::fs::metadata(dst.join("sub/f"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o640,
+        "mode not kept"
+    );
     assert!(!src.exists(), "the source stayed");
     let _ = std::fs::remove_dir_all(&other);
 }

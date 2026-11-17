@@ -17,10 +17,41 @@ use std::time::Duration;
 
 pub const VOLUME_ROOT: &str = "/data";
 const MOUNTS_FILE: &str = "/proc/self/mountinfo";
+
+/// tests: the volume's root and the mount table elsewhere, and the privileged commands recorded instead of run
+pub struct TestVolume {
+    pub root: PathBuf,
+    pub mounts: PathBuf,
+    pub cmds: Vec<String>,
+}
+
+pub static TEST_VOLUME: std::sync::Mutex<Option<TestVolume>> = std::sync::Mutex::new(None);
+
+fn volume_root() -> PathBuf {
+    TEST_VOLUME
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().map(|t| t.root.clone()))
+        .unwrap_or_else(|| PathBuf::from(VOLUME_ROOT))
+}
+
+fn mounts_file() -> PathBuf {
+    TEST_VOLUME
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().map(|t| t.mounts.clone()))
+        .unwrap_or_else(|| PathBuf::from(MOUNTS_FILE))
+}
 const MIRROR_EVERY: Duration = Duration::from_secs(60);
 
 /// sudo: the bind mounts and the volume's owner
 fn run_privileged(args: &[&str]) -> Result<()> {
+    if let Ok(mut g) = TEST_VOLUME.lock()
+        && let Some(t) = g.as_mut()
+    {
+        t.cmds.push(args.join(" "));
+        return Ok(());
+    }
     let out = std::process::Command::new("sudo")
         .arg("-n")
         .args(args)
@@ -35,11 +66,12 @@ fn run_privileged(args: &[&str]) -> Result<()> {
 
 /// /data is a mount point (Fly mounts the volume there; nothing else does)
 pub fn has_volume() -> bool {
-    std::fs::read_to_string(MOUNTS_FILE)
+    let root = volume_root();
+    std::fs::read_to_string(mounts_file())
         .map(|s| {
             s.lines().any(|l| {
                 let f: Vec<&str> = l.split_whitespace().collect();
-                f.len() > 4 && f[4] == VOLUME_ROOT
+                f.len() > 4 && std::path::Path::new(f[4]) == root
             })
         })
         .unwrap_or(false)
@@ -65,17 +97,15 @@ pub fn setup_volume() -> bool {
         nix::unistd::Uid::current(),
         nix::unistd::Gid::current()
     );
-    if let Err(e) = run_privileged(&["chown", &owner, VOLUME_ROOT]) {
+    let vroot = volume_root();
+    if let Err(e) = run_privileged(&["chown", &owner, &vroot.to_string_lossy()]) {
         logf!("volume: {e:#}; the state stays on the root disk");
         return false;
     }
     let (dirs, _) = volume_split();
     let mut n = 0;
     for rel in &dirs {
-        let (src, dst) = (
-            PathBuf::from(VOLUME_ROOT).join("home").join(rel),
-            home.join(rel),
-        );
+        let (src, dst) = (vroot.join("home").join(rel), home.join(rel));
         if let Err(e) = std::fs::create_dir_all(&src).and_then(|_| std::fs::create_dir_all(&dst)) {
             logf!("volume: {rel}: {e}");
             continue;
@@ -115,18 +145,21 @@ pub fn setup_volume() -> bool {
     }
     // a multi-GB download lands on the volume
     if let Ok(mut p) = paths::PREDECESSOR_TMP.write() {
-        *p = Some(PathBuf::from(VOLUME_ROOT).join(".predecessor.tar.gz"));
+        *p = Some(vroot.join(".predecessor.tar.gz"));
     }
     logf!(
-        "volume: {n} of {} state directories on {VOLUME_ROOT}",
-        dirs.len()
+        "volume: {n} of {} state directories on {}",
+        dirs.len(),
+        vroot.display()
     );
-    std::thread::spawn(|| {
-        loop {
-            mirror_volume_files();
-            util::sleep(MIRROR_EVERY);
-        }
-    });
+    if TEST_VOLUME.lock().map(|g| g.is_none()).unwrap_or(true) {
+        std::thread::spawn(|| {
+            loop {
+                mirror_volume_files();
+                util::sleep(MIRROR_EVERY);
+            }
+        });
+    }
     true
 }
 
@@ -141,7 +174,7 @@ pub fn mirror_volume_files() {
         let Ok(b) = std::fs::read(home.join(rel)) else {
             continue;
         };
-        let dst = PathBuf::from(VOLUME_ROOT).join("home").join(rel);
+        let dst = volume_root().join("home").join(rel);
         if std::fs::read(&dst).is_ok_and(|old| old == b) {
             continue;
         }

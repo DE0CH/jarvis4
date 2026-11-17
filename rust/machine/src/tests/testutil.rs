@@ -118,9 +118,15 @@ fn reset_seams() {
     *crate::deliver::TEST_CHANNEL
         .write()
         .unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::claudelogin::TEST_STARTS.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::claudelogin::TEST_RUN_SYNC.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    *crate::claudelogin::TEST_PROFILE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::claudelogin::TEST_STARTS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::claudelogin::TEST_RUN_SYNC
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::claudelogin::TEST_PROFILE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
     for (a, v) in [
         (&crate::claudelogin::LOCK_HOLD_MAX_MS, 45_000),
         (&crate::claudelogin::SWITCH_POLL_MS, 1000),
@@ -132,10 +138,19 @@ fn reset_seams() {
         a.store(v, std::sync::atomic::Ordering::SeqCst);
     }
     crate::claudelogin::CREDS_SYNC_ON.store(false, std::sync::atomic::Ordering::SeqCst);
+    *crate::volume::TEST_VOLUME
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    crate::boot::PULL_TRIES.store(300, std::sync::atomic::Ordering::SeqCst);
+    crate::boot::PULL_WAIT_MS.store(2000, std::sync::atomic::Ordering::SeqCst);
     crate::boot::BOOT_REPORT_WAIT_MS.store(2000, std::sync::atomic::Ordering::SeqCst);
-    *crate::apptitle::TEST_CODE_SESSIONS_URL.write().unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::apptitle::TEST_CODE_SESSIONS_URL
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
     crate::restore::CHANGES_TIMEOUT_MS.store(60_000, std::sync::atomic::Ordering::SeqCst);
-    *crate::restore::CHANGES_SCRIPT.write().unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::restore::CHANGES_SCRIPT
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
     *crate::claudelogin::TEST_PANE
         .lock()
         .unwrap_or_else(|e| e.into_inner()) = None;

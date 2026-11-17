@@ -63,7 +63,11 @@ fn a_refused_start_is_told_to_the_router() {
     assert_eq!(report(2, 200), (vec![why.to_string()], 3));
     // it gives up after the tries; an older router is asked once
     assert_eq!(report(10, 200), (vec![], BOOT_REPORT_TRIES));
-    assert_eq!(report(0, 404).1, 1, "an older router was asked more than once");
+    assert_eq!(
+        report(0, 404).1,
+        1,
+        "an older router was asked more than once"
+    );
 }
 
 /// the repo check before a snapshot can't hang it (2026-10-21): a script that never ends is killed at the time limit,
@@ -75,7 +79,11 @@ fn write_changes_gives_up_at_its_time_limit() {
     CHANGES_TIMEOUT_MS.store(300, Ordering::SeqCst);
     let t0 = std::time::Instant::now();
     write_changes();
-    assert!(t0.elapsed() < Duration::from_secs(10), "took {:?}", t0.elapsed());
+    assert!(
+        t0.elapsed() < Duration::from_secs(10),
+        "took {:?}",
+        t0.elapsed()
+    );
     assert_eq!(std::fs::read(e.home.join(CHANGES_FILE)).unwrap(), b"");
 }
 
@@ -84,12 +92,18 @@ fn write_changes_writes_the_repos() {
     let e = TestEnv::new();
     *CHANGES_SCRIPT.write().unwrap() = Some("echo 'jarvis3 13 0'".into());
     write_changes();
-    assert_eq!(std::fs::read_to_string(e.home.join(CHANGES_FILE)).unwrap(), "jarvis3 13 0\n");
+    assert_eq!(
+        std::fs::read_to_string(e.home.join(CHANGES_FILE)).unwrap(),
+        "jarvis3 13 0\n"
+    );
 }
 
 fn fake_home(e: &TestEnv) -> std::path::PathBuf {
     let h = e.root.join("claude");
-    for d in [".claude/sessions", ".claude/projects/-home-claude-workspace"] {
+    for d in [
+        ".claude/sessions",
+        ".claude/projects/-home-claude-workspace",
+    ] {
         std::fs::create_dir_all(h.join(d)).unwrap();
     }
     *crate::paths::TEST_CLAUDE_HOME.write().unwrap() = Some(h.clone());
@@ -105,42 +119,88 @@ fn app_title() {
     let broken = Arc::new(Mutex::new(false));
     let (c2, a2, b2) = (calls.clone(), auth_ok.clone(), broken.clone());
     let srv = FakeRouter::open("", move |r| {
-        c2.lock().unwrap().push(if r.query.is_empty() { r.path.clone() } else { format!("{}?{}", r.path, r.query) });
-        let ok = r.headers.get("Authorization").and_then(|v| v.to_str().ok()) == Some("Bearer tok-1")
-            && r.headers.get("anthropic-beta").and_then(|v| v.to_str().ok()).unwrap_or("").contains("oauth-2025-04-20");
+        c2.lock().unwrap().push(if r.query.is_empty() {
+            r.path.clone()
+        } else {
+            format!("{}?{}", r.path, r.query)
+        });
+        let ok = r.headers.get("Authorization").and_then(|v| v.to_str().ok())
+            == Some("Bearer tok-1")
+            && r.headers
+                .get("anthropic-beta")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .contains("oauth-2025-04-20");
         let mut a = a2.lock().unwrap();
         *a = *a && ok;
         if *b2.lock().unwrap() {
             return ans(500, "");
         }
         match r.path.as_str() {
-            "/v1/code/sessions/cse_abc" => ans(200, r#"{"id":"cse_abc","title":"Renamed by Deyao"}"#),
-            "/v1/code/sessions/cse_wrapped" => ans(200, r#"{"response_shape":{"id":"cse_wrapped","title":"Inside the shape","connection_status":"connected"}}"#),
+            "/v1/code/sessions/cse_abc" => {
+                ans(200, r#"{"id":"cse_abc","title":"Renamed by Deyao"}"#)
+            }
+            "/v1/code/sessions/cse_wrapped" => ans(
+                200,
+                r#"{"response_shape":{"id":"cse_wrapped","title":"Inside the shape","connection_status":"connected"}}"#,
+            ),
             "/v1/code/sessions/cse_old" => ans(404, ""),
-            "/v1/code/sessions" => ans(200, r#"{"data":[{"id":"cse_x","title":"other"},{"id":"cse_old","title":"From the list"}]}"#),
+            "/v1/code/sessions" => ans(
+                200,
+                r#"{"data":[{"id":"cse_x","title":"other"},{"id":"cse_old","title":"From the list"}]}"#,
+            ),
             _ => ans(500, ""),
         }
     });
     *TEST_CODE_SESSIONS_URL.write().unwrap() = Some(format!("{}/v1/code/sessions", srv.url));
     let a = AppTitler::default();
-    assert!(a.current().is_empty() && calls.lock().unwrap().is_empty(), "no claude yet: no title, no call");
-    std::fs::write(home.join(".claude/sessions/1.json"), r#"{"pid":1,"startedAt":5,"bridgeSessionId":"session_abc"}"#).unwrap();
-    std::fs::write(home.join(".claude/sessions/2.json"), r#"{"pid":2,"startedAt":9}"#).unwrap();
-    assert!(a.current().is_empty() && calls.lock().unwrap().is_empty(), "no credentials: no call");
-    std::fs::write(home.join(".claude/.credentials.json"), r#"{"claudeAiOauth":{"accessToken":"tok-1","refreshToken":"r"}}"#).unwrap();
+    assert!(
+        a.current().is_empty() && calls.lock().unwrap().is_empty(),
+        "no claude yet: no title, no call"
+    );
+    std::fs::write(
+        home.join(".claude/sessions/1.json"),
+        r#"{"pid":1,"startedAt":5,"bridgeSessionId":"session_abc"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        home.join(".claude/sessions/2.json"),
+        r#"{"pid":2,"startedAt":9}"#,
+    )
+    .unwrap();
+    assert!(
+        a.current().is_empty() && calls.lock().unwrap().is_empty(),
+        "no credentials: no call"
+    );
+    std::fs::write(
+        home.join(".claude/.credentials.json"),
+        r#"{"claudeAiOauth":{"accessToken":"tok-1","refreshToken":"r"}}"#,
+    )
+    .unwrap();
     a.expire(); // the TTL would otherwise hold the empty answer
     assert_eq!(a.current(), "Renamed by Deyao");
     let n = calls.lock().unwrap().len();
     a.current();
     assert_eq!(calls.lock().unwrap().len(), n, "not cached");
     // a new Remote Control entry (a resume): read again; 404 on the single read → the list
-    std::fs::write(home.join(".claude/sessions/1.json"), r#"{"pid":1,"startedAt":5,"bridgeSessionId":"cse_old"}"#).unwrap();
+    std::fs::write(
+        home.join(".claude/sessions/1.json"),
+        r#"{"pid":1,"startedAt":5,"bridgeSessionId":"cse_old"}"#,
+    )
+    .unwrap();
     assert_eq!(a.current(), "From the list");
-    std::fs::write(home.join(".claude/sessions/1.json"), r#"{"pid":1,"startedAt":5,"bridgeSessionId":"session_wrapped"}"#).unwrap();
+    std::fs::write(
+        home.join(".claude/sessions/1.json"),
+        r#"{"pid":1,"startedAt":5,"bridgeSessionId":"session_wrapped"}"#,
+    )
+    .unwrap();
     assert_eq!(a.current(), "Inside the shape");
     let (s, _, r) = fetch_code_session("wrapped", "tok-1");
     assert!(r.is_ok() && s.connection_status == "connected", "{s:?}");
-    assert!(*auth_ok.lock().unwrap(), "the request lacked the token or the beta header");
+    assert!(
+        *auth_ok.lock().unwrap(),
+        "the request lacked the token or the beta header"
+    );
     // a failed read keeps the last title of the same entry
     a.expire();
     *broken.lock().unwrap() = true;
@@ -156,21 +216,32 @@ fn live_sync_once() {
     let s2 = sent.clone();
     let l = LiveSyncer::new(
         Box::new(move |name, body| {
-            s2.lock().unwrap().insert(name.into(), String::from_utf8_lossy(body).into());
+            s2.lock()
+                .unwrap()
+                .insert(name.into(), String::from_utf8_lossy(body).into());
             Ok(())
         }),
         None,
         BTreeMap::new(),
     );
     std::fs::write(dir.join("aaaa.jsonl"), "{\"type\":\"user\"}\n").unwrap();
-    std::fs::write(dir.join("relay.jsonl"), r#"{"type":"user","message":{"content":"You are a delivery relay for Jarvis"}}"#).unwrap();
+    std::fs::write(
+        dir.join("relay.jsonl"),
+        r#"{"type":"user","message":{"content":"You are a delivery relay for Jarvis"}}"#,
+    )
+    .unwrap();
     std::fs::write(dir.join("notes.txt"), "x").unwrap();
     assert_eq!(l.once(), 1);
     assert!(sent.lock().unwrap().len() == 1 && sent.lock().unwrap().contains_key("aaaa.jsonl"));
     assert_eq!(l.once(), 0, "an unchanged file was sent again");
     std::fs::write(dir.join("aaaa.jsonl"), "a\nb\n").unwrap();
     let later = std::time::SystemTime::now() + Duration::from_secs(60);
-    std::fs::File::options().write(true).open(dir.join("aaaa.jsonl")).unwrap().set_modified(later).unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(dir.join("aaaa.jsonl"))
+        .unwrap()
+        .set_modified(later)
+        .unwrap();
     assert_eq!(l.once(), 1);
     assert_eq!(sent.lock().unwrap()["aaaa.jsonl"], "a\nb\n");
     // a failed send is tried again on the next pass
@@ -180,7 +251,9 @@ fn live_sync_once() {
         if *f2.lock().unwrap() {
             anyhow::bail!("deadline exceeded");
         }
-        s3.lock().unwrap().insert(name.into(), String::from_utf8_lossy(body).into());
+        s3.lock()
+            .unwrap()
+            .insert(name.into(), String::from_utf8_lossy(body).into());
         Ok(())
     }));
     std::fs::write(dir.join("bbbb.jsonl"), "x\n").unwrap();
@@ -189,7 +262,11 @@ fn live_sync_once() {
     assert_eq!(l.once(), 1, "not retried");
     assert_eq!(sent.lock().unwrap()["bbbb.jsonl"], "x\n");
     crate::env::set("JARVIS2_LIVE_SYNC_SECONDS", Some("20")); // the env: ignored
-    assert_eq!(crate::livesync::live_sync_interval(), Duration::from_secs(300), "the env set the interval");
+    assert_eq!(
+        crate::livesync::live_sync_interval(),
+        Duration::from_secs(300),
+        "the env set the interval"
+    );
     let v = crate::vouch::Vouched {
         ex: crate::vouch::FormatExceptions {
             live_sync_seconds: 20,
@@ -198,5 +275,8 @@ fn live_sync_once() {
         ..Default::default()
     };
     crate::vouch::write_vouched(&v);
-    assert_eq!(crate::livesync::live_sync_interval(), Duration::from_secs(20));
+    assert_eq!(
+        crate::livesync::live_sync_interval(),
+        Duration::from_secs(20)
+    );
 }

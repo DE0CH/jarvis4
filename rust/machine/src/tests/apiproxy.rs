@@ -23,8 +23,15 @@ fn proxy(c: &Client) -> (String, tokio::task::JoinHandle<()>) {
 }
 
 fn call(method: &str, url: &str, body: &str, headers: &[(&str, &str)]) -> (u16, String) {
-    let (method, url, body) = (reqwest::Method::from_bytes(method.as_bytes()).unwrap(), url.to_string(), body.to_string());
-    let headers: Vec<(String, String)> = headers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+    let (method, url, body) = (
+        reqwest::Method::from_bytes(method.as_bytes()).unwrap(),
+        url.to_string(),
+        body.to_string(),
+    );
+    let headers: Vec<(String, String)> = headers
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
     rt::block_on(async move {
         let mut r = reqwest::Client::new().request(method, &url).body(body);
         for (k, v) in headers {
@@ -55,17 +62,29 @@ fn proxy_forwards_signed() {
         "PUT",
         &format!("{p}/api/sessions/s1/content/my%20store/file?path=a%2Fb.txt"),
         "data",
-        &[("CF-Access-Client-Id", "placeholder"), ("Authorization", "Bearer placeholder"), ("Content-Type", "application/octet-stream")],
+        &[
+            ("CF-Access-Client-Id", "placeholder"),
+            ("Authorization", "Bearer placeholder"),
+            ("Content-Type", "application/octet-stream"),
+        ],
     );
     assert_eq!(st, 200);
     let r = got.lock().unwrap().clone().unwrap();
     assert_eq!(r.path, "/m/api/sessions/s1/content/my store/file");
     assert_eq!(r.query, "path=a%2Fb.txt");
     assert_eq!(r.body, b"data");
-    assert!(r.headers.get("Authorization").is_none() && r.headers.get("CF-Access-Client-Id").is_none());
-    assert_eq!(r.headers.get("Content-Type").and_then(|v| v.to_str().ok()), Some("application/octet-stream"));
+    assert!(
+        r.headers.get("Authorization").is_none() && r.headers.get("CF-Access-Client-Id").is_none()
+    );
+    assert_eq!(
+        r.headers.get("Content-Type").and_then(|v| v.to_str().ok()),
+        Some("application/octet-stream")
+    );
     // secrets and changes for another session are refused locally
-    assert_eq!(call("GET", &format!("{p}/api/sessions/sX/secrets"), "", &[]).0, 403);
+    assert_eq!(
+        call("GET", &format!("{p}/api/sessions/sX/secrets"), "", &[]).0,
+        403
+    );
     h.abort();
 }
 
@@ -80,16 +99,29 @@ fn proxy_arming_gives_no_shell() {
     });
     let at = (crate::util::unix_now() + 7200) * 1000;
     let srv = FakeRouter::new(&key.sig.public_key(), move |r| match r.path.as_str() {
-        "/m/api/sessions/s1/wakeup" => ok_json(serde_json::json!({"ok": true, "wakeup": {"name": "default", "at": at}})),
+        "/m/api/sessions/s1/wakeup" => {
+            ok_json(serde_json::json!({"ok": true, "wakeup": {"name": "default", "at": at}}))
+        }
         _ => ans(404, ""),
     });
     let (p, h) = proxy(&srv.client());
-    let (st, b) = call("POST", &format!("{p}/api/sessions/s1/wakeup"), r#"{"delaySeconds":7200,"prompt":"x"}"#, &[("Content-Type", "application/json")]);
+    let (st, b) = call(
+        "POST",
+        &format!("{p}/api/sessions/s1/wakeup"),
+        r#"{"delaySeconds":7200,"prompt":"x"}"#,
+        &[("Content-Type", "application/json")],
+    );
     assert!(
-        st == 200 && b.contains(r#""ok":true"#) && b.contains("no shell access granted") && b.contains("approves or denies that message on the phone"),
+        st == 200
+            && b.contains(r#""ok":true"#)
+            && b.contains("no shell access granted")
+            && b.contains("approves or denies that message on the phone"),
         "{st} {b}"
     );
-    assert!(crate::grants::read_allow().is_empty(), "something was put on the allow list");
+    assert!(
+        crate::grants::read_allow().is_empty(),
+        "something was put on the allow list"
+    );
     h.abort();
 }
 
@@ -105,7 +137,10 @@ fn repo_changes_counts() {
     assert!(c.status().unwrap().success());
     std::fs::write(d.join("a"), "x").unwrap();
     let got = repo_changes(&ws);
-    assert!(got.len() == 1 && got[0].name == "r" && got[0].uncommitted == 1 && got[0].unpushed == -1, "{got:?}");
+    assert!(
+        got.len() == 1 && got[0].name == "r" && got[0].uncommitted == 1 && got[0].unpushed == -1,
+        "{got:?}"
+    );
 }
 
 #[test]
@@ -131,7 +166,14 @@ fn proxy_takes_a_content_file_only_attested() {
         }
     });
     let (p, h) = proxy(&srv.client());
-    let get = || call("GET", &format!("{p}/api/sessions/m1/content/notes/file?path=a.txt"), "", &[]);
+    let get = || {
+        call(
+            "GET",
+            &format!("{p}/api/sessions/m1/content/notes/file?path=a.txt"),
+            "",
+            &[],
+        )
+    };
     for a in [
         None,
         Some(attest_for(&core, "m2", "content", b"hello")),
@@ -144,7 +186,17 @@ fn proxy_takes_a_content_file_only_attested() {
     }
     *attest.lock().unwrap() = Some(attest_for(&core, "m1", "content", b"hello"));
     assert_eq!(get(), (200, "hello".to_string()));
-    assert_eq!(call("GET", &format!("{p}/api/sessions/sX/content/notes/file?path=a.txt"), "", &[]).0, 403, "another session");
+    assert_eq!(
+        call(
+            "GET",
+            &format!("{p}/api/sessions/sX/content/notes/file?path=a.txt"),
+            "",
+            &[]
+        )
+        .0,
+        403,
+        "another session"
+    );
     h.abort();
 }
 
@@ -165,10 +217,18 @@ fn proxy_forwards_a_batch() {
     });
     let (p, h) = proxy(&srv.client());
     let inp = r#"{"summary":"two grants","items":[{"intent":"grant","holder":"status","minutes":5},{"intent":"grant","holder":"remote"}]}"#;
-    let (st, b) = call("POST", &format!("{p}/api/requests/batch"), inp, &[("Content-Type", "application/json")]);
+    let (st, b) = call(
+        "POST",
+        &format!("{p}/api/requests/batch"),
+        inp,
+        &[("Content-Type", "application/json")],
+    );
     assert_eq!(st, 200);
     let out: serde_json::Value = serde_json::from_str(&b).unwrap();
     let (path, body) = got.lock().unwrap().clone();
-    assert!(path == "/m/api/requests/batch" && body == inp.as_bytes() && out["id"] == "b1", "forwarded {path} {body:?} {out}");
+    assert!(
+        path == "/m/api/requests/batch" && body == inp.as_bytes() && out["id"] == "b1",
+        "forwarded {path} {body:?} {out}"
+    );
     h.abort();
 }

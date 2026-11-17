@@ -29,14 +29,26 @@ fn check_restore_cert_rules() {
     let old = old_cert(&other);
     let plain = Cert::default();
     check_restore_cert(&core.public(), "new", &plain, Some(&core.doc(&old))).unwrap();
-    assert!(check_restore_cert(&core.public(), "new", &plain, Some(&other.doc(&old))).is_err(), "accepted a cert the core didn't sign");
-    assert!(check_restore_cert(&core.public(), "old", &plain, Some(&core.doc(&old))).is_err(), "accepted a cert naming this machine");
+    assert!(
+        check_restore_cert(&core.public(), "new", &plain, Some(&other.doc(&old))).is_err(),
+        "accepted a cert the core didn't sign"
+    );
+    assert!(
+        check_restore_cert(&core.public(), "old", &plain, Some(&core.doc(&old))).is_err(),
+        "accepted a cert naming this machine"
+    );
     let mut not_cert = old.clone();
     not_cert.kind = "burn-cert".into();
-    assert!(check_restore_cert(&core.public(), "new", &plain, Some(&core.doc(&not_cert))).is_err(), "accepted another kind of document");
+    assert!(
+        check_restore_cert(&core.public(), "new", &plain, Some(&core.doc(&not_cert))).is_err(),
+        "accepted another kind of document"
+    );
     let mut sens = old.clone();
     sens.sensitive = true;
-    assert!(check_restore_cert(&core.public(), "new", &plain, Some(&core.doc(&sens))).is_err(), "a sensitive line's snapshot went into a line without one");
+    assert!(
+        check_restore_cert(&core.public(), "new", &plain, Some(&core.doc(&sens))).is_err(),
+        "a sensitive line's snapshot went into a line without one"
+    );
     let sensitive = Cert {
         sensitive: true,
         ..Default::default()
@@ -51,9 +63,15 @@ fn snapshot_sig_and_unpack() {
     let body = tarball("artifacts/x.txt", "hi");
     let sig = m.0.sign(sha256_hex(&body).as_bytes());
     check_snapshot_sig(&m.public(), &body, &sig).unwrap();
-    assert!(check_snapshot_sig(&new_key().public(), &body, &sig).is_err(), "another key's signature passed");
+    assert!(
+        check_snapshot_sig(&new_key().public(), &body, &sig).is_err(),
+        "another key's signature passed"
+    );
     assert_eq!(unpack_reader(&body[..]).unwrap(), 1);
-    assert_eq!(std::fs::read_to_string(e.home.join("artifacts/x.txt")).unwrap(), "hi");
+    assert_eq!(
+        std::fs::read_to_string(e.home.join("artifacts/x.txt")).unwrap(),
+        "hi"
+    );
     // a bad path is refused (written by hand: the tar crate refuses to write one)
     let mut h = tar::Header::new_ustar();
     h.as_old_mut().name[..7].copy_from_slice(b"../evil");
@@ -67,7 +85,10 @@ fn snapshot_sig_and_unpack() {
     std::io::Write::write_all(&mut gz, &raw).unwrap();
     let bad = gz.finish().unwrap();
     let r = unpack_reader(&bad[..]);
-    assert!(format!("{:#}", r.as_ref().unwrap_err()).contains("bad path"), "{r:?}");
+    assert!(
+        format!("{:#}", r.as_ref().unwrap_err()).contains("bad path"),
+        "{r:?}"
+    );
 }
 
 #[test]
@@ -160,24 +181,53 @@ fn a_restore_from_an_earlier_core_goes_through_the_masters_claim() {
     let mut rc = RestoreCertDocs {
         cert: Some(cert_doc),
         core_state: Some(state.clone()),
-        core_cert: Some(claim(&master, serde_json::json!({"kind": "claim", "master": master.public(), "core": {"signingKey": earlier.public()}}))),
+        core_cert: Some(claim(
+            &master,
+            serde_json::json!({"kind": "claim", "master": master.public(), "core": {"signingKey": earlier.public()}}),
+        )),
     };
-    assert_eq!(restore_signer(&now.public(), &rc).unwrap(), earlier.public());
+    assert_eq!(
+        restore_signer(&now.public(), &rc).unwrap(),
+        earlier.public()
+    );
     // a seeded claim names the derived key as its identity
     rc.core_cert = Some(claim(
         &master,
         serde_json::json!({"kind": "claim", "master": master.public(), "core": {"signingKey": other.public()}, "identity": {"signingKey": earlier.public()}}),
     ));
-    assert_eq!(restore_signer(&now.public(), &rc).unwrap(), earlier.public(), "identity");
+    assert_eq!(
+        restore_signer(&now.public(), &rc).unwrap(),
+        earlier.public(),
+        "identity"
+    );
     // a claim another key signed, a state another core signed, a claim naming another core: refused
-    rc.core_cert = Some(claim(&other, serde_json::json!({"kind": "claim", "master": master.public(), "core": {"signingKey": earlier.public()}})));
-    assert!(restore_signer(&now.public(), &rc).is_err(), "a claim the master didn't sign");
-    rc.core_cert = Some(claim(&master, serde_json::json!({"kind": "claim", "master": master.public(), "core": {"signingKey": earlier.public()}})));
-    rc.core_state = Some(other.doc(&serde_json::json!({"kind": "core-state", "master": master.public()})));
-    assert!(restore_signer(&now.public(), &rc).is_err(), "a state this machine's core didn't sign");
+    rc.core_cert = Some(claim(
+        &other,
+        serde_json::json!({"kind": "claim", "master": master.public(), "core": {"signingKey": earlier.public()}}),
+    ));
+    assert!(
+        restore_signer(&now.public(), &rc).is_err(),
+        "a claim the master didn't sign"
+    );
+    rc.core_cert = Some(claim(
+        &master,
+        serde_json::json!({"kind": "claim", "master": master.public(), "core": {"signingKey": earlier.public()}}),
+    ));
+    rc.core_state =
+        Some(other.doc(&serde_json::json!({"kind": "core-state", "master": master.public()})));
+    assert!(
+        restore_signer(&now.public(), &rc).is_err(),
+        "a state this machine's core didn't sign"
+    );
     rc.core_state = Some(state);
-    rc.core_cert = Some(claim(&master, serde_json::json!({"kind": "claim", "master": master.public(), "core": {"signingKey": other.public()}})));
-    assert!(restore_signer(&now.public(), &rc).is_err(), "a claim of another core");
+    rc.core_cert = Some(claim(
+        &master,
+        serde_json::json!({"kind": "claim", "master": master.public(), "core": {"signingKey": other.public()}}),
+    ));
+    assert!(
+        restore_signer(&now.public(), &rc).is_err(),
+        "a claim of another core"
+    );
     // the running core's own cert needs nothing else
     let own = RestoreCertDocs {
         cert: Some(now.doc(&old)),

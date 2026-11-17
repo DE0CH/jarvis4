@@ -9,7 +9,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 fn pair(exp: i64) -> String {
-    format!(r#"{{"claudeAiOauth":{{"accessToken":"a{exp}","refreshToken":"r{exp}","expiresAt":{exp}}}}}"#)
+    format!(
+        r#"{{"claudeAiOauth":{{"accessToken":"a{exp}","refreshToken":"r{exp}","expiresAt":{exp}}}}}"#
+    )
 }
 
 const ACCT: &str = r#"{"oauthAccount":{"accountUuid":"acct-1","emailAddress":"x"}}"#;
@@ -26,7 +28,13 @@ struct LoginRouter {
     none: bool,
 }
 
-fn login(creds: Option<&str>, account: Option<&str>, exp: i64, generation: i64, preparing: bool) -> serde_json::Value {
+fn login(
+    creds: Option<&str>,
+    account: Option<&str>,
+    exp: i64,
+    generation: i64,
+    preparing: bool,
+) -> serde_json::Value {
     let mut m = serde_json::Map::new();
     if let Some(c) = creds {
         m.insert("credentials".into(), c.into());
@@ -47,7 +55,10 @@ fn login_router(e: &TestEnv) -> (FakeRouter, Arc<Mutex<LoginRouter>>, Client) {
     let srv = FakeRouter::new(&key.sig.public_key(), move |r| {
         let mut f = s2.lock().unwrap();
         match (r.path.as_str(), r.method.as_str()) {
-            ("/m/claude-login", "GET") if f.none => ans(404, r#"{"error":"this session has no Claude account","noAccount":true}"#),
+            ("/m/claude-login", "GET") if f.none => ans(
+                404,
+                r#"{"error":"this session has no Claude account","noAccount":true}"#,
+            ),
             ("/m/claude-login", "GET") => {
                 f.polls.push(r.query.clone());
                 let a = f.answers[0].clone();
@@ -58,7 +69,8 @@ fn login_router(e: &TestEnv) -> (FakeRouter, Arc<Mutex<LoginRouter>>, Client) {
             }
             ("/m/claude-login", "POST") => {
                 let b: serde_json::Value = serde_json::from_slice(&r.body).unwrap_or_default();
-                f.pushes.push(b["credentials"].as_str().unwrap_or("").into());
+                f.pushes
+                    .push(b["credentials"].as_str().unwrap_or("").into());
                 ans(200, r#"{"stored":false}"#)
             }
             _ => ans(404, ""),
@@ -82,25 +94,57 @@ fn session_claude_login_at_boot() {
     *TEST_STARTS.lock().unwrap() = Some(0);
     f.lock().unwrap().none = true;
     assert_eq!(session_claude_login(&c), "");
-    assert_eq!(TEST_STARTS.lock().unwrap().unwrap(), 0, "no Claude account for the session: nothing to do");
-    assert!(!creds_path().exists(), "a session with no account got a credentials file");
+    assert_eq!(
+        TEST_STARTS.lock().unwrap().unwrap(),
+        0,
+        "no Claude account for the session: nothing to do"
+    );
+    assert!(
+        !creds_path().exists(),
+        "a session with no account got a credentials file"
+    );
     f.lock().unwrap().none = false;
     let acct = session_claude_login(&c);
-    assert!(TEST_STARTS.lock().unwrap().unwrap() == 1 && acct.contains("acct-1"), "account {acct:?}");
+    assert!(
+        TEST_STARTS.lock().unwrap().unwrap() == 1 && acct.contains("acct-1"),
+        "account {acct:?}"
+    );
     assert_eq!(expires_at(read(&creds_path()).as_bytes()), 2000);
     use std::os::unix::fs::PermissionsExt;
-    assert_eq!(std::fs::metadata(creds_path()).unwrap().permissions().mode() & 0o777, 0o600);
-    assert_eq!(local_account(), "acct-1", "~/.claude.json didn't take the account");
+    assert_eq!(
+        std::fs::metadata(creds_path())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+    assert_eq!(
+        local_account(),
+        "acct-1",
+        "~/.claude.json didn't take the account"
+    );
     // a resumed pair of the same account that expires later is kept
     std::fs::write(creds_path(), pair(3000)).unwrap();
     session_claude_login(&c);
-    assert_eq!(expires_at(read(&creds_path()).as_bytes()), 3000, "a later pair was replaced");
+    assert_eq!(
+        expires_at(read(&creds_path()).as_bytes()),
+        3000,
+        "a later pair was replaced"
+    );
     // a resume after a Re-login to another account: the restored ~/.claude.json takes the new account, other keys kept
-    std::fs::write(e.home.join(".claude.json"), r#"{"oauthAccount":{"accountUuid":"acct-1"},"projects":{"x":1}}"#).unwrap();
+    std::fs::write(
+        e.home.join(".claude.json"),
+        r#"{"oauthAccount":{"accountUuid":"acct-1"},"projects":{"x":1}}"#,
+    )
+    .unwrap();
     f.lock().unwrap().answers = vec![login(Some(&pair(2500)), Some(ACCT2), 2500, 0, false)];
     session_claude_login(&c);
     let j = read(&e.home.join(".claude.json"));
-    assert!(local_account() == "acct-2" && j.contains(r#""projects""#) && j.contains(r#""u2""#), "{j}");
+    assert!(
+        local_account() == "acct-2" && j.contains(r#""projects""#) && j.contains(r#""u2""#),
+        "{j}"
+    );
 }
 
 /// afterSwitch's waits made short and its outside world faked (no Anthropic, no tmux)
@@ -137,16 +181,34 @@ fn creds_sync_account_switch() {
     quiet_after_switch();
     let mut s = syncer(&c, &pair(9000));
     // the first answer only tells the router's account (its pair expires sooner than ours)
-    f.lock().unwrap().answers = vec![login(None, Some(ACCT2), 4000, 0, false), login(Some(&pair(4000)), Some(ACCT2), 4000, 0, false)];
+    f.lock().unwrap().answers = vec![
+        login(None, Some(ACCT2), 4000, 0, false),
+        login(Some(&pair(4000)), Some(ACCT2), 4000, 0, false),
+    ];
     s.step().unwrap();
     s.step().unwrap();
     {
         let f = f.lock().unwrap();
-        assert!(f.polls[0].contains("have=9000") && f.polls[1].contains("have=0"), "polls {:?}", f.polls);
+        assert!(
+            f.polls[0].contains("have=9000") && f.polls[1].contains("have=0"),
+            "polls {:?}",
+            f.polls
+        );
     }
-    assert_eq!(expires_at(read(&creds_path()).as_bytes()), 4000, "the other account's pair wasn't taken");
-    assert_eq!(local_account(), "acct-2", "~/.claude.json's oauthAccount wasn't switched");
-    assert!(!lock_dir().exists(), "the CLI's refresh lock was left taken");
+    assert_eq!(
+        expires_at(read(&creds_path()).as_bytes()),
+        4000,
+        "the other account's pair wasn't taken"
+    );
+    assert_eq!(
+        local_account(),
+        "acct-2",
+        "~/.claude.json's oauthAccount wasn't switched"
+    );
+    assert!(
+        !lock_dir().exists(),
+        "the CLI's refresh lock was left taken"
+    );
     // in step again: the usual expiry rule
     f.lock().unwrap().answers = vec![login(None, Some(ACCT2), 4000, 0, false)];
     let _ = s.step();
@@ -172,17 +234,33 @@ fn creds_sync_lock_protocol() {
     s.step().unwrap();
     {
         let p = f.lock().unwrap().polls[1].clone();
-        assert!(p.contains("ack=1") && p.contains("have=1000"), "the second poll must acknowledge: {p}");
+        assert!(
+            p.contains("ack=1") && p.contains("have=1000"),
+            "the second poll must acknowledge: {p}"
+        );
     }
-    assert_eq!(expires_at(read(&creds_path()).as_bytes()), 5000, "the new pair wasn't written");
-    assert!(!lock_dir().exists() && s.lock_gen == 0, "the lock wasn't released after the write");
-    assert!(f.lock().unwrap().pushes.is_empty(), "the router's own pair was pushed back");
+    assert_eq!(
+        expires_at(read(&creds_path()).as_bytes()),
+        5000,
+        "the new pair wasn't written"
+    );
+    assert!(
+        !lock_dir().exists() && s.lock_gen == 0,
+        "the lock wasn't released after the write"
+    );
+    assert!(
+        f.lock().unwrap().pushes.is_empty(),
+        "the router's own pair was pushed back"
+    );
     // a failed refresh: preparing, then not preparing with no newer pair → released
     answer(login(None, None, 5000, 2, true));
     let _ = s.step();
     answer(login(None, None, 5000, 2, false));
     let _ = s.step();
-    assert!(!lock_dir().exists() && s.lock_gen == 0, "a failed refresh left the lock");
+    assert!(
+        !lock_dir().exists() && s.lock_gen == 0,
+        "a failed refresh left the lock"
+    );
     // a lock the CLI holds (it is refreshing itself) is never removed by us
     std::fs::create_dir(lock_dir()).unwrap();
     answer(login(None, None, 5000, 3, true));
@@ -197,7 +275,10 @@ fn creds_sync_lock_protocol() {
     let _ = s.step();
     {
         let p = f.lock().unwrap().pushes.clone();
-        assert!(p.len() == 1 && expires_at(p[0].as_bytes()) == 9000, "the session's own refresh wasn't pushed: {p:?}");
+        assert!(
+            p.len() == 1 && expires_at(p[0].as_bytes()) == 9000,
+            "the session's own refresh wasn't pushed: {p:?}"
+        );
     }
     // a lock held past the limit is released before the next poll (which then acknowledges nothing)
     answer(login(None, None, 9000, 4, true));
@@ -208,16 +289,28 @@ fn creds_sync_lock_protocol() {
     answer(login(None, None, 9000, 0, false));
     let _ = s.step();
     let last = f.lock().unwrap().polls.last().cloned().unwrap();
-    assert!(last.contains("ack=0") && s.lock_gen == 0, "a stale lock wasn't released before the poll: {last}");
+    assert!(
+        last.contains("ack=0") && s.lock_gen == 0,
+        "a stale lock wasn't released before the poll: {last}"
+    );
     assert!(!lock_dir().exists(), "the stale lock is still there");
 }
 
 #[test]
 fn take_if_later_rule() {
     let _e = TestEnv::new();
-    assert!(take_if_later(b"{}").is_err(), "a pair without expiresAt is refused");
-    assert!(take_if_later(pair(10).as_bytes()).unwrap(), "no file: taken");
-    assert!(!take_if_later(pair(10).as_bytes()).unwrap(), "same expiry: kept");
+    assert!(
+        take_if_later(b"{}").is_err(),
+        "a pair without expiresAt is refused"
+    );
+    assert!(
+        take_if_later(pair(10).as_bytes()).unwrap(),
+        "no file: taken"
+    );
+    assert!(
+        !take_if_later(pair(10).as_bytes()).unwrap(),
+        "same expiry: kept"
+    );
     assert!(take_if_later(pair(11).as_bytes()).unwrap(), "later: taken");
 }
 
@@ -272,11 +365,18 @@ fn after_switch_proof_and_remote_control() {
     let t = std::thread::spawn(move || after_switch(&l, &c));
     let start = std::time::Instant::now();
     while !t.is_finished() {
-        assert!(start.elapsed() < Duration::from_secs(10), "after_switch hung");
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "after_switch hung"
+        );
         std::thread::sleep(Duration::from_millis(20));
     }
     assert!(read(&account_proof()).contains(r#""acct-2""#), "proof");
-    assert_eq!(local_account(), "acct-2", "the old record written back by claude stayed");
+    assert_eq!(
+        local_account(),
+        "acct-2",
+        "the old record written back by claude stayed"
+    );
     let keys = st.lock().unwrap().1.join("|");
     assert_eq!(keys, "-l /remote-control|Enter|Enter");
     assert_eq!(live_bridge(), "cse_new");
@@ -302,7 +402,9 @@ fn after_switch_proxy_login_types_nothing() {
         t2.lock().unwrap().push(a.join(" "));
         Ok(())
     }));
-    *TEST_PANE.lock().unwrap() = Some(Arc::new(|| "signed-in claude.ai account or account or organization changed".to_string()));
+    *TEST_PANE.lock().unwrap() = Some(Arc::new(|| {
+        "signed-in claude.ai account or account or organization changed".to_string()
+    }));
     let l = RouterLogin {
         credentials: pair(4000),
         account: ACCT2.into(),
@@ -332,7 +434,10 @@ fn after_switch_wrong_account() {
         ..Default::default()
     };
     after_switch(&l, &Client::with_url("http://127.0.0.1:1", "m1"));
-    assert!(!account_proof().exists() && !*typed.lock().unwrap(), "a proof for the wrong account, or keys typed");
+    assert!(
+        !account_proof().exists() && !*typed.lock().unwrap(),
+        "a proof for the wrong account, or keys typed"
+    );
 }
 
 /// boot writes the Claude login marker seconds after "booted": the supervisor starts the sync whenever it appears
@@ -350,11 +455,15 @@ fn creds_sync_starts_when_the_marker_comes_late() {
     std::thread::sleep(Duration::from_millis(100)); // booted, no marker yet
     assert!(rx.try_recv().is_err(), "started with no marker");
     std::fs::write(crate::paths::claude_login_on(), "1").unwrap();
-    rx.recv_timeout(Duration::from_secs(3)).expect("the sync never started once the marker came");
+    rx.recv_timeout(Duration::from_secs(3))
+        .expect("the sync never started once the marker came");
     t.join().unwrap();
     // already running (the "claude-account" command started it): nothing more
     start_creds_sync_on_marker();
-    assert!(rx.recv_timeout(Duration::from_millis(50)).is_err(), "started twice");
+    assert!(
+        rx.recv_timeout(Duration::from_millis(50)).is_err(),
+        "started twice"
+    );
 }
 
 /// the router's pair (no refresh token) is never pushed back, even on the first step after boot
@@ -363,9 +472,16 @@ fn creds_sync_no_push_without_refresh_token() {
     let e = TestEnv::new();
     let (_srv, f, c) = login_router(&e);
     std::fs::create_dir_all(e.home.join(".claude")).unwrap();
-    std::fs::write(creds_path(), r#"{"claudeAiOauth":{"accessToken":"a1","expiresAt":1000}}"#).unwrap();
+    std::fs::write(
+        creds_path(),
+        r#"{"claudeAiOauth":{"accessToken":"a1","expiresAt":1000}}"#,
+    )
+    .unwrap();
     let mut s = syncer(&c, "");
     f.lock().unwrap().answers = vec![login(None, None, 1000, 0, false)];
     s.step().unwrap();
-    assert!(f.lock().unwrap().pushes.is_empty(), "the router's pair was pushed back");
+    assert!(
+        f.lock().unwrap().pushes.is_empty(),
+        "the router's pair was pushed back"
+    );
 }

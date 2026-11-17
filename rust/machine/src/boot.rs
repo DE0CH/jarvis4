@@ -48,7 +48,8 @@ pub fn prepare_cmd() -> Result<()> {
 
 /// how often a refused start is told to the router, and the wait between (ms; tests shorten it)
 pub const BOOT_REPORT_TRIES: u32 = 3;
-pub static BOOT_REPORT_WAIT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(2000);
+pub static BOOT_REPORT_WAIT_MS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(2000);
 
 /// Tell the router why this machine starts nothing (POST /m/boot-failed: its session becomes failed with the reason).
 /// Best effort; a router without the route (404) isn't asked again.
@@ -72,7 +73,9 @@ pub fn report_boot_failed(c: &Client, why: &str) {
             logf!("telling the router this machine refused to start: {err}");
             return;
         }
-        util::sleep(Duration::from_millis(BOOT_REPORT_WAIT_MS.load(Ordering::Relaxed)));
+        util::sleep(Duration::from_millis(
+            BOOT_REPORT_WAIT_MS.load(Ordering::Relaxed),
+        ));
         tr += 1;
     }
 }

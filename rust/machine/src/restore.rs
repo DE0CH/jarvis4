@@ -35,7 +35,8 @@ pub const REPO_CHANGES_SH: &str = concat!(
 /// the repo check runs with the session frozen (2026-10-21: a final snapshot went silent right after the freeze, with
 /// this check the only step before it): a git that waits on a stopped process or a slow disk can't hold the snapshot up
 /// past it (ms; tests shorten it)
-pub static CHANGES_TIMEOUT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(60_000);
+pub static CHANGES_TIMEOUT_MS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(60_000);
 /// tests make it hang
 pub static CHANGES_SCRIPT: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
 

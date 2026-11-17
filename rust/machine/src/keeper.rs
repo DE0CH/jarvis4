@@ -392,11 +392,7 @@ impl Keeper {
     /// the keeper writes them there, and lets boot go on as init would, once boot has made them; again every 20 s until
     /// the cert is in.
     fn announce_keys(&self) {
-        let console = if on_fabric() {
-            paths::FABRIC_CONSOLE_PATH
-        } else {
-            paths::CONSOLE_PATH
-        };
+        let console = keys_console();
         loop {
             match std::fs::read(paths::keys_path()) {
                 Ok(b) => {
@@ -846,4 +842,13 @@ pub fn dur_text(d: Duration) -> String {
 
 fn round_secs(d: Duration) -> Duration {
     Duration::from_secs(d.as_secs_f64().round() as u64)
+}
+
+/// where the keys line goes: the sandbox's console on the fabric, the serial console on AWS
+pub fn keys_console() -> &'static str {
+    if on_fabric() {
+        paths::FABRIC_CONSOLE_PATH
+    } else {
+        paths::CONSOLE_PATH
+    }
 }

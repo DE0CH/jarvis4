@@ -399,8 +399,15 @@ impl Syncer {
     /// push this machine's own newer pair (its claude refreshed by itself), then one long poll and its answer
     pub fn step(&mut self) -> Result<()> {
         let local = std::fs::read(creds_path()).unwrap_or_default();
-        if self.lock_gen != 0 && self.locked_at.is_some_and(|t| t.elapsed() > ms(&LOCK_HOLD_MAX_MS)) {
-            logf!("claude login: no pair {} after the refresh notice: lock released", crate::keeper::dur_text(ms(&LOCK_HOLD_MAX_MS)));
+        if self.lock_gen != 0
+            && self
+                .locked_at
+                .is_some_and(|t| t.elapsed() > ms(&LOCK_HOLD_MAX_MS))
+        {
+            logf!(
+                "claude login: no pair {} after the refresh notice: lock released",
+                crate::keeper::dur_text(ms(&LOCK_HOLD_MAX_MS))
+            );
             self.release();
         }
         // a pair with no refresh token is the router's own: this machine's claude can't have refreshed it, so there is
@@ -645,7 +652,9 @@ pub fn enable_remote_control(old_bridge: &str) {
         util::sleep(Duration::from_millis(300));
         let _ = send_keys(&["Enter"]);
     }
-    if !wait_until(ms(&RC_MENU_WAIT_MS), || pane_text().contains(RC_ENABLE_TEXT)) {
+    if !wait_until(ms(&RC_MENU_WAIT_MS), || {
+        pane_text().contains(RC_ENABLE_TEXT)
+    }) {
         logf!("claude login: the /remote-control menu didn't show within 3m0s");
         return;
     }
