@@ -105,3 +105,28 @@ func TestFabricEnvEndpoint(t *testing.T) {
 	}
 	_ = http.StatusOK
 }
+
+// a destroyed fabric session's files: DELETE /v1/workspaces/{conversation} at hermit as caller magpie
+func TestDeleteFabricFiles(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		got = append(got, req.Method+" "+req.URL.Path+" "+req.Header.Get("Authorization")+" "+req.Header.Get("Aviary-Protocol"))
+		if strings.HasSuffix(req.URL.Path, "/bad") {
+			w.WriteHeader(503)
+			return
+		}
+		w.WriteHeader(204)
+	}))
+	defer srv.Close()
+	t.Setenv("FABRIC_HERMIT_URL", srv.URL+"/")
+	t.Setenv("FABRIC_HERMIT_MAGPIE_TOKEN", "mt")
+	if err := deleteFabricFiles("0190f6c2-0000-7000-8000-000000000002"); err != nil {
+		t.Fatal(err)
+	}
+	if err := deleteFabricFiles("bad"); err == nil {
+		t.Fatal("a 503 taken as deleted")
+	}
+	if got[0] != "DELETE /v1/workspaces/0190f6c2-0000-7000-8000-000000000002 Bearer mt hermit-core=1" {
+		t.Fatal(got)
+	}
+}

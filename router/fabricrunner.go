@@ -13,6 +13,7 @@ package main
 //
 //	FABRIC_HERMIT_URL          the fabric hermit inside the cluster (unset: no fabric runner, nothing here runs)
 //	FABRIC_HERMIT_TOOLS_TOKEN  hermit's pair token of the caller tools (GET /v1/sandbox-token-keys)
+//	FABRIC_HERMIT_MAGPIE_TOKEN hermit's pair token of the caller magpie for the router (a session's files deleted at Destroy)
 //	FABRIC_MACHINE_ADDR        the fabric listener (the fabric's egress target), e.g. :3128
 //	FABRIC_SESSION_IMAGE       the fabric image a fabric session's sources name (ghcr.io/de0ch/jarvis4-session-fabric@sha256:…,
 //	                           the digest hermit's configuration starts), and FABRIC_SESSION_IMAGE_SIG CI's signature over it
@@ -68,6 +69,37 @@ func (r *Router) sourceImage(s *Session) string {
 	}
 	return r.cfg.SessionImage
 }
+
+// isFabricSession: the session's machines run on the fabric
+func (r *Router) isFabricSession(id string) (yes bool) {
+	r.st.Do(func(d *persisted) {
+		if s := d.Sessions[id]; s != nil {
+			yes = s.Fabric != nil
+		}
+	})
+	return
+}
+
+// deleteFabricFiles: DELETE /v1/workspaces/{conversation} as caller magpie: the session's /workspace and its other
+// folders (the home) at the fabric hermit, after its archive (a destroy's last machine sent its whole state). hermit
+// releases a live sandbox of the conversation first and answers 204 also when nothing is there.
+var deleteFabricFiles = func(conversation string) error {
+	req, _ := http.NewRequest("DELETE", strings.TrimRight(os.Getenv("FABRIC_HERMIT_URL"), "/")+"/v1/workspaces/"+conversation, nil)
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("FABRIC_HERMIT_MAGPIE_TOKEN"))
+	req.Header.Set("Aviary-Protocol", "hermit-core=1")
+	res, err := (&http.Client{Timeout: 60 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode/100 != 2 {
+		b, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return fmt.Errorf("hermit: HTTP %d %s", res.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
+}
+
+func (r *Router) deleteFabricFiles(conversation string) error { return deleteFabricFiles(conversation) }
 
 // fabricLine: the session's fabric line, its conversation made on first use
 func (r *Router) fabricLine(sid string) (*FabricLine, error) {

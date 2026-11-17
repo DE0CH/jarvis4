@@ -84,7 +84,7 @@ func (r *Router) finalSnapshotAndKillWith(id, machine string, destroying, force 
 			r.cancelSpare(id, "the old machine was kept")
 		}
 	}()
-	serr := r.lastSnapshotThen(id, machine, stopSent)
+	serr := r.lastSnapshotThen(id, machine, stopSent, destroying)
 	vol := r.machineVolume(machine)
 	if serr != nil && !force {
 		r.keepMachine(id, machine, serr)

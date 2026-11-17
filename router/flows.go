@@ -1348,6 +1348,14 @@ func (r *Router) destroyRun(id string, s Session, o destroyOpts, unlock func(), 
 			op.note("", "the line ended: the core's burn cert")
 		}
 	}
+	if s.Fabric != nil { // fabricrunner.go: the session's files at the fabric hermit go with it
+		if err := r.deleteFabricFiles(s.Fabric.Conversation); err != nil {
+			log.Printf("session %s: the fabric files: %v", id, err)
+			op.note("", "deleting its files at the fabric hermit: "+err.Error())
+		} else {
+			op.note("", "its files at the fabric hermit are deleted")
+		}
+	}
 	r.endRunners(id, op, "destroyed") // runners.go
 	op.note("", "the session becomes a record")
 	op.end("done", "")
@@ -1530,11 +1538,15 @@ func (r *Router) send(machine, cmd string) {
 // silentAfter: a booted machine whose last report is older than this isn't asked for a snapshot
 var silentAfter = 3 * time.Minute
 
-func (r *Router) lastSnapshot(id, machine string) error { return r.lastSnapshotThen(id, machine, nil) }
+func (r *Router) lastSnapshot(id, machine string) error {
+	return r.lastSnapshotThen(id, machine, nil, false)
+}
 
 // lastSnapshotThen: stopSent runs once the supervisor has been sent the snapshot command, which stops the session
 // (handover.go: a handover's next machine starts then)
-func (r *Router) lastSnapshotThen(id, machine string, stopSent func()) error {
+// (handover.go: a handover's next machine starts then). destroying: the session ends with this machine, so a fabric
+// machine sends the whole state, not the records only (fabricrunner.go: the archive is all there is afterwards).
+func (r *Router) lastSnapshotThen(id, machine string, stopSent func(), destroying bool) error {
 	booted := func() (b bool) {
 		r.st.Do(func(d *persisted) {
 			if x := d.Sessions[id]; x != nil {
@@ -1572,7 +1584,11 @@ func (r *Router) lastSnapshotThen(id, machine string, stopSent func()) error {
 		return fmt.Errorf("its machine has been silent since %s, so it can't send its snapshot", last.UTC().Format("2006-01-02 15:04 UTC"))
 	}
 	done := r.awaitSnapshot(machine)
-	r.send(machine, "snapshot")
+	cmd := "snapshot"
+	if destroying && r.isFabricSession(id) {
+		cmd = "snapshot-full"
+	}
+	r.send(machine, cmd)
 	r.lcNote(id, machine, "asked the supervisor for the final snapshot (it pauses the Claude process and freezes the session first)")
 	if stopSent != nil {
 		stopSent()

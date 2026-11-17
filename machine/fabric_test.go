@@ -65,6 +65,13 @@ func TestFabricMachine(t *testing.T) {
 		}
 	}
 
+	// a destroy (snapshot-full): the whole state, the archive being all that is left of the session's files
+	fullSnapshot.Store(true)
+	if len(statePaths()) != len(snapshotPaths) {
+		t.Fatal("a destroy's snapshot on the fabric is not whole")
+	}
+	fullSnapshot.Store(false)
+
 	// the other runners keep the whole snapshot
 	t.Setenv("JARVIS2_RUNNER", "")
 	if len(statePaths()) != len(snapshotPaths) || machineObject("abc123") != doc.Object("fly-abc123") || keysConsole() != consolePath {

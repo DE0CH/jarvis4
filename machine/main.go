@@ -310,9 +310,13 @@ func fabricStatePaths() []string {
 	return out
 }
 
+// fullSnapshot: the router asked for the whole state (snapshot-full: a destroy, so no next machine finds the files on
+// the fabric's disk; the archive is all that is left of them)
+var fullSnapshot atomic.Bool
+
 // statePaths: what this machine's snapshot holds, in snapshotPaths' order
 func statePaths() []string {
-	if onFabric() {
+	if onFabric() && !fullSnapshot.Load() {
 		return fabricStatePaths()
 	}
 	return snapshotPaths

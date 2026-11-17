@@ -192,7 +192,10 @@ func runCommand(c *client, cmd string) {
 		} else if err := resumeHarness(); err != nil {
 			log.Printf("resume-harness: %v", err)
 		}
-	case "snapshot":
+	case "snapshot", "snapshot-full":
+		if cmd == "snapshot-full" {
+			fullSnapshot.Store(true) // main.go statePaths: the session ends with this machine (a destroy)
+		}
 		if !booted() {
 			if err := bootingSnapshot(c); err != nil { // snapstream.go: the predecessor's, carried over
 				log.Printf("answering the snapshot while booting: %v", err)
