@@ -339,7 +339,16 @@ pub fn resume_harness() -> Result<()> {
 
 /// the Claude process first (pause_harness), then SIGSTOP to every other process of user claude (signal_session: never
 /// root's, so never the keeper or the supervisors). Only on a session machine.
+/// tests count the freezes and thaws here (frozen, thawed) instead
+pub static TEST_FREEZE: std::sync::Mutex<Option<(usize, usize)>> = std::sync::Mutex::new(None);
+
 pub fn freeze_session() {
+    if let Ok(mut g) = TEST_FREEZE.lock()
+        && let Some(c) = g.as_mut()
+    {
+        c.0 += 1;
+        return;
+    }
     if machine_id().is_empty() {
         return;
     }
@@ -354,6 +363,12 @@ pub fn freeze_session() {
 
 /// SIGCONT to the session (the counterpart of freeze_session, after a failed snapshot); only on a session machine
 pub fn thaw_session() {
+    if let Ok(mut g) = TEST_FREEZE.lock()
+        && let Some(c) = g.as_mut()
+    {
+        c.1 += 1;
+        return;
+    }
     if machine_id().is_empty() {
         return;
     }

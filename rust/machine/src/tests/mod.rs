@@ -12,3 +12,4 @@ pub mod task;
 pub mod output;
 pub mod secrets;
 pub mod deploykeys;
+pub mod snapstream;

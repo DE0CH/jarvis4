@@ -43,6 +43,10 @@ impl TestEnv {
         std::fs::create_dir_all(&dir).unwrap();
         paths::set_dir(&dir);
         env::set("HOME", Some(home.to_str().unwrap()));
+        // never this machine's own identity: code gated on it acts on the real session (a freeze is kill(-1, STOP))
+        for k in ["FLY_MACHINE_ID", "JARVIS2_MACHINE_ID", "JARVIS2_RUNNER", "JARVIS2_URL", "JARVIS2_CORE_KEY"] {
+            env::set(k, None);
+        }
         TestEnv { _g: g, root, home, dir }
     }
 
@@ -64,6 +68,11 @@ impl Drop for TestEnv {
 
 fn reset_seams() {
     env::reset();
+    for k in ["FLY_MACHINE_ID", "JARVIS2_MACHINE_ID", "JARVIS2_RUNNER", "JARVIS2_URL", "JARVIS2_CORE_KEY"] {
+        env::set(k, None);
+    }
+    *crate::supervisor::TEST_FREEZE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::snapstream::TEST_CERT_FILE.lock().unwrap_or_else(|e| e.into_inner()) = None;
     *crate::grants::TEST_CERT.lock().unwrap_or_else(|e| e.into_inner()) = None;
     *crate::outcomes::TEST_CORE_KEY.lock().unwrap_or_else(|e| e.into_inner()) = None;
     *crate::apiproxy::TEST_CORE_KEY.lock().unwrap_or_else(|e| e.into_inner()) = None;
