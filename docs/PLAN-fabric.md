@@ -16,7 +16,7 @@ turn them on:
 | machine: `JARVIS2_RUNNER=fabric` (object, keys line, records-only snapshot) | pushed, tests pass |
 | router: runner `fabric` (offered with `FABRIC_HERMIT_URL`), the session's conversation, the spawn, `GET /fabric/env` | pushed, tests pass |
 | router: the conversation's files deleted at hermit on Destroy (`DELETE /v1/workspaces/{cid}`) | to do |
-| the source image: the phone signs a source's image after checking CI's signature, so `jarvis4-session-fabric` needs CI's signature and the app's acceptance of the repo | to do |
+| the source image: a fabric session's sources name `FABRIC_SESSION_IMAGE` with `FABRIC_SESSION_IMAGE_SIG` (router), the iPhone app accepts the fabric repo (`KernelChecks.fabricImageRepo`) | pushed; the app needs a TestFlight build; CI does not sign the fabric image yet (images.yml pin step: `jarvis2-session-image <ref>` with the CI key) |
 | image `jarvis4-session-fabric` (images.yml job `fabric`, `session-image/fabric/`), `aviary-sandbox`'s bind mode, the env-fetching entrypoint | pushed; bind mode tested (`aviary-sandbox_test.sh`); the new GHCR package must be made public (github-web) before hosts can pull it |
 | hermit-jarvis: the fabric control-token hash, activity forwarding | to do |
 | infra: AWS eu-central-1, AMI, hermit + gateway, JuiceFS, bucket | to do |

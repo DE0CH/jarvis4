@@ -106,7 +106,7 @@ func (r *Router) kernelSourceDraft(s *Session, config, image, snapshot string) (
 
 // kernelNewSessionApproval: the new session's Inbox approval (the phone signs the draft's payload)
 func (r *Router) kernelNewSessionApproval(s *Session, config string, opts map[string]string, in NewSession, snapshot string) error {
-	draft, err := r.kernelSourceDraft(s, config, r.cfg.SessionImage, snapshot)
+	draft, err := r.kernelSourceDraft(s, config, r.sourceImage(s), snapshot)
 	if err != nil {
 		return err
 	}
@@ -773,15 +773,16 @@ func (r *Router) kernelResume(s Session, upgrade bool, unlock func(), op *lcHand
 				// source names the line's newest committed snapshot, so the state isn't dropped (the phone signs the hash)
 				snap = r.newestSnapSum(id)
 			}
-			draft, err := r.kernelSourceDraft(&s, config, r.cfg.SessionImage, snap)
+			img := r.sourceImage(&s)
+			draft, err := r.kernelSourceDraft(&s, config, img, snap)
 			if err != nil {
 				r.setState(id, "failed", "resume: "+err.Error())
 				return
 			}
 			r.setState(id, "approval", "")
 			r.addApproval(&Approval{Kind: kernelApprovalKind, Session: id, Label: s.Label, Challenge: &Doc{Payload: draft.Payload},
-				Options: map[string]string{"permissionMode": normMode(s.PermissionMode), "image": r.cfg.SessionImage}, Again: l.SourceCert == nil})
-			op.note("", "waiting for Deyao's approval in the Inbox: a new source on image "+r.cfg.SessionImage)
+				Options: map[string]string{"permissionMode": normMode(s.PermissionMode), "image": img}, Again: l.SourceCert == nil})
+			op.note("", "waiting for Deyao's approval in the Inbox: a new source on image "+img)
 			return
 		}
 		r.kernelSpawn(id)

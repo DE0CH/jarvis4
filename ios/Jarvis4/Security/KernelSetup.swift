@@ -260,6 +260,9 @@ enum KernelJSON: Codable, Equatable {
 
 enum KernelChecks {
   static let sessionImageRepo = "ghcr.io/de0ch/jarvis4-session"
+  /// the fabric image (docs/PLAN-fabric.md): the session image with aviary's sandbox in it, for machines on aviary's
+  /// fabric (kernel/spawner/fabric.go FabricRepo); attested by CI like the session image
+  static let fabricImageRepo = "ghcr.io/de0ch/jarvis4-session-fabric"
 
   /// a cert into a new source the phone signs (a new session, a restore, a resume on another image): from the sink, by
   /// the phone, its stores for exactly this session, the session image pinned by digest
@@ -315,6 +318,6 @@ enum KernelChecks {
     guard let at = image.range(of: "@sha256:") else { return false }
     let repo = image[..<at.lowerBound], digest = image[at.upperBound...]
     let name = repo.split(separator: ":", maxSplits: 1).first.map(String.init) ?? ""
-    return name == sessionImageRepo && digest.count == 64 && isHex(digest)
+    return (name == sessionImageRepo || name == fabricImageRepo) && digest.count == 64 && isHex(digest)
   }
 }

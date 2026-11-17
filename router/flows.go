@@ -448,6 +448,8 @@ func (r *Router) addApproval(a *Approval) {
 	// a resume on the session's own image names an older CI build than the current one: its signature is in the list
 	if img != "" && img == r.cfg.SessionImage {
 		a.ImageSig = r.cfg.SessionImageSig
+	} else if f := os.Getenv("FABRIC_SESSION_IMAGE"); img != "" && img == f {
+		a.ImageSig = os.Getenv("FABRIC_SESSION_IMAGE_SIG") // fabricrunner.go
 	} else if img != "" {
 		a.ImageSig = r.cfg.ImageSigs[img]
 	}

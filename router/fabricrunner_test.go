@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -92,6 +93,11 @@ func TestFabricEnvEndpoint(t *testing.T) {
 	// the runner is offered only with a fabric hermit, and fabric objects are named as the kernel names them
 	if !validRunner("fabric") || kernelObject(&Session{Runner: "fabric"}, "x0190f6c2000070008000000000000001", "fly") != "fabric-x0190f6c2000070008000000000000001" {
 		t.Fatal("the fabric runner")
+	}
+	// a fabric session's sources name the fabric image; the others the session image
+	t.Setenv("FABRIC_SESSION_IMAGE", "ghcr.io/de0ch/jarvis4-session-fabric@sha256:"+strings.Repeat("c", 64))
+	if r.sourceImage(&Session{Runner: "fabric"}) != os.Getenv("FABRIC_SESSION_IMAGE") || r.sourceImage(&Session{Runner: "fly"}) != r.cfg.SessionImage {
+		t.Fatal("the source image by runner")
 	}
 	t.Setenv("FABRIC_HERMIT_URL", "")
 	if validRunner("fabric") || len(sessionRunners()) != 2 {

@@ -14,6 +14,8 @@ package main
 //	FABRIC_HERMIT_URL          the fabric hermit inside the cluster (unset: no fabric runner, nothing here runs)
 //	FABRIC_HERMIT_TOOLS_TOKEN  hermit's pair token of the caller tools (GET /v1/sandbox-token-keys)
 //	FABRIC_MACHINE_ADDR        the fabric listener (the fabric's egress target), e.g. :3128
+//	FABRIC_SESSION_IMAGE       the fabric image a fabric session's sources name (ghcr.io/de0ch/jarvis4-session-fabric@sha256:…,
+//	                           the digest hermit's configuration starts), and FABRIC_SESSION_IMAGE_SIG CI's signature over it
 
 import (
 	"crypto/ed25519"
@@ -54,6 +56,17 @@ func newConversation() string {
 	b[8] = b[8]&0x3f | 0x80
 	h := hex.EncodeToString(b)
 	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
+}
+
+// sourceImage: the image a new source of the session names: the fabric image for a fabric session, else the session
+// image (the phone checks CI's signature over either: ios KernelChecks.pinned)
+func (r *Router) sourceImage(s *Session) string {
+	if r.runnerOf(s) == "fabric" {
+		if f := os.Getenv("FABRIC_SESSION_IMAGE"); f != "" {
+			return f
+		}
+	}
+	return r.cfg.SessionImage
 }
 
 // fabricLine: the session's fabric line, its conversation made on first use
