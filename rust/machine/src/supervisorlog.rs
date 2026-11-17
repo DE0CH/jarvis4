@@ -99,8 +99,16 @@ pub fn log_to_supervisor_log() {
     let _ = TAG.set(tag.to_string());
 }
 
+/// tests read the lines here
+pub static TEST_LOG: Mutex<Option<Vec<String>>> = Mutex::new(None);
+
 /// one log line: stderr, and the supervisor log when this process logs there (logf! calls it)
 pub fn log_line(text: &str) {
+    if let Ok(mut g) = TEST_LOG.lock()
+        && let Some(v) = g.as_mut()
+    {
+        v.push(text.to_string());
+    }
     eprintln!("[jarvis] {text}");
     if let Some(tag) = TAG.get() {
         append_line(tag, text);

@@ -59,12 +59,23 @@ const TEARDOWN_MAX: Duration = Duration::from_secs(30 * 60);
 
 /// the boot steps' pid, then the harness launcher's (each start)
 pub fn harness_pid_path() -> PathBuf {
-    PathBuf::from(paths::KEEPER_DIR).join("harness.pid")
+    keeper_dir().join("harness.pid")
+}
+
+/// root's (0755): what only the keeper writes (tests move it)
+pub static TEST_KEEPER_DIR: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
+
+pub fn keeper_dir() -> PathBuf {
+    TEST_KEEPER_DIR
+        .read()
+        .ok()
+        .and_then(|p| p.clone())
+        .unwrap_or_else(|| PathBuf::from(paths::KEEPER_DIR))
 }
 
 /// the harness's starts and last end (the status report)
 pub fn harness_state_path() -> PathBuf {
-    PathBuf::from(paths::KEEPER_DIR).join("harness.json")
+    keeper_dir().join("harness.json")
 }
 
 /// what the keeper tells the status report about the harness

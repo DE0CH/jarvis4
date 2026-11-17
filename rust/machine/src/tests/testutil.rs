@@ -86,6 +86,8 @@ fn reset_seams() {
     *paths::PREDECESSOR_TMP.write().unwrap_or_else(|e| e.into_inner()) = None;
     *crate::task::TASKS_ROOT.write().unwrap_or_else(|e| e.into_inner()) = None;
     *paths::TEST_CLAUDE_HOME.write().unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::keeper::TEST_KEEPER_DIR.write().unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::supervisorlog::TEST_LOG.lock().unwrap_or_else(|e| e.into_inner()) = None;
     crate::output::SHIP_FILE_CAP.store(32 << 20, std::sync::atomic::Ordering::SeqCst);
     crate::snapshot::PROGRESS_POST_EVERY_MS.store(3000, std::sync::atomic::Ordering::SeqCst);
     crate::snapshot::PROGRESS_LOG_EVERY_MS.store(10_000, std::sync::atomic::Ordering::SeqCst);

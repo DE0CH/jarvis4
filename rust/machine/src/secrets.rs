@@ -69,6 +69,16 @@ struct MemState {
 }
 
 impl HeldSecrets {
+    /// a copy of its own (tests: two supervisor-cores' copies of one memfd)
+    #[cfg(test)]
+    pub fn new_with_mem(mem: Option<std::fs::File>) -> HeldSecrets {
+        HeldSecrets {
+            vals: RwLock::new((HashMap::new(), false)),
+            mem: Mutex::new(mem),
+            pull_mu: Mutex::new(()),
+        }
+    }
+
     /// supervisor-core's start: the values the memfd holds (from an earlier one), if any
     pub fn load_held(&self) {
         let Ok(fd) = crate::env::get(SECRETS_FD_ENV)
