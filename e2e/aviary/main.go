@@ -333,6 +333,23 @@ func serveModel(w http.ResponseWriter, req *http.Request) {
 	}
 	models.Unlock()
 	log.Printf("model: %s (openrouter %v, auth %q)", kind, openRouter, req.Header.Get("Authorization"))
+	if kind == "other" { // what the stand-in did not recognise: enough to see why (a side call, or a turn whose shape changed)
+		msgs, _ := in["messages"].([]any)
+		tools, _ := in["tools"].([]any)
+		last := ""
+		if n := len(msgs); n > 0 {
+			b, _ := json.Marshal(msgs[n-1])
+			last = string(b)
+		}
+		if len(last) > 1500 {
+			last = last[len(last)-1500:]
+		}
+		sys := systemText(in)
+		if len(sys) > 300 {
+			sys = sys[:300]
+		}
+		log.Printf("model: other: model %v, %d tools, %d messages, system %q, last message %s", in["model"], len(tools), len(msgs), sys, last)
+	}
 	id := "msg_e2e_" + hex.EncodeToString(randBytes(6))
 	// the agent's turns read the most input: the supervisor takes the conversation's context window from the model
 	// that did (a `result`'s modelUsage), never from a side call's model
