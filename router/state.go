@@ -186,7 +186,7 @@ type State struct {
 // failed, jobs.go jobUnlock).
 func (s *State) Do(fn func(d *persisted)) {
 	var failed [][2]string
-	s.doLocked(func(d *persisted) {
+	s.doLocked(doCaller(), func(d *persisted) {
 		fn(d)
 		failed = stampFailures(d, time.Now().UTC()) // failures.go: a failed session says why and since when
 	})
@@ -197,11 +197,11 @@ func (s *State) Do(fn func(d *persisted)) {
 	}
 }
 
-func (s *State) doLocked(fn func(d *persisted)) {
+func (s *State) doLocked(who string, fn func(d *persisted)) {
 	asked := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	defer s.load.done(asked, time.Now()) // statestats.go
+	defer s.load.done(who, asked, time.Now()) // statestats.go
 	if s.sdb == nil {
 		fn(&s.data) // a State that was never opened (a test's frozen stand-in)
 		return
@@ -253,11 +253,19 @@ func (s *State) doOnce(fn func(d *persisted)) error {
 		s.load.rowLock += time.Since(t)
 		if ver != s.sdb.ver {
 			t = time.Now()
-			if err := s.reload(ctx, tx); err != nil {
+			ok, err := s.catchUp(ctx, tx, s.sdb.ver, ver) // statedb.go: only what the other replicas changed
+			if err != nil {
 				return err
 			}
+			if ok {
+				s.load.catchUps++
+			} else {
+				if err := s.reload(ctx, tx); err != nil {
+					return err
+				}
+				s.load.reloads++
+			}
 			s.sdb.ver = ver
-			s.load.reloads++
 			s.load.reload += time.Since(t)
 		}
 		fn(&s.data)
@@ -269,7 +277,7 @@ func (s *State) doOnce(fn func(d *persisted)) error {
 			}
 		}
 		t = time.Now()
-		now, changed, err := s.sdb.writeTx(ctx, tx, d)
+		now, changed, err := s.sdb.writeTx(ctx, tx, d, ver+1)
 		s.load.write += time.Since(t)
 		if err != nil {
 			return err

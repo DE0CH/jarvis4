@@ -550,11 +550,9 @@ func (r *Router) buildHandlers() {
 		writeJSON(w, 200, map[string]any{"answer": cert, "session": sid})
 	})
 	app("POST /api/approvals/{id}/reject", func(w http.ResponseWriter, req *http.Request) {
-		if err := r.Reject(req.PathValue("id")); err != nil {
-			writeErr(w, err)
-			return
-		}
-		writeJSON(w, 200, map[string]bool{"ok": true})
+		// an approval no longer waiting (the phone asks again after a try that timed out): what was asked for holds,
+		// 200 {ok, gone} as every other deny (inbox.go writeDenied)
+		writeDenied(w, r.Reject(req.PathValue("id")))
 	})
 
 	// ---- the core, relayed unchanged ------------------------------------------------------------------

@@ -933,7 +933,7 @@ func (r *Router) RejectAs(id, outcome string) error {
 		}
 	})
 	if a == nil {
-		return fmt.Errorf("no such approval")
+		return errAlreadyGone // inbox.go
 	}
 	r.st.Do(func(d *persisted) {
 		s := d.Sessions[a.Session]

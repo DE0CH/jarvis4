@@ -3079,3 +3079,15 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      shows too. A runner Hetzner doesn't delete never fails the pause or destroy: it stays on the view, standing
      out. *Not chosen*: sessions keeping the token with Jarvis 4 only reading the project (an owner by convention
      only); keeping runners across every pause (they are billed by the hour and nothing would end them).
+266. **A replica behind reads only the records the others changed** (2026-11-17: every router call took 3-12 s
+     and an approval's signature timed out on Deyao's phone; the router burned a core and its node took 18 MB/s).
+     Every Do of every replica takes one lock; a replica whose copy was older read ALL the records again, so with
+     two replicas taking turns nearly every Do did, and the Do's of a minute took more than a minute. Each write
+     now lists the rows it touched in `state_changes` under the version it makes, with a marker row per version;
+     the other replica's next Do reads just those rows (`statedb.go` `catchUp`), and reads everything only when a
+     version in between has no marker (a router from before the table, mid-rollout) or the list no longer goes
+     back that far (5000 versions). The log says once a minute what the Do's cost and which lines asked most
+     (`statestats.go`, "state: last 1m0s: …"): the measurement that was missing. Also: Reject on an approval that
+     is gone answers 200 `{ok, gone}` like every other deny (the phone's second try after a timeout was told "no
+     such approval"). *Not chosen*: one replica (a deploy would stop the router); a version column on every row
+     (a deleted row has none to read).

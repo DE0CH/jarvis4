@@ -319,3 +319,21 @@ func TestInboxItemsGoAfterTenMinutes(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Reject asked twice (the phone's first try timed out after the router had taken it): the second is told it holds
+// already, 200 {ok, gone}, not "no such approval"
+func TestRejectTwice(t *testing.T) {
+	rg := newRig(t)
+	r := rg.r
+	r.cfg.NoAccess = true
+	r.st.Do(func(d *persisted) {
+		d.Sessions["s2"] = &Session{ID: "s2", State: "paused", Cert: rg.cert}
+		d.Approvals["a1"] = &Approval{ID: "a1", Kind: "add-store", Session: "s2", Created: time.Now().UTC()}
+	})
+	if code, out := inboxDo(t, r, "POST", "/api/approvals/a1/reject", "", true); code != 200 || out["ok"] != true || out["gone"] != nil {
+		t.Fatalf("the first: %d %v", code, out)
+	}
+	if code, out := inboxDo(t, r, "POST", "/api/approvals/a1/reject", "", true); code != 200 || out["ok"] != true || out["gone"] != true {
+		t.Fatalf("the second: %d %v", code, out)
+	}
+}
