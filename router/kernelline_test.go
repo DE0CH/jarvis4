@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -968,5 +969,29 @@ func TestAKernelKillThatFailsOnTheWayIsTriedAgain(t *testing.T) {
 	}
 	if ft2.n != 0 || k2.Fly.Machine(m2.ID).State == "destroyed" {
 		t.Fatalf("%d failures left, machine %s", ft2.n, k2.Fly.Machine(m2.ID).State)
+	}
+}
+
+// a spawn waits while its machine comes up, and stops at once when the spawner reports it destroyed (a fabric sandbox
+// whose start failed at hermit kept its session booting for 10 minutes, 2026-11-17)
+func TestInitWaits(t *testing.T) {
+	ke := func(reason, msg string) error {
+		return &KernelError{Role: "spawner", Status: 409, Msg: msg, Reason: reason}
+	}
+	for _, c := range []struct {
+		err  error
+		want bool
+	}{
+		{ke(spawner.ReasonNotStarted, "machine x1 is created, not started"), true},
+		{ke(spawner.ReasonNotStarted, "fabric init: not yet"), true},
+		{ke(spawner.ReasonFly, "fly inspect: EOF"), true},
+		{ke(spawner.ReasonAWS, "aws: throttled"), true},
+		{ke(spawner.ReasonNotStarted, "machine x01a1ea606c96728a98f97c5978594fa2 is destroyed, not started"), false},
+		{ke(spawner.ReasonWrongImage, "machine x1 runs a, not its source's b"), false},
+		{errors.New("connection refused"), false},
+	} {
+		if got := initWaits(c.err); got != c.want {
+			t.Errorf("%v: waits %v, want %v", c.err, got, c.want)
+		}
 	}
 }
