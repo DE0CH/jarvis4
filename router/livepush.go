@@ -5,7 +5,7 @@ package main
 // sessions every livePushEvery to LIVE_PUSH_URL with the header X-Jarvis-Secret: LIVE_PUSH_SECRET (Secret
 // router-secrets-livepush, infra/router-secrets.py --part livepush; unset = off). Jarvis 4 holds the dashboard's write
 // secret; the dashboard holds nothing of Jarvis 4's. Each session is only its title, a state, two counts and since
-// when; at most liveMax, the most active first, with the total listed. A session that will wake by itself (a wakeup,
+// when; at most liveMax in liveRank's order, with the total listed. A session that will wake by itself (a wakeup,
 // cron or watch armed) and has nothing running is "scheduled", paused or idle, as the app's Scheduled (Deyao,
 // 2026-11-17: "it should also show scheduled as blue, similar to background"), with its next wake when it has a time.
 
@@ -46,8 +46,8 @@ var (
 	liveANSI    = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
 )
 
-// liveRank: the order on the panel, the most active first
-var liveRank = map[string]int{"waiting": 0, "working": 1, "background": 2, "scheduled": 3, "booting": 4, "idle": 5}
+// liveRank: the order on the panel, the dashboard's amber states (waiting, idle; Deyao, 2026-11-17) first
+var liveRank = map[string]int{"waiting": 0, "idle": 1, "working": 2, "background": 3, "scheduled": 4, "booting": 5}
 
 // nextWake: the session's earliest wakeup or cron (0: none with a time, e.g. a watch only); callers hold the lock
 func nextWake(d *persisted, sid string) int64 {

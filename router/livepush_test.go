@@ -67,24 +67,27 @@ func TestLiveDoc(t *testing.T) {
 		addSession(r, id, "started", "m"+id, false)
 		reg(id, "idle", 0, int64(i))
 	}
-	for i := 0; i < 10; i++ { // past liveMax: the oldest idle ones are left out
-		id := "y" + string(rune('a'+i))
-		addSession(r, id, "started", "m"+id, false)
-		reg(id, "idle", 0, int64(i))
+	for i := 0; i < 10; i++ { // past liveMax: the last of the watch-only ones are left out
+		addSession(r, "y"+string(rune('a'+i)), "paused", "", false)
+		r.st.Do(func(d *persisted) { sched(d, "y"+string(rune('a'+i))).Watches["x"] = &Watch{Name: "x", NextAt: 1} })
 	}
 	doc := r.liveDoc(now)
 	if doc.Total != 37 || len(doc.Sessions) != liveMax {
 		t.Fatalf("total %d, %d sessions", doc.Total, len(doc.Sessions))
 	}
 	var order []string
-	for _, x := range doc.Sessions[:8] {
-		order = append(order, x.State+":"+x.Name)
+	for i, x := range doc.Sessions {
+		if i < 4 || (i >= 21 && i < 26) {
+			order = append(order, x.State+":"+x.Name)
+		}
 	}
-	want := []string{"waiting:label c", "working:label b", "background:label d", "scheduled:label f", "scheduled:label g", "scheduled:label h", "idle:label a", "idle:label zt"}
+	// waiting and idle first (the newest idle first), then working, background, scheduled (the soonest first, watch-only last)
+	want := []string{"waiting:label c", "idle:label a", "idle:label zt", "idle:label zs",
+		"idle:label za", "working:label b", "background:label d", "scheduled:label f", "scheduled:label g"}
 	if b, _ := json.Marshal(order); string(b) != func() string { w, _ := json.Marshal(want); return string(w) }() {
 		t.Fatalf("order %v, want %v", order, want)
 	}
-	if doc.Sessions[2].Jobs != 1 || doc.Sessions[0].Since != 1002 || doc.Sessions[3].Next != 7000 || doc.Sessions[4].Next != 8000 || doc.Sessions[5].Next != 0 {
+	if doc.Sessions[23].Jobs != 1 || doc.Sessions[0].Since != 1002 || doc.Sessions[24].Next != 7000 || doc.Sessions[25].Next != 8000 || doc.Sessions[26].State != "scheduled" || doc.Sessions[26].Next != 0 {
 		t.Fatalf("%+v", doc.Sessions[:3])
 	}
 }
