@@ -3,10 +3,12 @@
 // store, each such message waits in the Inbox until Deyao delivers it (signed on the iPhone) or denies it; a per-kind
 // rule on the session lets one kind through (views/Sessions.tsx MessageRules). Only the session arms
 // them (scripts/schedule-wakeup.sh, schedule-cron.sh: its own signed request vouches for the delivery; the router
-// refuses arming from the app), so this page lists and cancels them (app DECISIONS 76).
+// refuses arming from the app), so this page lists and cancels them (app DECISIONS 76), and Run now delivers one at
+// once as its scheduled firing would, counted as that firing; a cron run skipped after failed attempts (e.g. Fly's
+// machine limit on the resume) is marked missed until one is delivered (Deyao, 2026-11-17).
 import { useEffect, useState } from "react";
 import { api, cronEvery, sessionTitle, when, type Cron, type Wakeup } from "../lib/api";
-import { useStore, ask, exclusive, failed, pend, refresh } from "../lib/store";
+import { useStore, ask, exclusive, failed, pend, refresh, toast } from "../lib/store";
 import { Card, Flex, Heading, Lbl, Muted, P, Pill, Quote, Row, Rows, Spinner } from "../ui/kit";
 import { FoldedQuote, PButton } from "../ui/bits";
 import { Cards } from "../ui/cards";
@@ -35,6 +37,16 @@ export function SchedulesPage({ spec }: { spec: SchedulesSpec }) {
     finally { pend(`sch:${what}:${n}`, null); }
   });
 
+  // the router answers 202 once the delivery has started; it runs in the background (a paused session resumes first) and
+  // a failure comes as a DM and a missed mark
+  const runNow = (what: "wakeup" | "cron", n: string) => exclusive(`sch:run:${what}:${n}`, async () => {
+    if (!(await ask({ title: "Run now?", rows: [{ label: "Name", value: n }, { label: "Does", value: what === "wakeup" ? "Delivers the wakeup now; it is then done" : "Delivers the next run now; the schedule carries on" }], action: "Run now" }))) return;
+    pend(`sch:run:${what}:${n}`, "Starting…");
+    try { await api("POST", `api/sessions/${sid}/${what === "wakeup" ? "wakeups" : "crons"}/${encodeURIComponent(n)}/run`); toast("Delivering: a paused session resumes first"); await load(); }
+    catch (e: any) { failed(e); }
+    finally { pend(`sch:run:${what}:${n}`, null); }
+  });
+
   return (
     <Page title="Schedules" id="schedules-page">
       <Rows mt={2}><Row label="Session" id="sch-session">{title}</Row></Rows>
@@ -49,20 +61,28 @@ export function SchedulesPage({ spec }: { spec: SchedulesSpec }) {
               <Flex justify="space-between" align="flex-start" gap={2} mb={1}><Heading size={3} style={{ flex: 1 }}>{w.name}</Heading><Pill kind="info">once</Pill></Flex>
               <Rows><Row label="At" id={"sch-at-" + w.name}>{when(w.at)}</Row></Rows>
               <Quote by="Prompt">{w.prompt}</Quote>
-              <Flex mt={3}><PButton pkey={"sch:wakeup:" + w.name} variant="soft" color="red" onPress={() => cancel("wakeup", w.name)} label="Cancel" id={"sch-cancel-w-" + w.name} /></Flex>
+              <Flex mt={3} gap={2}>
+                <PButton pkey={"sch:run:wakeup:" + w.name} variant="soft" onPress={() => runNow("wakeup", w.name)} label="Run now" id={"sch-run-w-" + w.name} />
+                <PButton pkey={"sch:wakeup:" + w.name} variant="soft" color="red" onPress={() => cancel("wakeup", w.name)} label="Cancel" id={"sch-cancel-w-" + w.name} />
+              </Flex>
             </Card>))}
           {cs.map((c) => (
             <Card key={"c:" + c.name} data={{ cron: c.name }}>
-              <Flex justify="space-between" align="flex-start" gap={2} mb={1}><Heading size={3} style={{ flex: 1 }}>{c.name}</Heading><Pill kind="info">repeating</Pill></Flex>
+              <Flex justify="space-between" align="flex-start" gap={2} mb={1}><Heading size={3} style={{ flex: 1 }}>{c.name}</Heading>{!!c.missed && <Pill kind="bad">missed</Pill>}<Pill kind="info">repeating</Pill></Flex>
               <Rows>
                 <Row label="Repeats">{cronEvery(c.everySeconds)}</Row>
                 <Row label="Next" id={"sch-next-" + c.name}>{when(c.nextAt)}</Row>
                 {!!c.tz && c.tz !== "UTC" && <Row label="Time zone">{c.tz}</Row>}
                 {!!c.runs && <Row label="Runs">{String(c.runs)}</Row>}
                 {!!c.untilIso && <Row label="Until">{new Date(c.untilIso).toLocaleDateString()}</Row>}
+                {!!c.missed && <Row label="Missed" color="red" id={"sch-missed-" + c.name}>{`Run ${c.missed.run}, ${when(c.missed.at)}`}</Row>}
+                {!!c.missed && <Row label="Why" color="red">{c.missed.error}</Row>}
               </Rows>
               <FoldedQuote by="Prompt" id={"sch-prompt-c-" + c.name}>{c.prompt}</FoldedQuote>
-              <Flex mt={3}><PButton pkey={"sch:cron:" + c.name} variant="soft" color="red" onPress={() => cancel("cron", c.name)} label="Cancel" id={"sch-cancel-c-" + c.name} /></Flex>
+              <Flex mt={3} gap={2}>
+                <PButton pkey={"sch:run:cron:" + c.name} variant={c.missed ? "solid" : "soft"} onPress={() => runNow("cron", c.name)} label="Run now" id={"sch-run-c-" + c.name} />
+                <PButton pkey={"sch:cron:" + c.name} variant="soft" color="red" onPress={() => cancel("cron", c.name)} label="Cancel" id={"sch-cancel-c-" + c.name} />
+              </Flex>
             </Card>))}
         </Cards>}
     </Page>

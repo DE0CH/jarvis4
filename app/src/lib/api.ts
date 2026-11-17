@@ -109,7 +109,7 @@ export type LeaseEvent = { at: number; kind: string; sid: string; purpose?: stri
 export type Lease = { name: string; holder: LeaseEntry | null; queue: LeaseWaiter[]; log: LeaseEvent[] };
 export type Watch = { name: string; prompt: string; failPrompt: string; interval: number; maxSeconds: number; armedAtIso: string; expiresAtIso: string; nextCheckIso: string; runs: number; lastExit: number | null; lastRunIso: string | null; lastError: string; lastOutput: string; outcome: string };
 export type Wakeup = { name: string; at: number; atIso?: string; prompt: string };
-export type Cron = { name: string; prompt: string; everySeconds: number; tz?: string; nextAt: number; nextAtIso?: string; until?: number | null; untilIso?: string | null; runs?: number; lastFiredIso?: string | null };
+export type Cron = { name: string; prompt: string; everySeconds: number; tz?: string; nextAt: number; nextAtIso?: string; until?: number | null; untilIso?: string | null; runs?: number; lastFiredIso?: string | null; missed?: { at: number; atIso: string; run: number; error: string } | null };
 export type Refusal = { kind: "fallback" | "refusal"; at?: string; from?: string; to?: string; model?: string; category?: string };
 export type Session = {
   id: string; machineId?: string | null; released?: boolean; name?: string; state: SessionState | string; status?: string | null;

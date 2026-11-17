@@ -462,3 +462,7 @@ fixes, 34–40 carried over from the old app and still true, 41–43 the web pag
     the other stores (a picked repo brings its own; the filter searches both). More holds the rarely changed ones:
     Claude account, runner, region, content stores, auto-pause, API proxy. The request sent is unchanged. A filter box
     carries `data-nosubmit`, so Enter in it is not the page's Start (`ui/page.tsx`).
+82. **Run now beside Cancel on every wakeup and cron** (both apps; docs/DECISIONS.md 267; Deyao, 2026-11-17). A
+    confirm saying what it does (a wakeup is then done; a cron's schedule carries on), then a toast/notice that the
+    delivery has started: it runs in the background, a paused session resumes first. A cron whose last run was skipped
+    shows a red "missed" pill and rows (run, when, why); its Run now is the solid button.

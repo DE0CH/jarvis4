@@ -773,12 +773,14 @@ session and ends with it.
 | `GET …/wakeup` | `{wakeup /* the soonest or null */, wakeups}`; `GET …/wakeups` → `{wakeups}`. Wakeup view `{name, at /* ms */, atIso, prompt}`. |
 | `POST …/wakeup` or `…/wakeups` | `{prompt, at? /* ISO or ms */, delaySeconds?, name? /* default "default" */}` → `{ok, wakeup}`. Arming a name again replaces it. ≤ 400 days (a time already past fires at once), prompt ≤ 3500 chars (whitespace collapses). 409 when the session is destroying. |
 | `DELETE …/wakeup?name=X` (`?all=1`), `DELETE …/wakeups/:name` | `{ok, cancelled: [names]}` |
-| `GET …/crons` | `{crons}`; view `{name, prompt, everySeconds, tz, nextAt, nextAtIso, until, untilIso, armedAtIso, runs, lastFiredIso}` |
+| `GET …/crons` | `{crons}`; view `{name, prompt, everySeconds, tz, nextAt, nextAtIso, until, untilIso, armedAtIso, runs, lastFiredIso, missed?}` |
 | `POST …/crons` | `{name, prompt, everySeconds? /* 900–7776000, default 86400 */, time? "HH:MM" + tz?, at?, delaySeconds?, until?}` → `{ok, cron}` |
 | `DELETE …/crons/:name` | `{ok}` |
+| `POST …/wakeups/:name/run`, `POST …/crons/:name/run` (app only) | Run now (DECISIONS 267): 202 `{ok, started}` once the delivery has started in the background, exactly as the scheduled firing (a paused session resumed first), counted as that firing (a wakeup is done; a cron's `runs` goes up, its next occurrence at least half a period away). 404 unknown; 409 while it is being delivered, or for a cron that ran less than half its period ago (the machine refuses a repeat that soon). A failure is DMed and marks the cron `missed`. |
 | `POST …/notify-idle` | `{enabled}` → `{ok, notifyIdle: "on"|"off"}` (kept for the idle DMs) |
 
-Delivery failures back off and, after 5 attempts, drop a wakeup (a cron skips that occurrence) with a DM. A message
+Delivery failures back off and, after 5 attempts, drop a wakeup (a cron skips that occurrence and marks it
+`missed: {at, atIso, run, error}` in its view until a later run is delivered) with a DM. A message
 held for Deyao counts as handed over: the wakeup is done (the cron advances), and the message queue delivers it once
 approved or tells the session (an Inbox outcome of the request that armed it) when it is denied, lapses or fails.
 

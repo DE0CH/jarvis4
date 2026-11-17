@@ -162,6 +162,10 @@ struct Cron: Identifiable, Equatable, Hashable {
   var nextAt: Date? { j["nextAt"].double.map { Date(timeIntervalSince1970: $0 / 1000) } ?? j["nextAtIso"].string?.isoDate }
   var runs: Int { j["runs"].int ?? 0 }
   var until: Date? { j["untilIso"].string?.isoDate }
+  /// the run skipped after failed attempts (or a failed Run now), until a later one is delivered
+  var missedRun: Int? { j["missed"]["run"].int }
+  var missedAt: Date? { j["missed"]["atIso"].string?.isoDate }
+  var missedError: String? { j["missed"]["error"].string }
 }
 
 /// an approval the router holds (GET api/state `approvals`); the challenge is checked by Checks.review before anything

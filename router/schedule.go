@@ -63,6 +63,16 @@ type Cron struct {
 	Runs        int            `json:"runs"`
 	LastFiredAt *int64         `json:"lastFiredAt,omitempty"`
 	Signed      *SignedRequest `json:"signed,omitempty"` // as Wakeup.Signed
+	// Missed: the last occurrence that could not be delivered (dropFailed, or a Run now that failed), until a later
+	// one is delivered: the app marks it beside Run now (Deyao, 2026-11-17)
+	Missed *Missed `json:"missed,omitempty"`
+}
+
+// Missed: an occurrence given up on: when, its run number, and why (e.g. Fly's org machine limit on the resume)
+type Missed struct {
+	At    int64  `json:"at"` // ms epoch
+	Run   int    `json:"run"`
+	Error string `json:"error"`
 }
 
 // Schedule: one session's wakeups, crons and pending resume prompt
@@ -330,6 +340,9 @@ func cronView(c *Cron) map[string]any {
 	}
 	if c.LastFiredAt != nil {
 		v["lastFiredIso"] = iso(*c.LastFiredAt)
+	}
+	if c.Missed != nil {
+		v["missed"] = map[string]any{"at": c.Missed.At, "atIso": iso(c.Missed.At), "run": c.Missed.Run, "error": c.Missed.Error}
 	}
 	return v
 }
@@ -810,15 +823,20 @@ func (r *Router) scheduleTick(now time.Time) {
 			log.Printf("[schedule] %s failed (drop=%v): %v", key, drop, err)
 			switch {
 			case drop:
-				r.dropFailed(it.sid, it.kind, it.name, it.armedAt)
-				r.DM(fmt.Sprintf("%s could not be delivered after %d attempts: %s", what, scheduleMaxAttempt, trimTo(err.Error(), 300)))
+				r.dropFailed(it.sid, it.kind, it.name, it.armedAt, err)
+				again := ""
+				if it.kind == "c" {
+					again = " It is marked missed on the session's Schedules page: Run now delivers it."
+				}
+				r.DM(fmt.Sprintf("%s could not be delivered after %d attempts: %s.%s", what, scheduleMaxAttempt, trimTo(err.Error(), 300), again))
 			}
 		}()
 	}
 }
 
-// dropFailed: after too many failures a wakeup or resume prompt is dropped; a cron skips this occurrence
-func (r *Router) dropFailed(sid, kind, name string, armedAt int64) {
+// dropFailed: after too many failures a wakeup or resume prompt is dropped; a cron skips this occurrence and marks it
+// missed (Run now delivers it)
+func (r *Router) dropFailed(sid, kind, name string, armedAt int64, cause error) {
 	r.st.Do(func(d *persisted) {
 		s := d.Schedules[sid]
 		if s == nil {
@@ -831,6 +849,7 @@ func (r *Router) dropFailed(sid, kind, name string, armedAt int64) {
 			}
 		case "c":
 			if c := s.Crons[name]; c != nil && c.ArmedAt == armedAt {
+				c.Missed = &Missed{At: time.Now().UnixMilli(), Run: c.Runs + 1, Error: trimTo(cause.Error(), 300)}
 				if next, ok := advanceCron(c, time.Now()); ok {
 					c.NextAt = next
 				} else {
@@ -887,24 +906,164 @@ func (r *Router) fireCron(sid, name string, armedAt int64) error {
 		return err
 	}
 	log.Printf("[cron] %s %q delivered", sid, name)
-	now := time.Now()
+	r.cronFired(sid, name, armedAt, time.Now(), false)
+	return nil
+}
+
+// cronFired: a cron's run was delivered: count it, clear a missed mark, and move it to its next occurrence. early (a
+// Run now): the next occurrence is at least half a period away, as the machine refuses a cron run sooner than that
+// after the last (machine/deliver.go replayGuard).
+func (r *Router) cronFired(sid, name string, armedAt int64, now time.Time, early bool) {
 	r.st.Do(func(d *persisted) {
 		s := d.Schedules[sid]
 		if s == nil || s.Crons[name] == nil || s.Crons[name].ArmedAt != armedAt {
 			return // cancelled or replaced meanwhile
 		}
 		cur := s.Crons[name]
-		next, ok := advanceCron(cur, now)
+		after := now
+		if early {
+			after = now.Add(time.Duration(cur.Every) * time.Second / 2)
+		}
+		next, ok := cur.NextAt, cur.Until == nil || cur.NextAt <= *cur.Until
+		if next <= after.UnixMilli() {
+			next, ok = advanceCron(cur, after)
+		}
 		if !ok {
 			delete(s.Crons, name)
 			log.Printf("[cron] %s %q reached its end", sid, name)
 			return
 		}
 		ms := now.UnixMilli()
-		cur.NextAt, cur.Runs, cur.LastFiredAt = next, cur.Runs+1, &ms
+		cur.NextAt, cur.Runs, cur.LastFiredAt, cur.Missed = next, cur.Runs+1, &ms, nil
 	})
+}
+
+// ---- Run now (Deyao, 2026-11-17) ----------------------------------------------------------------------------
+
+// errConflict: Run now refused for now (409): it is being delivered already, or the session would refuse it this soon
+type errConflict struct{ msg string }
+
+func (e *errConflict) Error() string { return e.msg }
+
+// runNowSkipWait: how long a Run now keeps trying while the session is busy with another action (errSkip)
+var runNowSkipWait = 10 * time.Minute
+
+// RunNow: Deyao's Run now on a wakeup or cron (the app's Schedules page): deliver it at once exactly as its scheduled
+// firing would (the session's own signed request, a paused session resumed first, the Inbox for a sensitive one) and
+// count it as that firing: a wakeup is done, a cron's run number goes up and its schedule carries on. A failed session
+// (its start refused) is resumed first. For a run skipped
+// after failed attempts (Fly's org machine limit on the resume: Deyao, 2026-11-17) it is that run, delivered late. The
+// delivery runs in the background (a resume can wait out the machine limit); a failure is DMed and marked missed.
+func (r *Router) RunNow(sid, kind, name string) error {
+	key := sid + "/" + kind + "/" + name
+	var signed *SignedRequest
+	var armedAt int64
+	var run int
+	var label string
+	var err error
+	now := time.Now()
+	r.st.Do(func(d *persisted) {
+		var ss *Session
+		if ss, err = r.liveSession(d, sid); err != nil {
+			return
+		}
+		label = ss.Label
+		if label == "" {
+			label = ss.Title
+		}
+		if label == "" {
+			label = sid
+		}
+		s := d.Schedules[sid]
+		switch kind {
+		case "w":
+			if s == nil || s.Wakeups[name] == nil {
+				err = errNoSchedule
+				return
+			}
+			signed, armedAt = s.Wakeups[name].Signed, s.Wakeups[name].ArmedAt
+		case "c":
+			if s == nil || s.Crons[name] == nil {
+				err = errNoSchedule
+				return
+			}
+			c := s.Crons[name]
+			signed, armedAt, run = c.Signed, c.ArmedAt, c.Runs+1
+			if c.LastFiredAt != nil && now.UnixMilli()-*c.LastFiredAt < c.Every*1000/2 {
+				err = &errConflict{fmt.Sprintf("it last ran at %s, less than half its period ago: the session refuses a repeat that soon (Run now from %s, or wait for its next run at %s)",
+					iso(*c.LastFiredAt), iso(*c.LastFiredAt+c.Every*1000/2), iso(c.NextAt))}
+				return
+			}
+		}
+		if signed == nil {
+			err = &errConflict{"it was not armed by the session's own signed request, so nothing vouches for delivering it"}
+		}
+	})
+	if err != nil {
+		return err
+	}
+	schedRun.forget(key) // a Run now goes past the scheduled attempts' backoff
+	if !schedRun.claim(key, now) {
+		return &errConflict{"it is being delivered right now"}
+	}
+	what := fmt.Sprintf("Wakeup “%s” of session “%s”", name, label)
+	dl := Delivery{Kind: "wakeup", Request: signed}
+	if kind == "c" {
+		dl = Delivery{Kind: "cron", Request: signed, Run: run}
+	}
+	log.Printf("[schedule] %s: Run now", key)
+	go func() {
+		defer schedRun.release(key)
+		deadline := time.Now().Add(runNowSkipWait)
+		var err error
+		for {
+			err = nil
+			// a session whose start failed (e.g. at Fly's machine limit) gets no delivery, scheduled or not
+			// (lessons/92): Deyao's press resumes it first, as the app's Resume would
+			if st, _ := r.sessionState(sid); st == "failed" {
+				if err = runNowResumeHook(r, sid); errors.Is(err, errBusy) {
+					err = errSkip
+				}
+			}
+			if err == nil {
+				err = deliverVouchedHook(r, sid, dl)
+			}
+			if !errors.Is(err, errSkip) || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(scheduleWaitStep)
+		}
+		if err != nil {
+			log.Printf("[schedule] %s: Run now failed: %v", key, err)
+			if kind == "c" {
+				r.st.Do(func(d *persisted) {
+					if s := d.Schedules[sid]; s != nil && s.Crons[name] != nil && s.Crons[name].ArmedAt == armedAt {
+						s.Crons[name].Missed = &Missed{At: time.Now().UnixMilli(), Run: run, Error: trimTo(err.Error(), 300)}
+					}
+				})
+			}
+			r.DM(fmt.Sprintf("Run now: %s could not be delivered: %s", what, trimTo(err.Error(), 300)))
+			return
+		}
+		log.Printf("[schedule] %s: Run now delivered", key)
+		switch kind {
+		case "w":
+			r.st.Do(func(d *persisted) { // compare-and-clear, as fireWakeup
+				if s := d.Schedules[sid]; s != nil && s.Wakeups[name] != nil && s.Wakeups[name].ArmedAt == armedAt {
+					delete(s.Wakeups, name)
+				}
+			})
+		case "c":
+			r.cronFired(sid, name, armedAt, time.Now(), true)
+		}
+	}()
 	return nil
 }
+
+var errNoSchedule = errors.New("no such wakeup or cron")
+
+// runNowResumeHook: a seam for tests (the app's Resume of a failed session)
+var runNowResumeHook = func(r *Router, sid string) error { return r.Resume(sid, false) }
 
 func (r *Router) fireResumePrompt(sid string) error {
 	var text string

@@ -338,3 +338,121 @@ func TestAutopilotVetoDoesNotDeadlock(t *testing.T) {
 		t.Fatal("autopilotTick deadlocked on the scheduler's veto")
 	}
 }
+
+// a cron run that fails every attempt (Fly's org machine limit on the resume) is skipped and marked missed; Run now
+// then delivers that same run, counts it, clears the mark and leaves the next occurrence at least half a period away
+// (Deyao, 2026-11-17)
+func TestCronSkippedIsMissedThenRunNow(t *testing.T) {
+	r := newTestRouter(t)
+	dms := captureDM(t)
+	f := &fakeDelivery{err: errors.New(`Fly POST /machines -> 422: "Your organization has reached its machine limit"`)}
+	f.install(t)
+	addSession(r, "s6", "paused", "", false)
+	r.ArmCron("s6", &Cron{Name: "check", Prompt: "do", Every: 3600, TZ: "UTC", NextAt: time.Now().Add(-time.Minute).UnixMilli(), ArmedAt: 1, Signed: signed("check")})
+	at := time.Now()
+	for i := 0; i < scheduleMaxAttempt; i++ {
+		r.scheduleTick(at)
+		waitIdle(t)
+		at = at.Add(9 * time.Minute)
+	}
+	cs, _ := r.ListCrons("s6")
+	if len(cs) != 1 || cs[0].Missed == nil || cs[0].Missed.Run != 1 || !strings.Contains(cs[0].Missed.Error, "machine limit") || cs[0].Runs != 0 {
+		t.Fatalf("not marked missed: %+v", cs)
+	}
+	if v := cronView(cs[0]); v["missed"] == nil {
+		t.Fatalf("view without missed: %v", v)
+	}
+	if len(dms()) != 1 || !strings.Contains(dms()[0], "Run now") {
+		t.Fatalf("dms %q", dms())
+	}
+
+	f.mu.Lock()
+	f.err = nil
+	f.mu.Unlock()
+	if code, out := appDo(t, r, "POST", "/api/sessions/s6/crons/check/run", ""); code != 202 {
+		t.Fatalf("run now: %d %v", code, out)
+	}
+	waitIdle(t)
+	if got := f.got(); len(got) != 1 || got[0] != "s6: cron check run 1" {
+		t.Fatalf("delivered %q", got)
+	}
+	cs, _ = r.ListCrons("s6")
+	if cs[0].Missed != nil || cs[0].Runs != 1 || cs[0].LastFiredAt == nil || cs[0].NextAt < time.Now().Add(30*time.Minute).UnixMilli() {
+		t.Fatalf("after run now: %+v", cs[0])
+	}
+	// right after, the session would refuse a repeat: refused upfront, nothing delivered
+	if code, out := appDo(t, r, "POST", "/api/sessions/s6/crons/check/run", ""); code != 409 || !strings.Contains(fmt.Sprint(out["error"]), "half its period") {
+		t.Fatalf("too soon: %d %v", code, out)
+	}
+	if code, _ := appDo(t, r, "POST", "/api/sessions/s6/crons/nope/run", ""); code != 404 {
+		t.Fatalf("unknown cron: %d", code)
+	}
+	if len(f.got()) != 1 {
+		t.Fatalf("delivered again: %q", f.got())
+	}
+}
+
+// Run now on a wakeup not yet due: delivered at once and done, as its own firing would be
+func TestRunNowWakeup(t *testing.T) {
+	r := newTestRouter(t)
+	f := &fakeDelivery{}
+	f.install(t)
+	addSession(r, "s7", "started", "m7", false)
+	r.ArmWakeup("s7", &Wakeup{Name: "later", At: time.Now().Add(time.Hour).UnixMilli(), Prompt: "go", ArmedAt: 1, Signed: signed("later")})
+	if code, out := appDo(t, r, "POST", "/api/sessions/s7/wakeups/later/run", ""); code != 202 {
+		t.Fatalf("run now: %d %v", code, out)
+	}
+	waitIdle(t)
+	if got := f.got(); len(got) != 1 || got[0] != "s7: wakeup later" {
+		t.Fatalf("delivered %q", got)
+	}
+	if ws, _ := r.ListWakeups("s7"); len(ws) != 0 {
+		t.Fatalf("left %+v", ws)
+	}
+}
+
+// a Run now that fails is DMed and marks the run missed; the cron's schedule is left as it was
+func TestRunNowFailureMarksMissed(t *testing.T) {
+	r := newTestRouter(t)
+	dms := captureDM(t)
+	f := &fakeDelivery{err: errors.New("the session didn't start")}
+	f.install(t)
+	addSession(r, "s8", "paused", "", false)
+	next := time.Now().Add(2 * time.Hour).UnixMilli()
+	r.ArmCron("s8", &Cron{Name: "d", Prompt: "do", Every: 86400, TZ: "UTC", NextAt: next, ArmedAt: 1, Runs: 3, Signed: signed("d")})
+	if err := r.RunNow("s8", "c", "d"); err != nil {
+		t.Fatal(err)
+	}
+	waitIdle(t)
+	cs, _ := r.ListCrons("s8")
+	if cs[0].Missed == nil || cs[0].Missed.Run != 4 || cs[0].Runs != 3 || cs[0].NextAt != next {
+		t.Fatalf("%+v", cs[0])
+	}
+	if len(dms()) != 1 || !strings.Contains(dms()[0], "Run now") {
+		t.Fatalf("dms %q", dms())
+	}
+}
+
+// a session whose start failed at Fly's machine limit is resumed by Run now, then gets the delivery
+func TestRunNowResumesAFailedSession(t *testing.T) {
+	r := newTestRouter(t)
+	f := &fakeDelivery{}
+	f.install(t)
+	addSession(r, "s9", "failed", "", false)
+	resumed := 0
+	old := runNowResumeHook
+	runNowResumeHook = func(r *Router, sid string) error {
+		resumed++
+		r.st.Do(func(d *persisted) { d.Sessions[sid].State = "started" })
+		return nil
+	}
+	t.Cleanup(func() { runNowResumeHook = old })
+	r.ArmCron("s9", &Cron{Name: "rel", Prompt: "check", Every: 1800, TZ: "UTC", NextAt: time.Now().Add(-time.Hour).UnixMilli(), ArmedAt: 1, Signed: signed("rel")})
+	if err := r.RunNow("s9", "c", "rel"); err != nil {
+		t.Fatal(err)
+	}
+	waitIdle(t)
+	if got := f.got(); resumed != 1 || len(got) != 1 || got[0] != "s9: cron rel run 1" {
+		t.Fatalf("resumed %d, delivered %q", resumed, got)
+	}
+}

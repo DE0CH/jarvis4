@@ -3098,3 +3098,20 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      record in a Read loses nothing (the next Do writes it), so a wrong conversion costs a late write, not a lost
      one. *Not chosen*: one replica (a deploy would stop the router); a version column on every row
      (a deleted row has none to read).
+
+267. **Run now on every wakeup and cron; a skipped cron run is marked missed** (Deyao, 2026-11-17: "Sometimes scheduled
+     wakeup fails because i dont have fly runner quota (limit reached) i should have a button to fire the scheduled run
+     as if it had succeeded"; he picked "every wakeup" over "only on missed runs"). A wakeup on a paused session resumes
+     it first; at Fly's org machine limit that start waits up to 3 h, the firing fails, and after 5 attempts the run
+     was skipped with only a DM. Now the skipped cron run stays on the cron as `missed` (`{at, run, error}`, cleared by
+     the next delivered run) and the DM says so; the Schedules page (web and iPhone) has Run now on each wakeup and cron
+     (`POST /api/sessions/:id/wakeups/:name/run`, `…/crons/:name/run`, 202): the same delivery as the scheduled firing
+     (the session's own signed request, a paused session resumed, the Inbox for a sensitive one), counted as that
+     firing (a wakeup is done; a cron's run number goes up, its schedule carries on). It runs in the background; a
+     failure is DMed and marked missed. The machine refuses a cron run sooner than half its period after the last
+     (machine/deliver.go replayGuard, which keeps a router from replaying a session's signed request at will), so a
+     Run now that soon is refused upfront with 409 and the time it can run, and after a Run now the next occurrence is
+     moved to at least half a period away. *Not chosen*: loosening the machine's half-period guard for a Run now
+     (nothing the machine can check tells Deyao's press from a router replay without a Face ID per press); keeping a
+     failed one-shot wakeup as missed (they are only armed by images from before every wakeup became a cron, and a
+     kept past-due wakeup would hold the session from auto-pause).

@@ -3,7 +3,9 @@
 // the Inbox as a pending message until Deyao delivers it (Face ID) or denies it, unless a per-kind message rule says
 // to deliver it (MessageReviewView). Only the session arms them (scripts/schedule-wakeup.sh, schedule-cron.sh: its own
 // signed request is what vouches for the delivery; the router refuses arming from the app), so this page lists and
-// cancels them (app DECISIONS 76).
+// cancels them (app DECISIONS 76), and Run now delivers one at once as its scheduled firing would, counted as that
+// firing; a cron run skipped after failed attempts (e.g. Fly's machine limit on the resume) shows as missed until one is
+// delivered (Deyao, 2026-11-17).
 import SwiftUI
 
 struct SchedulesView: View {
@@ -29,8 +31,12 @@ struct SchedulesView: View {
             HStack {
               WakeRow(symbol: "alarm", when: w.at.map(Fmt.when) ?? "", name: w.name == "default" ? nil : w.name, prompt: w.prompt)
               Spacer()
-              PendingButton(key: "sch:wakeup:" + w.name, title: "Cancel", role: .destructive) { await cancel("wakeup", w.name) }
-                .buttonStyle(.borderless).accessibilityIdentifier("sch-cancel-w-\(w.name)")
+              VStack(alignment: .trailing, spacing: 8) {
+                PendingButton(key: "sch:run:wakeup:" + w.name, title: "Run now") { await runNow("wakeup", w.name) }
+                  .buttonStyle(.borderless).accessibilityIdentifier("sch-run-w-\(w.name)")
+                PendingButton(key: "sch:wakeup:" + w.name, title: "Cancel", role: .destructive) { await cancel("wakeup", w.name) }
+                  .buttonStyle(.borderless).accessibilityIdentifier("sch-cancel-w-\(w.name)")
+              }
             }
           }
           ForEach(crons) { c in
@@ -38,8 +44,20 @@ struct SchedulesView: View {
               WakeRow(symbol: "repeat", when: Fmt.every(c.everySeconds), name: c.name, prompt: c.prompt, next: c.nextAt.map(Fmt.when),
                           tags: [c.tz.flatMap { $0 == "UTC" ? nil : $0 }, c.runs > 0 ? Fmt.plural(c.runs, "run") : nil].compactMap { $0 })
               Spacer()
-              PendingButton(key: "sch:cron:" + c.name, title: "Cancel", role: .destructive) { await cancel("cron", c.name) }
-                .buttonStyle(.borderless).accessibilityIdentifier("sch-cancel-c-\(c.name)")
+              VStack(alignment: .trailing, spacing: 8) {
+                PendingButton(key: "sch:run:cron:" + c.name, title: "Run now") { await runNow("cron", c.name) }
+                  .buttonStyle(.borderless).accessibilityIdentifier("sch-run-c-\(c.name)")
+                PendingButton(key: "sch:cron:" + c.name, title: "Cancel", role: .destructive) { await cancel("cron", c.name) }
+                  .buttonStyle(.borderless).accessibilityIdentifier("sch-cancel-c-\(c.name)")
+              }
+            }
+            if let run = c.missedRun {
+              VStack(alignment: .leading, spacing: 2) {
+                Label("Missed run \(run)\(c.missedAt.map { ", " + Fmt.when($0) } ?? "")", systemImage: "exclamationmark.circle")
+                  .font(.footnote.weight(.medium)).foregroundStyle(.red)
+                if let e = c.missedError { Text(Fmt.clip(e, 200)).font(.footnote).foregroundStyle(.secondary) }
+              }
+              .accessibilityElement(children: .combine).accessibilityIdentifier("sch-missed-\(c.name)")
             }
           }
           ForEach(watches) { w in
@@ -69,6 +87,22 @@ struct SchedulesView: View {
       watches = try await x["watches"].array.map(Watch.init)
       error = nil
     } catch { self.error = errText(error) }
+  }
+
+  /// the router answers 202 once the delivery has started; it runs in the background (a paused session resumes first)
+  /// and a failure comes as a DM and a missed mark
+  private func runNow(_ what: String, _ n: String) async {
+    await model.exclusive("sch:run:\(what):\(n)") {
+      guard await model.confirm(what == "wakeup" ? "Deliver the wakeup\(n == "default" ? "" : " “\(n)”") now? It is then done." : "Deliver the next run of “\(n)” now? The schedule carries on.", action: "Run now") else { return }
+      model.pend("sch:run:\(what):\(n)", "Starting…")
+      defer { model.pend("sch:run:\(what):\(n)", nil) }
+      let enc = n.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? n
+      do {
+        try await RouterClient.shared.call("POST", "api/sessions/\(sessionId)/\(what == "wakeup" ? "wakeups" : "crons")/\(enc)/run")
+        model.say("Delivering: a paused session resumes first")
+        await load()
+      } catch { model.fail(error) }
+    }
   }
 
   private func cancel(_ what: String, _ n: String) async {

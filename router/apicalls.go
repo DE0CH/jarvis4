@@ -521,6 +521,7 @@ var callRules = map[string]callRule{
 	"GET /api/sessions/{id}/crons":                callBody,
 	"POST /api/sessions/{id}/crons":               callBody,
 	"DELETE /api/sessions/{id}/crons/{name}":      callBody,
+	"POST /api/sessions/{id}/crons/{name}/run":    callBody,
 	"POST /api/sessions/{id}/destroy":             callBody,
 	"POST /api/sessions/{id}/env":                 callBody,
 	"POST /api/sessions/{id}/exec":                callStatus, // another session's command output (its env, its files)
@@ -548,6 +549,7 @@ var callRules = map[string]callRule{
 	"GET /api/sessions/{id}/wakeups":              callBody,
 	"POST /api/sessions/{id}/wakeups":             callBody,
 	"DELETE /api/sessions/{id}/wakeups/{name}":    callBody,
+	"POST /api/sessions/{id}/wakeups/{name}/run":  callBody,
 	"GET /api/sessions/{id}/watches":              callBody,
 	"POST /api/sessions/{id}/watches":             callNo, // only a session's own signed request arms a watch (always 400 here)
 	"DELETE /api/sessions/{id}/watches/{name}":    callBody,

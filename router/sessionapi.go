@@ -44,6 +44,13 @@ func (r *Router) registerSessionAPI(app appRoute, m machineRoute) {
 	app("DELETE /api/sessions/{id}/wakeups/{name}", func(w http.ResponseWriter, req *http.Request) {
 		r.deleteWakeups(w, req.PathValue("id"), req.PathValue("name"), false)
 	})
+	// Run now (Deyao, 2026-11-17): deliver it at once as its scheduled firing would, counted as that firing (schedule.go RunNow)
+	app("POST /api/sessions/{id}/wakeups/{name}/run", func(w http.ResponseWriter, req *http.Request) {
+		r.postRunNow(w, req.PathValue("id"), "w", req.PathValue("name"))
+	})
+	app("POST /api/sessions/{id}/crons/{name}/run", func(w http.ResponseWriter, req *http.Request) {
+		r.postRunNow(w, req.PathValue("id"), "c", req.PathValue("name"))
+	})
 	app("GET /api/sessions/{id}/crons", func(w http.ResponseWriter, req *http.Request) { r.getCrons(w, req.PathValue("id")) })
 	app("POST /api/sessions/{id}/crons", func(w http.ResponseWriter, req *http.Request) { appArmRefused(w, "cron", "scripts/schedule-cron.sh") })
 	app("DELETE /api/sessions/{id}/crons/{name}", func(w http.ResponseWriter, req *http.Request) {
@@ -166,8 +173,10 @@ func scheduleErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.As(err, &b):
 		writeJSON(w, 400, map[string]string{"error": b.msg})
-	case errors.Is(err, errNoSession):
+	case errors.Is(err, errNoSession), errors.Is(err, errNoSchedule):
 		writeJSON(w, 404, map[string]string{"error": err.Error()})
+	case errors.As(err, new(*errConflict)):
+		writeJSON(w, 409, map[string]string{"error": err.Error()})
 	case strings.HasPrefix(err.Error(), "session is "):
 		writeJSON(w, 409, map[string]string{"error": err.Error()})
 	default:
@@ -280,6 +289,19 @@ func (r *Router) postCron(w http.ResponseWriter, sid string, body []byte, signed
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "cron": cronView(c)})
+}
+
+// postRunNow: 202 once the delivery has started in the background (its failure is DMed and marked missed)
+func (r *Router) postRunNow(w http.ResponseWriter, sid, kind, name string) {
+	if !scheduleNameRE.MatchString(name) {
+		writeJSON(w, 400, map[string]string{"error": "bad name"})
+		return
+	}
+	if err := r.RunNow(sid, kind, name); err != nil {
+		scheduleErr(w, err)
+		return
+	}
+	writeJSON(w, 202, map[string]any{"ok": true, "started": true})
 }
 
 func (r *Router) deleteCron(w http.ResponseWriter, sid, name string) {
