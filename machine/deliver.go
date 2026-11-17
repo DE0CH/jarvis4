@@ -143,10 +143,10 @@ func replayGuard(d Delivery, now time.Time, record bool) error {
 		every := int64(24 * 60 * 60)
 		if body, err := base64.StdEncoding.DecodeString(d.Request.Body); err == nil {
 			var b struct {
-				Every int64 `json:"everySeconds"`
+				Every float64 `json:"everySeconds"` // a float: the router takes 1800.0, and an int64 refused it (2026-11-17)
 			}
 			if json.Unmarshal(body, &b) == nil && b.Every > 0 {
-				every = max(b.Every, 15*60)
+				every = max(int64(b.Every), 15*60)
 			}
 		}
 		if d.Run <= last.Run {

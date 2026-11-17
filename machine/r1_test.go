@@ -140,3 +140,24 @@ func TestAWakeupTheHarnessRefusedIsNotBurned(t *testing.T) {
 		t.Fatal("a delivered wakeup passes the check again")
 	}
 }
+
+// 2026-11-17: schedule-wakeup.sh armed every cron with a fractional period ("everySeconds":1800.0, Python's float).
+// Decoding that into an int64 failed, the guard fell back to a day, and every run after the first was refused as
+// "less than half its period ago" (12 h): recurring wakeups ran once and then only failed.
+func TestACronArmedWithAFractionalPeriodRunsAgain(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	k := newKey()
+	now := time.Unix(1791700000, 0)
+	cr := Delivery{Kind: "cron", Run: 1, Request: signedRequest(k, "m1", "POST", "/m/api/sessions/s/crons", []byte(`{"prompt":"p","everySeconds":1800.0}`))}
+	if err := notReplayed(cr, now); err != nil {
+		t.Fatal(err)
+	}
+	cr.Run = 2
+	if err := notReplayed(cr, now.Add(30*time.Minute)); err != nil {
+		t.Fatalf("run 2 of a 30-minute cron, 30 minutes later, was refused: %v", err)
+	}
+	cr.Run = 3
+	if err := notReplayed(cr, now.Add(40*time.Minute)); err == nil {
+		t.Fatal("a 30-minute cron ran 10 minutes after its last run")
+	}
+}
