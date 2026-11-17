@@ -228,8 +228,12 @@ The rule (CLAUDE.md "Write the minimal algorithm"): asking is an ordinary comman
 prints the answer. Everything else follows from that, with no logic of its own:
 
 - `jarvis-request` (Inbox requests: stores, repos, grants, new sessions, batches) already works so (jarvis4 3cc242e7).
-- A question: `ask` (aviary's supervisor CLI, through `/run/supervisor/agent.sock`, like `send-file`) shows the question
-  card in the chat and blocks until the answer, which it prints. aviary's build, so YYC AI's sessions too. Claude
+- A question: `ask` shows a question card in the chat and blocks until the answer, which it prints. The card is a
+  component a tool drives, like a page or an email a tool sends, not part of the agent loop (Deyao, 2026-11-17): the
+  chat box steers the turn; the question card belongs to the command that made it. So it is not the harness's:
+  the command talks to magpie through the sandbox's gateway (`POST` a question, a long poll for its answer), magpie
+  keeps the question and its answer apart from turns, the app shows every open question of the conversation, turn
+  or no turn, and neither the supervisor nor the harness takes part. aviary's build, so YYC AI's sessions too. Claude
   Code's native AskUserQuestion and ExitPlanMode, and Qwen Code's ask_user_question, are turned off (a clean cut).
 - The harness never dismisses a question for the person: no timeout, no parked turn, no "asking" state. A long wait
   goes to the background like any long command; the chat keeps showing the question; the watchdog keeps firing.
