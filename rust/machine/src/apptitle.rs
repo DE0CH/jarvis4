@@ -10,6 +10,16 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 pub const CODE_SESSIONS_URL: &str = "https://api.anthropic.com/v1/code/sessions";
+/// tests point it at their own server
+pub static TEST_CODE_SESSIONS_URL: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+fn code_sessions_url() -> String {
+    TEST_CODE_SESSIONS_URL
+        .read()
+        .ok()
+        .and_then(|u| u.clone())
+        .unwrap_or_else(|| CODE_SESSIONS_URL.to_string())
+}
 const APP_TITLE_TTL: Duration = Duration::from_secs(60);
 
 fn strip_bridge(b: &str) -> String {
@@ -93,7 +103,7 @@ pub fn fetch_code_session(key: &str, tok: &str) -> (CodeSession, u16, Result<()>
         connection_status: String,
         response_shape: Option<CodeSession>,
     }
-    let (st, r) = code_sessions_get::<R>(&format!("{CODE_SESSIONS_URL}/cse_{key}"), tok);
+    let (st, r) = code_sessions_get::<R>(&format!("{}/cse_{key}", code_sessions_url()), tok);
     match r {
         Ok(r) => {
             let s = r.response_shape.unwrap_or(CodeSession {
@@ -120,7 +130,7 @@ pub fn fetch_app_title(key: &str, tok: &str) -> Result<String> {
     struct List {
         data: Vec<CodeSession>,
     }
-    let (_, list) = code_sessions_get::<List>(&format!("{CODE_SESSIONS_URL}?limit=100"), tok);
+    let (_, list) = code_sessions_get::<List>(&format!("{}?limit=100", code_sessions_url()), tok);
     for s in list?.data {
         if strip_bridge(&s.id) == key {
             return Ok(s.title);
@@ -136,6 +146,14 @@ pub struct AppTitler {
 }
 
 impl AppTitler {
+    /// tests: the next current() reads again
+    #[cfg(test)]
+    pub fn expire(&self) {
+        if let Ok(mut g) = self.inner.lock() {
+            g.2 = None;
+        }
+    }
+
     pub fn current(&self) -> String {
         let key = host_bridge();
         if key.is_empty() {

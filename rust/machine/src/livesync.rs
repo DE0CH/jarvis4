@@ -20,7 +20,7 @@ type SendFn = Box<dyn Fn(&str, &[u8]) -> Result<()> + Send + Sync>;
 pub struct LiveSyncer {
     /// file → the modification time last sent (RFC 3339 with nanoseconds, as Go wrote it)
     sent: Mutex<BTreeMap<String, String>>,
-    send: SendFn,
+    send: Mutex<SendFn>,
     /// where sent is kept (None = memory only)
     state: Option<PathBuf>,
 }
@@ -125,8 +125,16 @@ impl LiveSyncer {
     pub fn new(send: SendFn, state: Option<PathBuf>, sent: BTreeMap<String, String>) -> LiveSyncer {
         LiveSyncer {
             sent: Mutex::new(sent),
-            send,
+            send: Mutex::new(send),
             state,
+        }
+    }
+
+    /// tests: another way to send
+    #[cfg(test)]
+    pub fn set_send(&self, f: SendFn) {
+        if let Ok(mut g) = self.send.lock() {
+            *g = f;
         }
     }
 
@@ -177,7 +185,11 @@ impl LiveSyncer {
                 sent.insert(key, tt);
                 continue;
             }
-            if let Err(e) = (self.send)(&base, &body) {
+            let r = match self.send.lock() {
+                Ok(f) => f(&base, &body),
+                Err(_) => Err(anyhow::anyhow!("the sender is gone")),
+            };
+            if let Err(e) = r {
                 logf!("live sync: {base}: {e:#}");
                 continue; // tried again next pass
             }

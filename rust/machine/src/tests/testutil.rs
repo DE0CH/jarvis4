@@ -132,6 +132,10 @@ fn reset_seams() {
         a.store(v, std::sync::atomic::Ordering::SeqCst);
     }
     crate::claudelogin::CREDS_SYNC_ON.store(false, std::sync::atomic::Ordering::SeqCst);
+    crate::boot::BOOT_REPORT_WAIT_MS.store(2000, std::sync::atomic::Ordering::SeqCst);
+    *crate::apptitle::TEST_CODE_SESSIONS_URL.write().unwrap_or_else(|e| e.into_inner()) = None;
+    crate::restore::CHANGES_TIMEOUT_MS.store(60_000, std::sync::atomic::Ordering::SeqCst);
+    *crate::restore::CHANGES_SCRIPT.write().unwrap_or_else(|e| e.into_inner()) = None;
     *crate::claudelogin::TEST_PANE
         .lock()
         .unwrap_or_else(|e| e.into_inner()) = None;

@@ -34,16 +34,15 @@ pub const REPO_CHANGES_SH: &str = concat!(
 
 /// the repo check runs with the session frozen (2026-10-21: a final snapshot went silent right after the freeze, with
 /// this check the only step before it): a git that waits on a stopped process or a slow disk can't hold the snapshot up
-/// past it (seconds; tests shorten it)
-pub static CHANGES_TIMEOUT_SECS: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(60);
+/// past it (ms; tests shorten it)
+pub static CHANGES_TIMEOUT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(60_000);
 /// tests make it hang
 pub static CHANGES_SCRIPT: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
 
 /// Before every snapshot; a failure (or the time limit) only leaves the router without the check. No optional locks and
 /// no fsmonitor: the session's processes are stopped, so nothing may be waited on.
 pub fn write_changes() {
-    let limit = Duration::from_secs(CHANGES_TIMEOUT_SECS.load(Ordering::Relaxed));
+    let limit = Duration::from_millis(CHANGES_TIMEOUT_MS.load(Ordering::Relaxed));
     let script = CHANGES_SCRIPT
         .read()
         .ok()
