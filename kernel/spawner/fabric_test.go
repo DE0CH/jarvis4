@@ -203,6 +203,20 @@ func TestFabricSpawnInitKill(t *testing.T) {
 	if env["JARVIS2_SOURCE"] != string(o["source"].(doc.Object)) || env["JARVIS2_KERNEL_ROOT"] == "" || env["JARVIS2_KERNEL_ROSTER"] == "" || env["JARVIS2_URL"] != "http://10.202.1.1:3128" {
 		t.Fatalf("env %v", env)
 	}
+	// the same spawn again (its answer was lost): the same machine, nothing new at hermit
+	again, err := r.sp.Spawn(r.fabricInput(cidA))
+	if err == nil {
+		t.Fatal("a new source on a live conversation's sandbox was taken")
+	}
+	r.rig.t.Helper()
+	nin := r.fabricInput(cidB)
+	first, err := r.sp.Spawn(nin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, err = r.sp.Spawn(nin); err != nil || again.(map[string]any)["id"] != first.(map[string]any)["id"] {
+		t.Fatalf("a repeated spawn: %v %v", again, err)
+	}
 	// nothing went to Fly
 	if len(r.fly.ms) != 0 || len(r.fly.vols) != 0 {
 		t.Fatal("a fabric spawn reached Fly")
@@ -232,9 +246,6 @@ func TestFabricSpawnInitKill(t *testing.T) {
 	// the conversation's sandbox is this machine: a second spawn on it is refused, another conversation's is not
 	if _, err := r.sp.Spawn(r.fabricInput(cidA)); reason(err) != ReasonFabricBusy {
 		t.Fatalf("a second machine on the session's files: %v", err)
-	}
-	if _, err := r.sp.Spawn(r.fabricInput(cidB)); err != nil {
-		t.Fatal(err)
 	}
 	// the kill: hermit's forced release of this sandbox; not destroyed until hermit says gone
 	if _, err := r.sp.Kill(id, nil); reason(err) != ReasonNotDestroyed {

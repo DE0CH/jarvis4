@@ -33,10 +33,18 @@ import (
 	"github.com/DE0CH/jarvis4/kernel/spawner"
 )
 
-// sessionRunners: what New session offers
-var sessionRunners = []struct{ ID, Label string }{{"aws", "AWS"}, {"fly", "Fly"}}
+// sessionRunners: what New session offers (the fabric only once the router has a fabric hermit: fabricrunner.go)
+func sessionRunners() []struct{ ID, Label string } {
+	out := []struct{ ID, Label string }{{"aws", "AWS"}, {"fly", "Fly"}}
+	if fabricEnabled() {
+		out = append(out, struct{ ID, Label string }{"fabric", "Fabric (gVisor)"})
+	}
+	return out
+}
 
-func validRunner(id string) bool { return id == "aws" || id == "fly" }
+func validRunner(id string) bool {
+	return id == "aws" || id == "fly" || (id == "fabric" && fabricEnabled())
+}
 
 // defaultRunner: DEFAULT_RUNNER, else fly
 func defaultRunner() string {
@@ -60,6 +68,9 @@ var awsRegionOf = map[string]string{"lhr": "eu-west-2", "sin": "ap-southeast-1",
 // spawnRegion: the region the spawner gets for the session's next machine, in its runner's terms
 func (r *Router) spawnRegion(s *Session) string {
 	reg := r.regionOf(s)
+	if r.runnerOf(s) == "fabric" {
+		return fabricRegion
+	}
 	if r.runnerOf(s) == "aws" {
 		if a := awsRegionOf[reg]; a != "" {
 			return a

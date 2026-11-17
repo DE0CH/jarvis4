@@ -146,6 +146,14 @@ func main() {
 			log.Fatal(err)
 		}
 	}()
+	if a := os.Getenv("FABRIC_MACHINE_ADDR"); a != "" && fabricEnabled() { // fabricrunner.go: the fabric machines' listener
+		fSrv := &http.Server{Addr: a, Handler: r.FabricMachineHandler(&hermitKeys{get: fetchHermitKeys})}
+		go func() {
+			if err := fSrv.ListenAndServe(); err != http.ErrServerClosed {
+				log.Fatal(err)
+			}
+		}()
+	}
 	log.Printf("router %s on %s and %s (core %s)", routerID, addr, maddr, coreClient.URL())
 	// SIGTERM (a rollout, a node drain): this replica leaves the Service (readyz 503), hands the scheduler's lease on,
 	// lets its running jobs end (up to JOB_GRACE_SECONDS, under the pod's terminationGracePeriodSeconds: a job still

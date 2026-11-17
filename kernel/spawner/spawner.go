@@ -474,11 +474,16 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 		m.Conversation = in.Fabric.Conversation
 	}
 	sp.mu.Lock()
-	// hermit answers a conversation's sandbox that is already there: a machine the spawner made before, from another
-	// source. It is not this source's, and one session's files never get a second machine.
+	// hermit answers a conversation's sandbox that is already there: a machine the spawner made before. From this
+	// source it is this spawn's machine (an earlier spawn whose answer was lost: the router asks again, as it finds a
+	// Fly or AWS machine by its source); from another source it is not, and one session's files never get a second
+	// machine.
 	if old := sp.machines[id]; old != nil {
 		sp.mu.Unlock()
-		return nil, serve.FailBecause(409, ReasonFabricBusy, "the conversation's sandbox %s is the machine made from %s", id, old.Source)
+		if old.Source != c.Succ || old.Killed {
+			return nil, serve.FailBecause(409, ReasonFabricBusy, "the conversation's sandbox %s is the machine made from %s", id, old.Source)
+		}
+		return map[string]any{"kind": "created", "id": id, "source": c.Succ, "volume": "", "env": env}, nil
 	}
 	sp.machines[id] = m
 	err = sp.save()

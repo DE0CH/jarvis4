@@ -341,7 +341,7 @@ func (r *Router) buildHandlers() {
 			regions = append(regions, map[string]string{"id": g.ID, "label": g.Label})
 		}
 		runners := []map[string]string{}
-		for _, g := range sessionRunners {
+		for _, g := range sessionRunners() {
 			runners = append(runners, map[string]string{"id": g.ID, "label": g.Label})
 		}
 		writeJSON(w, 200, map[string]any{"regions": regions, "default": r.cfg.Region, "runners": runners, "defaultRunner": defaultRunner()})

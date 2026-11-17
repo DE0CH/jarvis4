@@ -211,21 +211,38 @@ func (r *Router) kernelSpawn(sid string) {
 			return
 		}
 	}
-	id, vol := r.kernelAdopt(op, l.Source)
+	var fabric *FabricLine
+	if runner == "fabric" {
+		if fabric, err = r.fabricLine(sid); err != nil {
+			fail("start: " + err.Error())
+			return
+		}
+	}
+	id, vol := "", ""
+	if fabric == nil { // a fabric spawn asked again answers its machine (the spawner): nothing to look for
+		id, vol = r.kernelAdopt(op, l.Source)
+	}
 	for try := 1; id == ""; try++ {
 		in := map[string]any{"cert": l.SourceCert, "notarized": l.SourceNz, "notarizer": nzID, "region": r.spawnRegion(&s), "size": size, "diskGb": gb}
 		if wg != nil { // only an AWS spawn names its runner: a spawner from before the AWS runner refuses fields it doesn't know
 			in["runner"], in["wireguard"] = runner, wg
 		}
+		if fabric != nil {
+			in["runner"], in["fabric"] = runner, map[string]string{"conversation": fabric.Conversation}
+		}
 		op.note("", "asked the kernel's spawner to start a machine from "+string(l.Source)+" ("+size+", "+runner+" "+r.spawnRegion(&s)+")")
 		d, err := r.kernel.Doc("spawner", "/spawn", in)
 		if err == nil {
 			var created struct {
-				ID     string `json:"id"`
-				Volume string `json:"volume"`
+				ID     string            `json:"id"`
+				Volume string            `json:"volume"`
+				Env    map[string]string `json:"env"`
 			}
 			json.Unmarshal([]byte(d.Payload), &created)
 			id, vol = created.ID, created.Volume
+			if fabric != nil {
+				r.setFabricMachine(sid, created.ID, created.Env)
+			}
 			break
 		}
 		var ke *KernelError
@@ -824,8 +841,11 @@ func kernelObject(s *Session, machine, fallback string) doc.Object {
 	if s != nil && validRunner(s.Runner) {
 		runner = s.Runner
 	}
-	if runner == "aws" {
+	switch runner {
+	case "aws":
 		return doc.Object("aws-" + machine)
+	case "fabric":
+		return doc.Object("fabric-" + machine)
 	}
 	return doc.Object("fly-" + machine)
 }
