@@ -11,3 +11,4 @@ pub mod misc;
 pub mod task;
 pub mod output;
 pub mod secrets;
+pub mod deploykeys;
