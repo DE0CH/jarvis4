@@ -4,8 +4,8 @@
 #
 #   Claude Code    the agent: the Claude Code of DE0CH/aviary's sandbox image, driven by that image's supervisor, in
 #                  that image's root (the same image YYC AI's sandboxes run: aviary-sandbox), in the session's
-#                  workspace with its CLAUDE.md, skills, settings and hooks (the descriptor's claude.projectSettings). Model = SESSION_MODEL ("aviary/<model id>": a Claude model, or
-#                  an OpenRouter one such as z-ai/glm-5.3, which needs OPENROUTER_API from the store `openrouter`).
+#                  workspace with its CLAUDE.md, skills, settings and hooks (the descriptor's claude.projectSettings). The conversation starts on SESSION_MODEL ("aviary/<model id>": a Claude model, or
+#                  an OpenRouter one such as z-ai/glm-5.3, which needs OPENROUTER_API from the store `openrouter`); the chat's menu changes it from then on.
 #   supervisor     supervisor-keeper as PID 1 of its own PID + mount namespace (aviary-sandbox, as root): ~/.claude is
 #                  magpie's (FUSE), so the conversation lives in magpie and a resume picks it up from there.
 #   aviary-gateway the machine's half of the sandbox gateway on 127.0.0.1:3128: boots the sandbox with hermit-jarvis
