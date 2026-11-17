@@ -6,3 +6,4 @@ pub mod testutil;
 pub mod vouch;
 pub mod grants;
 pub mod outcomes;
+pub mod watchdogs;

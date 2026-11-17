@@ -35,7 +35,12 @@ const RECHECK_AFTER: Duration = Duration::from_secs(15);
 const RC_DROP_WAIT: Duration = Duration::from_secs(90);
 /// for the /remote-control menu (a host in a turn shows it after the turn)
 const RC_MENU_WAIT: Duration = Duration::from_secs(180);
-pub const RC_UP_WAIT: Duration = Duration::from_secs(90);
+/// how long Remote Control has to come up after Enable (ms; tests shorten it)
+pub static RC_UP_WAIT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(90_000);
+
+pub fn rc_up_wait() -> Duration {
+    Duration::from_millis(RC_UP_WAIT_MS.load(Ordering::Relaxed))
+}
 const PROFILE_TRIES: u32 = 5;
 const OAUTH_PROFILE_URL: &str = "https://api.anthropic.com/api/oauth/profile";
 /// Claude Code's notice when it stops Remote Control for it
@@ -554,8 +559,18 @@ pub fn profile_of(token: &str) -> Result<(String, String)> {
     Ok((uuid.into(), email.into()))
 }
 
+type PaneFn = std::sync::Arc<dyn Fn() -> String + Send + Sync>;
+type KeysFn = std::sync::Arc<dyn Fn(&[&str]) -> Result<()> + Send + Sync>;
+
+/// tests stand in for tmux here
+pub static TEST_PANE: Mutex<Option<PaneFn>> = Mutex::new(None);
+pub static TEST_KEYS: Mutex<Option<KeysFn>> = Mutex::new(None);
+
 /// tmux's pane of the Claude host
 pub fn pane_text() -> String {
+    if let Some(f) = TEST_PANE.lock().ok().and_then(|g| g.clone()) {
+        return f();
+    }
     session_command("tmux", &["capture-pane", "-p", "-t", "claude"])
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
@@ -564,6 +579,9 @@ pub fn pane_text() -> String {
 
 /// keys into the Claude host's pane
 pub fn send_keys(args: &[&str]) -> Result<()> {
+    if let Some(f) = TEST_KEYS.lock().ok().and_then(|g| g.clone()) {
+        return f(args);
+    }
     let mut a = vec!["send-keys", "-t", "claude"];
     a.extend_from_slice(args);
     let st = session_command("tmux", &a).status()?;
@@ -607,7 +625,7 @@ pub fn enable_remote_control(old_bridge: &str) {
         return;
     }
     let _ = send_keys(&["Enter"]); // its first choice, selected: Enable Remote Control
-    if wait_until(RC_UP_WAIT, || {
+    if wait_until(rc_up_wait(), || {
         let b = live_bridge();
         !b.is_empty() && b != old_bridge
     }) {

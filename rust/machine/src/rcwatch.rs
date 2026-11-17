@@ -7,7 +7,7 @@
 //! again after 10 minutes. The router takes no part.
 
 use crate::claudelogin::{
-    RC_ENABLE_TEXT, RC_TYPING, RC_UP_WAIT, live_bridge, pane_text, send_keys, wait_until,
+    RC_ENABLE_TEXT, RC_TYPING, live_bridge, pane_text, rc_up_wait, send_keys, wait_until,
 };
 use crate::{logf, paths, util};
 use std::time::{Duration, Instant};
@@ -15,10 +15,10 @@ use std::time::{Duration, Instant};
 const RC_EVERY: Duration = Duration::from_secs(60);
 pub const RC_DOWN_AFTER: Duration = Duration::from_secs(180);
 pub const RC_RETRY_WAIT: Duration = Duration::from_secs(600);
-/// for the menu, typed between turns
-const RC_STEP_WAIT: Duration = Duration::from_secs(30);
+/// for the menu, typed between turns (ms; tests shorten it)
+pub static RC_STEP_WAIT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(30_000);
 /// the /remote-control menu of a host that has Remote Control on
-const RC_DISCONNECT_TEXT: &str = "Disconnect this session";
+pub const RC_DISCONNECT_TEXT: &str = "Disconnect this session";
 
 /// one look at the host
 #[derive(Debug, Clone, Default)]
@@ -154,7 +154,7 @@ pub fn rc_choose(want: &str, done: impl Fn() -> bool) -> bool {
             let _ = send_keys(&["Escape"]);
         }
     };
-    if !wait_until(RC_STEP_WAIT, || {
+    if !wait_until(Duration::from_millis(RC_STEP_WAIT_MS.load(std::sync::atomic::Ordering::Relaxed)), || {
         done() || open_menu(&pane_text()).contains(want)
     }) {
         logf!(
@@ -172,7 +172,7 @@ pub fn rc_choose(want: &str, done: impl Fn() -> bool) -> bool {
             None => break,
             Some(0) => {
                 let _ = send_keys(&["Enter"]);
-                return wait_until(RC_UP_WAIT, &done);
+                return wait_until(rc_up_wait(), &done);
             }
             Some(d) if d < 0 => {
                 let _ = send_keys(&["Up"]);

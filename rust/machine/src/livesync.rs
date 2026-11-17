@@ -14,6 +14,7 @@ use std::time::{Duration, SystemTime};
 /// the router refuses more
 const LIVE_SYNC_MAX_BYTES: u64 = 256 << 20;
 
+pub type SendFnPub = SendFn;
 type SendFn = Box<dyn Fn(&str, &[u8]) -> Result<()> + Send + Sync>;
 
 pub struct LiveSyncer {

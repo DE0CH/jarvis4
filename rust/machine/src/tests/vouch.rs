@@ -8,7 +8,7 @@ use crate::deliver::*;
 use crate::vouch::*;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
 pub fn env_map(env: &[String]) -> HashMap<String, String> {
