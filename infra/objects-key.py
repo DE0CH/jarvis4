@@ -9,6 +9,11 @@ HETZNER_USER,HETZNER_PASSWORD,HETZNER_S3_ENDPOINT,HETZNER_S3_REGION,HETZNER_S3_A
 The admin key HETZNER_S3_* does the bucket policies and the cleanup. The new keys live in FILE
 (~/.jarvis/jarvis4-objects.env, mode 600: ACCESS_KEY=… / SECRET_KEY=…) until `install`; then it is shredded.
 
+OBJECTS_KEY=fabric picks the fabric's credential instead (docs/PLAN-fabric.md): "jarvis4-fabric" for the bucket
+jarvis4-fabric-6fdff6, JuiceFS's data, its keys FABRIC_JFS_ACCESS_KEY / _SECRET_KEY in the infra store, and no
+`install` (the fabric hermit's Secret takes it: infra/router-secrets.py --part fabric). Every key's Deny statements
+stay on each bucket, so `policies` for one key keeps the other's.
+
 A Hetzner S3 credential can do everything in the project unless a bucket policy denies it, so the key is fenced in by
 statements of its own: every bucket but jarvis4-snapshots-de0ch gets Sid NoJarvis4ObjectsKey, a Deny of s3:* for it
 (a bucket with no policy gets one; a new bucket needs `policies` run again). On its own bucket it may do everything.
@@ -26,13 +31,18 @@ statements of its own: every bucket but jarvis4-snapshots-de0ch gets Sid NoJarvi
 import json, os, re, secrets, subprocess, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FILE = os.path.expanduser("~/.jarvis/jarvis4-objects.env")
-OLD = os.path.expanduser("~/.jarvis/jarvis4-objects.old")
+KEYS = {  # OBJECTS_KEY → (credential name, its bucket, its Deny statements' Sid, its store keys' prefix, what holds it)
+    "objects": ("jarvis4-objects", "jarvis4-snapshots-de0ch", "NoJarvis4ObjectsKey", "JARVIS4_OBJECTS",
+                "the router has it as Secret router-secrets-objects"),
+    "fabric": ("jarvis4-fabric", "jarvis4-fabric-6fdff6", "NoJarvis4FabricKey", "FABRIC_JFS",
+               "the fabric's JuiceFS volume holds it (Secret hermit in jarvis4-fabric; docs/PLAN-fabric.md)"),
+}
+WHICH = os.environ.get("OBJECTS_KEY", "objects")
+NAME, B, SID_OTHER, STORE_PREFIX, HOLDER = KEYS[WHICH]
+FILE = os.path.expanduser(f"~/.jarvis/{NAME}.env")
+OLD = os.path.expanduser(f"~/.jarvis/{NAME}.old")
 CDP = os.environ.get("CDP", "http://127.0.0.1:9333")
 URL = "https://console.hetzner.com/projects/2827255/security/s3-credentials"
-NAME = "jarvis4-objects"
-B = "jarvis4-snapshots-de0ch"
-SID_OTHER = "NoJarvis4ObjectsKey"
 
 
 def client(ak, sk):
@@ -48,6 +58,10 @@ def admin():
 
 
 def newkey():
+    """the key in FILE (a fresh one), else the stored one in the env (STORE_PREFIX_ACCESS_KEY / _SECRET_KEY): `policies`
+    with the stored key adds its Deny on buckets made since"""
+    if not os.path.exists(FILE) and os.environ.get(STORE_PREFIX + "_ACCESS_KEY"):
+        return os.environ[STORE_PREFIX + "_ACCESS_KEY"], os.environ.get(STORE_PREFIX + "_SECRET_KEY", "")
     v = dict(l.strip().split("=", 1) for l in open(FILE) if "=" in l)
     return v["ACCESS_KEY"], v["SECRET_KEY"]
 
@@ -225,22 +239,24 @@ def delete_old():
 def store():
     ce = os.environ.get("CLAUDE_ENV", os.path.expanduser("~/workspace/claude-env"))
     ak, sk = newkey()
-    for k, v in (("JARVIS4_OBJECTS_ACCESS_KEY", ak), ("JARVIS4_OBJECTS_SECRET_KEY", sk)):
+    for k, v in ((STORE_PREFIX + "_ACCESS_KEY", ak), (STORE_PREFIX + "_SECRET_KEY", sk)):
         p = os.path.join(os.path.dirname(FILE), k)
         with os.fdopen(os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
             f.write(v)
         try:
-            why = ("Jarvis 4 router's Hetzner S3 " + ("access key" if "ACCESS" in k else "secret key") +
-                   " (credential jarvis4-objects): bucket jarvis4-snapshots-de0ch only, denied on every other bucket by"
-                   " bucket policies (jarvis4 infra/objects-key.py); the router has it as Secret router-secrets-objects")
+            why = (f"Hetzner S3 " + ("access key" if "ACCESS" in k else "secret key") +
+                   f" (credential {NAME}): bucket {B} only, denied on every other bucket by"
+                   f" bucket policies (jarvis4 infra/objects-key.py); {HOLDER}")
             subprocess.run([sys.executable, os.path.join(ce, "scripts/store-put.py"), "infra", f"{k}=file:{p}", "--explain",
                             f"{k}={why}"], check=True, cwd=ce)
         finally:
             subprocess.run(["shred", "-u", p], check=True)
-    print("ok: JARVIS4_OBJECTS_ACCESS_KEY / _SECRET_KEY in the infra store")
+    print(f"ok: {STORE_PREFIX}_ACCESS_KEY / _SECRET_KEY in the infra store")
 
 
 def install():
+    if WHICH != "objects":
+        raise SystemExit(f"{NAME} has no install: {HOLDER}")
     ak, sk = newkey()
     env = dict(os.environ, OBJECTS_ACCESS_KEY=ak, OBJECTS_SECRET_KEY=sk)
     subprocess.run([sys.executable, os.path.join(ROOT, "infra/router-secrets.py"), "--box", "cluster",
