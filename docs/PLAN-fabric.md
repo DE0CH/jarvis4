@@ -14,7 +14,8 @@ turn them on:
 | aviary: spec `mounts`, `sandbox.mounts`, `directEgress`, live console tail | pushed (DE0CH/aviary d417d225) |
 | kernel/spawner: the fabric runner (`fabric.go`), objects `fabric-x<32 hex>` | pushed, tests pass; ships with a kernel release (Deyao's OK) |
 | machine: `JARVIS2_RUNNER=fabric` (object, keys line, records-only snapshot) | pushed, tests pass |
-| router: runner `fabric`, the session's conversation, the env endpoint, workspace delete on Destroy | to do |
+| router: runner `fabric` (offered with `FABRIC_HERMIT_URL`), the session's conversation, the spawn, `GET /fabric/env` | pushed, tests pass |
+| router: the conversation's files deleted at hermit on Destroy (`DELETE /v1/workspaces/{cid}`) | to do |
 | the source image: the phone signs a source's image after checking CI's signature, so `jarvis4-session-fabric` needs CI's signature and the app's acceptance of the repo | to do |
 | image `jarvis4-session-fabric` and `aviary-sandbox`'s bind mode | to do |
 | hermit-jarvis: the fabric control-token hash, activity forwarding | to do |
