@@ -7,7 +7,7 @@ name: images
 on:
   push:
     branches: [main]
-    paths: [kernel/**, router/**, machine/**, session-image/**, aviary/**, policy/**, tasks/**, app/**, infra/setup.py, infra/setup_trust_test.py, infra/setup_write_test.py, infra/setup_roster_test.py, infra/kernel-pin.py, infra/kernel_pin_test.py, ios/interop/rostervec/**, infra/image-unpacked-size.py, .github/workflows/images.yml]
+    paths: [kernel/**, router/**, machine/**, rust/**, session-image/**, aviary/**, policy/**, tasks/**, app/**, infra/setup.py, infra/setup_trust_test.py, infra/setup_write_test.py, infra/setup_roster_test.py, infra/kernel-pin.py, infra/kernel_pin_test.py, ios/interop/rostervec/**, infra/image-unpacked-size.py, .github/workflows/images.yml]
   workflow_dispatch:
     inputs:
       base:
@@ -38,6 +38,8 @@ jobs:
       - run: cd kernel && go vet ./... && go test ./... && test -z "$(gofmt -l .)"
       - run: cd router && go vet ./... && go test ./...
       - run: cd machine && go vet ./... && go test ./...
+      # Jarvis 4 in Rust (rust/): each crate tested before it replaces its Go part; rust/sig against kernel/sig's vectors
+      - run: cd rust && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
       # the aviary sandbox's home carries the volume's ~/workspace and ~/artifacts (a mount namespace of its own)
       - run: sudo bash session-image/base/aviary-sandbox_test.sh
       # every shell script parses: one that does not ends its harness at every start

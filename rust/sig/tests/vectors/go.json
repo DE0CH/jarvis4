@@ -1,0 +1,33 @@
+{
+  "signingKey": "BL/pZKYfAghmXA9SY9f8dN4BKRAkhsm2hvxu40oW4IVJWQ5KggjNFmKqc7eRyNFtE6RTiuWTFcb8KgCN9+DlTpw=",
+  "payload": "{\"kind\":\"vector\",\"n\":1}",
+  "sigs": [
+    "MEUCICk0sMVMhY5tSa8QBYZEQxOcDnwD4EyrY5Y/0uSImjq/AiEAq0vwMy7dt2cxRE90Q/odU70j55V7WKEK3BCHrdlYIsM=",
+    "MEYCIQDDjZ5MfbgV0B75vULMvwM9tY4wedNRIxhN87mEGMdXLQIhAJ4M/jWfVrveAVER9Dy/bqpfNlmTyv6Ktnz8fk7EjmGg",
+    "MEYCIQDG5By8vBYvSD0Zcy4fcNwLBSG7Uv/gN625gwjmxAJ1VgIhAKdafXyk1+5MQzZ6q6Ku1eWurLFIwEfcGvnp6+RjpgEi",
+    "MEQCIDn8iYRMpODsrgQAebWUJebljyPRqQ7EN1oI/QtIjLkSAiAKHGCwvXSrx+doDSUdIbwzPKo6BxJUkb6b4QGIyf8z0w==",
+    "MEYCIQCASq/Ha1xJ62d/rFyOOYtp3h2tb+Tzc/5g4IaNebEyiwIhAPUEXoSv3ZXczFmHu7Q+MWyBaTyfF63/TTb2rCJ0nb8x",
+    "MEUCIEwOUG/IaLEmzv0NTSfRAXfYl0zIxZJtRUW+vtiAsuINAiEAv6XQ+g8bRI2NjqyWZjWMvvtUF+0iynXTbL4Fk/6JDq4=",
+    "MEUCIQCH9UN04MjfDRxyiXZ6Z7K6kk0QutGwpPDTeUhGmpZmQgIgbN6dGwBu6/6tSAVkxqd5OvoApV26Yjkg+SOz68z5Kcs=",
+    "MEUCIDaKb6fQd19s5aP+V309nscjqLMoNKP0r8fuJaKXJLisAiEAyPOHOAEEXQdpWmAOfNq0B8UvP2W927psniVjjrIkxCY=",
+    "MEUCIQCnZiPLZhLsdAyyFVDQgjGeCsGuuCKbe7SXWLzFBI0NCQIgUs/bOgKLTBgnyNZu+1uHOHWgLs2GpLOj5sNvWod2erw=",
+    "MEUCIQDA2/aD9xPQB7WeumIYSw1ppNDB6S6z/f0LJYeW7Wy9XwIgItJQKurm+5Y7eF/2EiII0QD0HXmpgDqE0e7DERN5bAQ=",
+    "MEUCIGoaeMNBfwXAC0QTvAE6RRXKCnaN7gd5ljzsxyr/sy7QAiEAiwVfF8J0C2CkbTPzrM/2iS0w9xOfrXZIpSjpqgK3jW4=",
+    "MEUCIED2uXM74lBOX+DD3uMO0wWTkq0eG3AMt6U0D+yfOS9jAiEAwe3ufGYKazaKKXueQNct+Gkl7rdu1lY/yMpUSmguPsk=",
+    "MEUCIF826aM5ciPzZjW360dfcyRzOCMQXJRw17dinhAMa2/wAiEA4NYClD+1kM6qNfKcgtFG9/1JMxDBIVoenMfs2OdEw28=",
+    "MEUCIFf1qCQ1AKBygLC5pC0n0ZYsCTexCQQAqP1XhzperYcJAiEA7oPWORZV7RhUI8Pg5dFrVvXD1zJP52cIlDajdQvecJM=",
+    "MEUCIQCUZlAVRroYtZ7KhIb5vEK/uSjTg0L7PWFUF8ePuIlGEwIgeoY9GnyhlAIxakx/dPvex2nedsKYt6+tBSbwEOIAJmU=",
+    "MEUCIGqGB39eIM0JZqSpfIWSMFk5a5GFtgRd4ywh+Z+uxioAAiEAmaBvmHi+1bRrxU5SRD0c+jyyBcV8LJcn3JOuh/R+0CE="
+  ],
+  "doc": {
+    "payload": "{\"a\":1,\"b\":\"two\"}",
+    "sig": "MEUCIG0xahvZxQDTBPNseCPzLPYLnW45BLwc00aXD5fl802pAiEAsG0bXoHEa+3nEjlwHm/Xx1x8cEMg0K1L3PgX31NdHhg="
+  },
+  "recipientScalar": "c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721",
+  "info": "jarvis4 rust vectors",
+  "plain": "the plain text",
+  "sealed": {
+    "e": "BIc+KNJbkGS5gAHAcCd+5330wd2ZRRUzdHBaYQyt7AhnzcCN7GEydC7FNUrFOpdJ/h7wo1hmu7KplcU4aFdKFgg=",
+    "data": "12ij7AxBagRNxBpvZm/ftIcm7+w9KyFmwaxAC25+0PuelRt4dMrSsJVi"
+  }
+}

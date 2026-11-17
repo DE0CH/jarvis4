@@ -1,0 +1,22 @@
+# Jarvis 4 in Rust (Deyao, 2026-11-17: rewrite all of it from Go into Rust, part by part, with the same wire formats).
+# Each crate replaces its Go part in one cut once it passes that part's tests and the e2e replica.
+[workspace]
+resolver = "3"
+members = ["sig"]
+
+[workspace.package]
+edition = "2024"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
