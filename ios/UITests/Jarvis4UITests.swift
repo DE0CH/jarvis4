@@ -325,11 +325,16 @@ final class Jarvis4UITests: JarvisUITestCase {
     sleep(2)
     shot("session-created")
     // a row's swipes offer neither Destroy nor Pause (they went off by mistake); both live on the session's page
-    row.swipeLeft()
-    XCTAssertFalse(app.buttons["Destroy"].waitForExistence(timeout: 3), "[\(tag)] no swipe to Destroy")
-    row.swipeRight()
-    XCTAssertFalse(app.buttons["Pause"].waitForExistence(timeout: 3), "[\(tag)] no swipe to Pause")
-    row.tap()
+    // (a swipe on a row with no actions can read as a tap and open the session's page: back to the list then)
+    let srow = el("srow-\(sid)")
+    for (left, action) in [(true, "Destroy"), (false, "Pause")] {
+      guard wait(srow, 20, "the row before the swipe") else { break }
+      if left { srow.swipeLeft() } else { srow.swipeRight() }
+      if el("grants-\(sid)").waitForExistence(timeout: 2) { back(); continue }
+      XCTAssertFalse(app.buttons[action].waitForExistence(timeout: 3), "[\(tag)] no swipe to \(action)")
+    }
+    guard wait(srow, 20, "the row after the swipes") else { return }
+    srow.tap()
     guard arrives(el("grants-\(sid)"), 20, "the session's page") else { return }
     shot("session-detail")
 
