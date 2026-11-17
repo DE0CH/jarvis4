@@ -778,6 +778,7 @@ session and ends with it.
 | `DELETE …/crons/:name` | `{ok}` |
 | `POST …/wakeups/:name/run`, `POST …/crons/:name/run` (app only) | Run now (DECISIONS 267): 202 `{ok, started}` once the delivery has started in the background, exactly as the scheduled firing (a paused session resumed first), counted as that firing (a wakeup is done; a cron's `runs` goes up, its next occurrence at least half a period away). 404 unknown; 409 while it is being delivered, or for a cron that ran less than half its period ago (the machine refuses a repeat that soon). A failure is DMed and marks the cron `missed`. |
 | `POST …/notify-idle` | `{enabled}` → `{ok, notifyIdle: "on"|"off"}` (kept for the idle DMs) |
+| `PUT /api/sessions/:id/chat-schedule` | hermit-jarvis only in practice: `{nextAt: RFC 3339 or null}` → `{ok}`. An aviary session's wakeups are magpie's schedules (Deyao, 2026-11-17; `ChatSchedule`): magpie fires them and hermit-jarvis resumes the session; the router never fires one, but counts it as armed (a paused session keeps its runners, the session's retire answers 409 `pending`, auto-pause leaves it running within 10 min of it) and shows `chatScheduleIso` in the session's view. 400 for a session that is not aviary. |
 
 Delivery failures back off and, after 5 attempts, drop a wakeup (a cron skips that occurrence and marks it
 `missed: {at, atIso, run, error}` in its view until a later run is delivered) with a DM. A message

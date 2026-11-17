@@ -456,3 +456,62 @@ func TestRunNowResumesAFailedSession(t *testing.T) {
 		t.Fatalf("resumed %d, delivered %q", resumed, got)
 	}
 }
+
+// An aviary session's wakeups are magpie's schedules (Deyao, 2026-11-17): hermit-jarvis reports the next one, and the
+// router counts it as armed (a paused session keeps its runners, its card shows it) without ever firing it.
+func TestChatScheduleCountsAsArmed(t *testing.T) {
+	r := newTestRouter(t)
+	addSession(r, "s1", "paused", "", false)
+	addSession(r, "s2", "running", "", false)
+	r.st.Do(func(d *persisted) { d.Sessions["s1"].Harness = "aviary" })
+	now := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
+	at := now.Add(5 * time.Hour)
+	wakes := func(sid string) (w bool) { r.st.Do(func(d *persisted) { w = willWake(d, sid) }); return }
+	if wakes("s1") {
+		t.Fatal("nothing armed yet")
+	}
+	if err := r.SetChatSchedule("s1", &at, now); err != nil {
+		t.Fatal(err)
+	}
+	if !wakes("s1") {
+		t.Fatal("a chat schedule is an armed wakeup")
+	}
+	// the session's own retire waits for it, and auto-pause leaves the session running when it is due soon
+	if p := r.PendingSchedule("s1"); len(p) != 1 {
+		t.Fatalf("pending: %v", p)
+	}
+	if r.ScheduleDueWithin("s1", time.Hour) {
+		t.Fatal("due in 5 h, not within 1 h")
+	}
+	soon := time.Now().Add(5 * time.Minute)
+	if err := r.SetChatSchedule("s1", &soon, now); err != nil || !r.ScheduleDueWithin("s1", 10*time.Minute) {
+		t.Fatalf("due in 5 min: %v", err)
+	}
+	if err := r.SetChatSchedule("s1", &at, now); err != nil {
+		t.Fatal(err)
+	}
+	v := map[string]any{}
+	r.st.Do(func(d *persisted) { scheduleView(d, "s1", v) })
+	if v["chatScheduleIso"] != iso(at.UnixMilli()) {
+		t.Fatalf("view: %v", v)
+	}
+	// none armed any more: forgotten, and the schedule entry with it
+	if err := r.SetChatSchedule("s1", nil, now); err != nil {
+		t.Fatal(err)
+	}
+	if wakes("s1") {
+		t.Fatal("cleared")
+	}
+	r.st.Do(func(d *persisted) {
+		if d.Schedules["s1"] != nil {
+			t.Fatal("an empty schedule is dropped")
+		}
+	})
+	// only an aviary session has them; an unknown session is 404's error
+	if err := r.SetChatSchedule("s2", &at, now); err == nil {
+		t.Fatal("a claude session has no chat schedules")
+	}
+	if err := r.SetChatSchedule("nope", &at, now); !errors.Is(err, errNoSession) {
+		t.Fatalf("unknown session: %v", err)
+	}
+}

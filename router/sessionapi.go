@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -53,6 +54,8 @@ func (r *Router) registerSessionAPI(app appRoute, m machineRoute) {
 	})
 	app("GET /api/sessions/{id}/crons", func(w http.ResponseWriter, req *http.Request) { r.getCrons(w, req.PathValue("id")) })
 	app("POST /api/sessions/{id}/crons", func(w http.ResponseWriter, req *http.Request) { appArmRefused(w, "cron", "scripts/schedule-cron.sh") })
+	// hermit-jarvis: the next fire of an aviary session's chat schedules (schedule.go ChatSchedule)
+	app("PUT /api/sessions/{id}/chat-schedule", func(w http.ResponseWriter, req *http.Request) { r.putChatSchedule(w, req) })
 	app("DELETE /api/sessions/{id}/crons/{name}", func(w http.ResponseWriter, req *http.Request) {
 		r.deleteCron(w, req.PathValue("id"), req.PathValue("name"))
 	})
@@ -258,6 +261,31 @@ func (r *Router) deleteWakeups(w http.ResponseWriter, sid, name string, all bool
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "cancelled": out})
+}
+
+// putChatSchedule: {"nextAt": RFC 3339} or {"nextAt": null} (none armed)
+func (r *Router) putChatSchedule(w http.ResponseWriter, req *http.Request) {
+	var b struct {
+		NextAt *string `json:"nextAt"`
+	}
+	if err := json.NewDecoder(io.LimitReader(req.Body, 4096)).Decode(&b); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "body: {\"nextAt\": RFC 3339 or null}"})
+		return
+	}
+	var at *time.Time
+	if b.NextAt != nil {
+		t, err := time.Parse(time.RFC3339Nano, *b.NextAt)
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": "nextAt is not an RFC 3339 time"})
+			return
+		}
+		at = &t
+	}
+	if err := r.SetChatSchedule(req.PathValue("id"), at, time.Now()); err != nil {
+		scheduleErr(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
 func (r *Router) getCrons(w http.ResponseWriter, sid string) {

@@ -75,23 +75,62 @@ type Missed struct {
 	Error string `json:"error"`
 }
 
+// ChatSchedule: when the soonest of an aviary session's chat schedules fires next. An aviary session arms its
+// wakeups as magpie's schedules, the same ones YYC AI's conversations use (Deyao, 2026-11-17: dogfooding): magpie fires
+// them into the conversation and hermit-jarvis resumes a paused session for the turn. The router never fires one; it
+// only knows one is armed (hermit-jarvis reports it, PUT /api/sessions/{id}/chat-schedule), so a paused session keeps
+// its runners and its card says it will run again, as for a wakeup of its own.
+type ChatSchedule struct {
+	NextAt     int64 `json:"nextAt"`     // ms epoch
+	ReportedAt int64 `json:"reportedAt"` // ms epoch
+}
+
 // Schedule: one session's wakeups, crons and pending resume prompt
 type Schedule struct {
 	Wakeups      map[string]*Wakeup `json:"wakeups,omitempty"`
 	Crons        map[string]*Cron   `json:"crons,omitempty"`
 	ResumePrompt string             `json:"resumePrompt,omitempty"`
 	Watches      map[string]*Watch  `json:"watches,omitempty"` // watches.go
+	Chat         *ChatSchedule      `json:"chat,omitempty"`
 }
 
 func (s *Schedule) empty() bool {
-	return len(s.Wakeups) == 0 && len(s.Crons) == 0 && s.ResumePrompt == "" && len(s.Watches) == 0
+	return len(s.Wakeups) == 0 && len(s.Crons) == 0 && s.ResumePrompt == "" && len(s.Watches) == 0 && s.Chat == nil
 }
 
 // willWake: something armed will prompt the session again (a wakeup, a cron, a watch, also one met or given up and
 // still being delivered)
 func willWake(d *persisted, sid string) bool {
 	s := d.Schedules[sid]
-	return s != nil && len(s.Wakeups)+len(s.Crons)+len(s.Watches) > 0
+	return s != nil && (len(s.Wakeups)+len(s.Crons)+len(s.Watches) > 0 || s.Chat != nil)
+}
+
+// SetChatSchedule records the next fire of an aviary session's chat schedules (nil: none armed) as hermit-jarvis
+// reports it.
+func (r *Router) SetChatSchedule(sid string, nextAt *time.Time, now time.Time) error {
+	var err error
+	r.st.Do(func(d *persisted) {
+		s := d.Sessions[sid]
+		if s == nil {
+			err = errNoSession
+			return
+		}
+		if s.Harness != "aviary" {
+			err = &badRequest{"only an aviary session has chat schedules"}
+			return
+		}
+		if nextAt == nil {
+			if sc := d.Schedules[sid]; sc != nil {
+				sc.Chat = nil
+				if sc.empty() {
+					delete(d.Schedules, sid)
+				}
+			}
+			return
+		}
+		sched(d, sid).Chat = &ChatSchedule{NextAt: nextAt.UnixMilli(), ReportedAt: now.UnixMilli()}
+	})
+	return err
 }
 
 // sched: the session's schedule, made on demand (callers hold the state lock)
@@ -361,6 +400,9 @@ func scheduleView(d *persisted, sid string, v map[string]any) {
 		if sc.ResumePrompt != "" {
 			v["resumePrompt"] = sc.ResumePrompt
 		}
+		if sc.Chat != nil {
+			v["chatScheduleIso"] = iso(sc.Chat.NextAt)
+		}
 	}
 	v["wakeups"], v["crons"], v["watches"] = ws, cs, watchesViewOf(d, sid)
 }
@@ -600,6 +642,9 @@ func (r *Router) PendingSchedule(sid string) []string {
 		for _, w := range sortedWatches(s) {
 			out = append(out, "watch "+w.Name)
 		}
+		if s != nil && s.Chat != nil {
+			out = append(out, "chat schedule (scripts/schedule-wakeup.sh --list)")
+		}
 	})
 	return out
 }
@@ -625,7 +670,7 @@ func scheduleDueWithin(p *persisted, sid string, d time.Duration) bool {
 			return true
 		}
 	}
-	return false
+	return s != nil && s.Chat != nil && s.Chat.NextAt < lim
 }
 
 // ---- firing -------------------------------------------------------------------------------------------

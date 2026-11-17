@@ -520,6 +520,7 @@ var callRules = map[string]callRule{
 	"GET /api/sessions/{id}/changes":              callBody,
 	"GET /api/sessions/{id}/crons":                callBody,
 	"POST /api/sessions/{id}/crons":               callBody,
+	"PUT /api/sessions/{id}/chat-schedule":        callNo, // hermit-jarvis's report (schedule.go ChatSchedule)
 	"DELETE /api/sessions/{id}/crons/{name}":      callBody,
 	"POST /api/sessions/{id}/crons/{name}/run":    callBody,
 	"POST /api/sessions/{id}/destroy":             callBody,
