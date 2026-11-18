@@ -29,8 +29,10 @@ DE0CH/jarvis2 -f name=claw|openclaw -f url=… -f sha=…` with `JARVIS2_DISPATC
 sha256 (claw: `session-image/base/forks.json`, so the base rebuilds; OpenClaw: `session-image/openclaw-runtime.json`)
 and pushes with its deploy key, which runs `images`. By hand: the same `gh workflow run` line (DECISIONS 156).
 
-GitHub settings (R1 audit, 2026-10-11; `gh api`): ruleset "main: only admins and deploy keys update it" (deletion,
-non_fast_forward, update; bypass: the admin role and deploy keys); environment `release` (deployment branches: main only)
+GitHub settings (`gh api`): ruleset "main: the gate, admins and deploy keys" (deletion, non_fast_forward, update, the
+required status `gate`; bypass: deploy keys and the admin role), made by `gate setup` on 2026-11-18 (the R1 audit's
+ruleset of 2026-10-11 was jarvis2's; jarvis4's main had none until then);
+environment `merge` (main only) with MERGE_DEPLOY_KEY (deploy key `jarvis-merge`, the gate's: "Agent branches" below); environment `release` (deployment branches: main only)
 with secrets ASC_KEY_ID / ASC_ISSUER_ID / ASC_PRIVATE_KEY (ios.yml's TestFlight job), CI_IMAGE_KEY (the private half of
 `keys/ci.pub`), PIN_DEPLOY_KEY and FORK_PIN_DEPLOY_KEY (`fork-pin.yml`, deploy key `jarvis2-fork-pin`); environment `replica`
 (main only) with REPLICA_FLY_TOKEN and REPLICA_REPO_TOKEN (ios.yml's phone replica, "The phone replica"). A workflow that must push to main gets its own deploy key in `release`, never
@@ -40,6 +42,37 @@ X9.63) into `keys/ci.pub` in one go, then run `images` so the router gets a fres
 `k8s.yml` (every push touching `k8s/`) dry-runs each box's tree as its Flux applies it (`infra/flux-dryrun.sh`: on top of
 the previous main, and on an empty cluster as a new box meets it) and checks every Deployment is there and pinned by
 digest (Flux prunes what a commit drops, so an emptied file would delete the router and its volume).
+
+### Agent branches: merged only when CI is green
+
+Deyao, 2026-11-18 (after a router port's tests turned `images` red for a day of pushes): agents never push to main.
+They push a branch (`claude/<topic>`; `wip/<topic>` only runs CI), and the gate (`rust/gate`, `gate.yml`) merges it:
+
+- `branch.yml` (every branch push) opens the branch's pull request and sets the commit's `gate` status pending.
+- Every workflow that tests something runs on branch pushes too (images, ios, web, transitions, aviary, infra-tests,
+  k8s, services, gate-release); what deploys or pins stays main-only (`if: github.ref == 'refs/heads/main'`,
+  environments `release`/`replica` admit main only, aws's workflow_run takes main's images runs only, `:latest` moves
+  on main only).
+- `merge.yml` (workflow_run of each of those; GitHub runs main's copy, so a branch can't change it) runs `gate merge`:
+  once every workflow on the head commit is over, one red → `gate` red; all green → into main with the deploy key
+  `jarvis-merge` (environment `merge`), the branch deleted: on main's head a fast-forward to that exact commit, on an
+  older base main merged in and the merge pushed with no further run (Deyao, 2026-11-18: jarvis4's main moves every
+  15-30 min, aviary's faster, and re-testing for every move would never land; main's own CI runs on the merge). A
+  conflict turns `gate` red with a comment. The rule is `rust/gate/src/decide.rs` and the git part `land_git`, both
+  tested alone (against local repos).
+- Main's ruleset requires `gate` green for anyone else (a merge in the web page); deploy keys (the pins, the gate) and
+  the admin role bypass it.
+- The agent's side: a Claude Code hook (DE0CH/claude-env `.claude/hooks/git-guard.py`) denies a commit on main and a
+  push to it before it runs, so a session learns the branch path from the denial.
+- `gate-release.yml` builds the binary on every branch that touches it and, on main, releases `gate-<sha12>` and writes
+  `rust/gate/pin.txt` (its sha256 and URL): every repo's `gate.yml` reads that one file, so a new gate reaches all of
+  them without touching them.
+- Every agent-pushed repo has the same three workflows, written by `gate vendor <dir> --workflows "ci1, ci2"` (the repo's
+  own CI workflow names; `rust/gate/templates/` is the source): `gate.yml` (a copy: a private repo can't call another
+  private repo's reusable workflow), `branch.yml`, `merge.yml`. `gate setup` does the GitHub side of one repo
+  (GATE_REPOS=owner/name,…): the deploy key `jarvis-merge` and its secret in the `merge` environment (main only), and
+  main's ruleset (update, no deletion, no force push, the required status `gate`; admins and deploy keys bypass). Until
+  `pin.txt` says a release, the gate's steps warn and pass, so a repo can be set up before the first release.
 
 ### A core release: blue/green and the flip
 

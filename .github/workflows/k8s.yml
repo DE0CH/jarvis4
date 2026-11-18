@@ -2,8 +2,7 @@
 # every Deployment is pinned: Flux prunes whatever a commit drops, so an emptied file would delete the router.
 name: k8s
 on:
-  push:
-    branches: [main]
+  push:  # every branch: the gate (rust/gate) waits for it
     paths: [k8s/**, infra/router-secrets.py, .github/workflows/k8s.yml]
 jobs:
   manifests:

@@ -4,8 +4,7 @@ name: aviary
 # without a login; DE0CH/deyao-ai chat-pin.yml pins it). aviary-gateway goes into the session image (images.yml builds
 # it from the same tree).
 on:
-  push:
-    branches: [main]
+  push:  # every branch: the gate (rust/gate) waits for it
     paths: [aviary/**, .github/workflows/aviary.yml]
   pull_request:
     paths: [aviary/**, .github/workflows/aviary.yml]
@@ -66,7 +65,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           tags: |
             ghcr.io/de0ch/hermit-jarvis:sha-${{ env.SHORT }}
-            ghcr.io/de0ch/hermit-jarvis:latest
+            ${{ github.ref == 'refs/heads/main' && 'ghcr.io/de0ch/hermit-jarvis:latest' || '' }}
       - uses: actions/attest-build-provenance@v2
         with:
           subject-name: ghcr.io/de0ch/hermit-jarvis
