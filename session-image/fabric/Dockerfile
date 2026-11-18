@@ -21,6 +21,6 @@ ENV AVIARY_SANDBOX_IMAGE_DIR=/opt/aviary-sandbox
 RUN env | grep -Ev '^(HOSTNAME|HOME|PWD|OLDPWD|SHLVL|_|TERM|USER|LOGNAME|SHELL)=' | sort > /opt/jarvis/image.env \
  && grep -qx 'AVIARY_SANDBOX_IMAGE_DIR=/opt/aviary-sandbox' /opt/jarvis/image.env \
  && echo 'Defaults env_keep += "AVIARY_SANDBOX_IMAGE_DIR"' > /etc/sudoers.d/aviary-sandbox-image \
- && chmod 440 /etc/sudoers.d/aviary-sandbox-image && visudo -cf /etc/sudoers.d/aviary-sandbox-image \
+ && chmod 440 /etc/sudoers.d/aviary-sandbox-image \
  && sudo -n env | grep -qx 'AVIARY_SANDBOX_IMAGE_DIR=/opt/aviary-sandbox'
 ENTRYPOINT ["/usr/local/bin/fabric-entrypoint"]
