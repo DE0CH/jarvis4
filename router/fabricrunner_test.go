@@ -135,3 +135,87 @@ func TestDeleteFabricFiles(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// a fabric machine's state is hermit's word, not Fly's: the lost-machine check marked a fabric session lost 30 s after
+// it booted, its machine being in neither Fly's nor AWS's list (2026-11-18)
+func TestTheLostCheckAsksHermitForAFabricMachine(t *testing.T) {
+	r := newTestRouter(t)
+	const m = "x01a1ec41c22f71e49e50601a78aeffde"
+	addSession(r, "s1", "started", m, false)
+	r.st.Do(func(d *persisted) {
+		d.Sessions["s1"].Runner = "fabric"
+		d.Sessions["s1"].Fabric = &FabricLine{Conversation: "6bd76dff-094c-425f-b971-c9b531254b1e", Machine: m}
+	})
+	t.Setenv("FABRIC_HERMIT_URL", "http://hermit.invalid")
+	oldFly, oldState := listFlyMachines, fabricMachineState
+	t.Cleanup(func() { listFlyMachines, fabricMachineState = oldFly, oldState })
+	listFlyMachines = func() ([]flyMachineDetail, error) { return nil, nil }
+	hermit := "started"
+	asked := ""
+	fabricMachineState = func(conversation, machine string) (string, error) {
+		asked = conversation + " " + machine
+		return hermit, nil
+	}
+	seen := map[string]int{}
+	r.lostTick(seen)
+	r.lostTick(seen)
+	if s := sessionByID(r, "s1"); s.Lost != nil || s.State != "started" {
+		t.Fatalf("a running fabric machine was marked lost: %s %v", s.State, s.Error)
+	}
+	if asked != "6bd76dff-094c-425f-b971-c9b531254b1e "+m {
+		t.Fatalf("asked hermit about %q", asked)
+	}
+	// hermit no longer has it: lost, said as the fabric's
+	hermit = "released"
+	r.lostTick(seen)
+	r.lostTick(seen)
+	s := sessionByID(r, "s1")
+	if s.Lost == nil || s.State != "failed" || !strings.Contains(s.Error, "was released on the fabric") {
+		t.Fatalf("a released fabric machine: %s %q", s.State, s.Error)
+	}
+}
+
+// hermit's answer in the lost check's words: this machine's sandbox starting or ready is running; another sandbox of
+// the conversation, none, or a gone one is released; one being released is destroying
+func TestFabricMachineState(t *testing.T) {
+	var answer string
+	code := 200
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path != "/v1/conversations/c1/sandbox" || req.Header.Get("Authorization") != "Bearer mt" || req.Header.Get("Aviary-Protocol") != "hermit-core=1" {
+			w.WriteHeader(400)
+			return
+		}
+		w.WriteHeader(code)
+		_, _ = w.Write([]byte(answer))
+	}))
+	defer srv.Close()
+	t.Setenv("FABRIC_HERMIT_URL", srv.URL+"/")
+	t.Setenv("FABRIC_HERMIT_MAGPIE_TOKEN", "mt")
+	const m = "x01a1ec41c22f71e49e50601a78aeffde"
+	for _, c := range []struct {
+		code      int
+		body, out string
+	}{
+		{200, `{"id":"01a1ec41-c22f-71e4-9e50-601a78aeffde","state":"ready"}`, "started"},
+		{202, `{"id":"01a1ec41-c22f-71e4-9e50-601a78aeffde","state":"starting"}`, "started"},
+		{200, `{"id":"01a1ec41-c22f-71e4-9e50-601a78aeffde","state":"releasing"}`, "destroying"},
+		{200, `{"id":"01a1ec41-c22f-71e4-9e50-601a78aeffde","state":"gone"}`, "released"},
+		{200, `{"id":"01a1ffff-c22f-71e4-9e50-601a78aeffde","state":"ready"}`, "released"},
+		{404, `{"code":"no_sandbox"}`, "released"},
+	} {
+		code, answer = c.code, c.body
+		got, err := fabricMachineState("c1", m)
+		if err != nil || got != c.out {
+			t.Errorf("%d %s: %q %v, want %q", c.code, c.body, got, err, c.out)
+		}
+	}
+	code, answer = 503, `{}`
+	if _, err := fabricMachineState("c1", m); err == nil {
+		t.Error("hermit unavailable: an error (the machine is not taken for lost)")
+	}
+}
+
+func sessionByID(r *Router, id string) (s Session) {
+	r.st.Do(func(d *persisted) { s = *d.Sessions[id] })
+	return
+}

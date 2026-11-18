@@ -101,6 +101,42 @@ var deleteFabricFiles = func(conversation string) error {
 
 func (r *Router) deleteFabricFiles(conversation string) error { return deleteFabricFiles(conversation) }
 
+// fabricMachineState: a fabric machine's state in the lost-machine check's words (lostmachine.go), from hermit: GET
+// /v1/conversations/{conversation}/sandbox as caller magpie. The machine is its sandbox (machine id x<sandbox id
+// without hyphens>): starting or ready is running ("started"); releasing is "destroying"; gone, another sandbox of
+// the conversation, or none at all is "released". An error (hermit not answering) says nothing: no verdict.
+var fabricMachineState = func(conversation, machine string) (string, error) {
+	req, _ := http.NewRequest("GET", strings.TrimRight(os.Getenv("FABRIC_HERMIT_URL"), "/")+"/v1/conversations/"+conversation+"/sandbox", nil)
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("FABRIC_HERMIT_MAGPIE_TOKEN"))
+	req.Header.Set("Aviary-Protocol", "hermit-core=1")
+	res, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+	if res.StatusCode == 404 {
+		return "released", nil
+	}
+	if res.StatusCode/100 != 2 {
+		return "", fmt.Errorf("hermit: HTTP %d %s", res.StatusCode, strings.TrimSpace(string(b)))
+	}
+	var sb struct{ ID, State string }
+	if err := json.Unmarshal(b, &sb); err != nil {
+		return "", fmt.Errorf("hermit: %v", err)
+	}
+	if "x"+strings.ReplaceAll(sb.ID, "-", "") != machine {
+		return "released", nil
+	}
+	switch sb.State {
+	case "releasing":
+		return "destroying", nil
+	case "gone":
+		return "released", nil
+	}
+	return "started", nil
+}
+
 // fabricLine: the session's fabric line, its conversation made on first use
 func (r *Router) fabricLine(sid string) (*FabricLine, error) {
 	var out *FabricLine

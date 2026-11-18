@@ -5,7 +5,8 @@ package main
 // its machine still listed, and nothing said whether its work was lost).
 //
 //   - The leader looks at Fly every lostEvery with its read-only token (FLY_READ_TOKEN), and at AWS with its read-only
-//     key (awsrunner.go): a session that Jarvis has
+//     key (awsrunner.go), and asks the fabric hermit about a fabric session's machine (fabricrunner.go
+//     fabricMachineState: it is in neither list): a session that Jarvis has
 //     running (started or initialising, no action of Jarvis's under way) whose machine Fly shows stopped, suspended,
 //     failed or destroyed, or no longer lists, on two looks in a row, is marked lost: state failed, Session.Lost, and an
 //     error saying plainly what happened (Fly's own stop or exit event, when), what is kept, and what Resume does. The
@@ -39,7 +40,7 @@ var lostEvery = 20 * time.Second
 
 // machineDown: a Fly state of a machine that isn't running
 func machineDown(state string) bool {
-	return slices.Contains([]string{"stopped", "suspended", "failed", "destroyed", "destroying", "gone"}, state)
+	return slices.Contains([]string{"stopped", "suspended", "failed", "destroyed", "destroying", "gone", "released"}, state)
 }
 
 func (r *Router) lostLoop() {
@@ -74,19 +75,30 @@ func (r *Router) lostTick(seen map[string]int) {
 	for _, i := range ins {
 		state[i.ID] = i.State
 	}
-	type cand struct{ sid, machine string }
+	type cand struct{ sid, machine, fabric string }
 	var cands []cand
 	r.st.Do(func(d *persisted) {
 		for _, s := range d.Sessions {
 			if s.MachineID != "" && s.Lost == nil && (s.State == "started" || s.State == "initialising") {
-				cands = append(cands, cand{s.ID, s.MachineID})
+				c := cand{sid: s.ID, machine: s.MachineID}
+				if s.Fabric != nil && r.runnerOf(s) == "fabric" {
+					c.fabric = s.Fabric.Conversation
+				}
+				cands = append(cands, c)
 			}
 		}
 	})
 	next := map[string]int{}
 	for _, c := range cands {
 		st, ok := state[c.machine]
-		if !ok {
+		if c.fabric != "" {
+			// a fabric machine is in neither Fly's list nor AWS's: hermit says what became of it (no answer, no verdict)
+			var err error
+			if st, err = fabricMachineState(c.fabric, c.machine); err != nil {
+				log.Printf("[lost] fabric: %s: %v", c.sid, err)
+				continue
+			}
+		} else if !ok {
 			st = "gone"
 		}
 		if !machineDown(st) || r.busy(c.sid) {
@@ -146,6 +158,8 @@ func lostWhat(state string) string {
 		return "failed on Fly"
 	case "gone":
 		return "is gone from Fly"
+	case "released":
+		return "was released on the fabric"
 	}
 	return "was destroyed"
 }
