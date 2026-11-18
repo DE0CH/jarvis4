@@ -8,7 +8,7 @@ use crate::nethttp::Mux;
 use crate::state::State;
 use std::collections::BTreeMap;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Default)]
@@ -138,6 +138,8 @@ pub struct Router {
     pub me: OnceLock<std::sync::Weak<Router>>,
     /// nextcore.rs: the next core and the flip
     pub next: crate::nextcore::NextCores,
+    /// archive.rs: the Storage Box this router uses instead of the env's (tests: Some(None) = none)
+    pub box_override: RwLock<Option<Option<Arc<crate::storagebox::StorageBox>>>>,
     pub muxes: OnceLock<(Arc<Mux>, Arc<Mux>)>,
     /// http.rs: every app route's pattern (apicalls.rs classifies them)
     pub app_patterns: OnceLock<BTreeMap<String, bool>>,
@@ -187,6 +189,7 @@ impl Router {
             claude: OnceLock::new(),
             me: OnceLock::new(),
             next: crate::nextcore::NextCores::from_env(),
+            box_override: RwLock::new(None),
             muxes: OnceLock::new(),
             app_patterns: OnceLock::new(),
             sup: Default::default(),

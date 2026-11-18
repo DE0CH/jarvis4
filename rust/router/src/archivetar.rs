@@ -512,7 +512,7 @@ impl Router {
 
     /// an archive's upload progress, as the session's waiting text and, at most every 20 s, a line in the destroy's
     /// lifecycle log and the router's log
-    fn archive_progress(&self, sid: &str, total: i64) -> Box<dyn Fn(i64) + Send + Sync + '_> {
+    pub fn archive_progress(&self, sid: &str, total: i64) -> Box<dyn Fn(i64) + Send + Sync + '_> {
         let last: Mutex<Option<Instant>> = Mutex::new(None);
         let sid = sid.to_string();
         Box::new(move |raw| {

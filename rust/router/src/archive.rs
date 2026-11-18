@@ -213,6 +213,14 @@ pub fn sha256hex(p: &std::path::Path) -> Result<String> {
 
 impl Router {
     pub fn box_(&self) -> Option<Arc<StorageBox>> {
+        if let Some(b) = self
+            .box_override
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        {
+            return b;
+        }
         SBOX.get_or_init(|| crate::storagebox::records_box_from_env().map(Arc::new))
             .clone()
     }

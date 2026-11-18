@@ -189,8 +189,10 @@ impl DB {
     /// a pool on url, the migrations applied
     pub fn open(url: &str) -> Result<DB> {
         let manager = manager_for(url)?;
+        // opened as they are needed, as pgxpool does (an idle router holds one or two)
         let pool = Pool::builder()
             .max_size(8)
+            .min_idle(Some(0))
             .connection_timeout(Duration::from_secs(30))
             .build(manager)
             .context("the database")?;
