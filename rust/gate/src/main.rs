@@ -263,7 +263,9 @@ fn merge(gh: &Gh) -> Result<()> {
         .map(|w| w.trim().to_string())
         .filter(|w| !w.is_empty())
         .collect();
-    let runs_v = gh.get(&format!("/actions/runs?head_sha={sha}&per_page=100"))?;
+    // every run on the branch, then only those on its own commits since it left main (compare base...sha, up to
+    // 250 commits: a branch longer than that counts its newest 250)
+    let runs_v = gh.get(&format!("/actions/runs?branch={branch}&per_page=100"))?;
     let runs: Vec<Run> = runs_v["workflow_runs"]
         .as_array()
         .map(|a| a.as_slice())
@@ -273,12 +275,23 @@ fn merge(gh: &Gh) -> Result<()> {
         .filter(|r| gated.is_empty() || gated.iter().any(|w| r["name"] == w.as_str()))
         .map(|r| Run {
             path: r["path"].as_str().unwrap_or("").into(),
+            sha: r["head_sha"].as_str().unwrap_or("").into(),
             id: r["id"].as_u64().unwrap_or(0),
             status: r["status"].as_str().unwrap_or("").into(),
             conclusion: r["conclusion"].as_str().unwrap_or("").into(),
         })
         .collect();
-    let runs = decide::latest(&runs, OWN);
+    let cmp = gh.get(&format!("/compare/{base}...{sha}"))?;
+    let mut commits: std::collections::BTreeSet<String> = cmp["commits"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|c| c["sha"].as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    commits.insert(sha.clone());
+    let runs = decide::latest(&runs, &commits, OWN);
     let current = match gh.call(
         reqwest::Method::GET,
         &format!("/git/ref/heads/{branch}"),
@@ -288,7 +301,7 @@ fn merge(gh: &Gh) -> Result<()> {
         _ => false,
     };
     let pr = gh.open_pr(&branch)?;
-    let rel = match gh.get(&format!("/compare/{base}...{sha}"))?["status"].as_str() {
+    let rel = match cmp["status"].as_str() {
         Some("ahead") => Rel::Ahead,
         Some("identical") => Rel::Identical,
         Some("behind") => Rel::Behind,
@@ -296,6 +309,19 @@ fn merge(gh: &Gh) -> Result<()> {
     };
     let action = decide::decide(&branch, &runs, current, pr.is_some(), rel);
     println!("{branch} at {sha}: {action:?}");
+    // GATE_DRY=1: the decision only (a check from a session against a repo's real runs)
+    if std::env::var("GATE_DRY").is_ok_and(|v| v == "1") {
+        for r in &runs {
+            println!(
+                "  {} {} {} on {}",
+                decide::file_name(&r.path),
+                r.status,
+                r.conclusion,
+                &r.sha[..r.sha.len().min(8)]
+            );
+        }
+        return Ok(());
+    }
     match action {
         Action::Wait(why) => {
             if current {

@@ -12,6 +12,8 @@
 pub struct Run {
     /// .github/workflows/<file>
     pub path: String,
+    /// the commit it ran on
+    pub sha: String,
     pub id: u64,
     /// queued | in_progress | completed | …
     pub status: String,
@@ -50,11 +52,16 @@ fn passed(conclusion: &str) -> bool {
     matches!(conclusion, "success" | "skipped" | "neutral")
 }
 
-/// the newest run of each workflow (a re-run keeps its id; a second run of one workflow on the same commit is a newer
-/// event), the gate's own runs left out
-pub fn latest(runs: &[Run], own: &str) -> Vec<Run> {
+/// the newest run of each workflow on any of the branch's own commits (`commits`: those since it left main, the head
+/// among them), the gate's own runs left out. A later commit that doesn't start a workflow (its paths untouched)
+/// carries that workflow's last result on the branch: a red iOS run stays red under a README-only push, and a change
+/// the workflow reads starts a newer run. Run ids grow with time; a re-run keeps its id and its newest result.
+pub fn latest(runs: &[Run], commits: &std::collections::BTreeSet<String>, own: &str) -> Vec<Run> {
     let mut by: std::collections::BTreeMap<&str, &Run> = std::collections::BTreeMap::new();
-    for r in runs.iter().filter(|r| r.path != own) {
+    for r in runs
+        .iter()
+        .filter(|r| r.path != own && commits.contains(&r.sha))
+    {
         if by.get(r.path.as_str()).is_none_or(|o| r.id > o.id) {
             by.insert(&r.path, r);
         }
@@ -113,8 +120,13 @@ mod tests {
     use super::*;
 
     fn run(path: &str, id: u64, status: &str, conclusion: &str) -> Run {
+        on("head", path, id, status, conclusion)
+    }
+
+    fn on(sha: &str, path: &str, id: u64, status: &str, conclusion: &str) -> Run {
         Run {
             path: format!(".github/workflows/{path}"),
+            sha: sha.into(),
             id,
             status: status.into(),
             conclusion: conclusion.into(),
@@ -207,6 +219,10 @@ mod tests {
         ));
     }
 
+    fn commits(shas: &[&str]) -> std::collections::BTreeSet<String> {
+        shas.iter().map(|s| s.to_string()).collect()
+    }
+
     #[test]
     fn the_newest_run_of_each_workflow_counts_and_the_gates_own_never() {
         let runs = vec![
@@ -214,7 +230,40 @@ mod tests {
             run("images.yml", 9, "completed", "success"),
             run("merge.yml", 10, "in_progress", ""),
         ];
-        let l = latest(&runs, ".github/workflows/merge.yml");
+        let l = latest(&runs, &commits(&["head"]), ".github/workflows/merge.yml");
         assert_eq!(l, vec![run("images.yml", 9, "completed", "success")]);
+    }
+
+    #[test]
+    fn a_later_commit_that_starts_no_workflow_keeps_the_earlier_red() {
+        // the code push turned ios red; a README push after it starts only branch.yml
+        let runs = vec![
+            on("c1", "ios.yml", 3, "completed", "failure"),
+            on("c1", "branch.yml", 4, "completed", "success"),
+            on("c2", "branch.yml", 7, "completed", "success"),
+        ];
+        let l = latest(
+            &runs,
+            &commits(&["c1", "c2"]),
+            ".github/workflows/merge.yml",
+        );
+        assert_eq!(
+            decide("claude/x", &l, true, true, Rel::Ahead),
+            Action::Fail("ios.yml failure".into())
+        );
+    }
+
+    #[test]
+    fn runs_on_commits_outside_the_branch_dont_count() {
+        // a branch of the same name before, deleted and made again: its old red is not this branch's
+        let runs = vec![
+            on("old", "ios.yml", 1, "completed", "failure"),
+            on("c1", "branch.yml", 4, "completed", "success"),
+        ];
+        let l = latest(&runs, &commits(&["c1"]), ".github/workflows/merge.yml");
+        assert_eq!(
+            decide("claude/x", &l, true, true, Rel::Ahead),
+            Action::Merge
+        );
     }
 }
