@@ -515,6 +515,24 @@ impl Registrar {
         self.public.handle(pattern, h);
     }
 
+    /// a setup route whose request the setup key signed (X-Setup-Time, X-Setup-Sig over the method, path and body): f gets
+    /// the body, at most max bytes
+    pub fn setup_signed(
+        &mut self,
+        pattern: &str,
+        max: u64,
+        f: impl Fn(&Arc<Router>, &mut W, &mut Req, &[u8]) + Send + Sync + 'static,
+    ) {
+        self.setup_route(pattern, move |r, w, req| {
+            let b = req.read_body(max);
+            if let Err(e) = r.check_setup_sig(&req.method, &req.path, &req.header("X-Setup-Time"), &req.header("X-Setup-Sig"), &b) {
+                crate::nethttp::write_error(w, 401, &format!("{e:#}"));
+                return;
+            }
+            f(r, w, req, &b)
+        });
+    }
+
     /// setup: the setup session's Access token AND its key's signature, relayed to the core (the core's store calls
     /// are open, the router decides who uses them)
     fn setup_relay(&mut self, pattern: &str, method: &'static str, core_path: &'static str) {
