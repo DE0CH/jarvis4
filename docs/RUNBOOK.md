@@ -30,7 +30,8 @@ sha256 (claw: `session-image/base/forks.json`, so the base rebuilds; OpenClaw: `
 and pushes with its deploy key, which runs `images`. By hand: the same `gh workflow run` line (DECISIONS 156).
 
 GitHub settings (R1 audit, 2026-10-11; `gh api`): ruleset "main: only admins and deploy keys update it" (deletion,
-non_fast_forward, update; bypass: the admin role and deploy keys); environment `release` (deployment branches: main only)
+non_fast_forward, update, and the required status `gate` (2026-11-18); bypass: the admin role and deploy keys);
+environment `merge` (main only) with MERGE_DEPLOY_KEY (deploy key `jarvis-merge`, the gate's: "Agent branches" below); environment `release` (deployment branches: main only)
 with secrets ASC_KEY_ID / ASC_ISSUER_ID / ASC_PRIVATE_KEY (ios.yml's TestFlight job), CI_IMAGE_KEY (the private half of
 `keys/ci.pub`), PIN_DEPLOY_KEY and FORK_PIN_DEPLOY_KEY (`fork-pin.yml`, deploy key `jarvis2-fork-pin`); environment `replica`
 (main only) with REPLICA_FLY_TOKEN and REPLICA_REPO_TOKEN (ios.yml's phone replica, "The phone replica"). A workflow that must push to main gets its own deploy key in `release`, never
@@ -40,6 +41,29 @@ X9.63) into `keys/ci.pub` in one go, then run `images` so the router gets a fres
 `k8s.yml` (every push touching `k8s/`) dry-runs each box's tree as its Flux applies it (`infra/flux-dryrun.sh`: on top of
 the previous main, and on an empty cluster as a new box meets it) and checks every Deployment is there and pinned by
 digest (Flux prunes what a commit drops, so an emptied file would delete the router and its volume).
+
+### Agent branches: merged only when CI is green
+
+Deyao, 2026-11-18 (after a router port's tests turned `images` red for a day of pushes): agents never push to main.
+They push a branch (`claude/<topic>`; `wip/<topic>` only runs CI), and the gate (`rust/gate`, `gate.yml`) merges it:
+
+- `branch.yml` (every branch push) opens the branch's pull request and sets the commit's `gate` status pending.
+- Every workflow that tests something runs on branch pushes too (images, ios, web, transitions, aviary, infra-tests,
+  k8s, services, gate-release); what deploys or pins stays main-only (`if: github.ref == 'refs/heads/main'`,
+  environments `release`/`replica` admit main only, aws's workflow_run takes main's images runs only, `:latest` moves
+  on main only).
+- `merge.yml` (workflow_run of each of those; GitHub runs main's copy, so a branch can't change it) runs `gate merge`:
+  once every workflow on the head commit is over, one red → `gate` red; all green on main's head → main is
+  fast-forwarded to that exact commit with the deploy key `jarvis-merge` (environment `merge`) and the branch deleted;
+  all green on an older base → main is merged into the branch (never a force push) and its CI runs again. The rule is
+  `rust/gate/src/decide.rs`, tested alone.
+- Main's ruleset requires `gate` green for anyone else (a merge in the web page); deploy keys (the pins, the gate) and
+  the admin role bypass it.
+- The agent's side: a Claude Code hook (DE0CH/claude-env `.claude/hooks/git-guard.py`) denies a commit on main and a
+  push to it before it runs, so a session learns the branch path from the denial.
+- `gate-release.yml` builds the binary on every branch that touches it and, on main, releases `gate-<sha12>` and pins
+  it in `gate.yml`. Every other agent-pushed repo has the same `branch.yml` and `merge.yml`, calling this repo's
+  `gate.yml@main`, a `merge` environment with its own `jarvis-merge` key, and the `gate` ruleset.
 
 ### A core release: blue/green and the flip
 

@@ -5,8 +5,7 @@ name: images
 # is built only when that directory changed since the base it pins (or on a dispatch with base=true), pushed as
 # jarvis4-session:base-sha-<12>, and pinned in session-image/Dockerfile's BASE by the pin job.
 on:
-  push:
-    branches: [main]
+  push:  # every branch: the gate merges an agent's branch only when this is green (rust/gate); main alone pins
     paths: [kernel/**, router/**, rust/**, session-image/**, aviary/**, policy/**, tasks/**, app/**, infra/setup.py, infra/setup_trust_test.py, infra/setup_write_test.py, infra/setup_roster_test.py, infra/kernel-pin.py, infra/kernel_pin_test.py, ios/interop/rostervec/**, infra/image-unpacked-size.py, .github/workflows/images.yml]
   workflow_dispatch:
     inputs:
@@ -19,7 +18,7 @@ permissions:
   packages: write
   attestations: write
   id-token: write
-concurrency: { group: images, cancel-in-progress: false }
+concurrency: { group: "images-${{ github.ref }}", cancel-in-progress: false }
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -132,7 +131,7 @@ jobs:
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           tags: |
             ghcr.io/de0ch/jarvis4-${{ matrix.name }}:${{ steps.tag.outputs.sha }}
-            ghcr.io/de0ch/jarvis4-${{ matrix.name }}:latest
+            ${{ github.ref == 'refs/heads/main' && format('ghcr.io/de0ch/jarvis4-{0}:latest', matrix.name) || '' }}
       - name: build attestation (what the iPhone will check for "CI build from <date>")
         uses: actions/attest-build-provenance@v2
         with:
@@ -192,7 +191,7 @@ jobs:
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           tags: |
             ghcr.io/de0ch/jarvis4-session-fabric:${{ steps.in.outputs.tag }}
-            ghcr.io/de0ch/jarvis4-session-fabric:latest
+            ${{ github.ref == 'refs/heads/main' && 'ghcr.io/de0ch/jarvis4-session-fabric:latest' || '' }}
       - uses: actions/attest-build-provenance@v2
         with:
           subject-name: ghcr.io/de0ch/jarvis4-session-fabric

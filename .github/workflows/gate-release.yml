@@ -1,0 +1,48 @@
+# gate-release.yml — builds rust/gate (static, musl) on every push that touches it; on main it publishes the binary as
+# release gate-<sha12> and pins it in gate.yml (GATE_URL, GATE_SHA256) with the pin deploy key (environment
+# `release`), so every repo's next gate run uses it.
+name: gate-release
+on:
+  push:
+    paths: [rust/gate/**, rust/Cargo.lock, .github/workflows/gate-release.yml]
+  workflow_dispatch:
+concurrency: { group: "gate-release-${{ github.ref }}", cancel-in-progress: false }
+permissions: { contents: read }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sudo apt-get install -y -qq musl-tools
+          cd rust && rustup target add x86_64-unknown-linux-musl
+          cargo test --locked -p gate
+          cargo build --locked --release -p gate --target x86_64-unknown-linux-musl
+          cp target/x86_64-unknown-linux-musl/release/gate ../gate-x86_64-linux
+      - uses: actions/upload-artifact@v4
+        with: { name: gate, path: gate-x86_64-linux }
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ssh-key: "${{ secrets.PIN_DEPLOY_KEY }}" }
+      - uses: actions/download-artifact@v4
+        with: { name: gate }
+      - env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          set -e
+          tag="gate-${GITHUB_SHA::12}"
+          sum="$(sha256sum gate-x86_64-linux | cut -d' ' -f1)"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" gate-x86_64-linux --target "$GITHUB_SHA" \
+            --title "$tag" --notes "rust/gate at $GITHUB_SHA (sha256 $sum)"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/$tag/gate-x86_64-linux"
+          sed -i -E "s#^  GATE_URL: .*#  GATE_URL: $url#; s#^  GATE_SHA256: .*#  GATE_SHA256: $sum#" .github/workflows/gate.yml
+          git diff --quiet && exit 0
+          git config user.name jarvis4-ci && git config user.email jarvis4-ci@users.noreply.github.com
+          git commit -qam "gate-pin: $tag"
+          for i in 1 2 3 4 5; do git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0; sleep $((i * 5)); done
+          exit 1

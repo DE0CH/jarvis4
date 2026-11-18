@@ -1,0 +1,20 @@
+[package]
+name = "gate"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+description = "Agent branches merge into main only when CI is green: opens the branch's pull request and fast-forwards main to the tested commit (docs/DESIGN.md \"Agent branches\")"
+
+[[bin]]
+name = "gate"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tempfile = "3"

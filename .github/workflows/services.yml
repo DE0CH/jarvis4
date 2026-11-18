@@ -4,8 +4,7 @@ name: services
 # manifest that names the image (k8s/cluster/services/<name>/; a commit by this workflow; Flux rolls them out). Only the service whose files changed is
 # built and pinned, so a watch change never restarts the iCloud index.
 on:
-  push:
-    branches: [main]
+  push:  # every branch: the gate (rust/gate) waits for it
     paths: [services/**, .github/workflows/services.yml]
   workflow_dispatch:
 permissions:
@@ -13,7 +12,7 @@ permissions:
   packages: write
   attestations: write
   id-token: write
-concurrency: { group: services, cancel-in-progress: false }
+concurrency: { group: "services-${{ github.ref }}", cancel-in-progress: false }
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -53,7 +52,7 @@ jobs:
           labels: org.opencontainers.image.source=https://github.com/DE0CH/jarvis4
           tags: |
             ghcr.io/de0ch/jarvis4-${{ matrix.name }}:${{ steps.tag.outputs.sha }}
-            ghcr.io/de0ch/jarvis4-${{ matrix.name }}:latest
+            ${{ github.ref == 'refs/heads/main' && format('ghcr.io/de0ch/jarvis4-{0}:latest', matrix.name) || '' }}
       - uses: actions/attest-build-provenance@v2
         with:
           subject-name: ghcr.io/de0ch/jarvis4-${{ matrix.name }}
