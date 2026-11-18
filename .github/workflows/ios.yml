@@ -6,7 +6,7 @@ name: ios
 # only when the walkthrough, the interop test and the replica of this very commit pass.
 on:
   push:
-    paths: [ios/**, core/**, kernel/**, router/**, tasks/**, infra/setup.py, infra/fly-token.sh, infra/fly-read-token.sh, infra/run-volumes.py, infra/run_volumes_test.py, infra/test-postgres.sh, e2e/testdata/**, policy/**, tools/**, .github/workflows/ios.yml, .github/actions/ios-simulator/**]
+    paths: [ios/**, core/**, kernel/**, router/**, tasks/**, infra/setup.py, infra/fly-token.sh, infra/fly-read-token.sh, infra/run-volumes.py, infra/run_volumes_test.py, infra/test-postgres.sh, e2e/testdata/**, policy/**, tools/**, .github/workflows/ios.yml, .github/actions/ios-simulator/**, rust/replica-setup/**]
   workflow_dispatch:
 # one group per ref: a newer push replaces the run still waiting to start (only the newest queued run is kept), and
 # never cancels one in progress
@@ -261,7 +261,7 @@ jobs:
     # flow tapped by ReplicaUITests (recorded; a blank screen or a stuck state fails it) against a real throwaway Jarvis 4
     # on this runner (ios/ci/replica-stack.sh: this commit's core and router, real Fly session machines reaching the
     # router over a WireGuard peer of their own) and a real GitHub repo's deploy keys. The setup session's part is
-    # ios/ci/replica-setup.sh on the same runner. Secrets: the `replica` environment (main only).
+    # rust/replica-setup on the same runner. Secrets: the `replica` environment (main only).
     needs: compile
     if: github.ref == 'refs/heads/main'
     runs-on: xcode-27
@@ -330,6 +330,10 @@ jobs:
           # open Photos once so the library is indexed before the test: the first picker of a fresh simulator's life
           # (the light walkthrough) twice hung the whole simulator ("Failed to get screenshot: Timed out") right after Add
           xcrun simctl launch "$SIM_UDID" com.apple.mobileslideshow && sleep 25 && xcrun simctl terminate "$SIM_UDID" com.apple.mobileslideshow || true
+      - name: The setup session's answers (rust/replica-setup)
+        run: |
+          command -v rustup > /dev/null || { curl -fsSL https://sh.rustup.rs | sh -s -- -y -q --profile minimal --default-toolchain none; echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"; export PATH="$HOME/.cargo/bin:$PATH"; }
+          cd rust && (rustup show active-toolchain || rustup toolchain install) && cargo build --release --locked -p replica-setup
       - name: Build for testing (Release; only the router address and the keys ref differ)
         working-directory: ios
         run: |
@@ -343,9 +347,11 @@ jobs:
       - name: Every flow (video + screenshots)
         run: |
           W="$RUNNER_TEMP/stack"
-          export REPLICA_ENV="$W/env" JARVIS_KEYS_DIR="$W/keys"
+          # the stack's env (setup.py pointed at it, REPLICA_W, REPLICA_PY) for the setup session's answers
+          . "$W/env"
+          export JARVIS_KEYS_DIR="$W/keys"
           # the host opens the app's saved encrypted backup with tools/decrypt-backup.py (needs cryptography)
-          nohup "$W/venv/bin/python" ios/ci/replica-host.py "$SIM_UDID" "$PWD/ios/ci/replica-setup.sh" > out/host.log 2>&1 &
+          nohup "$W/venv/bin/python" ios/ci/replica-host.py "$SIM_UDID" "$PWD/rust/target/release/replica-setup" > out/host.log 2>&1 &
           # a deploy key ever seen on the test repo (the repos flow checks it was added, then removed)
           ( while :; do n=$(GH_TOKEN="$REPLICA_REPO_TOKEN" gh api "repos/$REPLICA_REPO/keys" -q length 2>/dev/null || echo 0); [ "$n" -gt 0 ] && touch "$W/key-seen"; sleep 5; done ) > /dev/null 2>&1 &
           sleep 1

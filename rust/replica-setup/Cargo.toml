@@ -1,0 +1,15 @@
+[package]
+name = "replica-setup"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "replica-setup"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1.0"
+
+[lints]
+workspace = true

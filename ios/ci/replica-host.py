@@ -5,7 +5,7 @@ served to the UI test (ReplicaUITests) on 127.0.0.1:18300.
   GET /faceid/match?for=N   Face ID matches for the next N seconds (each prompt that appears is matched)
   GET /faceid/nomatch       the next prompt fails (a face that isn't enrolled): no match is sent, and a nomatch every
                             1.5 s for 30 s (or until /faceid/match), so the prompt fails whenever it comes up
-  GET /relay?msg=M          M to the setup session (HANDLER M, ios/ci/replica-setup.sh, on this runner); its stdout back
+  GET /relay?msg=M          M to the setup session (HANDLER M, rust/replica-setup, on this runner); its stdout back
   GET /log?msg=M            a line in this helper's log
   GET /memwarn              the simulator's memory warning (Debug → Simulate Memory Warning)
   GET /backup-open?kit=K    the app's saved encrypted backup (its tmp/backups/*.json) opened offline with this run's

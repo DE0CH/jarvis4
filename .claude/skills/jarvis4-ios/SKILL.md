@@ -27,7 +27,7 @@ Jarvis2/<feature>    Sessions (split view, detail, terminal WebView, grants, sch
 UITests/             UITestKit (helpers, blank checks), Jarvis4UITests (walkthrough), TransitionsUITests, ReplicaUITests
 interop/             swift run Interop / Rehearse: the Security files (symlinks) against the real core
 ci/                  standins.sh (keys, S3 stand-in, core + router), standin.py, replica-stack.sh (the replica's Jarvis 4),
-                     replica-setup.sh (the setup session's answers), replica-host.py (Face ID, those answers)
+                     replica-host.py (Face ID, the setup session's answers: rust/replica-setup)
 ```
 
 ## Rules for any page that signs (keep them)
@@ -72,7 +72,7 @@ ci/                  standins.sh (keys, S3 stand-in, core + router), standin.py,
 - **Phone replica** (`ios.yml` job `replica`, main only, about 70 min on the `xcode-27` runner): the Release build
   against a real throwaway Jarvis 4 on the runner (`ios/ci/replica-stack.sh`: this commit's core and router, real Fly
   session machines over the run's own WireGuard peer), Face ID driven by `ios/ci/replica-host.py`, the setup session's
-  answers by `ios/ci/replica-setup.sh`. Secrets: GitHub environment `replica` (REPLICA_FLY_TOKEN, REPLICA_REPO_TOKEN for
+  answers by `rust/replica-setup` (built in the job). Secrets: GitHub environment `replica` (REPLICA_FLY_TOKEN, REPLICA_REPO_TOKEN for
   `DE0CH/jarvis4-replica-test`). docs/RUNBOOK.md "The phone replica".
 
 ## Ship
