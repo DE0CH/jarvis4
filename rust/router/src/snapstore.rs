@@ -8,7 +8,7 @@
 
 use crate::objstore::ObjReader;
 use crate::router::Router;
-use crate::transcript::{SnapshotFacts, read_snapshot_facts_from};
+use crate::tails::{SnapshotFacts, read_snapshot_facts_from};
 use anyhow::{Result, anyhow};
 use jarvis_go::GoTime;
 use sha2::{Digest, Sha256};
