@@ -723,8 +723,11 @@ DE0CH/aviary's supervisor (the same build YYC AI's sandboxes run) drives Claude 
 hermit-jarvis, aviary/). The machine's `aviary-gateway` boots the sandbox with hermit-jarvis (signed with the machine
 key, which hermit-jarvis has the router check: `POST /api/machine-signatures/verify`) and sends Claude's calls to
 Anthropic with the session's current login, as api-proxy.js does (an account switch needs no restart). Jarvis's
-messages are turns of the conversation (`harness-send` → the gateway → magpie; 409 while a turn runs → 75). Sessions
-start only here; the chat app has no New chat.
+messages are turns of the conversation (`harness-send` → the gateway → magpie; 409 while a turn runs → 75). A session
+starts here, or from the chat's New chat (Deyao, 2026-11-18): the conversation's first message makes hermit-jarvis
+propose a session with the defaults (`POST /api/remotes`), which waits in the Inbox like any New session; the message
+waits with it ("Waiting for your approval", then "Preparing the workspace") and goes in once the machine is up, and a
+denied session's conversation leaves the chat with its message.
 
 ### The supervisor and the guard (Deyao, 2026-10-16)
 

@@ -3161,3 +3161,16 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      resumed first (Resume finishes a failed pause's snapshot first, or starts a failed start again), then delivered.
      A resume that fails again fails the firing like any other failure (back-off, then a DM after 5 attempts). Other
      deliveries (peer messages, approved held messages) still don't start a failed session.
+272. **A new conversation in the chat starts its own session** (Deyao, 2026-11-18: "start a new session and start
+     typing right away"; this replaces "sessions start only in the Jarvis 4 app" of 2026-11-11). hermit-jarvis's
+     `/v1/deployment` says `peopleCreate: true`, so the chat offers New chat. The first message's get-or-start finds no
+     session for the conversation and proposes one through the router's existing New session path (`POST
+     /api/remotes {harness: aviary, requestId: chat:<conversation>}`: the defaults, the devices Access app hermit-jarvis
+     already reaches, no kernel change). The start waits in hermit's phase `approval` (aviary's contract) while the
+     router lists the session as `approval`, then `host`; magpie holds the message (the wait for an approval spends
+     none of the turn's 15 min) and the chat says "Waiting for your approval", then "Preparing the workspace". The
+     machine's boot finds the conversation already recorded and makes none. Denied, or lapsed after the Inbox's 10
+     minutes: the router removes the session, hermit-jarvis ends the start (`not_allowed`) and takes the conversation
+     out of the chat, message and all. The rule is `aviary/src/reconcile.rs` `verdict`, a pure function of the
+     router's state; the pass carries it out. *Change*: keep a lapsed one (as Deyao's own New session is kept failed,
+     to Start again) if a lapse should not lose the message.
