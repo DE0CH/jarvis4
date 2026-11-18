@@ -23,7 +23,7 @@ spec:
       tolerations: [{ operator: Exists }]
       containers:
         - name: warp-watch
-          image: ghcr.io/de0ch/jarvis4-warp-watch:sha-000000000000
+          image: ghcr.io/de0ch/jarvis4-warp-watch:sha-d1b7b9780e79@sha256:32e601ab5ccbd91166e579d6edc6765a68a0857c94cd1d5d102a8f30f8d2c8d9
           env: [{ name: NODE_NAME, valueFrom: { fieldRef: { fieldPath: spec.nodeName } } }]
           resources: { requests: { cpu: 5m, memory: 8Mi }, limits: { memory: 32Mi } }
           securityContext: { privileged: true }
