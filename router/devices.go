@@ -427,6 +427,28 @@ func (r *Router) registerDevices(app appRoute, public publicRoute) {
 	// Access app as the signature check is: hermit-jarvis's service token reaches only its paths
 	r.appPatterns["PUT /api/sessions/{id}/chat-schedule"] = true
 	public("PUT /api/sessions/{id}/chat-schedule", r.requireDeyaoOrDevice(r.putChatSchedule))
+	// the chat's model menu picked a Claude account for a session ("Opus 5.5 · chendeyao-uk"; accountswap.go,
+	// hermit-jarvis): the same switch as the app's More → Switch Claude account, answered at once (the machine's gateway
+	// waits for its own proof of the new pair before the next Anthropic call). Under /api/remotes, which the devices'
+	// Access app covers with its subpaths, so it needs no Access change (a path under /api/sessions/ would)
+	r.appPatterns["POST /api/remotes/{id}/account"] = true
+	public("POST /api/remotes/{id}/account", r.requireDeyaoOrDevice(func(w http.ResponseWriter, req *http.Request) {
+		var in accountSwitchIn
+		if err := json.NewDecoder(io.LimitReader(req.Body, 1<<16)).Decode(&in); err != nil && err != io.EOF {
+			writeErr(w, fmt.Errorf("bad JSON: %v", err))
+			return
+		}
+		out, err := r.SwitchAccount(req, req.PathValue("id"), in)
+		if err != nil {
+			scheduleErr(w, err)
+			return
+		}
+		code := 200
+		if out["started"] == true {
+			code = 202
+		}
+		writeJSON(w, code, out)
+	}))
 	public("POST /api/sessions/{id}/start", r.requireDeyaoOrDevice(func(w http.ResponseWriter, req *http.Request) {
 		if err := r.resumeWithPrompt(req.PathValue("id"), false, ""); err != nil {
 			scheduleErr(w, err)

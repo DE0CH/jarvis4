@@ -456,6 +456,40 @@ func (a *claudeAccounts) list() map[string]any {
 	return map[string]any{"default": def, "accounts": rows}
 }
 
+// chatRows: the accounts the chat's model menu offers, one entry per account a Claude model can run on (the default
+// first, then by name): {store, name, email, accountUuid, default}. An account with no usable login is left out — a
+// conversation on it couldn't answer — and comes back when Deyao re-logs it in (the menu re-reads this list).
+func (a *claudeAccounts) chatRows() []map[string]any {
+	def := a.defaultStore()
+	rows := []map[string]any{}
+	for _, h := range a.all() {
+		st := h.status()
+		if st["hasLogin"] != true {
+			continue
+		}
+		if need, ok := st["needLogin"].(bool); ok && need {
+			continue
+		}
+		row := map[string]any{
+			"store":   h.store,
+			"name":    strings.TrimPrefix(h.store, "claude-"),
+			"email":   st["email"],
+			"default": h.store == def,
+		}
+		if u, ok := st["accountUuid"].(string); ok && u != "" {
+			row["accountUuid"] = u
+		}
+		rows = append(rows, row)
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i]["default"] != rows[j]["default"] {
+			return rows[i]["default"] == true
+		}
+		return rows[i]["name"].(string) < rows[j]["name"].(string)
+	})
+	return rows
+}
+
 func loginErrStatus(err error) int {
 	var c *accountConflict
 	switch {

@@ -639,6 +639,7 @@ pub const CALL_RULES: &[(&str, CallRule)] = &[
     ("GET /api/sessions/{id}/crons", CallRule::Body),
     ("POST /api/sessions/{id}/crons", CallRule::Body),
     ("PUT /api/sessions/{id}/chat-schedule", CallRule::No), // hermit-jarvis's report (schedule.go ChatSchedule)
+    ("POST /api/remotes/{id}/account", CallRule::No), // hermit-jarvis: the chat's menu picked an account (a session asks with POST /api/sessions/{id}/account)
     ("DELETE /api/sessions/{id}/crons/{name}", CallRule::Body),
     ("POST /api/sessions/{id}/crons/{name}/run", CallRule::Body),
     ("POST /api/sessions/{id}/destroy", CallRule::Body),

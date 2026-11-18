@@ -436,6 +436,44 @@ impl ClaudeAccounts {
             .collect();
         json!({"default": def, "accounts": rows})
     }
+
+    /// the accounts the chat's model menu offers, one entry per account a Claude model can run on (the default first,
+    /// then by name): {store, name, email, accountUuid, default}. An account with no usable login is left out (a
+    /// conversation on it couldn't answer) and comes back once Deyao re-logs it in (the menu re-reads this list)
+    pub fn chat_rows(&self) -> Vec<Value> {
+        let def = self.default_store();
+        let mut rows: Vec<(bool, String, Value)> = self
+            .all()
+            .into_iter()
+            .filter_map(|h| {
+                let st = h.status();
+                if st.get("hasLogin") != Some(&json!(true))
+                    || st.get("needLogin") == Some(&json!(true))
+                {
+                    return None;
+                }
+                let name = h.store.trim_start_matches("claude-").to_string();
+                let mut row = Map::new();
+                row.insert("store".into(), json!(h.store));
+                row.insert("name".into(), json!(name));
+                row.insert(
+                    "email".into(),
+                    st.get("email").cloned().unwrap_or(Value::Null),
+                );
+                row.insert("default".into(), json!(h.store == def));
+                if let Some(u) = st
+                    .get("accountUuid")
+                    .and_then(Value::as_str)
+                    .filter(|u| !u.is_empty())
+                {
+                    row.insert("accountUuid".into(), json!(u));
+                }
+                Some((h.store != def, name, Value::Object(row)))
+            })
+            .collect();
+        rows.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
+        rows.into_iter().map(|(_, _, v)| v).collect()
+    }
 }
 
 fn login_err_status(e: &anyhow::Error) -> u16 {

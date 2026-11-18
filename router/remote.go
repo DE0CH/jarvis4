@@ -231,10 +231,11 @@ func tunnelProof(key, id string) string {
 }
 
 // GET /api/remotes?harness=openclaw|opencode|paseo-claude|paseo|aviary|dsh → {sessions: [{id, title, state, model,
-// harness, + url, token, webUrl (openclaw) | pairUrl (a Paseo harness) | webUrl (aviary, dsh) — only on a started session
-// whose front end is up, else error}]}. harness=paseo: every session a Paseo daemon fronts (opencode and paseo-claude),
-// what the Paseo app lists; harness=aviary: what hermit-jarvis lists (paused ones too, and one whose resume waits for
-// Deyao's approval, as paused).
+// harness, account, + url, token, webUrl (openclaw) | pairUrl (a Paseo harness) | webUrl (aviary, dsh) — only on a started
+// session whose front end is up, else error}], accounts: [{store, name, email, accountUuid, default}]}. The accounts are
+// the Claude ones the chat's model menu offers (claudeAccounts.chatRows). harness=paseo: every session a Paseo daemon
+// fronts (opencode and paseo-claude), what the Paseo app lists; harness=aviary: what hermit-jarvis lists (paused ones
+// too, and one whose resume waits for Deyao's approval, as paused).
 func (r *Router) remotes(w http.ResponseWriter, req *http.Request) {
 	harness := req.URL.Query().Get("harness")
 	if !remoteHarnesses[harness] && harness != "paseo" {
@@ -263,7 +264,7 @@ func (r *Router) remotes(w http.ResponseWriter, req *http.Request) {
 	out := make([]map[string]any, len(all))
 	var wg sync.WaitGroup
 	for i, s := range all {
-		o := map[string]any{"id": s.ID, "title": sessionTitle(s), "state": s.State, "model": s.Model, "harness": s.Harness}
+		o := map[string]any{"id": s.ID, "title": sessionTitle(s), "state": s.State, "model": s.Model, "harness": s.Harness, "account": s.ClaudeAccount}
 		out[i] = o
 		if s.State != "started" || s.MachineID == "" {
 			continue
@@ -299,5 +300,8 @@ func (r *Router) remotes(w http.ResponseWriter, req *http.Request) {
 	}
 	wg.Wait()
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 200, map[string]any{"sessions": out})
+	// `accounts`: the Claude accounts a session's model can run on, for a front end that offers them beside the models
+	// (hermit-jarvis: the chat's model menu, one entry "Opus 5.5 · chendeyao-uk" per account); "Paseo" and the other
+	// apps ignore it
+	writeJSON(w, 200, map[string]any{"sessions": out, "accounts": r.accounts().chatRows()})
 }

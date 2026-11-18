@@ -532,6 +532,13 @@ pub fn register_devices(reg: &mut Registrar) {
     device_route(reg, "PUT /api/sessions/{id}/chat-schedule", |r, w, req| {
         r.put_chat_schedule(w, req)
     });
+    // the chat's model menu picked a Claude account for a session ("Opus 5.5 · chendeyao-uk"; accountswap.rs,
+    // hermit-jarvis): the app's More → Switch Claude account, answered at once (the machine's gateway waits for its own
+    // proof of the new pair before the next Anthropic call). Under /api/remotes, which the devices' Access app covers
+    // with its subpaths, so it needs no Access change (a path under /api/sessions/ would)
+    device_route(reg, "POST /api/remotes/{id}/account", |r, w, req| {
+        crate::accountswap::account_switch_route(r, w, req)
+    });
     device_route(reg, "POST /api/sessions/{id}/start", |r, w, req| {
         match r.resume_with_prompt(&req.path_value("id"), false, "") {
             Err(e) => crate::schedule::schedule_err(w, &e),
