@@ -255,6 +255,8 @@ struct Pattern {
     segs: Vec<Seg>,
     /// ends in "/": the subtree
     subtree: bool,
+    /// ends in "/{$}": exactly this path with its trailing slash
+    exact_slash: bool,
     raw: String,
 }
 
@@ -286,6 +288,7 @@ fn parse_pattern(p: &str) -> Pattern {
         method,
         segs,
         subtree: subtree && !exact_end,
+        exact_slash: exact_end,
         raw: p.to_string(),
     }
 }
@@ -330,6 +333,9 @@ impl Pattern {
                 }
             }
             i += 1;
+        }
+        if self.exact_slash {
+            return (i == parts.len() && trailing).then_some(out);
         }
         if i == parts.len() && (!trailing || self.subtree) {
             return Some(out);

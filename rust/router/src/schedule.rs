@@ -1454,8 +1454,11 @@ mod tests {
             serde_json::from_str(r#"{"name":"x","prompt":"p","everySeconds":60}"#)
                 .unwrap_or_default();
         assert!(normalize_cron(&b, now).is_err());
-        assert_eq!(parse_time(&json!("2026-11-18T10:00")), Some(1763460000000));
-        assert_eq!(parse_time(&json!("2026-11-18")), Some(1763424000000));
+        assert_eq!(
+            parse_time(&json!("2026-11-18T10:00")),
+            Some(1_794_996_000_000)
+        );
+        assert_eq!(parse_time(&json!("2026-11-18")), Some(1_794_960_000_000));
         let mut cr = Cron {
             next_at: 1000,
             every: 10,
