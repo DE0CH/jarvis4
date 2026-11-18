@@ -225,6 +225,21 @@ from the AMI). What this shows for the build:
   1.5 GiB). Programs see both clocks jump; the tool's description says so.
 - The restore loads the image eagerly and is fast; most of a thaw is the download.
 
+### Lazy eviction (Deyao, 2026-11-18)
+
+A freeze does not go to S3 by itself. Freezing pauses the sandbox where it is (`runsc pause`: its memory stays on its
+host, nothing is written), and a thaw of a sandbox still there is `runsc resume` on that host, at once. The one rule:
+**a frozen sandbox's slot counts as free capacity, taken back by evicting it when the slot is needed.** Evicting is
+the push below (record the paused sandbox into S3, delete it there): the sandbox stays `frozen`, now with no host, and
+its thaw is a placement and a restore. Everything else follows from the rule:
+
+- A new sandbox (a start, a thaw of an evicted one) with no free slot on any host evicts the frozen sandbox with the
+  most time left before its `until` (none = the most of all; ties: the oldest freeze), and takes its slot. Only when
+  no frozen sandbox is left does the scaler start another AWS host.
+- The scaler's scale-in sees a host holding only frozen sandboxes as empty: taking that host away needs its slots,
+  so its frozen sandboxes are evicted first. A drain (an AMI or gVisor upgrade) the same.
+- A wakeup, message or condition that comes for a frozen sandbox thaws it from wherever it is.
+
 ### How a frozen image travels (engineering design, 2026-11-17)
 
 Hosts hold no standing AWS credentials and may only read `images/*` through the VPC endpoint; that stays. So:
@@ -237,7 +252,7 @@ Hosts hold no standing AWS credentials and may only read `images/*` through the 
   frames, the frame index as the nonce, the last frame marked; a streamed multipart upload of unknown length). Nothing
   of the sandbox's memory touches the host's tmpfs or disk, and the 64 KiB request bound holds. Once it stopped, its
   scratch file follows as `tar --sparse | sandboxd seal | aws s3 cp - <key>.scratch`. It then deletes the sandbox. hermit keeps the key sealed under its own key in its database and marks the sandbox `frozen`
-  (no host, no slot).
+  (no host, no slot). This is the eviction of a paused sandbox (above), never the freeze itself.
 - **Thaw:** hermit places the sandbox like a start (any host; its spec and address travel as in a migration) and calls
   `POST /v1/sandboxes/{name}/thaw` with the key and read-only credentials for those objects; sandboxd puts back the
   scratch file (`aws s3 cp <key>.scratch - | sandboxd open | tar -x`), starts `runsc restore --migrate-listen` as a
