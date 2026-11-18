@@ -54,10 +54,12 @@ They push a branch (`claude/<topic>`; `wip/<topic>` only runs CI), and the gate 
   environments `release`/`replica` admit main only, aws's workflow_run takes main's images runs only, `:latest` moves
   on main only).
 - `merge.yml` (workflow_run of each of those; GitHub runs main's copy, so a branch can't change it) runs `gate merge`:
-  once every workflow on the head commit is over, one red → `gate` red; all green on main's head → main is
-  fast-forwarded to that exact commit with the deploy key `jarvis-merge` (environment `merge`) and the branch deleted;
-  all green on an older base → main is merged into the branch (never a force push) and its CI runs again. The rule is
-  `rust/gate/src/decide.rs`, tested alone.
+  once every workflow on the head commit is over, one red → `gate` red; all green → into main with the deploy key
+  `jarvis-merge` (environment `merge`), the branch deleted: on main's head a fast-forward to that exact commit, on an
+  older base main merged in and the merge pushed with no further run (Deyao, 2026-11-18: jarvis4's main moves every
+  15-30 min, aviary's faster, and re-testing for every move would never land; main's own CI runs on the merge). A
+  conflict turns `gate` red with a comment. The rule is `rust/gate/src/decide.rs` and the git part `land_git`, both
+  tested alone (against local repos).
 - Main's ruleset requires `gate` green for anyone else (a merge in the web page); deploy keys (the pins, the gate) and
   the admin role bypass it.
 - The agent's side: a Claude Code hook (DE0CH/claude-env `.claude/hooks/git-guard.py`) denies a commit on main and a

@@ -1,9 +1,11 @@
 //! What the gate does with a branch's commit once a workflow on it has finished: a pure function of what GitHub
 //! reports, so the rule is tested alone (Deyao, 2026-11-18: an agent's change reaches main only when CI is green).
 //!
-//! The one rule: the commit the branch's CI tested is the commit main moves to. Everything else follows from it:
-//! a commit whose base is not main's head gets main merged in first (and is tested again), and a branch pushed again
-//! meanwhile is left to the newer push's own runs.
+//! The one rule: a commit whose every workflow is green goes into main. On main's head it is main's new head (a
+//! fast-forward); on an older base main is merged into it and the merge, if clean, is main's new head without another
+//! run (Deyao, 2026-11-18: main moves every 15-30 min in jarvis4, faster in aviary, and a branch re-tested for each
+//! move would never land; main's own CI runs on the merge). A branch pushed again meanwhile is left to the newer
+//! push's own runs.
 
 /// one workflow run on the branch's head commit, as the Actions API lists it
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,8 +39,8 @@ pub enum Action {
     Fail(String),
     /// green, and nothing to merge (a wip/ branch, no open pull request, already in main)
     Green(String),
-    /// green on an old base: merge main into the branch; its CI runs again
-    Update,
+    /// green on an older base: main merged into the commit, the merge (when clean) main's new head
+    MergeIn,
     /// green on main's head: main moves to this commit
     Merge,
 }
@@ -95,7 +97,7 @@ pub fn decide(branch: &str, runs: &[Run], current: bool, pr_open: bool, rel: Rel
     }
     match rel {
         Rel::Ahead => Action::Merge,
-        Rel::Diverged => Action::Update,
+        Rel::Diverged => Action::MergeIn,
         Rel::Identical | Rel::Behind => {
             Action::Green(format!("{n} workflows green; already in main"))
         }
@@ -166,10 +168,10 @@ mod tests {
     }
 
     #[test]
-    fn an_old_base_gets_main_merged_in() {
+    fn an_old_base_gets_main_merged_in_and_lands_without_another_run() {
         assert_eq!(
             decide("claude/x", &green(), true, true, Rel::Diverged),
-            Action::Update
+            Action::MergeIn
         );
     }
 

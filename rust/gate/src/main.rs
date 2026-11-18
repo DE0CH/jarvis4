@@ -7,6 +7,8 @@
 //!   gate setup   one repo's GitHub side, idempotent: the deploy key jarvis-merge and its secret in the `merge`
 //!                environment, and main's ruleset requiring the gate (setup.rs; GH_TOKEN is a repo admin's;
 //!                GATE_REPOS=owner/name[+actions],…: +actions when the repo's workflows push main with their token)
+//!   gate key     one more deploy key for a job that pushes the default branch (GATE_REPO, GATE_ENV, GATE_KEY_TITLE,
+//!                GATE_SECRET): the key's private half is that environment's secret
 //!   gate merge   merge.yml, when any workflow on a branch finishes (workflow_run: GitHub runs it from main's copy,
 //!                so a branch can't change it): once every workflow on the head commit is done, set `gate` green or
 //!                red; green on main's head fast-forwards main to that exact commit with the merge deploy key; green
@@ -188,14 +190,16 @@ impl Git {
             k.push('\n');
         }
         write_private(&key, &k)?;
-        let g = Git {
-            ssh: format!(
-                "ssh -i {} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new",
-                key.display()
-            ),
-            url: format!("git@github.com:{repo}.git"),
-            dir,
-        };
+        let ssh = format!(
+            "ssh -i {} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new",
+            key.display()
+        );
+        Git::at(dir, ssh, format!("git@github.com:{repo}.git"))
+    }
+
+    /// an empty repo in dir whose origin is url (tests: a local bare repo)
+    fn at(dir: tempfile::TempDir, ssh: String, url: String) -> Result<Git> {
+        let g = Git { ssh, url, dir };
         g.run(&["init", "-q", "repo"])?;
         g.git(&["remote", "add", "origin", &g.url])?;
         g.git(&["config", "user.name", "jarvis4-gate"])?;
@@ -301,70 +305,99 @@ fn merge(gh: &Gh) -> Result<()> {
         }
         Action::Fail(why) => gh.status(&sha, "failure", &format!("red: {why}")),
         Action::Green(why) => gh.status(&sha, "success", &why),
-        Action::Merge => {
+        Action::Merge | Action::MergeIn => {
             gh.status(
                 &sha,
                 "success",
                 &format!("{} workflows green; merging into {base}", runs.len()),
             )?;
-            let g = Git::new(&gh.repo)?;
-            g.git(&[
-                "fetch",
-                "-q",
-                "--filter=blob:none",
-                "origin",
-                &branch,
-                &base,
-            ])?;
-            match g.git(&["push", "-q", "origin", &format!("{sha}:refs/heads/{base}")]) {
-                Ok(_) => {
-                    println!("{base} is now {sha}");
-                    if let Err(e) = g.git(&["push", "-q", "origin", "--delete", &branch]) {
-                        println!("deleting {branch}: {e:#}");
-                    }
-                    Ok(())
-                }
-                // main moved since the compare (a pin): bring it in and test again
-                Err(e) => {
-                    println!("{base} moved while merging ({e:#}): merging it into {branch}");
-                    update(gh, &g, &branch, &base, &sha, pr.as_ref())
-                }
-            }
-        }
-        Action::Update => {
-            let g = Git::new(&gh.repo)?;
-            g.git(&[
-                "fetch",
-                "-q",
-                "--filter=blob:none",
-                "origin",
-                &branch,
-                &base,
-            ])?;
-            update(gh, &g, &branch, &base, &sha, pr.as_ref())
+            land(gh, &branch, &base, &sha, runs.len(), pr.as_ref())
         }
     }
 }
 
-/// main merged into the branch (never a force push): the branch's CI runs again on the merge
-fn update(gh: &Gh, g: &Git, branch: &str, base: &str, sha: &str, pr: Option<&Value>) -> Result<()> {
-    g.git(&["fetch", "-q", "--filter=blob:none", "origin", base])?;
-    g.git(&["checkout", "-q", "--detach", sha])?;
-    if let Err(e) = g.git(&["merge", "--no-edit", "-q", &format!("origin/{base}")]) {
-        let _ = g.git(&["merge", "--abort"]);
-        let why = format!("conflicts with {base}: merge {base} into the branch and push");
-        gh.status(sha, "failure", &why)?;
-        if let Some(n) = pr.and_then(|p| p["number"].as_u64()) {
-            let _ = gh.post(&format!("/issues/{n}/comments"), &json!({"body": format!("The gate couldn't merge `{base}` into this branch:\n\n```\n{e:#}\n```\n\nMerge it in and push; CI runs again.")}));
+/// what land_git did
+#[derive(Debug, PartialEq)]
+enum Landed {
+    /// main is now this commit (ff: the tested commit itself)
+    Pushed { target: String, ff: bool },
+    /// main doesn't merge into the commit cleanly
+    Conflict(String),
+    /// main kept moving under every push
+    Moved,
+}
+
+/// the green commit into main, git only: a fast-forward when main is its ancestor, else main merged into it and the
+/// merge pushed. Main moving during the push is tried again (5 times). Never a force push.
+fn land_git(g: &Git, branch: &str, base: &str, sha: &str, n: usize) -> Result<Landed> {
+    for attempt in 1..=5 {
+        g.git(&["fetch", "-q", "--filter=blob:none", "origin", branch, base])?;
+        let main = g.git(&["rev-parse", &format!("refs/remotes/origin/{base}")])?;
+        let ff = g.git(&["merge-base", "--is-ancestor", &main, sha]).is_ok();
+        let target = if ff {
+            sha.to_string()
+        } else {
+            g.git(&["checkout", "-q", "--detach", sha])?;
+            let msg = format!(
+                "Merge {branch} into {base}\n\nThe gate: {n} workflows green on {}; {base} merged in cleanly.",
+                &sha[..sha.len().min(12)]
+            );
+            if let Err(e) = g.git(&["merge", "--no-ff", "-q", "-m", &msg, &main]) {
+                let _ = g.git(&["merge", "--abort"]);
+                return Ok(Landed::Conflict(format!("{e:#}")));
+            }
+            g.git(&["rev-parse", "HEAD"])?
+        };
+        match g.git(&[
+            "push",
+            "-q",
+            "origin",
+            &format!("{target}:refs/heads/{base}"),
+        ]) {
+            Ok(_) => return Ok(Landed::Pushed { target, ff }),
+            Err(e) => println!("{base} moved while landing (attempt {attempt}): {e:#}"),
         }
-        return Ok(());
     }
-    g.git(&["push", "-q", "origin", &format!("HEAD:refs/heads/{branch}")])?;
-    gh.status(
-        sha,
-        "success",
-        &format!("green; {base} was merged into the branch, whose CI runs again"),
-    )
+    Ok(Landed::Moved)
+}
+
+/// land_git, then what it means for the gate's status, the pull request and the branch
+fn land(gh: &Gh, branch: &str, base: &str, sha: &str, n: usize, pr: Option<&Value>) -> Result<()> {
+    let g = Git::new(&gh.repo)?;
+    match land_git(&g, branch, base, sha, n)? {
+        Landed::Pushed { target, ff } => {
+            println!(
+                "{base} is now {target}{}",
+                if ff { "" } else { " (a merge)" }
+            );
+            if let Err(e) = g.git(&["push", "-q", "origin", "--delete", branch]) {
+                println!("deleting {branch}: {e:#}");
+            }
+            Ok(())
+        }
+        Landed::Conflict(e) => {
+            gh.status(
+                sha,
+                "failure",
+                &format!("conflicts with {base}: merge {base} into the branch and push"),
+            )?;
+            if let Some(num) = pr.and_then(|p| p["number"].as_u64()) {
+                let _ = gh.post(
+                    &format!("/issues/{num}/comments"),
+                    &json!({"body": format!("The gate couldn't merge `{base}` into this branch:\n\n```\n{e}\n```\n\nMerge it in and push; CI runs again.")}),
+                );
+            }
+            Ok(())
+        }
+        Landed::Moved => {
+            gh.status(
+                sha,
+                "pending",
+                &format!("green; {base} kept moving while landing, tried again at the next run"),
+            )?;
+            bail!("{base} kept moving: not landed")
+        }
+    }
 }
 
 fn main() -> ExitCode {
@@ -383,6 +416,7 @@ fn main() -> ExitCode {
         "open" => open(&gh),
         "merge" => merge(&gh),
         "setup" => setup_repos(&gh),
+        "key" => key_one(&gh),
         _ => Err(anyhow!("usage: gate open|merge|setup|vendor")),
     });
     match res {
@@ -433,83 +467,14 @@ fn setup_one(gh: &Gh, repo: &str, actions: bool, dry: bool) -> Result<Vec<String
         );
         return Ok(done);
     }
-    // the deploy key: generated fresh, the one titled jarvis-merge replaced
-    let dir = tempfile::tempdir()?;
-    let key = dir.path().join("key");
-    let st = Command::new("ssh-keygen")
-        .args([
-            "-q",
-            "-t",
-            "ed25519",
-            "-N",
-            "",
-            "-C",
-            &format!("jarvis4-gate@{repo}"),
-            "-f",
-        ])
-        .arg(&key)
-        .status()
-        .context("running ssh-keygen")?;
-    if !st.success() {
-        bail!("ssh-keygen failed");
-    }
-    let public = std::fs::read_to_string(key.with_extension("pub"))?;
-    let private = std::fs::read_to_string(&key)?;
-    let keys = gh.get(&format!("/repos/{repo}/keys"))?;
-    for k in keys.as_array().cloned().unwrap_or_default() {
-        if k["title"] == setup::KEY_TITLE {
-            let id = k["id"].as_u64().unwrap_or(0);
-            gh.call(
-                reqwest::Method::DELETE,
-                &format!("/repos/{repo}/keys/{id}"),
-                None,
-            )?;
-            done.push(format!("deploy key {id} replaced"));
-        }
-    }
-    if !public.contains("ed25519") {
-        bail!("ssh-keygen wrote no ed25519 key");
-    }
-    gh.post(
-        &format!("/repos/{repo}/keys"),
-        &json!({"title": setup::KEY_TITLE, "key": public.trim(), "read_only": false}),
-    )?;
-    done.push("deploy key jarvis-merge (write)".into());
-    // the environment first (main only), then its secret: an environment secret reaches only jobs that name the
-    // environment, and the environment admits main's runs only, so no branch's workflow can read the key
-    gh.call(
-        reqwest::Method::PUT,
-        &format!("/repos/{repo}/environments/merge"),
-        Some(&setup::environment_payload()),
-    )?;
-    let pol = gh.get(&format!(
-        "/repos/{repo}/environments/merge/deployment-branch-policies"
-    ))?;
-    let have = pol["branch_policies"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
-        .iter()
-        .any(|p| p["name"] == branch.as_str() && p["type"] == "branch");
-    if !have {
-        gh.post(
-            &format!("/repos/{repo}/environments/merge/deployment-branch-policies"),
-            &setup::branch_policy_payload(&branch),
-        )?;
-    }
-    done.push(format!("environment merge: {branch} only"));
-    let pk = gh.get(&format!(
-        "/repos/{repo}/environments/merge/secrets/public-key"
-    ))?;
-    let sealed = seal(pk["key"].as_str().unwrap_or(""), private.as_bytes())?;
-    match gh.call(
-        reqwest::Method::PUT,
-        &format!("/repos/{repo}/environments/merge/secrets/{}", setup::SECRET),
-        Some(&json!({"encrypted_value": sealed, "key_id": pk["key_id"]})),
-    )? {
-        (201 | 204, _) => done.push(format!("secret {} in environment merge", setup::SECRET)),
-        (c, v) => bail!("the environment secret: {c} {v}"),
-    }
+    done.extend(install_key(
+        gh,
+        repo,
+        &branch,
+        "merge",
+        setup::KEY_TITLE,
+        setup::SECRET,
+    )?);
     // main's ruleset: made, or the one this tool made before updated in place
     let want = setup::ruleset_payload(&branch, actions);
     let rs = gh.get(&format!("/repos/{repo}/rulesets"))?;
@@ -535,6 +500,143 @@ fn setup_one(gh: &Gh, repo: &str, actions: bool, dry: bool) -> Result<Vec<String
         }
     }
     Ok(done)
+}
+
+/// a write deploy key titled `title` (one with that title replaced) whose private half is the secret `secret` of the
+/// environment `env`; an environment that does not exist yet is made, admitting `branch` only (an existing one is
+/// left as it is: it may hold reviewers or other secrets)
+fn install_key(
+    gh: &Gh,
+    repo: &str,
+    branch: &str,
+    env: &str,
+    title: &str,
+    secret: &str,
+) -> Result<Vec<String>> {
+    let mut done = vec![];
+    let dir = tempfile::tempdir()?;
+    let key = dir.path().join("key");
+    let st = Command::new("ssh-keygen")
+        .args([
+            "-q",
+            "-t",
+            "ed25519",
+            "-N",
+            "",
+            "-C",
+            &format!("jarvis4-{title}@{repo}"),
+            "-f",
+        ])
+        .arg(&key)
+        .status()
+        .context("running ssh-keygen")?;
+    if !st.success() {
+        bail!("ssh-keygen failed");
+    }
+    let public = std::fs::read_to_string(key.with_extension("pub"))?;
+    let private = std::fs::read_to_string(&key)?;
+    if !public.contains("ed25519") {
+        bail!("ssh-keygen wrote no ed25519 key");
+    }
+    let keys = gh.get(&format!("/repos/{repo}/keys"))?;
+    for k in keys.as_array().cloned().unwrap_or_default() {
+        if k["title"] == title {
+            let id = k["id"].as_u64().unwrap_or(0);
+            gh.call(
+                reqwest::Method::DELETE,
+                &format!("/repos/{repo}/keys/{id}"),
+                None,
+            )?;
+            done.push(format!("deploy key {id} replaced"));
+        }
+    }
+    gh.post(
+        &format!("/repos/{repo}/keys"),
+        &json!({"title": title, "key": public.trim(), "read_only": false}),
+    )?;
+    done.push(format!("deploy key {title} (write)"));
+    // the environment first: an environment secret reaches only jobs that name the environment, and the
+    // environment admits the default branch's runs only, so no branch's workflow can read the key
+    let exists = matches!(
+        gh.call(
+            reqwest::Method::GET,
+            &format!("/repos/{repo}/environments/{env}"),
+            None
+        )?,
+        (200, _)
+    );
+    if !exists {
+        gh.call(
+            reqwest::Method::PUT,
+            &format!("/repos/{repo}/environments/{env}"),
+            Some(&setup::environment_payload()),
+        )?;
+        gh.post(
+            &format!("/repos/{repo}/environments/{env}/deployment-branch-policies"),
+            &setup::branch_policy_payload(branch),
+        )?;
+        done.push(format!("environment {env}: {branch} only"));
+    } else if env == "merge" {
+        // the gate's own environment: make sure it still admits the default branch only
+        let pol = gh.get(&format!(
+            "/repos/{repo}/environments/{env}/deployment-branch-policies"
+        ))?;
+        let have = pol["branch_policies"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .any(|p| p["name"] == branch && p["type"] == "branch");
+        if !have {
+            gh.call(
+                reqwest::Method::PUT,
+                &format!("/repos/{repo}/environments/{env}"),
+                Some(&setup::environment_payload()),
+            )?;
+            gh.post(
+                &format!("/repos/{repo}/environments/{env}/deployment-branch-policies"),
+                &setup::branch_policy_payload(branch),
+            )?;
+        }
+        done.push(format!("environment {env}: {branch} only"));
+    } else {
+        done.push(format!("environment {env} (there, left as it is)"));
+    }
+    let pk = gh.get(&format!(
+        "/repos/{repo}/environments/{env}/secrets/public-key"
+    ))?;
+    let sealed = seal(pk["key"].as_str().unwrap_or(""), private.as_bytes())?;
+    match gh.call(
+        reqwest::Method::PUT,
+        &format!("/repos/{repo}/environments/{env}/secrets/{secret}"),
+        Some(&json!({"encrypted_value": sealed, "key_id": pk["key_id"]})),
+    )? {
+        (201 | 204, _) => done.push(format!("secret {secret} in environment {env}")),
+        (c, v) => bail!("the environment secret: {c} {v}"),
+    }
+    Ok(done)
+}
+
+/// gate key: GATE_REPO, GATE_ENV, GATE_KEY_TITLE, GATE_SECRET — one deploy key for a job that pushes the default
+/// branch (a pin, a land job), as install_key makes it
+fn key_one(gh: &Gh) -> Result<()> {
+    let repo = env("GATE_REPO")?;
+    let base = gh.get(&format!("/repos/{repo}"))?;
+    let branch = base["default_branch"]
+        .as_str()
+        .unwrap_or("main")
+        .to_string();
+    for l in install_key(
+        gh,
+        &repo,
+        &branch,
+        &env("GATE_ENV")?,
+        &env("GATE_KEY_TITLE")?,
+        &env("GATE_SECRET")?,
+    )? {
+        println!("{repo}: {l}");
+    }
+    Ok(())
 }
 
 /// GitHub's sealed box for an Actions secret (libsodium crypto_box_seal)
@@ -595,4 +697,160 @@ fn vendor() -> Result<()> {
         println!("{}", wf.join(name).display());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod land_tests {
+    use super::*;
+
+    fn sh(dir: &Path, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap_or_else(|e| panic!("git: {e}"));
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    /// a bare origin with main, and a work clone to make commits in
+    struct Origin {
+        _tmp: tempfile::TempDir,
+        bare: std::path::PathBuf,
+        work: std::path::PathBuf,
+    }
+
+    impl Origin {
+        fn new() -> Origin {
+            let tmp = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+            let bare = tmp.path().join("origin.git");
+            let work = tmp.path().join("work");
+            sh(
+                tmp.path(),
+                &[
+                    "init",
+                    "-q",
+                    "--bare",
+                    "-b",
+                    "main",
+                    bare.to_str().unwrap_or(""),
+                ],
+            );
+            sh(
+                tmp.path(),
+                &[
+                    "clone",
+                    "-q",
+                    bare.to_str().unwrap_or(""),
+                    work.to_str().unwrap_or(""),
+                ],
+            );
+            sh(&work, &["checkout", "-q", "-b", "main"]);
+            Origin {
+                _tmp: tmp,
+                bare,
+                work,
+            }
+        }
+
+        fn commit(&self, file: &str, body: &str) -> String {
+            std::fs::write(self.work.join(file), body).unwrap_or_else(|e| panic!("{e}"));
+            sh(&self.work, &["add", file]);
+            sh(&self.work, &["commit", "-q", "-m", file]);
+            sh(&self.work, &["rev-parse", "HEAD"])
+        }
+
+        fn push(&self, refspec: &str) {
+            sh(&self.work, &["push", "-q", "origin", refspec]);
+        }
+
+        fn main(&self) -> String {
+            sh(&self.bare, &["rev-parse", "refs/heads/main"])
+        }
+
+        fn gate(&self) -> Git {
+            let g = Git::at(
+                tempfile::tempdir().unwrap_or_else(|e| panic!("{e}")),
+                "ssh".into(),
+                self.bare.to_str().unwrap_or("").into(),
+            )
+            .unwrap_or_else(|e| panic!("{e:#}"));
+            g.git(&["config", "user.name", "gate"])
+                .unwrap_or_else(|e| panic!("{e:#}"));
+            g
+        }
+    }
+
+    #[test]
+    fn a_commit_on_mains_head_is_mains_new_head() {
+        let o = Origin::new();
+        o.commit("a", "a");
+        o.push("main");
+        sh(&o.work, &["checkout", "-q", "-b", "claude/x"]);
+        let sha = o.commit("b", "b");
+        o.push("claude/x");
+        let got =
+            land_git(&o.gate(), "claude/x", "main", &sha, 2).unwrap_or_else(|e| panic!("{e:#}"));
+        assert_eq!(
+            got,
+            Landed::Pushed {
+                target: sha.clone(),
+                ff: true
+            }
+        );
+        assert_eq!(o.main(), sha);
+    }
+
+    #[test]
+    fn main_moved_meanwhile_is_merged_in_and_the_merge_lands() {
+        let o = Origin::new();
+        let base = o.commit("a", "a");
+        o.push("main");
+        sh(&o.work, &["checkout", "-q", "-b", "claude/x"]);
+        let sha = o.commit("b", "b");
+        o.push("claude/x");
+        // a pin lands on main while the branch's CI runs
+        sh(&o.work, &["checkout", "-q", &base]);
+        let pin = o.commit("pin", "sha-1");
+        o.push(&format!("{pin}:refs/heads/main"));
+        let got =
+            land_git(&o.gate(), "claude/x", "main", &sha, 2).unwrap_or_else(|e| panic!("{e:#}"));
+        let Landed::Pushed { target, ff } = got else {
+            panic!("not landed: {got:?}")
+        };
+        assert!(!ff);
+        assert_eq!(o.main(), target);
+        // the merge holds both, and both parents are the tested commit and the pin
+        let parents = sh(&o.bare, &["rev-list", "--parents", "-n", "1", &target]);
+        assert!(
+            parents.contains(&sha) && parents.contains(&pin),
+            "{parents}"
+        );
+        assert!(!sh(&o.bare, &["log", "-1", "--format=%B", &target]).contains("skip ci"));
+    }
+
+    #[test]
+    fn a_conflict_with_main_lands_nothing() {
+        let o = Origin::new();
+        let base = o.commit("a", "a");
+        o.push("main");
+        sh(&o.work, &["checkout", "-q", "-b", "claude/x"]);
+        let sha = o.commit("a", "the branch's a");
+        o.push("claude/x");
+        sh(&o.work, &["checkout", "-q", &base]);
+        let other = o.commit("a", "main's a");
+        o.push(&format!("{other}:refs/heads/main"));
+        let got =
+            land_git(&o.gate(), "claude/x", "main", &sha, 2).unwrap_or_else(|e| panic!("{e:#}"));
+        assert!(matches!(got, Landed::Conflict(_)), "{got:?}");
+        assert_eq!(o.main(), other, "main changed after a conflict");
+    }
 }
