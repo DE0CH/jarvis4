@@ -179,17 +179,30 @@ func main() {
 	}
 	must("POST", router+"/api/kernel/secrets/claim", map[string]any{"statement": string(st), "masterSig": ms, "bundle": sealed}, nil)
 
-	step("the spawner's Fly token, sealed to it")
 	var sd sig.Doc
 	must("GET", os.Getenv("E2E_SPAWNER")+"/identity", nil, &sd)
 	var sid sig.Identity
 	json.Unmarshal([]byte(sd.Payload), &sid)
-	tok, _ := json.Marshal(map[string]string{"FLY_API_TOKEN": os.Getenv("E2E_FLY_TOKEN")})
-	ts, err := sig.SealTo(sid.AgreementKey, tok, "jarvis2/fly-token")
-	if err != nil {
-		log.Fatal(err)
+	// the runner of this run (rust/e2e-kernel E2E_RUNNER): fly, or the fabric (its hermit the replica's fake one)
+	runner := os.Getenv("E2E_RUNNER")
+	if runner == "fabric" {
+		step("the spawner's fabric credentials, sealed to it")
+		cred, _ := json.Marshal(map[string]string{"magpieToken": os.Getenv("E2E_FABRIC_MAGPIE"),
+			"adminToken": os.Getenv("E2E_FABRIC_ADMIN"), "admin": "e2e@fabric.invalid", "person": "jarvis4@deyaochen.com"})
+		cs, err := sig.SealTo(sid.AgreementKey, cred, "jarvis4/fabric-credentials")
+		if err != nil {
+			log.Fatal(err)
+		}
+		must("POST", os.Getenv("E2E_SPAWNER")+"/fabric-credentials", map[string]any{"sealed": cs}, nil)
+	} else {
+		step("the spawner's Fly token, sealed to it")
+		tok, _ := json.Marshal(map[string]string{"FLY_API_TOKEN": os.Getenv("E2E_FLY_TOKEN")})
+		ts, err := sig.SealTo(sid.AgreementKey, tok, "jarvis2/fly-token")
+		if err != nil {
+			log.Fatal(err)
+		}
+		must("POST", os.Getenv("E2E_SPAWNER")+"/fly-token", map[string]any{"sealed": ts}, nil)
 	}
-	must("POST", os.Getenv("E2E_SPAWNER")+"/fly-token", map[string]any{"sealed": ts}, nil)
 
 	step("the root grant: ⊤ on the sink, signed by the root key")
 	var draft struct{ Payload string }
@@ -204,7 +217,11 @@ func main() {
 
 	step("a new session on the kernel; the phone signs its source")
 	var created struct{ ID string }
-	must("POST", router+"/api/sessions", map[string]any{"label": "e2e on the kernel", "harness": "opencode", "size": "small"}, &created)
+	newSession := map[string]any{"label": "e2e on the kernel", "harness": "opencode", "size": "small"}
+	if runner != "" {
+		newSession["runner"] = runner
+	}
+	must("POST", router+"/api/sessions", newSession, &created)
 	var a struct {
 		ID, Kind  string
 		Challenge sig.Doc
@@ -263,7 +280,7 @@ func main() {
 			return false
 		}
 		sc, err := doc.PeekCert(*s.Kernel.SourceCert)
-		if err == nil && sc.Pred == doc.Object("fly-"+m1) {
+		if err == nil && (sc.Pred == doc.Object("fly-"+m1) || sc.Pred == doc.Object("fabric-"+m1)) {
 			snap = sc.Source.Snapshot
 			return true
 		}

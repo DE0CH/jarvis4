@@ -8,10 +8,18 @@
 //! run's peer is destroyed with its volume, the peer removed, the processes stopped. Needs sudo (a mount namespace).
 //!
 //!   JARVIS2_FLY_TOKEN   the jarvis2-370 org token (the spawner's here, the sweep's, the peer's)
+//!   E2E_RUNNER=fabric   the fabric replica instead (docs/PLAN-fabric.md): no Fly; the session's machines are gVisor
+//!                       sandboxes on this box, made by the fake hermit (fakehermit.rs, `e2e-kernel fake-hermit`) with
+//!                       the fork's runsc (E2E_RUNSC, default /usr/local/bin/runsc) from the fabric image
+//!                       (E2E_FABRIC_IMAGE, default ghcr.io/de0ch/jarvis4-session-fabric:latest), unpacked once into
+//!                       E2E_FABRIC_CACHE (default ~/.cache/jarvis4-e2e-fabric). Needs crane and sudo. No Inbox, no
+//!                       approval: the boot check of a fabric change.
 //!   E2E_SESSION_IMAGE   the session image (default ghcr.io/de0ch/jarvis4-session:latest), pinned by digest here
 //!
 //! `e2e-kernel hosts-exec HOSTS UID GID -- CMD…` (run by the router's `sudo unshare`): HOSTS bound over /etc/hosts in
 //! this mount namespace, then CMD as UID:GID with no supplementary groups.
+
+mod fakehermit;
 
 use anyhow::{Context, Result, bail};
 use std::fs;
@@ -38,6 +46,13 @@ const ROLES: [&str; 9] = [
 const ROUTER: &str = "127.0.0.1:29080";
 const MACHINES: &str = "127.0.0.1:29081";
 const GATEWAY_HEALTH: &str = "127.0.0.1:29082";
+/// the fabric replica: the fake hermit, and the router's fabric listener (a fabric machine's way to the router)
+const FAKE_HERMIT: &str = "127.0.2.1:29090";
+const FABRIC_LISTENER: &str = "127.0.0.1:29083";
+
+fn fabric() -> bool {
+    std::env::var("E2E_RUNNER").is_ok_and(|r| r == "fabric")
+}
 
 fn murl() -> String {
     format!("http://{PEER}._peer.internal:8081")
@@ -77,6 +92,46 @@ impl Cleanup {
                 .args(["-n", "pkill", "-P", &p])
                 .status();
             let _ = Command::new("sudo").args(["-n", "kill", &p]).status();
+        }
+        if fabric() {
+            // the fake hermit's sandboxes: killed, deleted, their roots unmounted
+            let rs = std::env::var("E2E_RUNSC").unwrap_or_else(|_| "/usr/local/bin/runsc".into());
+            let root = self.w.join("fh").join("runsc");
+            if let Ok(o) = Command::new("sudo")
+                .arg("-n")
+                .arg(&rs)
+                .arg("--root")
+                .arg(&root)
+                .args(["list", "-q"])
+                .output()
+            {
+                for id in String::from_utf8_lossy(&o.stdout).split_whitespace() {
+                    for a in [vec!["kill", id, "KILL"], vec!["delete", "-force", id]] {
+                        let _ = Command::new("sudo")
+                            .arg("-n")
+                            .arg(&rs)
+                            .arg("--root")
+                            .arg(&root)
+                            .args(&a)
+                            .status();
+                    }
+                }
+            }
+            for e in fs::read_dir(self.w.join("fh").join("sbx"))
+                .into_iter()
+                .flatten()
+                .flatten()
+            {
+                let _ = Command::new("sudo")
+                    .args(["-n", "umount", "-l"])
+                    .arg(e.path().join("root"))
+                    .status();
+            }
+            let _ = Command::new("sudo")
+                .args(["-n", "rm", "-rf"])
+                .arg(&self.w)
+                .status();
+            return;
         }
         sweep(&self.token);
         let _ = Command::new("flyctl")
@@ -197,6 +252,8 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let r = if args.get(1).map(String::as_str) == Some("hosts-exec") {
         hosts_exec(&args[2..])
+    } else if args.get(1).map(String::as_str) == Some("fake-hermit") {
+        fake_hermit()
     } else {
         e2e()
     };
@@ -206,11 +263,92 @@ fn main() {
     }
 }
 
-fn e2e() -> Result<()> {
-    let token = std::env::var("JARVIS2_FLY_TOKEN")
+/// `e2e-kernel fake-hermit`, its settings in FH_* (set by the fabric run)
+fn fake_hermit() -> Result<()> {
+    let v = |k: &str| std::env::var(k).with_context(|| format!("{k} isn't set"));
+    let config: serde_json::Value = serde_json::from_slice(&fs::read(v("FH_CONFIG")?)?)?;
+    let list = |k: &str| -> Vec<String> {
+        config["config"][k]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|x| x.as_str().map(str::to_owned))
+            .collect()
+    };
+    let mut args = list("Entrypoint");
+    args.extend(list("Cmd"));
+    fakehermit::serve(fakehermit::Cfg {
+        listen: FAKE_HERMIT.into(),
+        work: PathBuf::from(v("FH_WORK")?),
+        rootfs: PathBuf::from(v("FH_ROOTFS")?),
+        args,
+        env: list("Env"),
+        digest: v("FH_DIGEST")?,
+        proxy_at: FABRIC_LISTENER.into(),
+        runsc: v("FH_RUNSC")?,
+        magpie: v("FH_MAGPIE")?,
+        admin: v("FH_ADMIN")?,
+        tools: v("FH_TOOLS")?,
+    })
+}
+
+/// The fabric image unpacked (its rootfs, once per digest) and its config: (ref@digest, rootfs, config.json)
+fn fabric_image(root: &Path) -> Result<(String, PathBuf, PathBuf)> {
+    let image = std::env::var("E2E_FABRIC_IMAGE")
         .ok()
-        .filter(|t| !t.is_empty())
-        .context("JARVIS2_FLY_TOKEN isn't set")?;
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "ghcr.io/de0ch/jarvis4-session-fabric:latest".into());
+    let pinned = output(
+        Command::new(root.join("infra/image-digest.sh")).arg(&image),
+        "the fabric image's digest",
+    )?;
+    let digest = pinned
+        .rsplit_once("@sha256:")
+        .map(|(_, d)| d.to_owned())
+        .context("no digest")?;
+    let cache = std::env::var("E2E_FABRIC_CACHE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            PathBuf::from(std::env::var("HOME").unwrap_or_default())
+                .join(".cache/jarvis4-e2e-fabric")
+        });
+    let dir = cache.join(&digest);
+    let (rootfs, config) = (dir.join("rootfs"), dir.join("config.json"));
+    if !dir.join(".done").exists() {
+        let _ = Command::new("sudo")
+            .args(["-n", "rm", "-rf"])
+            .arg(&dir)
+            .status();
+        fs::create_dir_all(&rootfs)?;
+        eprintln!("e2e-kernel: unpacking {pinned} (once per digest)");
+        run_ok(
+            Command::new("sh").arg("-c").arg(format!(
+                "crane export '{pinned}' - | sudo -n tar -x -C '{}'",
+                rootfs.display()
+            )),
+            "unpacking the fabric image",
+        )?;
+        fs::write(
+            &config,
+            output(
+                Command::new("crane").args(["config", &pinned]),
+                "the image's config",
+            )?,
+        )?;
+        fs::write(dir.join(".done"), "")?;
+    }
+    Ok((pinned, rootfs, config))
+}
+
+fn e2e() -> Result<()> {
+    let token = if fabric() {
+        String::new()
+    } else {
+        std::env::var("JARVIS2_FLY_TOKEN")
+            .ok()
+            .filter(|t| !t.is_empty())
+            .context("JARVIS2_FLY_TOKEN isn't set")?
+    };
     let root = PathBuf::from(output(
         Command::new("git").args(["rev-parse", "--show-toplevel"]),
         "the repository",
@@ -257,7 +395,9 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
             .push(child);
         Ok(())
     };
-    sweep(token);
+    if !fabric() {
+        sweep(token);
+    }
     for r in ROLES {
         run_ok(
             Command::new("go")
@@ -300,17 +440,52 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         c.args(args).env("FLY_API_TOKEN", token);
         c
     };
-    let _ = fly(&["wireguard", "remove", ORG, PEER])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
     let wg = w.join("wg.conf");
-    run_ok(
-        fly(&["wireguard", "create", ORG, "lhr", PEER])
-            .arg(&wg)
-            .stdout(Stdio::null()),
-        "the WireGuard peer",
-    )?;
+    if !fabric() {
+        let _ = fly(&["wireguard", "remove", ORG, PEER])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        run_ok(
+            fly(&["wireguard", "create", ORG, "lhr", PEER])
+                .arg(&wg)
+                .stdout(Stdio::null()),
+            "the WireGuard peer",
+        )?;
+    }
+    // the fabric replica: the fake hermit on the unpacked fabric image, with tokens of this run
+    let fabric_tokens = {
+        let r = |n: &str| format!("e2e-{n}-{}", std::process::id());
+        (r("magpie"), r("admin"), r("tools"))
+    };
+    let mut fabric_image_ref = String::new();
+    if fabric() {
+        let (pinned, rootfs, config) = fabric_image(root)?;
+        fabric_image_ref = pinned.clone();
+        let me = std::env::current_exe()?;
+        start(
+            Command::new(&me)
+                .arg("fake-hermit")
+                .env("FH_WORK", w.join("fh"))
+                .env("FH_ROOTFS", &rootfs)
+                .env("FH_CONFIG", &config)
+                .env(
+                    "FH_DIGEST",
+                    format!(
+                        "sha256:{}",
+                        pinned.rsplit_once("@sha256:").map_or("", |x| x.1)
+                    ),
+                )
+                .env(
+                    "FH_RUNSC",
+                    std::env::var("E2E_RUNSC").unwrap_or_else(|_| "/usr/local/bin/runsc".into()),
+                )
+                .env("FH_MAGPIE", &fabric_tokens.0)
+                .env("FH_ADMIN", &fabric_tokens.1)
+                .env("FH_TOOLS", &fabric_tokens.2),
+            "fake-hermit",
+        )?;
+    }
 
     // the kernel: each component on 127.0.1.<n>:28080, its state in its own directory
     let mut hosts = fs::read_to_string("/etc/hosts").unwrap_or_default();
@@ -326,6 +501,13 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
             .env("KERNEL_ADDR", format!("127.0.1.{n}:28080"));
         if *r == "spawner" {
             c.env("KERNEL_MACHINE_URL", murl());
+            if fabric() {
+                c.env("KERNEL_FABRIC_HERMIT_URL", format!("http://{FAKE_HERMIT}"))
+                    .env(
+                        "KERNEL_FABRIC_MACHINE_URL",
+                        format!("http://{FABRIC_LISTENER}"),
+                    );
+            }
         }
         if *r == "secrets" {
             c.env("KERNEL_MINTER_URL", "http://127.0.1.8:28080"); // the minter is the 8th
@@ -359,7 +541,7 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
     let home = std::env::var("HOME").unwrap_or_default();
     let kv =
         |k: &str, v: &dyn AsRef<std::ffi::OsStr>| format!("{k}={}", v.as_ref().to_string_lossy());
-    let router_env = [
+    let mut router_env = vec![
         kv("PATH", &path),
         kv("HOME", &home),
         kv("DATABASE_URL", &db),
@@ -376,6 +558,15 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         kv("TASKS_DIR", &root.join("tasks")),
         kv("SESSION_IMAGE", &image),
     ];
+    if fabric() {
+        router_env.extend([
+            format!("FABRIC_HERMIT_URL=http://{FAKE_HERMIT}"),
+            kv("FABRIC_HERMIT_TOOLS_TOKEN", &fabric_tokens.2),
+            kv("FABRIC_HERMIT_MAGPIE_TOKEN", &fabric_tokens.0),
+            kv("FABRIC_MACHINE_ADDR", &FABRIC_LISTENER),
+            kv("FABRIC_SESSION_IMAGE", &fabric_image_ref),
+        ]);
+    }
     let uid = nix::unistd::Uid::current().to_string();
     let gid = nix::unistd::Gid::current().to_string();
     {
@@ -398,15 +589,17 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
             .push(child.id());
     }
     // the machines' WireGuard peer runs in the gateway (router/mgateway.go), as on the cluster, passing /m to the router
-    start(
-        Command::new(w.join("router"))
-            .arg("m-gateway")
-            .env("POD_NAME", "m-gateway-0")
-            .env("WG_CONFIGS", &wg)
-            .env("M_GATEWAY_TO", format!("http://{MACHINES}"))
-            .env("HEALTH_ADDR", GATEWAY_HEALTH),
-        "m-gateway",
-    )?;
+    if !fabric() {
+        start(
+            Command::new(w.join("router"))
+                .arg("m-gateway")
+                .env("POD_NAME", "m-gateway-0")
+                .env("WG_CONFIGS", &wg)
+                .env("M_GATEWAY_TO", format!("http://{MACHINES}"))
+                .env("HEALTH_ADDR", GATEWAY_HEALTH),
+            "m-gateway",
+        )?;
+    }
     ready(
         &format!("http://{ROUTER}/api/kernel"),
         Duration::from_secs(60),
@@ -425,6 +618,9 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         .env("E2E_ROOT_KEY_FILE", &root_key)
         .env("E2E_KERNEL", &kaddrs)
         .env("E2E_FLY_TOKEN", token)
+        .env("E2E_RUNNER", if fabric() { "fabric" } else { "" })
+        .env("E2E_FABRIC_MAGPIE", &fabric_tokens.0)
+        .env("E2E_FABRIC_ADMIN", &fabric_tokens.1)
         .spawn()
         .context("starting e2e/kernel")?;
     let st = driver.wait()?;
