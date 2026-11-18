@@ -140,6 +140,12 @@ pub struct Router {
     pub next: crate::nextcore::NextCores,
     /// archive.rs: the Storage Box this router uses instead of the env's (tests: Some(None) = none)
     pub box_override: RwLock<Option<Option<Arc<crate::storagebox::StorageBox>>>>,
+    /// flows.rs SILENT_AFTER_SECS for this router (tests shorten it): a machine silent this long isn't waited for
+    pub silent_after_secs: std::sync::atomic::AtomicI64,
+    /// schedule.rs: tests catch deliveries here (vouch.rs deliver_vouched otherwise)
+    pub deliver_hook: RwLock<Option<crate::schedule::DeliverHook>>,
+    /// schedule.rs: tests catch the resume of a failed session here (the app's Resume otherwise)
+    pub resume_failed_hook: RwLock<Option<crate::schedule::ResumeHook>>,
     /// archive.rs: this router keeps no records on the Storage Box, as RECORDS_OFF=1 (tests)
     pub records_off: std::sync::atomic::AtomicBool,
     /// discord.rs: this router's DMs go here instead of the bot (tests)
@@ -196,6 +202,11 @@ impl Router {
             box_override: RwLock::new(None),
             dm_hook: RwLock::new(None),
             records_off: std::sync::atomic::AtomicBool::new(false),
+            deliver_hook: RwLock::new(None),
+            resume_failed_hook: RwLock::new(None),
+            silent_after_secs: std::sync::atomic::AtomicI64::new(
+                crate::flows::SILENT_AFTER_SECS.load(std::sync::atomic::Ordering::Relaxed),
+            ),
             muxes: OnceLock::new(),
             app_patterns: OnceLock::new(),
             sup: Default::default(),

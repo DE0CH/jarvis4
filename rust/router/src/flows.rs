@@ -2088,7 +2088,7 @@ impl Router {
                 .and_then(|x| x.live.as_ref().map(|l| l.last_report))
                 .unwrap_or_default()
         });
-        if last.since().whole_seconds() > SILENT_AFTER_SECS.load(Ordering::Relaxed) {
+        if last.since().whole_seconds() > self.silent_after_secs.load(Ordering::Relaxed) {
             crate::logf!(
                 "session {id}: {machine} silent since {}; not waiting for a snapshot",
                 last.rfc3339()

@@ -32,11 +32,12 @@ const SNAP_MOVE_EVERY: Duration = Duration::from_millis(100);
 static SNAP_MOVE_AT: LazyLock<Mutex<BTreeMap<String, Instant>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
-fn silent_after() -> time::Duration {
-    time::Duration::seconds(crate::flows::SILENT_AFTER_SECS.load(Ordering::Relaxed))
-}
-
 impl Router {
+    /// a machine silent this long during its snapshot is gone (flows.rs SILENT_AFTER_SECS)
+    pub fn silent_after(&self) -> time::Duration {
+        time::Duration::seconds(self.silent_after_secs.load(Ordering::Relaxed))
+    }
+
     pub fn sw_exec(
         &self,
         sql: &str,
@@ -152,9 +153,9 @@ impl Router {
                     crate::flows::wait_text(quiet_std)
                 ));
             }
-            if quiet >= silent_after() {
+            if quiet >= self.silent_after() {
                 let last = self.last_report(machine);
-                if last.since() >= silent_after() {
+                if last.since() >= self.silent_after() {
                     self.stop_awaiting(machine, &tok);
                     return Err(anyhow!(
                         "the machine went silent during its snapshot (last report {}, no progress for {})",

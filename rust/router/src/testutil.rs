@@ -945,3 +945,57 @@ pub fn take_cmd(r: &Router, machine: &str) -> Option<String> {
 pub fn wait_cmd(r: &Router, machine: &str, wait: std::time::Duration) -> Option<String> {
     mq_wait_kind(r, machine, "command", wait).and_then(|b| serde_json::from_str(&b).ok())
 }
+
+// ---- deliveries, played by the test --------------------------------------------------------------------------
+
+#[derive(Default)]
+pub struct FakeDeliveryState {
+    pub texts: Vec<String>,
+    pub after: Vec<String>,
+    /// every delivery fails with this, when set
+    pub err: Option<String>,
+}
+
+/// deliveries recorded as "<session>: <kind> <the signed request's body> [run n]" (schedule_test.go's fakeDelivery)
+#[derive(Clone, Default)]
+pub struct FakeDelivery(pub Arc<std::sync::Mutex<FakeDeliveryState>>);
+
+impl FakeDelivery {
+    pub fn install(r: &Router) -> FakeDelivery {
+        let f = FakeDelivery::default();
+        let g = f.0.clone();
+        *r.deliver_hook.write().unwrap_or_else(|e| e.into_inner()) =
+            Some(Arc::new(move |_, sid, d| {
+                let mut g = g.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(e) = &g.err {
+                    return Err(anyhow::anyhow!("{e}"));
+                }
+                let mut x = format!(
+                    "{sid}: {} {}",
+                    d.kind,
+                    d.request
+                        .as_ref()
+                        .map(|r| r.body.clone())
+                        .unwrap_or_default()
+                );
+                if d.run > 0 {
+                    x = format!("{x} run {}", d.run);
+                }
+                g.texts.push(x);
+                Ok(())
+            }));
+        f
+    }
+
+    pub fn texts(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .texts
+            .clone()
+    }
+
+    pub fn set_err(&self, e: Option<&str>) {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).err = e.map(str::to_string);
+    }
+}

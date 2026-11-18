@@ -19,7 +19,7 @@ use jarvis_go::GoTime;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
-use std::sync::{Arc, LazyLock, Mutex, RwLock};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 pub const WAKEUP_DEFAULT: &str = "default";
@@ -619,13 +619,10 @@ pub fn session_has_run(err: Option<&anyhow::Error>, run: i64) -> Option<i64> {
 
 pub type DeliverHook = Arc<dyn Fn(&Arc<Router>, &str, Delivery) -> Result<()> + Send + Sync>;
 pub type ResumeHook = Arc<dyn Fn(&Arc<Router>, &str) -> Result<()> + Send + Sync>;
-/// tests catch deliveries here (vouch.rs deliver_vouched otherwise)
-pub static DELIVER_VOUCHED_HOOK: RwLock<Option<DeliverHook>> = RwLock::new(None);
-/// tests catch the resume of a failed session here (the app's Resume otherwise)
-pub static RESUME_FAILED_HOOK: RwLock<Option<ResumeHook>> = RwLock::new(None);
-
+/// the router's deliveries (vouch.rs deliver_vouched), or its test's hook (Router.deliver_hook)
 pub fn deliver_vouched_hook(r: &Arc<Router>, sid: &str, d: Delivery) -> Result<()> {
-    if let Some(h) = DELIVER_VOUCHED_HOOK
+    if let Some(h) = r
+        .deliver_hook
         .read()
         .unwrap_or_else(|e| e.into_inner())
         .clone()
@@ -636,7 +633,8 @@ pub fn deliver_vouched_hook(r: &Arc<Router>, sid: &str, d: Delivery) -> Result<(
 }
 
 fn resume_failed_hook(r: &Arc<Router>, sid: &str) -> Result<()> {
-    if let Some(h) = RESUME_FAILED_HOOK
+    if let Some(h) = r
+        .resume_failed_hook
         .read()
         .unwrap_or_else(|e| e.into_inner())
         .clone()
