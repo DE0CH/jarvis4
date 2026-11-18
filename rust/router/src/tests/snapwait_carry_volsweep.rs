@@ -60,21 +60,26 @@ fn repeated_progress_numbers_stall() {
     wait_for("asked", || rg.snapshot_awaited("m2"));
     let m = rg.machine("m2");
     let h = rg.machine_handler();
+    // the same numbers never count as progress: the wait ends ~300 ms in, while the reports are still coming. If they
+    // did count, nothing could end until the reports stopped, so this loop (1.5 s of them) would run out first.
+    // Asserted by the loop breaking, not by its wall time: a loaded runner makes each request slower, never fewer.
     let t0 = Instant::now();
+    let mut left = false;
     for _ in 0..30 {
         if rg.session("s1").state != "pausing" {
+            left = true;
             break;
         }
         let _ = m.do_(&h, "POST", "/m/snapshot-progress", &progress(1));
         std::thread::sleep(Duration::from_millis(50));
     }
-    rg.wait_action_end("s1", "failed")
-        .unwrap_or_else(|e| panic!("{e:#}"));
     assert!(
-        t0.elapsed() <= Duration::from_secs(1),
-        "the stall took {:?}",
+        left,
+        "repeated numbers kept the wait going: still pausing after {:?} of reports",
         t0.elapsed()
     );
+    rg.wait_action_end("s1", "failed")
+        .unwrap_or_else(|e| panic!("{e:#}"));
     let s = rg.session("s1");
     assert!(
         s.snapshot_failed.contains("made no progress") && s.machine_id == "m2",
@@ -93,7 +98,7 @@ fn streamed_bytes_keep_the_wait_going() {
     let done = rg.await_snapshot("m9");
     let (pr, mut pw) = std::io::pipe().unwrap_or_else(|e| panic!("{e}"));
     std::thread::spawn(move || {
-        for _ in 0..10 {
+        for _ in 0..20 {
             let _ = std::io::Write::write_all(&mut pw, b"x");
             std::thread::sleep(Duration::from_millis(100));
         }
@@ -103,13 +108,14 @@ fn streamed_bytes_keep_the_wait_going() {
         let mut rd = crate::snapwait::MovedReader::new(pr, r2, "m9");
         let _ = std::io::copy(&mut rd, &mut std::io::sink());
     });
+    // a byte every 100 ms for 2 s: counted, the quiet clock never grows much; not counted, it grows the whole 2 s
     let mut quiet_max = time::Duration::ZERO;
-    for _ in 0..10 {
+    for _ in 0..20 {
         std::thread::sleep(Duration::from_millis(100));
         quiet_max = quiet_max.max(rg.snapshot_quiet("m9"));
     }
     assert!(
-        quiet_max <= time::Duration::milliseconds(250),
+        quiet_max <= Duration::from_secs(1),
         "quiet for {quiet_max} while bytes arrived"
     );
     rg.snapshot_arrived("m9");
