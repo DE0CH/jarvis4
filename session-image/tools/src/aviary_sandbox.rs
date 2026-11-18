@@ -10,7 +10,11 @@
 //!   the image    unpacked once on the session's volume (/data/aviary/image-<digest12>), as aviary's sandboxd unpacks
 //!                it for a host (`crane export | tar -x`), with its config beside it. It is 1.4 GB to fetch, 3.3 GB on
 //!                disk, so it cannot be a layer of the session image (Fly's unpack limit, claude-env lessons/72). One
-//!                image at a time: another pin's image and what was installed over it are removed first.
+//!                image at a time: another pin's image and what was installed over it are removed first. A first
+//!                start spends minutes here (7 on a shared-cpu-4x, 2026-11-18: Fly caps its disk at 32 MiB/s), so
+//!                every 10 s a tagged line says how far it is ("[aviary-sandbox] 612 of 1473 MB downloaded (41%),
+//!                1290 MB unpacked, 14.6 MB/s, about 59 s left"): crane reports nothing, so its download goes through
+//!                a CONNECT proxy on 127.0.0.1 that counts it ([`CountingProxy`]), against the manifest's layer sizes.
 //!   the root     an overlay over the image (/data/aviary/upper-<digest12>: what the agent installs with apt stays
 //!                while the session lives, as a sandbox's root does), entered with pivot_root; the machine's own root
 //!                is unmounted from the namespace, so the agent sees the image's files and tools, not the machine's.
@@ -39,13 +43,35 @@
 use serde_json::Value;
 use std::ffi::{CString, OsStr};
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::symlink;
 use std::os::unix::process::CommandExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
-use std::time::Duration;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{Duration, Instant};
+
+/// What it says goes to the session's log only with a `[tag] ` first (the keeper keeps only tagged harness lines:
+/// rust/machine/src/harnesslog.rs). A first start sat 7 minutes with nothing in the log while the image was fetched
+/// (2026-11-18), so the fetch also says how far it is.
+pub const TAG: &str = "[aviary-sandbox]";
+
+fn say(msg: &str) {
+    eprintln!("{TAG} {msg}");
+}
+
+/// how often the fetch says how far it is (AVIARY_SANDBOX_PROGRESS_SECS: the test's 1)
+fn progress_every() -> Duration {
+    Duration::from_secs(
+        std::env::var("AVIARY_SANDBOX_PROGRESS_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10),
+    )
+}
 
 /// The machine's session commands the sandbox gets (the three names of jarvis-tools are links to it on the machine;
 /// a bind follows the link, and the tool goes by the name it is run under).
@@ -208,14 +234,203 @@ fn last_line(path: &str) -> String {
         .unwrap_or_default()
 }
 
-/// One try at `crane export IMAGE - | tar -x` into `dir`, then `crane config IMAGE > config`.
-fn unpack(image: &str, dir: &str, config: &str, log: &str) -> bool {
+/// The image's layers' total size (what is downloaded), from its manifest (an index: its linux/amd64 manifest)
+pub fn layers_size(manifest: &Value) -> Option<(u64, usize)> {
+    let layers = manifest["layers"].as_array()?;
+    Some((
+        layers.iter().filter_map(|l| l["size"].as_u64()).sum(),
+        layers.len(),
+    ))
+}
+
+/// the linux/amd64 manifest's digest of an index
+pub fn platform_digest(index: &Value) -> Option<String> {
+    index["manifests"].as_array()?.iter().find_map(|m| {
+        (m["platform"]["os"] == "linux" && m["platform"]["architecture"] == "amd64")
+            .then(|| m["digest"].as_str().map(str::to_string))
+            .flatten()
+    })
+}
+
+fn crane_json(args: &[&str]) -> Option<Value> {
+    let out = Command::new("crane")
+        .args(args)
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| serde_json::from_slice(&out.stdout).ok())
+        .flatten()
+}
+
+/// What is downloaded, from the manifest (None when crane cannot say: the fetch goes on without a total)
+fn download_size(image: &str) -> Option<(u64, usize)> {
+    let m = crane_json(&["manifest", image])?;
+    if let Some(d) = platform_digest(&m) {
+        let name = image.split('@').next()?;
+        return layers_size(&crane_json(&["manifest", &format!("{name}@{d}")])?);
+    }
+    layers_size(&m)
+}
+
+const MB: f64 = 1e6;
+
+/// How long the download's rate is taken over: long enough to be steady, short enough to show a download slowing
+/// down (the time left from the whole average said "6 s left" for minutes while a registry trickled)
+pub const RATE_WINDOW: Duration = Duration::from_secs(30);
+
+/// The download's rate (bytes a second) over the samples (time, bytes downloaded), oldest first, within
+/// [`RATE_WINDOW`] of the newest
+pub fn window_rate(samples: &[(Duration, u64)]) -> f64 {
+    let Some(&(t1, d1)) = samples.last() else {
+        return 0.0;
+    };
+    let &(t0, d0) = samples
+        .iter()
+        .find(|(t, _)| t1.saturating_sub(*t) <= RATE_WINDOW)
+        .unwrap_or(&(t1, d1));
+    let secs = (t1 - t0).as_secs_f64();
+    if secs > 0.0 {
+        d1.saturating_sub(d0) as f64 / secs
+    } else {
+        0.0
+    }
+}
+
+/// One progress line: what is downloaded of the total, what is unpacked, the download's recent rate and, from it,
+/// the time left (none once everything is downloaded: what is left then is the disk's)
+pub fn progress_line(downloaded: u64, total: Option<u64>, unpacked: u64, rate: f64) -> String {
+    let unpacked = format!("{:.0} MB unpacked", unpacked as f64 / MB);
+    match total {
+        Some(t) if t > 0 && downloaded >= t => {
+            format!(
+                "{:.0} MB downloaded (100%), {unpacked}; unpacking the rest",
+                t as f64 / MB
+            )
+        }
+        Some(t) if t > 0 => {
+            let pct = downloaded * 100 / t;
+            let left = if rate > 0.0 {
+                format!(", about {:.0} s left", (t - downloaded) as f64 / rate)
+            } else {
+                String::new()
+            };
+            format!(
+                "{:.0} of {:.0} MB downloaded ({pct}%), {unpacked}, {:.1} MB/s{left}",
+                downloaded as f64 / MB,
+                t as f64 / MB,
+                rate / MB
+            )
+        }
+        _ => format!(
+            "{:.0} MB downloaded, {unpacked}, {:.1} MB/s",
+            downloaded as f64 / MB,
+            rate / MB
+        ),
+    }
+}
+
+/// A CONNECT proxy on 127.0.0.1 that counts the bytes coming back from upstream: crane's download, as crane reports
+/// none. It lives as long as the process (one fetch).
+pub struct CountingProxy {
+    pub port: u16,
+    pub received: Arc<AtomicU64>,
+}
+
+impl CountingProxy {
+    pub fn start() -> std::io::Result<CountingProxy> {
+        let l = TcpListener::bind("127.0.0.1:0")?;
+        let port = l.local_addr()?.port();
+        let received = Arc::new(AtomicU64::new(0));
+        let r = received.clone();
+        std::thread::spawn(move || {
+            for c in l.incoming().flatten() {
+                let r = r.clone();
+                std::thread::spawn(move || {
+                    let _ = tunnel(c, &r);
+                });
+            }
+        });
+        Ok(CountingProxy { port, received })
+    }
+
+    pub fn url(&self) -> String {
+        format!("http://127.0.0.1:{}", self.port)
+    }
+}
+
+/// `CONNECT host:port HTTP/1.1` → 200, then bytes both ways, those from upstream counted
+fn tunnel(client: TcpStream, received: &AtomicU64) -> std::io::Result<()> {
+    let mut rd = BufReader::new(client.try_clone()?);
+    let mut first = String::new();
+    rd.read_line(&mut first)?;
+    loop {
+        let mut h = String::new();
+        if rd.read_line(&mut h)? == 0 || h == "\r\n" || h == "\n" {
+            break;
+        }
+    }
+    let mut w = client.try_clone()?;
+    let target = match first.split_whitespace().collect::<Vec<_>>()[..] {
+        ["CONNECT", t, _] => t.to_string(),
+        _ => {
+            w.write_all(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n")?;
+            return Ok(());
+        }
+    };
+    let up = match TcpStream::connect(&target) {
+        Ok(u) => u,
+        Err(_) => {
+            w.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")?;
+            return Ok(());
+        }
+    };
+    w.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")?;
+    // what the client sent past the request head (nothing, for a client that waits for the 200) goes first
+    let buffered = rd.buffer().to_vec();
+    let mut up_w = up.try_clone()?;
+    up_w.write_all(&buffered)?;
+    let mut rd = rd.into_inner();
+    let to_up = std::thread::spawn(move || {
+        let _ = std::io::copy(&mut rd, &mut up_w);
+        let _ = up_w.shutdown(Shutdown::Write);
+    });
+    let mut up_r = up;
+    let mut buf = vec![0u8; 64 << 10];
+    loop {
+        let n = match up_r.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => n,
+        };
+        received.fetch_add(n as u64, Ordering::Relaxed);
+        if w.write_all(&buf[..n]).is_err() {
+            break;
+        }
+    }
+    let _ = w.shutdown(Shutdown::Write);
+    let _ = to_up.join();
+    Ok(())
+}
+
+/// One try at `crane export IMAGE - | tar -x` into `dir`, then `crane config IMAGE > config`. crane goes through a
+/// [`CountingProxy`] and its stream into tar is counted, so every [`progress_every`] a tagged line says how far it is
+/// (`total`: the manifest's layer sizes, when crane could tell them).
+fn unpack(image: &str, dir: &str, config: &str, log: &str, total: Option<u64>) -> bool {
     let Ok(log_f) = fs::File::create(log) else {
         return false;
     };
     let err = || log_f.try_clone().map(Stdio::from).unwrap_or(Stdio::null());
+    let Ok(proxy) = CountingProxy::start() else {
+        let _ = writeln!(&log_f, "the download counter could not listen");
+        return false;
+    };
     let Ok(mut crane) = Command::new("crane")
         .args(["export", image, "-"])
+        .env("HTTPS_PROXY", proxy.url())
+        .env("https_proxy", proxy.url())
+        .env_remove("NO_PROXY")
+        .env_remove("no_proxy")
         .stdout(Stdio::piped())
         .stderr(err())
         .spawn()
@@ -223,28 +438,93 @@ fn unpack(image: &str, dir: &str, config: &str, log: &str) -> bool {
         let _ = writeln!(&log_f, "crane could not be started");
         return false;
     };
-    let tar = crane.stdout.take().map(|out| {
-        Command::new("tar")
-            .args(["-x", "--numeric-owner", "-C", dir])
-            .stdin(out)
-            .stderr(err())
-            .status()
-    });
+    let Ok(mut tar) = Command::new("tar")
+        .args(["-x", "--numeric-owner", "-C", dir])
+        .stdin(Stdio::piped())
+        .stderr(err())
+        .spawn()
+    else {
+        let _ = writeln!(&log_f, "tar could not be started");
+        let _ = crane.kill();
+        let _ = crane.wait();
+        return false;
+    };
+    let unpacked = Arc::new(AtomicU64::new(0));
+    let done = Arc::new(AtomicBool::new(false));
+    let start = Instant::now();
+    let every = progress_every();
+    let reporter = {
+        let (received, unpacked, done) = (proxy.received.clone(), unpacked.clone(), done.clone());
+        std::thread::spawn(move || {
+            let mut next = start + every;
+            let mut samples = vec![(Duration::ZERO, 0u64)];
+            while !done.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(200));
+                if Instant::now() >= next {
+                    next += every;
+                    let d = received.load(Ordering::Relaxed);
+                    samples.push((start.elapsed(), d));
+                    let newest = samples[samples.len() - 1].0;
+                    samples.retain(|(t, _)| newest.saturating_sub(*t) <= RATE_WINDOW * 2);
+                    say(&progress_line(
+                        d,
+                        total,
+                        unpacked.load(Ordering::Relaxed),
+                        window_rate(&samples),
+                    ));
+                }
+            }
+        })
+    };
+    // crane's stream into tar's, counted
+    let mut copied = true;
+    if let (Some(mut from), Some(mut to)) = (crane.stdout.take(), tar.stdin.take()) {
+        let mut buf = vec![0u8; 1 << 20];
+        loop {
+            match from.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if to.write_all(&buf[..n]).is_err() {
+                        copied = false;
+                        break;
+                    }
+                    unpacked.fetch_add(n as u64, Ordering::Relaxed);
+                }
+                Err(_) => {
+                    copied = false;
+                    break;
+                }
+            }
+        }
+    } else {
+        copied = false;
+    }
     let crane_ok = crane.wait().is_ok_and(|s| s.success());
-    let tar_ok = matches!(tar, Some(Ok(s)) if s.success());
-    if !(crane_ok && tar_ok) {
+    let tar_ok = tar.wait().is_ok_and(|s| s.success());
+    done.store(true, Ordering::Relaxed);
+    let _ = reporter.join();
+    if !(copied && crane_ok && tar_ok) {
         return false;
     }
     let Ok(cfg) = fs::File::create(config) else {
         return false;
     };
-    Command::new("crane")
+    let ok = Command::new("crane")
         .args(["config", image])
         .stdout(cfg)
         .stderr(err())
         .status()
         .is_ok_and(|s| s.success())
-        && Path::new(dir).join("home/sandbox").is_dir()
+        && Path::new(dir).join("home/sandbox").is_dir();
+    if ok {
+        say(&format!(
+            "{:.0} MB downloaded, {:.0} MB unpacked in {:.0} s",
+            proxy.received.load(Ordering::Relaxed) as f64 / MB,
+            unpacked.load(Ordering::Relaxed) as f64 / MB,
+            start.elapsed().as_secs_f64()
+        ));
+    }
+    ok
 }
 
 fn fetch(p: &Paths) -> Result<(), String> {
@@ -276,23 +556,41 @@ fn fetch(p: &Paths) -> Result<(), String> {
         }
     }
     let (tmp, log) = (format!("{img}.tmp"), format!("{}/fetch.log", p.store));
+    let size = download_size(&p.image);
+    say(&match size {
+        Some((b, n)) => format!(
+            "fetching the sandbox image {} onto the volume: {:.0} MB in {n} layers",
+            p.image,
+            b as f64 / MB
+        ),
+        None => format!(
+            "fetching the sandbox image {} onto the volume (its size unknown)",
+            p.image
+        ),
+    });
     for attempt in 1..=5 {
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir(&tmp).map_err(|e| format!("{tmp}: {e}"))?;
-        if unpack(&p.image, &tmp, &format!("{img}.config"), &log) {
+        if unpack(
+            &p.image,
+            &tmp,
+            &format!("{img}.config"),
+            &log,
+            size.map(|s| s.0),
+        ) {
             fs::rename(&tmp, img).map_err(|e| format!("{img}: {e}"))?;
             fs::File::create(format!("{img}.ok")).map_err(|e| format!("{img}.ok: {e}"))?;
-            eprintln!(
-                "aviary-sandbox: the sandbox image {} is unpacked in {img}",
+            say(&format!(
+                "the sandbox image {} is unpacked in {img}",
                 p.image
-            );
+            ));
             return Ok(());
         }
-        eprintln!(
-            "aviary-sandbox: fetching {} failed (attempt {attempt}): {}",
+        say(&format!(
+            "fetching {} failed (attempt {attempt}): {}",
             p.image,
             last_line(&log)
-        );
+        ));
         std::thread::sleep(Duration::from_secs(5));
     }
     Err("the sandbox image could not be fetched".into())
@@ -567,6 +865,93 @@ pub fn run(args: &[String]) -> Result<ExitCode, String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn progress_says_how_far_and_how_long() {
+        let s = progress_line(
+            612_000_000,
+            Some(1_473_000_000),
+            1_290_000_000,
+            14_600_000.0,
+        );
+        assert_eq!(
+            s,
+            "612 of 1473 MB downloaded (41%), 1290 MB unpacked, 14.6 MB/s, about 59 s left"
+        );
+        // all downloaded: what is left is the disk's, no time is guessed
+        let s = progress_line(1_480_000_000, Some(1_473_000_000), 2_000_000_000, 1.0);
+        assert_eq!(
+            s,
+            "1473 MB downloaded (100%), 2000 MB unpacked; unpacking the rest"
+        );
+        // no total, nothing yet
+        assert_eq!(
+            progress_line(0, None, 0, 0.0),
+            "0 MB downloaded, 0 MB unpacked, 0.0 MB/s"
+        );
+        assert_eq!(
+            progress_line(0, Some(10_000_000), 0, 0.0),
+            "0 of 10 MB downloaded (0%), 0 MB unpacked, 0.0 MB/s"
+        );
+    }
+
+    #[test]
+    fn the_rate_is_the_last_half_minute() {
+        let s = |t: u64, d: u64| (Duration::from_secs(t), d);
+        assert_eq!(window_rate(&[]), 0.0);
+        assert_eq!(window_rate(&[s(0, 0)]), 0.0);
+        assert_eq!(window_rate(&[s(0, 0), s(10, 100)]), 10.0);
+        // fast at first, then a trickle: the rate is the trickle's, so the time left grows
+        let v = [
+            s(0, 0),
+            s(10, 1000),
+            s(20, 2000),
+            s(30, 2010),
+            s(40, 2020),
+            s(50, 2030),
+        ];
+        assert_eq!(window_rate(&v), 1.0);
+        let line = progress_line(2030, Some(3030), 0, window_rate(&v));
+        assert!(line.ends_with("about 1000 s left"), "{line}");
+    }
+
+    #[test]
+    fn the_download_size_is_the_layers() {
+        let m = json!({"layers": [{"size": 5}, {"size": 7}], "config": {"size": 100}});
+        assert_eq!(layers_size(&m), Some((12, 2)));
+        let idx = json!({"manifests": [
+            {"digest": "sha256:arm", "platform": {"os": "linux", "architecture": "arm64"}},
+            {"digest": "sha256:amd", "platform": {"os": "linux", "architecture": "amd64"}}]});
+        assert_eq!(platform_digest(&idx).as_deref(), Some("sha256:amd"));
+        assert_eq!(layers_size(&idx), None);
+    }
+
+    #[test]
+    fn the_proxy_counts_what_comes_back() {
+        let server = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = server.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let (mut c, _) = server.accept().unwrap();
+            let mut b = [0u8; 4];
+            c.read_exact(&mut b).unwrap();
+            assert_eq!(&b, b"ping");
+            c.write_all(&vec![7u8; 100_000]).unwrap();
+        });
+        let p = CountingProxy::start().unwrap();
+        let mut c = TcpStream::connect(("127.0.0.1", p.port)).unwrap();
+        write!(c, "CONNECT {addr} HTTP/1.1\r\nHost: {addr}\r\n\r\n").unwrap();
+        let mut rd = BufReader::new(c.try_clone().unwrap());
+        let mut status = String::new();
+        rd.read_line(&mut status).unwrap();
+        assert!(status.starts_with("HTTP/1.1 200"), "{status}");
+        let mut blank = String::new();
+        rd.read_line(&mut blank).unwrap();
+        c.write_all(b"ping").unwrap();
+        let mut got = Vec::new();
+        rd.read_to_end(&mut got).unwrap();
+        assert_eq!(got.len(), 100_000);
+        assert_eq!(p.received.load(Ordering::Relaxed), 100_000);
+    }
 
     #[test]
     fn images_are_pinned_by_digest() {

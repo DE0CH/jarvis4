@@ -20,6 +20,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 const BIN: &str = env!("CARGO_BIN_EXE_jarvis-tools");
+/// what the stand-in registry serves on each connection: the download the fetch counts
+const SERVED: usize = 3_000_000;
 const SANDBOX_TOOLS: [&str; 5] = [
     "jarvis-machine",
     "jarvis-request",
@@ -261,17 +263,40 @@ fn the_sandbox_is_the_image() {
             "{{\"release\": \"aviary-test\", \"sandbox\": \"ghcr.io/de0ch/hermit-sandbox@sha256:{digest}\"}}"
         ),
     );
-    // the stand-in crane: `export REF -` the image's files as a tar, `config REF` its config
+    // the stand-in registry: SERVED bytes on every connection, what the fetch must count through its proxy
+    let registry = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let registry_addr = registry.local_addr().unwrap().to_string();
+    std::thread::spawn(move || {
+        for c in registry.incoming().flatten() {
+            std::thread::spawn(move || {
+                use std::io::Write as _;
+                let mut c = c;
+                let _ = c.write_all(&vec![1u8; SERVED]);
+            });
+        }
+    });
+    // the stand-in crane: `export REF -` downloads from the registry through $HTTPS_PROXY (as crane does, by CONNECT),
+    // waits long enough for a progress line, then the image's files as a tar; `config REF` its config; `manifest REF`
+    // one layer of the registry's size
     let crane = t.join("path/crane");
     write(
         &crane,
         &format!(
-            "#!/usr/bin/env -S python3 -I\nimport os, sys\nopen({calls:?}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n\
-             if sys.argv[1] == 'export':\n    os.execvp('tar', ['tar', '-c', '-C', {src:?}, '.'])\n\
-             if sys.argv[1] == 'config':\n    sys.stdout.write(open({cfg:?}).read())\n    sys.exit(0)\nsys.exit(1)\n",
+            "#!/usr/bin/env -S python3 -I\nimport os, socket, sys, time\nopen({calls:?}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n\
+             if sys.argv[1] == 'export':\n    host, port = os.environ['HTTPS_PROXY'].removeprefix('http://').split(':')\n\
+             \x20   s = socket.create_connection((host, int(port)))\n\
+             \x20   s.sendall(b'CONNECT {reg} HTTP/1.1\\r\\nHost: {reg}\\r\\n\\r\\n')\n\
+             \x20   while s.recv(65536): pass\n\
+             \x20   time.sleep(2.5)\n\
+             \x20   os.execvp('tar', ['tar', '-c', '-C', {src:?}, '.'])\n\
+             if sys.argv[1] == 'config':\n    sys.stdout.write(open({cfg:?}).read())\n    sys.exit(0)\n\
+             if sys.argv[1] == 'manifest':\n    sys.stdout.write('{{\"schemaVersion\": 2, \"layers\": [{{\"size\": {served}}}]}}')\n    sys.exit(0)\n\
+             sys.exit(1)\n",
             calls = t.join("crane.calls").display().to_string(),
             src = src.display().to_string(),
             cfg = t.join("config.json").display().to_string(),
+            reg = registry_addr,
+            served = SERVED,
         ),
     );
     fs::set_permissions(&crane, fs::Permissions::from_mode(0o755)).unwrap();
@@ -335,6 +360,7 @@ fn the_sandbox_is_the_image() {
         ("AVIARY_SANDBOX_BIN", bin.display().to_string()),
         ("PATH", path),
         ("MACHINE_VAR", "from-the-machine".into()),
+        ("AVIARY_SANDBOX_PROGRESS_SECS", "1".into()),
     ];
     let (boot, repo) = (
         t.join("boot.env").display().to_string(),
@@ -362,6 +388,30 @@ fn the_sandbox_is_the_image() {
     assert!(
         !store.join("image-old").exists() && !store.join("upper-old").exists(),
         "another pin's image stays on the volume"
+    );
+    // what it says reaches the session's log (tagged), with what it fetches, how far it is and what it counted
+    let said = String::from_utf8_lossy(&o.stderr).to_string();
+    for l in said.lines() {
+        assert!(
+            l.starts_with("[aviary-sandbox] "),
+            "an untagged line, which the session's log leaves out: {l}"
+        );
+    }
+    assert!(
+        said.contains(&format!(
+            "fetching the sandbox image ghcr.io/de0ch/hermit-sandbox@sha256:{digest} onto the volume: 3 MB in 1 layers"
+        )),
+        "the fetch does not say what it fetches and how much: {said}"
+    );
+    assert!(
+        said.lines().any(|l| l.contains("3 MB downloaded (100%)")),
+        "no progress line while the fetch ran: {said}"
+    );
+    assert!(
+        said.lines()
+            .any(|l| l.starts_with("[aviary-sandbox] 3 MB downloaded, ")
+                && l.contains(" MB unpacked in ")),
+        "the download through the fetch's proxy is not counted: {said}"
     );
     sandbox(&env, &["--fetch"]);
     assert_eq!(

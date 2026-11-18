@@ -77,7 +77,7 @@ fn main() -> ExitCode {
             schedule::cron_action(&args).and_then(schedule::run),
             "ERROR",
         ),
-        "aviary-sandbox" => (aviary_sandbox::run(&args), "aviary-sandbox"),
+        "aviary-sandbox" => (aviary_sandbox::run(&args), aviary_sandbox::TAG),
         "retire-session" => (
             retire::run(args.first().is_some_and(|a| a == "--check")),
             "BLOCKED",
@@ -93,7 +93,12 @@ fn main() -> ExitCode {
     match res {
         Ok(code) => code,
         Err(e) => {
-            eprintln!("{failed_word}: {e}");
+            // a tag (`[aviary-sandbox]`) is followed by a space, as the session's log wants it
+            if failed_word.starts_with('[') {
+                eprintln!("{failed_word} {e}");
+            } else {
+                eprintln!("{failed_word}: {e}");
+            }
             ExitCode::FAILURE
         }
     }
