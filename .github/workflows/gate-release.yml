@@ -23,7 +23,8 @@ jobs:
         with: { name: gate, path: gate-x86_64-linux }
   release:
     needs: build
-    if: github.ref == 'refs/heads/main'
+    # not the pin's own commit: that would make a release for a release, for ever
+    if: github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'gate-pin:')
     runs-on: ubuntu-latest
     environment: release
     permissions: { contents: write }
