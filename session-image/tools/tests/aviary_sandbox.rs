@@ -193,7 +193,12 @@ fn the_sandbox_is_the_image() {
     // SAFETY: a plain system call
     assert_eq!(unsafe { libc::geteuid() }, 0, "run as root");
     if std::env::var("AVIARY_SANDBOX_TEST_INNER").as_deref() != Ok("1") {
-        // a private mount namespace of its own, as the machine gives the sandbox
+        // a private mount namespace of its own, as the machine gives the sandbox; its trees are removed here once
+        // the namespace (and every mount in it) is gone
+        let t = PathBuf::from(
+            String::from_utf8_lossy(&sh(Command::new("mktemp").arg("-d")).stdout).trim(),
+        );
+        fs::set_permissions(&t, fs::Permissions::from_mode(0o755)).unwrap();
         let me = std::env::current_exe().unwrap();
         let o = sh(Command::new("unshare")
             .args(["--mount", "--propagation", "private"])
@@ -205,7 +210,9 @@ fn the_sandbox_is_the_image() {
                 "--nocapture",
                 "--test-threads=1",
             ])
-            .env("AVIARY_SANDBOX_TEST_INNER", "1"));
+            .env("AVIARY_SANDBOX_TEST_INNER", "1")
+            .env("AVIARY_SANDBOX_TEST_DIR", &t));
+        let _ = fs::remove_dir_all(&t);
         let all = format!(
             "{}{}",
             String::from_utf8_lossy(&o.stdout),
@@ -215,8 +222,7 @@ fn the_sandbox_is_the_image() {
         return;
     }
     let t =
-        PathBuf::from(String::from_utf8_lossy(&sh(Command::new("mktemp").arg("-d")).stdout).trim());
-    fs::set_permissions(&t, fs::Permissions::from_mode(0o755)).unwrap();
+        PathBuf::from(std::env::var("AVIARY_SANDBOX_TEST_DIR").expect("the outer run's directory"));
 
     // ---- the stand-in image: a root filesystem and its config
     let src = t.join("image-src");
@@ -603,10 +609,7 @@ fn the_sandbox_is_the_image() {
     // ---- both ways aviary-home moves the machine's ~/.claude: the atomic exchange, and the copy a new machine's
     // overlay root needs (it refuses to rename a directory that comes from several image layers: 2026-11-14)
     for way in ["exchange", "copy"] {
-        let h = PathBuf::from(
-            String::from_utf8_lossy(&sh(Command::new("mktemp").arg("-d")).stdout).trim(),
-        )
-        .join("claude");
+        let h = t.join(format!("home-{way}")).join("claude");
         write(h.join(".claude/.credentials.json"), "login\n");
         write(h.join(".claude/sessions/aviary.json"), "shim\n");
         fs::create_dir_all(h.join(".claude/projects")).unwrap();
