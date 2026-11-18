@@ -11,6 +11,7 @@ mod r2_livepush;
 mod screen;
 mod small;
 mod snapwait_carry_volsweep;
+mod startinit_sizes;
 mod statedb;
 mod uploads;
 mod vouch;
