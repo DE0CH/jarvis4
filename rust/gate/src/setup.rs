@@ -7,10 +7,13 @@
 
 use serde_json::{Value, json};
 
-/// main's ruleset: everything it enforced before (no deletion, no force push, updates through a pull request) and the
-/// required status `gate`
-pub fn ruleset_payload(branch: &str) -> Value {
-    json!({
+/// GitHub Actions' app: the bypass a repo needs when its own workflows push main with the workflow token
+pub const ACTIONS_APP: i64 = 15368;
+
+/// main's ruleset: no deletion, no force push, updates only by the bypass actors, and the required status `gate`.
+/// actions: the repo's workflows push main with the workflow token (a pin, a land job), so GitHub Actions bypasses too
+pub fn ruleset_payload(branch: &str, actions: bool) -> Value {
+    let mut v = json!({
         "name": "main: the gate, admins and deploy keys",
         "target": "branch",
         "enforcement": "active",
@@ -31,7 +34,13 @@ pub fn ruleset_payload(branch: &str) -> Value {
             {"actor_id": null, "actor_type": "DeployKey", "bypass_mode": "always"},
             {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}
         ]
-    })
+    });
+    if actions && let Some(b) = v["bypass_actors"].as_array_mut() {
+        b.push(
+            json!({"actor_id": ACTIONS_APP, "actor_type": "Integration", "bypass_mode": "always"}),
+        );
+    }
+    v
 }
 
 /// the `merge` environment: main only, through a custom branch policy
@@ -55,7 +64,7 @@ mod tests {
 
     #[test]
     fn the_ruleset_keeps_what_main_had_and_adds_the_gate() {
-        let v = ruleset_payload("main");
+        let v = ruleset_payload("main", false);
         let rules: Vec<&str> = v["rules"]
             .as_array()
             .map(|a| a.iter().filter_map(|r| r["type"].as_str()).collect())
@@ -79,8 +88,21 @@ mod tests {
     }
 
     #[test]
+    fn a_repo_whose_workflows_push_main_lets_actions_through() {
+        let v = ruleset_payload("main", true);
+        assert_eq!(v["bypass_actors"].as_array().map(Vec::len), Some(3));
+        assert_eq!(v["bypass_actors"][2]["actor_id"], ACTIONS_APP);
+        assert_eq!(
+            ruleset_payload("main", false)["bypass_actors"]
+                .as_array()
+                .map(Vec::len),
+            Some(2)
+        );
+    }
+
+    #[test]
     fn another_default_branch() {
-        let v = ruleset_payload("master");
+        let v = ruleset_payload("master", false);
         assert_eq!(
             v["conditions"]["ref_name"]["include"][0],
             "refs/heads/master"

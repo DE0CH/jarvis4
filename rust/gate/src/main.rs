@@ -5,7 +5,8 @@
 //!                wip/<topic>) and set the commit's `gate` status pending
 //!   gate vendor  a repo's three workflows (gate.yml, branch.yml, merge.yml) from rust/gate/templates
 //!   gate setup   one repo's GitHub side, idempotent: the deploy key jarvis-merge and its secret in the `merge`
-//!                environment, and main's ruleset requiring the gate (setup.rs; GH_TOKEN is a repo admin's)
+//!                environment, and main's ruleset requiring the gate (setup.rs; GH_TOKEN is a repo admin's;
+//!                GATE_REPOS=owner/name[+actions],…: +actions when the repo's workflows push main with their token)
 //!   gate merge   merge.yml, when any workflow on a branch finishes (workflow_run: GitHub runs it from main's copy,
 //!                so a branch can't change it): once every workflow on the head commit is done, set `gate` green or
 //!                red; green on main's head fast-forwards main to that exact commit with the merge deploy key; green
@@ -56,10 +57,7 @@ impl Gh {
     ) -> Result<(u16, Value)> {
         let mut req = self
             .http
-            .request(
-                method.clone(),
-                format!("{}/repos/{}{path}", self.api, self.repo),
-            )
+            .request(method.clone(), self.url(path))
             .bearer_auth(&self.token)
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28")
@@ -74,6 +72,15 @@ impl Gh {
             code,
             serde_json::from_str(&text).unwrap_or(Value::String(text)),
         ))
+    }
+
+    /// a path of this repo ("/pulls"), or any repo's when it starts with "/repos/" (gate setup)
+    fn url(&self, path: &str) -> String {
+        if path.starts_with("/repos/") {
+            format!("{}{path}", self.api)
+        } else {
+            format!("{}/repos/{}{path}", self.api, self.repo)
+        }
     }
 
     fn get(&self, path: &str) -> Result<Value> {
@@ -394,8 +401,13 @@ fn main() -> ExitCode {
 fn setup_repos(gh: &Gh) -> Result<()> {
     let repos = env("GATE_REPOS")?;
     let dry = std::env::args().any(|a| a == "--dry-run");
-    for repo in repos.split(',').map(str::trim).filter(|r| !r.is_empty()) {
-        match setup_one(gh, repo, dry) {
+    for entry in repos.split(',').map(str::trim).filter(|r| !r.is_empty()) {
+        // owner/name+actions: the repo's workflows push main with the workflow token
+        let (repo, actions) = match entry.strip_suffix("+actions") {
+            Some(r) => (r, true),
+            None => (entry, false),
+        };
+        match setup_one(gh, repo, actions, dry) {
             Ok(lines) => {
                 for l in lines {
                     println!("{repo}: {l}");
@@ -407,7 +419,7 @@ fn setup_repos(gh: &Gh) -> Result<()> {
     Ok(())
 }
 
-fn setup_one(gh: &Gh, repo: &str, dry: bool) -> Result<Vec<String>> {
+fn setup_one(gh: &Gh, repo: &str, actions: bool, dry: bool) -> Result<Vec<String>> {
     let mut done = vec![];
     let base = gh.get(&format!("/repos/{repo}"))?;
     let branch = base["default_branch"]
@@ -415,7 +427,10 @@ fn setup_one(gh: &Gh, repo: &str, dry: bool) -> Result<Vec<String>> {
         .unwrap_or("main")
         .to_string();
     if dry {
-        println!("{repo}: ruleset {}", setup::ruleset_payload(&branch));
+        println!(
+            "{repo}: ruleset {}",
+            setup::ruleset_payload(&branch, actions)
+        );
         return Ok(done);
     }
     // the deploy key: generated fresh, the one titled jarvis-merge replaced
@@ -460,16 +475,8 @@ fn setup_one(gh: &Gh, repo: &str, dry: bool) -> Result<Vec<String>> {
         &json!({"title": setup::KEY_TITLE, "key": public.trim(), "read_only": false}),
     )?;
     done.push("deploy key jarvis-merge (write)".into());
-    // its private half, sealed to the repo, as the merge environment's secret
-    let pk = gh.get(&format!("/repos/{repo}/actions/secrets/public-key"))?;
-    let sealed = seal(pk["key"].as_str().unwrap_or(""), private.as_bytes())?;
-    gh.call(
-        reqwest::Method::PUT,
-        &format!("/repos/{repo}/actions/secrets/{}", setup::SECRET),
-        Some(&json!({"encrypted_value": sealed, "key_id": pk["key_id"]})),
-    )?;
-    done.push(format!("secret {} in environment merge", setup::SECRET));
-    // the environment: main only
+    // the environment first (main only), then its secret: an environment secret reaches only jobs that name the
+    // environment, and the environment admits main's runs only, so no branch's workflow can read the key
     gh.call(
         reqwest::Method::PUT,
         &format!("/repos/{repo}/environments/merge"),
@@ -489,12 +496,22 @@ fn setup_one(gh: &Gh, repo: &str, dry: bool) -> Result<Vec<String>> {
             &format!("/repos/{repo}/environments/merge/deployment-branch-policies"),
             &setup::branch_policy_payload(&branch),
         )?;
-        done.push(format!("environment merge: {branch} only"));
-    } else {
-        done.push(format!("environment merge: {branch} only (there)"));
+    }
+    done.push(format!("environment merge: {branch} only"));
+    let pk = gh.get(&format!(
+        "/repos/{repo}/environments/merge/secrets/public-key"
+    ))?;
+    let sealed = seal(pk["key"].as_str().unwrap_or(""), private.as_bytes())?;
+    match gh.call(
+        reqwest::Method::PUT,
+        &format!("/repos/{repo}/environments/merge/secrets/{}", setup::SECRET),
+        Some(&json!({"encrypted_value": sealed, "key_id": pk["key_id"]})),
+    )? {
+        (201 | 204, _) => done.push(format!("secret {} in environment merge", setup::SECRET)),
+        (c, v) => bail!("the environment secret: {c} {v}"),
     }
     // main's ruleset: made, or the one this tool made before updated in place
-    let want = setup::ruleset_payload(&branch);
+    let want = setup::ruleset_payload(&branch, actions);
     let rs = gh.get(&format!("/repos/{repo}/rulesets"))?;
     let mine = rs
         .as_array()
