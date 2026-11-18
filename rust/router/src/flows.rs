@@ -797,7 +797,7 @@ impl Router {
             s.import_from = i.session.clone();
             s.import_sha = i.sha256.clone();
         }
-        let (dup, err) = self.st.do_(|d| match crate::autopilot::admit_session(d, &s, &input) {
+        let (dup, err) = self.st.do_(|d| match crate::sessionops::admit_session(d, &mut s, &input) {
             Ok(dup) => {
                 if dup.is_empty() {
                     d.sessions.insert(s.id.clone(), s.clone());
