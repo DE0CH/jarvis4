@@ -8,7 +8,7 @@ package main
 // prompt is delivered (the session resumed first when it is paused); exit 3, or the maximum age passed = give up: the
 // fail prompt is delivered instead. Any other exit = not yet.
 //
-// The delivery is the session's own signed request ("watch" or "watch-fail", machine/deliver.go checks it against the
+// The delivery is the session's own signed request ("watch" or "watch-fail", rust/machine/src/deliver.rs checks it against the
 // line's keys and the core attests it), exactly like a wakeup: the router picks when, never what. The runner's output
 // never reaches the agent (nothing vouches for it); the machine runs the check once more itself, with the session's own
 // env, and appends that output. Watches belong to their session (Schedule.Watches) and end with it; a session with an

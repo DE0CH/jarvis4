@@ -60,13 +60,13 @@ lapsed, dropped or failed; for a batch, 0 only when every item was approved), Ja
 machine checks the proof an approval leaves: the phone-signed grant, the new cert naming the store, …). An added store
 (add-store, add-repo) is pulled into the supervisor before the command returns. A long wait goes to the background
 like any long command; nothing else tells the session the outcome (Deyao, 2026-11-17).
-Goes through the machine's local proxy ($JARVIS_URL, machine/apiproxy.go), which signs it with the machine key.
+Goes through the machine's local proxy ($JARVIS_URL, rust/machine/src/apiproxy.rs), which signs it with the machine key.
 """
 import json, os, subprocess, sys, urllib.error, urllib.request
 from time import time_ns
 
 BASE = os.environ.get("JARVIS_URL", "http://127.0.0.1:7171").rstrip("/")
-OUTCOMES = "/run/jarvis/outcomes"  # the checked outcomes the supervisor records (machine/outcomes.go outcomesDir)
+OUTCOMES = "/run/jarvis/outcomes"  # the checked outcomes the supervisor records (rust/machine/src/outcomes.rs outcomes_dir)
 # a wrong call says what was wrong in one line instead of printing the manual (--help prints that)
 USAGE = {"add-repo": "add-repo OWNER/NAME [--sensitive] [--no-store]", "grant": "grant HOLDER [--minutes N | --days N]",
          "unlock": "unlock", "new-session": "new-session --label TEXT --prompt-file FILE [...]",

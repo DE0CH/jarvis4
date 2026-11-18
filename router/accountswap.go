@@ -21,7 +21,7 @@ package main
 //                        its participants for refreshes
 //  2. taking the login   until the machine's status reports the new account's pair on disk (credsExpiresAt): the
 //                        supervisor installed it and the account record under the running claude, under the CLI's
-//                        refresh lock (machine/claudelogin.go switchInPlace); claude's next request uses it
+//                        refresh lock (rust/machine/src/claudelogin.rs switch_in_place); claude's next request uses it
 //  3. checking the account  until the status's __ACCOUNT__ names the new account: Anthropic's profile endpoint, asked
 //                        by the machine with the installed token
 //  4. Remote Control     Claude Code stops Remote Control when the account under it changes; the supervisor types
@@ -229,7 +229,7 @@ func (r *Router) SwitchAccount(req *http.Request, id string, in accountSwitchIn)
 		before = *g
 	}
 	setAccount()
-	r.send(s.MachineID, "claude-account") // machine/supervisor.go (images from 2026-10-20; older ones log it as unknown)
+	r.send(s.MachineID, "claude-account") // rust/machine/src/supervisor.rs (images from 2026-10-20; older ones log it as unknown)
 	go func() {
 		defer unlock()
 		err := r.runAccountSwitch(j, id, s.MachineID, harness, before, to, in.Continue)

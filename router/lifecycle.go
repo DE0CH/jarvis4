@@ -748,7 +748,7 @@ func (r *Router) registerLifecycle(app appRoute) {
 		})
 		return
 	}
-	// the supervisor's pause and resume of the Claude process (machine/supervisor.go), unguarded like snapshot and free
+	// the supervisor's pause and resume of the Claude process (rust/machine/src/supervisor.rs), unguarded like snapshot and free
 	app("POST /api/sessions/{id}/harness", func(w http.ResponseWriter, req *http.Request) {
 		id := req.PathValue("id")
 		var in struct {

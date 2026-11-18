@@ -534,7 +534,7 @@ func TestReposAndGitHub(t *testing.T) {
 
 func jsonString(v any) string { b, _ := json.Marshal(v); return string(b) }
 
-// addGrant: a stored grant as if the phone had signed it (the machine's checks are tested in machine/)
+// addGrant: a stored grant as if the phone had signed it (the machine's checks are tested in rust/machine/)
 func addGrant(r *Router, session, holder, kind string) {
 	r.st.Do(func(d *persisted) {
 		id := randID()

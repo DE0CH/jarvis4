@@ -1,6 +1,7 @@
-//! Whole snapshots against Go's machine/ (machine/snapshot_rustvec_test.go), both ways: go-snapshot.bin (what a Go
-//! machine wrote of the fixture home) restores here, and rust-snapshot.bin (what this port writes of the same home)
-//! restores in Go. `GEN_RUST_VECTORS=1 cargo test -p jarvis-machine snapvectors` writes rust-snapshot.bin again.
+//! Whole snapshots against what the Go machine wrote: go-snapshot.bin (Go's writeSnapshot of the fixture home) restores
+//! here, and so does rust-snapshot.bin (what this port writes of the same home), which the Go machine also restored
+//! (checked both ways before machine/ was deleted, 2026-11-17: snapshots Go machines stored still restore).
+//! `GEN_RUST_VECTORS=1 cargo test -p jarvis-machine snapvectors` writes rust-snapshot.bin again.
 
 use super::testutil::*;
 use sha2::{Digest, Sha256};

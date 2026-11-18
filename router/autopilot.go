@@ -201,7 +201,7 @@ func (r *Router) registerAutopilot(app appRoute, m machineRoute) {
 	m("POST /m/status", func(w http.ResponseWriter, req *http.Request, machine string, body []byte) {
 		var in struct {
 			Raw      string `json:"raw"`
-			AppTitle string `json:"appTitle"` // the Claude app's title of the Remote Control entry (machine/apptitle.go)
+			AppTitle string `json:"appTitle"` // the Claude app's title of the Remote Control entry (rust/machine/src/apptitle.rs)
 		}
 		json.Unmarshal(body, &in)
 		reg := parseRegistry(in.Raw)
@@ -218,7 +218,7 @@ func (r *Router) registerAutopilot(app appRoute, m machineRoute) {
 			if s.Booted != machine || s.Live.BootedAt.IsZero() {
 				s.Live.BootedAt = s.Live.LastReport // the harness check's clock (planTick)
 			}
-			s.Booted = machine // its agent reports only once the machine has booted (machine/main.go)
+			s.Booted = machine // its agent reports only once the machine has booted (rust/machine/src/boot.rs)
 			if reg != nil {
 				s.Live.HostUp, s.StuckImage = machine, ""
 			}
@@ -238,7 +238,7 @@ func (r *Router) registerAutopilot(app appRoute, m machineRoute) {
 		})
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
-	// the read-only terminal: the machine's own capture of its pane (machine/screen.go), in session_screens (screens.go)
+	// the read-only terminal: the machine's own capture of its pane (rust/machine/src/screen.rs), in session_screens (screens.go)
 	m("POST /m/screen", func(w http.ResponseWriter, req *http.Request, machine string, body []byte) {
 		var in TermSnap
 		json.Unmarshal(body, &in)
@@ -304,7 +304,7 @@ type pilotAction struct {
 	Machine string // harness-stuck: the machine whose harness never came up
 	Text    string // dm
 	Repair  string // login: the uuid of the "Please run /login" reply being repaired
-	// login: the machine keeps its account's pair in step (machine/claudelogin.go): no write, only
+	// login: the machine keeps its account's pair in step (rust/machine/src/claudelogin.rs): no write, only
 	// "continue" for a session stuck on "Please run /login"
 	Name string
 }
@@ -469,7 +469,7 @@ func planTick(d *persisted, now time.Time, storedExp map[string]int64, c pilotCo
 		}
 
 		// Claude login: a session with a Claude account keeps that account's pair in step by itself
-		// (machine/claudelogin.go); the router writes nothing (Deyao, 2026-10-14: no login repair). A turn that stopped on
+		// (rust/machine/src/claudelogin.rs); the router writes nothing (Deyao, 2026-10-14: no login repair). A turn that stopped on
 		// "Please run /login" gets "continue" once the session's pair is in step again.
 		if exp := storedExp[s.ClaudeAccount]; g != nil && !operating && !inFlight(l.LoginBusyAt, now) && s.ClaudeAccount != "" &&
 			exp > now.UnixMilli() && g.CredsExpiresAt >= exp && g.Status == "idle" {

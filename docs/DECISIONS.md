@@ -73,7 +73,7 @@ made around it; the app's own list is `app/DECISIONS.md`.
     token (`jarvis2-claude-credentials`, keys `JARVIS1_CREDENTIALS_ID/SECRET`) that Jarvis 1's Worker lets
     reach only `GET/POST jarvis.deyaochen.com/api/credentials`; tested: 403 on any other path and on session
     hosts. The machine takes the pair at boot and every 30 s pushes its own refreshed copy and takes Jarvis 1's
-    when that expires later (`machine/claudelogin.go`). Holding the store gives the Claude login and nothing
+    when that expires later (`rust/machine/src/claudelogin.rs`). Holding the store gives the Claude login and nothing
     else in Jarvis 1. Not sensitive.
 23. **Jarvis 1 stays a push path into jarvis2** (Deyao, 2026-10-09, "leave it"): Jarvis 1's `default` store holds
     the account-wide GitHub token, so whoever can start a Jarvis 1 session can push Jarvis 4's code.
@@ -263,7 +263,7 @@ shouldnt unlock the whole infra [store] for that one task."
 63. **The repo list is the router's, but follows the core**: an entry appears only from the core's `deploy-key-added`
     answer and goes with `deploy-key-removed`; GitHub repos only (Jarvis 1's "any git URL" is gone, and an older
     non-GitHub entry is left off the list). Removing needs Face ID too, since it deletes the key on GitHub.
-64. **Sessions get the repo by SSH, set up by the machine** (machine/deploykeys.go): each key in
+64. **Sessions get the repo by SSH, set up by the machine** (rust/machine/src/deploykeys.rs): each key in
     `~/.ssh/jarvis2-deploy/`, a host alias `github.com-jarvis2-<slug>` with that key only (`IdentitiesOnly`) and
     GitHub's published host keys pinned (`StrictHostKeyChecking`, its own known_hosts), and git `insteadOf` rewrites of
     the repo's `.git` URLs (https, `git@`, `ssh://`; as stored and lower case) to the alias. Only the `.git` forms:
@@ -390,7 +390,7 @@ entry points only ("if I decide to break it later then it's fine").
     no session mapping or cert, at least 15 minutes old. No separate destroy token for the router (one more credential
     that could destroy session machines). A machine is "test" when its JARVIS2_URL host isn't `jarvis4-box._peer.internal`.
 89. **A session logs into Claude by itself** (Deyao, 2026-10-11: no grant, no Face ID). Decision 22's boot step was
-    written (`machine/claudelogin.go`) but never called for sessions, so every session's first login was the
+    written (`rust/machine/src/claudelogin.rs`) but never called for sessions, so every session's first login was the
     router's `login` exec — which a vouching machine refuses without a grant: after the core release every new
     session asked for "login repair". Now boot takes Jarvis 1's pair over the `claude` store's confined token
     before the harness starts (a pair already here that expires later, a resume's, is kept), passes Jarvis 1's
@@ -485,7 +485,7 @@ fill the gaps (decided while Deyao was away, ~/artifacts/away/decisions.md).
 94. **Each attachment is in the input log**: the machine's listing (`GET /m/attachments`) carries the core's attestation
     of each file as it is on the volume (`/attest` machine, input `attachment`, origin `cert`; every core in use has
     `/attest`), and the machine takes a file only when its bytes hash to the cert's sha256 + size AND the attestation
-    names that hash, this machine and `attachment` (machine/attachments.go). One file failing refuses them all and the
+    names that hash, this machine and `attachment` (rust/machine/src/attachments.rs). One file failing refuses them all and the
     session starts without them (as before). A swapped file is attested under its own hash, so the swap shows in the log.
 95. **The web page takes images only** (PNG, JPEG, GIF, WebP, as they are: no conversion in the browser), from a file
     picker or pasted into the page, up to 20 per session, 25 MB each (the router's limits). It uploads them, then files
@@ -842,7 +842,7 @@ iCloud index and leases (decided while Deyao was away; the safe, reversible defa
      machines were stopped by hand right after boot, so their rootfs and keys were gone and no snapshot could be signed;
      their kills named none). A successor whose cert names no snapshot, on a line whose signed config names a restore that
      is a Jarvis 1 import, fetches that manifest and its files again and checks them as the first machine did
-     (`machine/restore.go` reimportJarvis1; the router serves them to such a successor). The cost: a router that withholds
+     (`rust/machine/src/restore.rs` reimport_jarvis1; the router serves them to such a successor). The cost: a router that withholds
      a later snapshot can bring the line back to the imported state instead of an empty one; both were already in its power
      (withholding, and the import's bytes are what Deyao signed). A destroyed Jarvis 4 session's archive is not taken again.
 142. **`/setup/sessions/{id}/pause` cancels the session's wakeups and crons first** (they would resume it by themselves);
@@ -1054,7 +1054,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
 
 162. **The requesting session is told every decision on what it filed** (Deyao, 2026-10-13: "Approving an Inbox
      request should send a message or something to notify the session that requested it"; `router/outcomes.go`,
-     `machine/outcomes.go`). Approved, denied, lapsed (10 minutes), dropped (left without a decision) or failed (an
+     `rust/machine/src/outcomes.rs`). Approved, denied, lapsed (10 minutes), dropped (left without a decision) or failed (an
      approved API call that couldn't run), per item, for everything a session files on its machine key (requests,
      add-store, new-session proposals, batches, the actions' filings incl. API calls). Claude's choices:
      *Built like the lease wake*: a delivery kind `request-outcome` whose text the machine builds from the session's
@@ -1236,7 +1236,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
 167. **Upgrade is a ladder with no top: each step doubles the memory** (Deyao, 2026-10-15: "keep tapping Upgrade to go
      to 16 GB, 32 GB and beyond"; no "biggest size", no fixed last rung). Sizes are small (2 GB), medium (4), large (8),
      then `16gb`, `32gb`, `64gb`, … (`router/sizes.go`; the same block is in `core/fly.go`, which makes the guest, and
-     `machine/deliver.go`, which names the sizes in the `upgraded` text; `TestSizeBlocksMatch` keeps them equal).
+     `rust/machine/src/deliver.rs`, which names the sizes in the `upgraded` text; `TestSizeBlocksMatch` keeps them equal).
      *Guests* follow Fly's rules (fly.io/docs/machines/guides-examples/machine-sizing: ≤ 2 GB per shared CPU, 2–8 GB per
      performance CPU): up to 16 GB shared (16 GB = 8 shared CPUs, the most a shared guest holds); past it performance,
      keeping large's 8 CPUs, or memory/8 CPUs once the memory needs more. A step never lowers the CPU count, so 32 GB is
@@ -1426,7 +1426,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
 After session sb8e0273d6c308894 ("k-matrix clone: interactive 5") lost its conversation: its disk was full, the final
 snapshot failed with "no space left on device", the machine was destroyed anyway and the resume started empty.
 
-175. **The final snapshot streams to the router; the machine needs no free disk for it** (`machine/snapstream.go`,
+175. **The final snapshot streams to the router; the machine needs no free disk for it** (`rust/machine/src/snapstream.rs`,
      `router/snapstream.go`). The tar.gz is made straight into the request body (`POST /m/snapshot-stream`, signed over
      the marker `stream` because the hash isn't known before the bytes, and checked before the router takes a byte); the
      router answers the hash of what it stored, the machine compares it with its own, signs it and commits. The R1 rule
@@ -1445,7 +1445,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      longer leaves the line without a snapshot. *Not chosen*: retrying the snapshot in a loop (a full disk stays full).
 
 177. **Each machine keeps its state on its own Fly volume, and the core backs the volume up at every kill**
-     (Deyao, 2026-10-15; `core/volumes.go`, `machine/volume.go`). The core (the only Fly token holder) makes a new, empty
+     (Deyao, 2026-10-15; `core/volumes.go`, `rust/machine/src/volume.rs`). The core (the only Fly token holder) makes a new, empty
      volume with each machine (`/data`, default 10 GB, encrypted, Fly's daily snapshots on); the machine bind-mounts the
      snapshot's directories from it (paths unchanged, so Claude's project names don't move) and copies the single files
      there every minute. At the kill, after the machine's own snapshot or after it failed or timed out, the core stops the
@@ -1472,7 +1472,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      automatically or from Fly's daily snapshots (Deyao: recovery from them is his decision, by hand); one volume per
      session kept across pauses (it would bill while paused, and a router could then start any machine on it).
 
-178. **Disk is reported like memory, warned about before it fills, and grown with More disk** (`machine/disk.go`,
+178. **Disk is reported like memory, warned about before it fills, and grown with More disk** (`rust/machine/src/disk.rs`,
      `router/disk.go`). Every 30 s the machine reports its root disk and its volume; the volume is the disk that counts
      when there is one. Under 10 % or 1 GB free starts an episode: one DM, `diskAlert` on the session, ending at 20 % and
      2 GB free. More disk (`POST /api/sessions/:id/disk`, a button on the session in the app and web page) has the core
@@ -1596,7 +1596,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      made and kept for its life** (Deyao, 2026-10-15: "there should be multiple claude key stores, one per account, so I
      can choose which account a session starts with and the session uses it (refreshed automatically), and I can manage
      the accounts in the dashboard"). Replaces 116's "the router alone picks which Claude account sessions use".
-     *Built* (`router/claudeaccounts.go`, `router/claudelogin.go`, `machine/claudelogin.go`; API "Claude accounts";
+     *Built* (`router/claudeaccounts.go`, `router/claudelogin.go`, `rust/machine/src/claudelogin.rs`; API "Claude accounts";
      RUNBOOK "The Claude accounts"): one login hub per account, its pair on the router's volume
      (`claude-accounts/<store>.json`), each refreshed by the router alone with the same refresh protocol (115-118), its
      participants the machines of its own sessions. `Session.ClaudeAccount` is set when the session is made (New session
@@ -2275,7 +2275,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      every encrypted volume snapshot of app jarvis4-sessions). Now:
      - `router/snapsafe.go`: any failed final snapshot keeps the machine (and its volume), the session `failed`,
        Deyao DMed, exactly as DECISIONS 176 did for machines without a volume; Destroy anyway still goes on.
-     - `machine/restore.go` `writeChanges` (the only step between the freeze and the snapshot's first progress line: a
+     - `rust/machine/src/restore.rs` `write_changes` (the only step between the freeze and the snapshot's first progress line: a
        `git status` per repo, which had no limit) runs at most 60 s, with no optional locks and no fsmonitor (the
        session's processes are stopped), its whole process group killed at the limit; the snapshot goes on without the
        changes file. It logs how long it took.
@@ -2327,7 +2327,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      likely its VSZ or RSS column read 5184), whose `while true; sleep 5` loop has no trap, so it died of SIGTERM
      (oom_killed false, requested_stop false), Fly tore the VM down and the supervisor (which ran as claude and only in
      its own session) died with it, so the Upgrade's final snapshot failed. Boot used to start the supervisor and then
-     exec into the entrypoint, which exec'd the launcher. Now (`machine/keeper.go`, DESIGN "The supervisor and the
+     exec into the entrypoint, which exec'd the launcher. Now (`rust/machine/src/keeper.rs`, DESIGN "The supervisor and the
      guard", The keeper):
      - The image's USER is root for the entry point only. The keeper starts the boot steps (`jarvis-machine prepare`,
        claude), the worker (root) and the harness (claude), each with setsid, never in the keeper's process group.
@@ -2409,7 +2409,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
 
 221. **The session can't take the control plane's memory** (Deyao, 2026-10-22: "only the supervisor needs to be
      protected, the rest dont matter"; "The point is to keep control plane alive so we still can send restart command
-     and also terminal grant to rescue"; machine/oomguard.go). Session s940709ec6ffdba71 ("YYC news monitor") filled
+     and also terminal grant to rescue"; rust/machine/src/oomguard.rs). Session s940709ec6ffdba71 ("YYC news monitor") filled
      its 4 GB machine (229 MB free at 04:21 UTC); with no swap the machine thrashed without the OOM killer running, and
      from 04:24 the router heard nothing, so no snapshot, Upgrade, pause or terminal command could reach it.
      `oom_score_adj` -1000 (DECISIONS 192) only keeps the OOM killer off the supervisor. Added:
@@ -2538,7 +2538,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
 
 228. **A machine stopped outside Jarvis is noticed and said so plainly; Resume starts a new machine from the newest
      signed snapshot. A machine's key pair lives in its memory only** (Deyao, 2026-10-23; `router/lostmachine.go`,
-     `machine/keeper.go` `memoryDir`). 2026-10-22: Claude ran `fly machine stop` on Jarvis 2's "YYC news monitor 2";
+     `rust/machine/src/keeper.rs` `memory_dir`). 2026-10-22: Claude ran `fly machine stop` on Jarvis 2's "YYC news monitor 2";
      Jarvis 2 showed it "started, busy" for a long time, then "failed" with its machine still listed, and nothing said
      whether its work was lost. Now the leader looks at Fly every 20 s (read-only token): a session Jarvis has running
      whose machine is stopped, suspended, failed, destroyed or no longer listed, on two looks in a row and with no
@@ -2718,7 +2718,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      (Deyao, 2026-10-24: "the 15 minute jarvis watchdog is not running", "i thought we seperated state and compute?",
      "for the watchdog it's actually a simple watch from the supervisor, nothing outside the image"). The router ran the
      stall clock from fields of Liveness that lived only in memory; every write by any replica makes the next Do read
-     the records again, which dropped them, so the nudge never came. Now `machine/stall.go` looks at its own Claude host
+     the records again, which dropped them, so the nudge never came. Now `rust/machine/src/stall.rs` looks at its own Claude host
      every 10 s (its registry file, its shells and the hook-fed job count, its pane) and sends the text through the
      Jarvis channel itself; the router has no nudge, no stall clock and no "nudge" delivery kind. The supervisor may
      keep its state in memory: the container is the session's state and ends with it (Deyao). What outlives a session
@@ -2772,7 +2772,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      cut and `connected` within seconds of the network coming back: measured on a throwaway host behind a proxy that
      was switched off), but it has give-up paths (`consecutive init failures, not retrying this session`, `Giving up
      on re-registering environment`, `the server refused to reconnect this computer`), and its header's `/rc active`
-     is drawn once and never changes. Now `machine/rcwatch.go` checks every minute: down = no Remote Control entry on
+     is drawn once and never changes. Now `rust/machine/src/rcwatch.rs` checks every minute: down = no Remote Control entry on
      the live host, or the entry is `disconnected` on claude.ai while the machine reaches Anthropic; after 3 minutes
      down, between turns (idle, or busy with background jobs only), it types `/remote-control` and picks Disconnect
      when the host still holds the entry, then Enable (the menu read from the pane's open dialog only, the cursor
@@ -2898,7 +2898,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      focused, it presses Enter: allow once, never "always allow" or a mode switch. It re-reads the pane right before
      pressing, presses the same dialog at most twice, and logs each one. Auto mode is untouched (its prompts are
      Deyao's), and so are the trust dialog, the API key question, a plan's approval and AskUserQuestion.
-     machine/autoaccept.go.
+     rust/machine/src/autoaccept.rs.
 248. **AWS spend is in the budget, one pool with Fly's** (Deyao, 2026-11-04: "aws spend tracking just like fly's spend
      tracking. they contribute to the same pool of 50 usd, make sure the billing is recorded separately from yyc").
      Each budget tick the router lists every instance, EBS volume, snapshot and Elastic IP in the three session regions
@@ -2973,7 +2973,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      with `docker run` and no init, so `jarvis-machine boot` (the keeper) is pid 1 of the container; the supervisor's
      boot-env check took a parent of pid 1 for an orphan re-parented to Fly's init and refused it, so every AWS
      session's Claude started with none of its stores' keys in its env (`session-secret` still worked). The check now
-     also takes a pid-1 parent whose executable is this binary (`keeperIsInit`, machine/supervisor.go); Fly's init is
+     also takes a pid-1 parent whose executable is this binary (`keeperIsInit`, rust/machine/src/supervisor.rs); Fly's init is
      another binary, so an orphaned supervisor there still gets nothing. Machine side only; no kernel change (the
      unit's `docker run` stays as the kernel released it).
 254. **The aviary harness replaces cloudcli: Jarvis 4 dogfoods YYC AI's stack** (Deyao, 2026-11-11: "dogfood of YYC
@@ -2993,7 +2993,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      supervisor's activity reply instead, readiness comes from the machine's own health reports).
 255. **The session is told of memory or disk pressure by its own supervisor, and told not to upgrade** (Deyao,
      2026-11-12: "add a jarvis watcher (similar to the idle/stall watcher) that says disk pressure/memory pressure, do
-     not upgrade. discord Deyao if upgrade is necessary or recommended"). `machine/pressure.go` reads its own
+     not upgrade. discord Deyao if upgrade is necessary or recommended"). `rust/machine/src/pressure.rs` reads its own
      machine's memory and disk every 30 s and decides by the router's rules (router/memory.go, router/disk.go), so the
      session hears of the episode Deyao is DMed about: the message goes into the harness through the Jarvis channel
      at the start of an episode and every 15 min while it lasts, with the numbers and the biggest processes. A memory
@@ -3034,7 +3034,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
 260. **The pressure watch counts a harness's own memory guard** (Deyao, 2026-11-13: "the memory pressure watcher isn't
      working"). The aviary supervisor kills the biggest process before the kernel would, within seconds, so none of
      the watch's signs showed while an aviary session lost `npm ci` twice. The guard's kills, read from its log as it
-     grows, are a fourth sign (`machine/pressure.go`). Its message, like every Jarvis message, now joins a running
+     grows, are a fourth sign (`rust/machine/src/pressure.rs`). Its message, like every Jarvis message, now joins a running
      aviary turn (magpie's `joinRunning`): before, a delivery during a turn was refused and retried until the turn
      ended, so a warning could not arrive during the long turn it was about.
 261. **An aviary session's status is the supervisor's run state** (Deyao, 2026-11-13: "it says working instead of idle
@@ -3111,7 +3111,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      (the session's own signed request, a paused session resumed, the Inbox for a sensitive one), counted as that
      firing (a wakeup is done; a cron's run number goes up, its schedule carries on). It runs in the background; a
      failure is DMed and marked missed. The machine refuses a cron run sooner than half its period after the last
-     (machine/deliver.go replayGuard, which keeps a router from replaying a session's signed request at will), so a
+     (rust/machine/src/deliver.rs replay_guard, which keeps a router from replaying a session's signed request at will), so a
      Run now that soon is refused upfront with 409 and the time it can run, and after a Run now the next occurrence is
      moved to at least half a period away. *Not chosen*: loosening the machine's half-period guard for a Run now
      (nothing the machine can check tells Deyao's press from a router replay without a Face ID per press); keeping a
@@ -3130,3 +3130,17 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      of entry 248 pauses every running session at USD 100 (`FLY_BUDGET_USD`) and DMs at USD 90 (`FLY_BUDGET_WARN_USD`,
      the same 90 % as the old 45/50). Only the router's env in k8s/cluster/router/router.yaml changed; the code's
      defaults stay 50/45.
+269. **Jarvis 4 is rewritten in Rust, part by part; the machine first** (Deyao, 2026-11-17: rewrite all of Jarvis 4 from
+     Go into Rust, the same wire formats, "part by part": machine, core, router, kernel last, as a kernel release needs
+     his OK and a Face ID). Each part's crate replaces its Go part in one cut once it passes that part's tests and the
+     e2e replica; paused sessions stay on their old image for weeks, so every format stays the same both ways. The
+     machine went first: `rust/machine` (binary `jarvis-machine`, tokio + axum + reqwest, `unsafe_code = "forbid"`)
+     with every non-root test of machine/ ported, Go↔Rust vectors for the signatures (rust/sig), the documents
+     (rust/doc), the kernel's boot documents (kernel/kerneltest) and whole snapshots both ways, then the router's
+     pinned session image with only `jarvis-machine` swapped through a kernel line's life on real Fly (boot, pause
+     with its snapshot, resume restoring it, destroy: `rust/e2e-kernel`, which replaced infra/e2e-kernel.sh; the
+     candidate workflow rust-machine-replica went with machine/). *Kept apart*: a non-root keeper puts the harness in
+     a process group of its own (setsid needs unsafe code), and children of the Rust keeper get the default
+     SIGPIPE/SIGTTOU. Shell scripts whose comments still name machine/*.go files are left until they are rewritten
+     (Deyao, 2026-11-17: shell scripts are banned, and one that has to change is rewritten in Rust), as are the
+     kernel's comments (a change to a kernel input is a release).

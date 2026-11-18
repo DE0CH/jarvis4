@@ -14,7 +14,7 @@ package main
 //   instance  {id, template, name, params, size, stores, session}: a new session whose harness is
 //             "task:<template>" (signed in the cert's options), approved ONCE on the phone like any new session.
 //   run       a resume of that line (approve_by_dead_machine: same stores, options and image, no phone) whose
-//             machine runs the template instead of a harness (machine/task.go), reports the result to
+//             machine runs the template instead of a harness (rust/machine/src/task.rs), reports the result to
 //             /m/task-result, and is paused again (snapshot kept: ~/workspace/task-state survives runs).
 //   schedule  {id, instance, time "HH:MM", tz, enabled, since}: the router's own daily tick starts a run.
 //
@@ -1444,7 +1444,7 @@ func taskEnv(r *Router, s *Session, e map[string]string) {
 	})
 }
 
-// TaskResult: what the machine reports once its run ended (machine/task.go); Run "" = a boot with no run
+// TaskResult: what the machine reports once its run ended (rust/machine/src/task.rs); Run "" = a boot with no run
 // (the line's first machine, or a run stopped before it started)
 type TaskResult struct {
 	Run        string    `json:"run"`

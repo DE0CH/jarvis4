@@ -1,6 +1,6 @@
 package main
 
-// A snapshot's compression (machine/snapformat.go, DECISIONS 241): S2 from 2026-10-25 on, gzip before; every
+// A snapshot's compression (rust/machine/src/snapformat.rs, DECISIONS 241): S2 from 2026-10-25 on, gzip before; every
 // reader tells them apart by their first bytes. The archive around a snapshot stays gzip.
 
 import (

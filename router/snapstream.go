@@ -1,7 +1,7 @@
 package main
 
 // The final snapshot without free disk on the machine (snapsafe.go): the machine streams its tar.gz straight into
-// the request body as it makes it (machine/main.go uploadSnapshot), so it needs no room for a local copy.
+// the request body as it makes it (rust/machine/src/snapstream.rs upload_snapshot), so it needs no room for a local copy.
 //
 //	POST /m/snapshot-stream   the body, streamed into the bucket (snapstore.go) and hashed on the way. The request is signed
 //	                          over the constant body marker "stream" (the hash isn't known before the bytes), so the

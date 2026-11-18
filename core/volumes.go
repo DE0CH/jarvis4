@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	volumePath    = "/data" // where the machine finds its volume (machine/volume.go)
+	volumePath    = "/data" // where the machine finds its volume (rust/machine/src/volume.rs)
 	volumeName    = "jarvis4_state"
 	defaultDiskGB = 10  // a session's volume when the router asks for no size
 	maxDiskGB     = 500 // the largest volume a start or Extend makes

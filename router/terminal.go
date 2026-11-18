@@ -1,7 +1,7 @@
 package main
 
 // The live terminal (Jarvis 1's lib/tty.js over grants instead of Fly exec): the harness runs in tmux session
-// `claude` inside the machine. Viewing is the pane the machine's supervisor uploads itself (machine/screen.go),
+// `claude` inside the machine. Viewing is the pane the machine's supervisor uploads itself (rust/machine/src/screen.rs),
 // never a command run in the machine; typing and resizing are commands under the "terminal" holder's grant.
 
 import (
@@ -22,7 +22,7 @@ type TermSnap struct {
 // pushedScreen: a machine's screen push counts while its heartbeat (30 s) can still be on time
 const screenFresh = 45 * time.Second
 
-// pushedScreen: the latest pane the session's running machine pushed itself (machine/screen.go; screens.go), if it
+// pushedScreen: the latest pane the session's running machine pushed itself (rust/machine/src/screen.rs; screens.go), if it
 // is fresh
 func (r *Router) pushedScreen(session string) (TermSnap, bool) {
 	snap, age, ok := r.latestScreen(session)

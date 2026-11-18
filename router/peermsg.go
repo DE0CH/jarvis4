@@ -13,7 +13,7 @@ package main
 // Equal and downward are delivered at once; upward waits in the Inbox as a "peer-message" request that Deyao
 // approves or denies with one tap (no Face ID: nothing is signed, like an API call). Either way the receiving machine
 // gets a core-attested "peer" delivery carrying the verified sender, both sides' stores and modes and the direction;
-// it checks the direction against its own cert and wraps the text with all of it (machine/peer.go). A denial, a lapse
+// it checks the direction against its own cert and wraps the text with all of it (rust/machine/src/peer.rs). A denial, a lapse
 // or a failed delivery comes back to the sender as its request's outcome (outcomes.go).
 //
 // Repos count through their stores (a repo is its deploy-key store). Grants and standing rules don't count: they let
@@ -35,7 +35,7 @@ const (
 	peerNoteMax     = 8000 // characters of a peer message
 )
 
-// PeerNote: what the receiving machine gets (machine/peer.go has the same struct: the core attests its JSON)
+// PeerNote: what the receiving machine gets (rust/machine/src/peer.rs has the same struct: the core attests its JSON)
 type PeerNote struct {
 	From       string   `json:"from"` // the sending session's id
 	FromTitle  string   `json:"fromTitle"`
@@ -245,7 +245,7 @@ func heldPeerNote(note PeerNote, recv *Session) (PeerNote, bool) {
 	return note, true
 }
 
-// peerAttested: what the core attests for a peer delivery (machine/peer.go checks the same bytes)
+// peerAttested: what the core attests for a peer delivery (rust/machine/src/peer.rs checks the same bytes)
 func peerAttested(n *PeerNote) ([]byte, string, error) {
 	if n == nil || n.From == "" || n.To == "" || n.Text == "" {
 		return nil, "", errors.New("peer: no note")

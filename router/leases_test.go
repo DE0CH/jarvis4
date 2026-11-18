@@ -157,7 +157,7 @@ func TestLeaseTakeOverHandBack(t *testing.T) {
 }
 
 func TestLeaseTextsMatchTheMachine(t *testing.T) {
-	// machine/deliver_test.go checks the same strings
+	// rust/machine/src/tests/vouch.rs checks the same strings
 	got := leaseGrantedText("mac", 60, false, false, "go on")
 	want := `[lease "mac" granted] This session now holds the shared device "mac" (you were queued for it). It is yours for 60 min, renewed automatically by the device helpers on every action; return it when done (scripts/lease.py return mac). The previous holder may have left it in any state: inspect it first. Your note: go on`
 	if got != want {

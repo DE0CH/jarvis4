@@ -3,7 +3,7 @@ package main
 // Disk: the machine's disk report, the warning before it fills, and More disk — the disk counterpart of memory.go
 // (2026-10-15: a session's disk filled, its final snapshot failed with "no space left on device").
 //
-// Every 30 s the machine's agent POSTs /m/disk (machine/disk.go): its root filesystem and, on a machine with a volume
+// Every 30 s the machine's agent POSTs /m/disk (rust/machine/src/disk.rs): its root filesystem and, on a machine with a volume
 // (core/volumes.go), the volume at /data that holds the session's state. The disk that counts is the volume when
 // there is one, else the root. An episode begins when it has less than diskLowPct free or less than diskLowMB; it is
 // DMed once, shown on the session as diskAlert {since, reason, detail, nextGb, canGrow, why} with a More disk button,
@@ -38,7 +38,7 @@ type DiskFS struct {
 	AvailKb int64 `json:"availKb"`
 }
 
-// DiskSample: what the machine reports (machine/disk.go)
+// DiskSample: what the machine reports (rust/machine/src/disk.rs)
 type DiskSample struct {
 	Root *DiskFS `json:"root"`
 	Data *DiskFS `json:"data"` // the volume, when the machine has one

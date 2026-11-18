@@ -524,7 +524,7 @@ func loadImageOrder(path string) []string {
 }
 
 // firstRouterLoginImage: the first pinned session image whose machine takes the Claude login from the router
-// (machine/claudelogin.go, 2026-10-13 01:39). Every earlier image fetched it from Jarvis 1 with the store claude's
+// (rust/machine/src/claudelogin.rs, 2026-10-13 01:39). Every earlier image fetched it from Jarvis 1 with the store claude's
 // JARVIS1_CREDENTIALS_*, which no longer exist: such a line resumes on the newest image (the phone approves).
 const firstRouterLoginImage = ":sha-c5427052a542@"
 

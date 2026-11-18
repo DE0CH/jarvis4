@@ -19,7 +19,7 @@ package main
 //
 // Jarvis 4 differences (docs/DECISIONS.md 100): the state is the router's (persisted.Leases, state.json on its volume),
 // the holder is the calling machine's own session (the path's id must be it), and the wake messages are deliveries
-// the machine checks (machine/deliver.go): "lease-granted" carries the waiter's own signed acquire request (its
+// the machine checks (rust/machine/src/deliver.rs): "lease-granted" carries the waiter's own signed acquire request (its
 // prompt and the device name in the signed path), "lease-taken" and "lease-back" are texts built into the image over
 // the device name. Deyao's notes never go into a session (nothing vouches for them); the session reads them with
 // lease.py status. Jarvis 1's lease table is separate: Jarvis 4 is the lease authority for Jarvis 4 sessions.
@@ -609,7 +609,7 @@ func (st *LeaseState) list(now int64) []map[string]any {
 	return out
 }
 
-// ---- the wake texts (built the same way in machine/deliver.go; the router picks when and for which device) ------
+// ---- the wake texts (built the same way in rust/machine/src/deliver.rs; the router picks when and for which device) ------
 
 func leaseGrantedText(device string, ttlMin int64, handover, interrupted bool, prompt string) string {
 	t := fmt.Sprintf("[lease %q granted] This session now holds the shared device %q (you were queued for it). ", device, device) +

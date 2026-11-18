@@ -1,6 +1,6 @@
 package main
 
-// The supervisor's log (Deyao, 2026-10-16): each session machine's supervisor (machine/supervisor.go) pushes its own
+// The supervisor's log (Deyao, 2026-10-16): each session machine's supervisor (rust/machine/src/supervisor.rs) pushes its own
 // log lines here (POST /m/supervisor-log), from its first second (also while it boots, before its first status
 // report). The router keeps them per session in its database (session_log, sessionlog.go), for the session's life;
 // the app and web page read them in the session's one event stream with the lifecycle log (sessionevents.go,

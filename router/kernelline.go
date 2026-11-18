@@ -62,7 +62,7 @@ func (r *Router) kernelServes() bool {
 	return ok
 }
 
-// kernelSettings: a source's settings, the guard's to read (machine/kernelboot.go): the harness, the permission mode
+// kernelSettings: a source's settings, the guard's to read (rust/machine/src/kernelboot.rs): the harness, the permission mode
 // (fixed for the line's life, D3) and the session's config as the old core's cert carried it
 func kernelSettings(s *Session, config string) (json.RawMessage, error) {
 	var cfg any = map[string]any{}
@@ -354,7 +354,7 @@ const kernelSpawnTries = 3
 
 // kernelPred: the machine whose snapshot a start from this source restores (GET /m/snapshot, snapdirect.go
 // snapshotFor): the line's machine whose committed snapshot has the hash the source names (the machine checks the
-// hash, machine/kernelboot.go kernelRestore). That is the machine the source came from when it left that snapshot. It
+// hash, rust/machine/src/kernelboot.rs kernel_restore). That is the machine the source came from when it left that snapshot. It
 // is an earlier one when the source came from a machine that never got past boot, whose kill passed on the hash its
 // own source named (neverBootedStateKept), or from the sink: a phone-signed source on a new image (a resume-upgrade)
 // names the hash of the line's last snapshot. A restoring line's machine has none ("") while the hash is the archived
@@ -616,7 +616,7 @@ func (r *Router) kernelBurn(sid string) error {
 	return nil
 }
 
-// kernelBoot: what a kernel machine reads at boot (machine/kernelboot.go): its grant, the spawner's cert naming it,
+// kernelBoot: what a kernel machine reads at boot (rust/machine/src/kernelboot.rs): its grant, the spawner's cert naming it,
 // the cert into its source, each notarization, and the identities that check them
 func (r *Router) kernelBoot(machine string) (map[string]any, error) {
 	var l *KernelLine
@@ -866,7 +866,7 @@ func mustSucc(d *sig.Doc) doc.Object {
 }
 
 // kernelObject: a kernel line's machine as the kernel names it, "<runner>-<id>" (kernel/doc Object; the machine
-// checks the same name, machine/main.go machineObject): the spawner's cert onto it when that names it, else by the
+// checks the same name, rust/machine/src/main.rs machine_object): the spawner's cert onto it when that names it, else by the
 // session's runner (fallback: the router's default, for a session from before runners were recorded)
 func kernelObject(s *Session, machine, fallback string) doc.Object {
 	if s != nil && s.Kernel != nil && s.Kernel.MachineCert != nil {
@@ -1032,7 +1032,7 @@ func (s *Session) hasLine() bool {
 }
 
 // attestInput: an input's entry in the log before it reaches a machine: the old core's input log, or, for a kernel
-// machine, the log notary's challenge over (its object, the kind, the input's sha256) (machine/kernelboot.go
+// machine, the log notary's challenge over (its object, the kind, the input's sha256) (rust/machine/src/kernelboot.rs
 // KernelInputSubject)
 func (r *Router) attestInput(machine, kind, origin, sum string) (*Doc, error) {
 	if !r.isKernelMachine(machine) {

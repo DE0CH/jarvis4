@@ -37,7 +37,7 @@ every store back from the backups). docs/DESIGN.md "Setting a core up".
 - Infra: the control box and the services box (DESIGN "The boxes"); tunnel `jarvis2` + Access apps on
   `jarvis4.deyaochen.com`; Fly app `jarvis4-sessions` in org `jarvis2-370`; logs, metrics and alerts in Grafana Cloud.
 - Router: `router/` (docs/API.md), deployed.
-- Session image: `session-image/` (its base in `session-image/base/`) + `machine/`, built by CI.
+- Session image: `session-image/` (its base in `session-image/base/`) + `rust/machine/`, built by CI.
 - End-to-end test on real Fly with a software phone (`infra/e2e.sh`), the Recover rehearsal on a real throwaway control
   box (`infra/rehearse-recover.sh`), the phone replica in CI before every TestFlight build.
 - iOS app: `ios/`; web page: `app/` — see app/DECISIONS.md.

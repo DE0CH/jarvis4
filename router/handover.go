@@ -14,7 +14,7 @@ package main
 //
 // What still waits, and why (each is something the new machine depends on):
 //   - The cert. A machine without a cert has no secrets, no snapshot and no session identity: it boots, prints its
-//     keys and waits (machine/main.go prepare, up to ~10 min). The core certifies a successor only once its
+//     keys and waits (rust/machine/src/boot.rs prepare, up to ~10 min). The core certifies a successor only once its
 //     predecessor is killed, and a kill is Fly-confirmed destroyed with the final snapshot named (core/core.go
 //     Certify, Kill). So the snapshot the new machine restores is always the old machine's final one, never an
 //     older one, and the old machine can no longer write state, pull secrets, register the tunnel, hold the Remote
@@ -60,7 +60,7 @@ type spare struct {
 func (sp *spare) machine() string { sp.mu.Lock(); defer sp.mu.Unlock(); return sp.id }
 
 // spareMaxAge: how long a started spare may wait for its cert. The machine asks for it 300 times 2 s apart
-// (machine/main.go prepare) and refuses to start after that, so a spare older than this is killed, not certified.
+// (rust/machine/src/boot.rs prepare) and refuses to start after that, so a spare older than this is killed, not certified.
 var spareMaxAge = 8 * time.Minute
 
 // spareStarted: tests learn when a spare's start began (nil in production)

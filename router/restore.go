@@ -4,7 +4,7 @@ package main
 // a restore is a NEW line from null — the phone approves it like any new session — whose first machine
 // restores the archived snapshot.
 //
-// What the machine trusts (machine/restore.go): the core's succession challenge has no room for "restore
+// What the machine trusts (rust/machine/src/restore.rs): the core's succession challenge has no room for "restore
 // from" (core Options carry only the harness, and the core is off-limits), so the router passes the old
 // line's signer cert in the machine's env (JARVIS2_RESTORE_CERT) and serves the archived snapshot at
 // /m/restore-snapshot. The machine accepts it only on a line's FIRST machine (a cert with no predecessor),
@@ -321,7 +321,7 @@ func (r *Router) markRestored(recordID, sid string) {
 }
 
 // earlierCoreSigned: the archive's core-cert.json is the master key's claim (the running core's master) of a core whose
-// key signed the cert — the router's early check of what machine/restore.go checks again (core continuity)
+// key signed the cert — the router's early check of what rust/machine/src/restore.rs checks again (core continuity)
 func (r *Router) earlierCoreSigned(dir string, cert *Doc) bool {
 	b, err := os.ReadFile(filepath.Join(dir, "core-cert.json"))
 	if err != nil {

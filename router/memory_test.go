@@ -159,7 +159,7 @@ func TestUpgradedTextMatchesMachine(t *testing.T) {
 	mine, _ := os.ReadFile("memory.go")
 	ours := regexp.MustCompile(`(?s)func upgradedText\(from, to string\) string \{\n\treturn (fmt\.Sprintf.*?)\n\}`).FindSubmatch(mine)
 	if body == nil || ours == nil || string(body[1]) != string(ours[1]) {
-		t.Fatal("router/memory.go upgradedText and machine/deliver.go upgradedText differ")
+		t.Fatal("router/memory.go upgradedText and rust/machine/src/deliver.rs upgraded_text differ")
 	}
 	if _, _, err := attested(Delivery{Kind: "upgraded", From: "medium", To: "evil"}); err == nil {
 		t.Fatal("a size outside the three must be refused")

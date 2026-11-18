@@ -1,7 +1,7 @@
 package main
 
 // Helpers shared by the message paths. Every message into a session goes in as a core-attested delivery the machine
-// sends into its harness itself (vouch.go deliverVouched, machine/deliver.go); the router runs no command for it, and
+// sends into its harness itself (vouch.go deliverVouched, rust/machine/src/deliver.rs); the router runs no command for it, and
 // no router feature holds a grant for it (into a session holding a sensitive store, Deyao delivers or denies each
 // message: messages.go).
 

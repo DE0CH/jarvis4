@@ -17,7 +17,7 @@ package main
 //     so it vouches for every byte the manifest lists;
 //  3. the line's first machine fetches the manifest (/m/restore-snapshot), checks its hash against the cert, then
 //     fetches each file through the router (/m/import-file/<name>, streamed from the Storage Box: the machine holds
-//     no Storage Box credential) and refuses any whose sha256 or size differs (machine/jarvis1import.go).
+//     no Storage Box credential) and refuses any whose sha256 or size differs (rust/machine/src/jarvis1import.rs).
 //
 // The router's choice of WHICH bytes to hash is its own (as with attachments, decision 78): the phone binds the
 // bytes the router read at prepare time, and the Storage Box (ours, over TLS) is where they came from.
@@ -51,7 +51,7 @@ const (
 
 var (
 	j1SessionIDRE = regexp.MustCompile(`^[a-z0-9]{1,40}$`)
-	// the files an import takes (machine/jarvis1import.go accepts the same names)
+	// the files an import takes (rust/machine/src/jarvis1import.rs accepts the same names)
 	j1FileRE = regexp.MustCompile(`^(session\.json|claude\.json|manifest\.txt|workspace\.tar\.gz|artifacts\.tar\.gz|harness\.tar\.gz|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl)$`)
 )
 
@@ -452,7 +452,7 @@ func (r *Router) importFor(machine string) string {
 	r.st.Do(func(d *persisted) {
 		s := d.Sessions[d.Machines[machine]]
 		// the line's first machine, or a successor whose cert names no snapshot (its predecessor left none: the
-		// machine takes the import again, machine/restore.go reimportJarvis1)
+		// machine takes the import again, rust/machine/src/restore.rs reimport_jarvis1)
 		cert := d.Certs[machine]
 		if s == nil || s.ImportFrom == "" || s.MachineID != machine || (certField(cert, "predecessorId") != "" && certField(cert, "snapshot") != "") {
 			return

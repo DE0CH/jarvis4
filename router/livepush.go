@@ -40,7 +40,7 @@ type liveDocument struct {
 	Sessions []liveSession `json:"sessions"`
 }
 
-// Claude Code's working line ("✻ Thinking… (12s · esc to interrupt)"), as machine/stall.go reads it
+// Claude Code's working line ("✻ Thinking… (12s · esc to interrupt)"), as rust/machine/src/stall.rs reads it
 var (
 	liveSpinner = regexp.MustCompile(`(?m)^\s*\S\s+[A-Z][\p{L}-]*…\s*\(\d`)
 	liveANSI    = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
@@ -68,7 +68,7 @@ func nextWake(d *persisted, sid string) int64 {
 }
 
 // liveStateOf: a running session's state. Claude Code keeps a host "busy" while background jobs run after its turn
-// ended (machine/stall.go), so a busy host with jobs or subagents and no working line on its pane is "background".
+// ended (rust/machine/src/stall.rs), so a busy host with jobs or subagents and no working line on its pane is "background".
 // screen: its pushed pane ("" when none is fresh).
 func liveStateOf(g *Registry, fresh bool, screen string) (state string, jobs, subagents int) {
 	if g == nil || !fresh || g.Status == "" {

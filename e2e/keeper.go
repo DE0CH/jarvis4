@@ -1,6 +1,6 @@
 package main
 
-// The keeper (machine/keeper.go, DECISIONS 218): jarvis-machine boot is Fly's main child for the machine's life,
+// The keeper (rust/machine/src/keeper.rs, DECISIONS 218): jarvis-machine boot is Fly's main child for the machine's life,
 // as root; the session (user claude) can't signal it or the supervisor's worker; a dead harness is started again with
 // the machine staying up; a stop signal to the main child uploads the transcript tail, then the final snapshot.
 
@@ -21,7 +21,7 @@ func keeperStep(id, m string) {
 	expectOnMachine(m, "h=$(cat /run/jarvis-keeper/harness.pid); ps -o user=,sid= -p $h | awk -v h=$h '{print $1, ($2==h)}'", "claude 1")
 	expectOnMachine(m, "cat /proc/$(pgrep -o -f 'jarvis-machine boot')/oom_score_adj /proc/$(pgrep -o -f 'supervisor --core')/oom_score_adj", "-1000\n-1000")
 
-	step("memory for the supervisor (machine/oomguard.go): the session is under a memory limit below the machine's RAM, the rescue path (terminal grants) under its own; the keeper's and supervisor-core's pages are locked, supervisor-normal is unprotected in the session's cgroup; a session hog over the limit is killed inside it and the supervisor reports on")
+	step("memory for the supervisor (rust/machine/src/oomguard.rs): the session is under a memory limit below the machine's RAM, the rescue path (terminal grants) under its own; the keeper's and supervisor-core's pages are locked, supervisor-normal is unprotected in the session's cgroup; a session hog over the limit is killed inside it and the supervisor reports on")
 	expectOnMachine(m, "G=/sys/fs/cgroup/memory/jarvis-session; t=$(awk '/MemTotal/{print $2*1024}' /proc/meminfo); l=$(cat $G/memory.limit_in_bytes); "+
 		"[ $l -lt $t ] && [ $((t-l)) -ge $((512<<20)) ] && echo limited", "limited")
 	expectOnMachine(m, "R=/sys/fs/cgroup/memory/jarvis-rescue; [ $(cat $R/memory.limit_in_bytes) -le $((384<<20)) ] && echo limited", "limited")

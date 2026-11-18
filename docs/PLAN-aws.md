@@ -76,7 +76,7 @@ instance was lost, so a machine's first small requests went through and nothing 
 sessions failed "the harness didn't come up").
 
 Flatcar has cgroup v2, Fly's guest cgroup v1: the session's and rescue memory cgroups are /sys/fs/cgroup/jarvis-session
-and jarvis-rescue there, limited by memory.max (machine/oomguard.go cgroupDir).
+and jarvis-rescue there, limited by memory.max (rust/machine/src/oomguard.rs cgroup_dir).
 
 ## Infra (`infra/aws/`, OpenTofu, `.github/workflows/aws.yml`)
 
@@ -140,7 +140,7 @@ Nothing reads an EC2 instance's: the unit's `docker run` writes the container's 
 
 | source | what | how |
 |---|---|---|
-| `machine` | the container's stdout and stderr (the keeper's, the boot steps', both supervisors', the harness's console lines: what Fly ships as the app's lines) | the keeper (PID 1) makes fd 1 and 2 a pipe and tees each line on to the journal and into `/run/jarvis/output.log`; supervisor-core pushes it every 2 s to `POST /m/machine-output` (machine/output.go) |
+| `machine` | the container's stdout and stderr (the keeper's, the boot steps', both supervisors', the harness's console lines: what Fly ships as the app's lines) | the keeper (PID 1) makes fd 1 and 2 a pipe and tees each line on to the journal and into `/run/jarvis/output.log`; supervisor-core pushes it every 2 s to `POST /m/machine-output` (rust/machine/src/output.rs) |
 | `journal` | the instance's systemd units: the session unit's image pull and start, docker, networkd's WireGuard, journald (not the kernel's: the console has those; not the unit's docker client after the keeper started: that is `machine`) | the keeper mounts the host's ROOT partition read only (privileged, as the container is; under a 0700 directory) and follows `journalctl -D … -b -f -o json` from the boot's start; pushed as above |
 | `console` | the serial console: the kernel from its first second, the initrd's systemd, Ignition, getty, an OOM kill, a panic; also for a machine whose container never started | the leader reads `GetConsoleOutput --latest` of each live session instance every 15 s with the router's read key (`ec2:GetConsoleOutput` on tagged instances, infra/aws/iam.tf) and ships what follows the last line it shipped (router/awslogs.go) |
 
@@ -176,7 +176,7 @@ lines of the session unit in `kernel/spawner/aws.go` (`ignition`):
 +ExecStopPost=/usr/bin/systemctl poweroff
 ```
 
-1. The journal bound read only into the container: the keeper reads it there (machine/output.go already looks for
+1. The journal bound read only into the container: the keeper reads it there (rust/machine/src/output.rs already looks for
    `/run/jarvis-host/journal` first) and no longer mounts the host's disk. Same lines, a tidier way in.
 2. The container's end on the console: the unit's result and exit status (what Fly's "Main child exited with code"
    gives), and, when the container didn't end cleanly, 50 s before the power-off so the router's console read sees

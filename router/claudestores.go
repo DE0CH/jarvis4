@@ -205,7 +205,7 @@ func (r *Router) routerStoreKey() (string, error) {
 }
 
 // sealToPoint: ephemeral ECDH with the recipient point, HKDF-SHA256(info), AES-256-GCM (nonce ‖ ciphertext ‖ tag),
-// as machine/putkey.go sealParts and core WrapToPoint
+// as rust/machine/src/putkey.rs seal_parts and core WrapToPoint
 func sealToPoint(recipientB64 string, plain []byte, info string, aad []byte) (string, string, error) {
 	rb, err := base64.StdEncoding.DecodeString(recipientB64)
 	if err != nil {

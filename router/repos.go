@@ -8,7 +8,7 @@ package main
 // store github-<repo>. Removing one deletes both, the same way. The router only relays: it holds no GitHub
 // token that can push or manage keys (the picker lists repos with GITHUB_READ_TOKEN, metadata read only), and
 // it records an entry only from the core's answer. Sessions clone, pull and push a repo over SSH with its
-// store's key (machine/deploykeys.go); the picker only fills New session's `repos`.
+// store's key (rust/machine/src/deploykeys.rs); the picker only fills New session's `repos`.
 // The repo list is the router's own (repos.json, a row of router_docs in its database), shown in /api/state `repos`.
 
 import (

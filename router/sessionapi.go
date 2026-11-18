@@ -1,7 +1,7 @@
 package main
 
 // The session-facing API (Jarvis 1's `$JARVIS_URL/api/...` as its session scripts call it). In a Jarvis 4
-// session JARVIS_URL points at the machine's local proxy (the supervisor, `jarvis-machine supervisor`, machine/apiproxy.go), which
+// session JARVIS_URL points at the machine's local proxy (the supervisor, `jarvis-machine supervisor`, rust/machine/src/apiproxy.rs), which
 // signs each request with the machine key and sends it here as /m/api/<rest>. Any session id in the path must
 // be the calling machine's own session.
 //
@@ -124,7 +124,7 @@ func (r *Router) registerSessionAPI(app appRoute, m machineRoute) {
 	})
 }
 
-// the machine-side proxy's address (machine/apiproxy.go) and placeholders for the Access/session-token variables
+// the machine-side proxy's address (rust/machine/src/apiproxy.rs) and placeholders for the Access/session-token variables
 // Jarvis 1's scripts insist on before calling; the proxy ignores them (a store's real values override these).
 // Not for OpenCode/OpenClaw: their harness scripts take CF_ACCESS_* as "publish the web UI through the
 // cf-tunnel" and would loop on a placeholder.
@@ -221,7 +221,7 @@ func (r *Router) getWakeups(w http.ResponseWriter, sid string, single bool) {
 }
 
 // appArmRefused: arming from the app. Nothing would vouch for its delivery into the session (only the session's own
-// signed request does, machine/deliver.go), so a wakeup or cron armed here could never fire: it was accepted and then
+// signed request does, rust/machine/src/deliver.rs), so a wakeup or cron armed here could never fire: it was accepted and then
 // failed at every firing. Refused upfront instead, saying what works (like watches.go).
 func appArmRefused(w http.ResponseWriter, kind, script string) {
 	writeJSON(w, 400, map[string]string{"error": fmt.Sprintf("a %s is armed by the session itself (%s): only its own signed request can be delivered into it. Ask the session to arm it (message it in its chat)", kind, script)})

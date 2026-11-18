@@ -8,12 +8,12 @@ package main
 // GET /m/attachments, /m/attachments/{name}), and its machine drops it once fetched (DELETE /m/attachments).
 // Each file's sha256 and size go into the new line's signed config (vouch.go sessionConfig), so the phone signs them;
 // the listing carries the core's attestation of each (input "attachment", origin "cert"), so each is in the input log,
-// and the machine takes a file only with both (machine/attachments.go). The app can read a staged file back
+// and the machine takes a file only with both (rust/machine/src/attachments.rs). The app can read a staged file back
 // (GET /api/sessions/{id}/attachments/{name}) to show it on the approval page, checked against the signed hash there.
 // A session proposing a new session stages its files the same way (PUT /m/api/sessions/{id}/uploads/{upload}/{name}):
 // such an upload is owned by that session (Upload.Owner), only its own proposals can bind it, and from there it is
 // the same line: signed by hash, attested, fetched by the new session's first machine.
-// The first machine fetches them before the harness starts (machine/attachments.go) and hands Jarvis 1's
+// The first machine fetches them before the harness starts (rust/machine/src/attachments.rs) and hands Jarvis 1's
 // session-attachments script a local file:// "box", so ~/uploads and the first message come out exactly as in
 // Jarvis 1.
 
@@ -230,7 +230,7 @@ func checkUpload(d *persisted, sid, owner string, in *AttachmentsIn) ([]AttachFi
 }
 
 // attachEnv: the first machine only (no cert yet). session-attachments (Jarvis 1) reads the names from
-// SESSION_ATTACHMENTS_JSON; the machine fills in where they are (machine/attachments.go).
+// SESSION_ATTACHMENTS_JSON; the machine fills in where they are (rust/machine/src/attachments.rs).
 func attachEnv(s *Session, e map[string]string) {
 	if s.Cert != nil || len(s.Ops.Attach) == 0 {
 		return

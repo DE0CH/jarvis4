@@ -11,7 +11,7 @@ package main
 //	M_GATEWAY_TO   e.g. http://router.jarvis4-router.svc.cluster.local:8081
 //	HEALTH_ADDR    :8080 by default: GET /healthz answers once the peer is up (the pod's readiness)
 //
-// SIGTERM: no new connection (the machines' dials go to the other gateway, machine/routerdial.go), the requests it
+// SIGTERM: no new connection (the machines' dials go to the other gateway, rust/machine/src/routerdial.rs), the requests it
 // carries end (up to M_GATEWAY_GRACE_SECONDS), then the peer goes. A rollout replaces one gateway at a time
 // (OrderedReady), so the machines always have one.
 

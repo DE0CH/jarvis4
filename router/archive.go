@@ -32,12 +32,12 @@ import (
 const (
 	recordsRoot  = "claude-records"
 	recordsIndex = archivesRoot + "/index.json" // Jarvis 4's own (archivetar.go); Jarvis 2 keeps claude-records/.index
-	// changesFile: the repos' state, written by the machine into every snapshot (machine/restore.go)
+	// changesFile: the repos' state, written by the machine into every snapshot (rust/machine/src/restore.rs)
 	changesFile = ".jarvis2-changes.txt"
 )
 
 // repoChangesSH: one "<repo> <uncommitted files> <unpushed commits, -1 = no upstream>" line per repo under
-// ~/workspace (the same script as Jarvis 1's REPO_CHANGES_SH and machine/restore.go's)
+// ~/workspace (the same script as Jarvis 1's REPO_CHANGES_SH and rust/machine/src/restore.rs's)
 const repoChangesSH = `cd ~/workspace 2>/dev/null || exit 0; for d in */; do d=${d%/}; [ -d "$d/.git" ] || continue; ` +
 	`u=$(git -C "$d" status --porcelain 2>/dev/null | wc -l); ` +
 	`if git -C "$d" rev-parse --abbrev-ref @{u} >/dev/null 2>&1; then p=$(git -C "$d" rev-list @{u}..HEAD --count 2>/dev/null || echo 0); else p=-1; fi; ` +

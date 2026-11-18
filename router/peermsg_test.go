@@ -167,7 +167,7 @@ func TestPeerAttested(t *testing.T) {
 	}
 }
 
-// the router attests the same bytes the machine checks (machine/peer_test.go peerNoteJSON)
+// the router attests the same bytes the machine checks (rust/machine/src/tests/outcomes.rs (the peer note))
 func TestPeerNoteJSON(t *testing.T) {
 	const want = `{"from":"sa","fromTitle":"A","fromStores":["default"],"fromMode":"auto","to":"sb","toStores":["default"],"toMode":"auto","direction":"equal","text":"hi"}`
 	b, _, err := peerAttested(&PeerNote{From: "sa", FromTitle: "A", FromStores: []string{"default"}, FromMode: "auto", To: "sb", ToStores: []string{"default"}, ToMode: "auto", Direction: "equal", Text: "hi"})

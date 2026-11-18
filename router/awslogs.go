@@ -5,7 +5,7 @@ package main
 // has no such reader, so it reaches Grafana from two places, both through the router, which names the machine:
 //
 //   - the machine's own output (source "machine"): the keeper tees its and its children's stdout and stderr into a
-//     file in memory (machine/output.go) that supervisor-core pushes here, POST /m/machine-output, signed by the
+//     file in memory (rust/machine/src/output.rs) that supervisor-core pushes here, POST /m/machine-output, signed by the
 //     machine's certified key like every /m request, so the instance id on the lines is the router's word, not the
 //     machine's. With the kernel's journal bind (docs/PLAN-aws.md "Logs": a proposal) the machine also pushes the
 //     host's journal (source "journal": the session unit's image pull, docker, the kernel).

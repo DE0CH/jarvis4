@@ -167,7 +167,7 @@ spec:
 # m-gateway (docs/STATE.md 5, step 9; router/mgateway.go): two gateways, each the Fly org's WireGuard peer of its
 # own (m-gateway-0: jarvis4-box, m-gateway-1: jarvis4-gw-b), the machines' only way to the router: every request a
 # gateway takes on :8081 goes to the router Service's :8081 (any replica). The machines know both (MACHINE_URL /
-# KERNEL_MACHINE_URL) and dial the other when one doesn't answer (machine/routerdial.go). A StatefulSet so a rollout
+# KERNEL_MACHINE_URL) and dial the other when one doesn't answer (rust/machine/src/routerdial.rs). A StatefulSet so a rollout
 # replaces one at a time (the other is ready meanwhile) and each pod keeps its peer (by its ordinal); a stopping
 # gateway takes no new connection and lets what it carries finish first.
 apiVersion: v1

@@ -4,7 +4,7 @@ package main
 // START: snapshot: write …: no space left on device" and its session showed "initialising" with no error for good:
 // only a machine that boots reports anything, and the harness check (autopilot.go) looks at booted machines only).
 //
-//	POST /m/boot-failed   {error}: the machine's boot steps ended without a harness (machine/main.go prepareCmd).
+//	POST /m/boot-failed   {error}: the machine's boot steps ended without a harness (rust/machine/src/boot.rs prepare_cmd).
 //	                      Its session becomes failed with the reason; the machine is kept, as after any failure
 //	                      that leaves one: its supervisor still answers, Resume finishes its pause first (a
 //	                      machine that never got past boot is killed with no snapshot, and the next one restores

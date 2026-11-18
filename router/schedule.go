@@ -966,7 +966,7 @@ func (r *Router) fireCron(sid, name string, armedAt int64) error {
 
 // cronFired: a cron's run was delivered: count it, clear a missed mark, and move it to its next occurrence. early (a
 // Run now): the next occurrence is at least half a period away, as the machine refuses a cron run sooner than that
-// after the last (machine/deliver.go replayGuard).
+// after the last (rust/machine/src/deliver.rs replay_guard).
 func (r *Router) cronFired(sid, name string, armedAt int64, now time.Time, early bool) {
 	r.st.Do(func(d *persisted) {
 		s := d.Schedules[sid]

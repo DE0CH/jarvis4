@@ -318,7 +318,7 @@ a planned move comes with the blue/green flow.
 **Archives from any earlier core.** A restore checks the archived cert against the machine's core key, or, for an
 earlier core's cert, through the master key: the running core's signed state names its master, the master signed the
 claim naming the earlier core (the archive's `core-cert.json`; a seeded claim names its derived key as `identity`), and
-that core's key signed the cert (`machine/restore.go`, `router/restore.go`).
+that core's key signed the cert (`rust/machine/src/restore.rs`, `router/restore.go`).
 
 **A kill the core can't check** (a machine an earlier core initialised) names no snapshot instead of refusing, so
 destroying an earlier core's session never fails on it.
@@ -414,7 +414,7 @@ PEM private keys, the kit's prefix), as a second layer under "the core logs noth
   shipper with only the Loki sink, the same redaction, and no listening port: Vector's API would let any machine on the
   org's network tap every session's log), label `box="fly"`.
 - **The AWS session machines** (docs/PLAN-aws.md "Logs"): no platform reads an EC2 instance's output, so they go
-  through the router: the machine's own output (the keeper tees its stdout and stderr, machine/output.go) and the
+  through the router: the machine's own output (the keeper tees its stdout and stderr, rust/machine/src/output.rs) and the
   host's journal (the keeper reads it from the instance's disk, mounted read only), pushed by the machine on its signed
   `/m` channel (`POST /m/machine-output`), and the instance's serial console (kernel messages from the first second),
   read by the router with its read-only AWS key. The router labels each line with the instance, region, session and
@@ -685,7 +685,7 @@ hands the harness's env (no secret value) to the keeper, which starts the harnes
 check → start nothing. Everything else it takes: below. Once init asked, the keeper starts the supervisor ("The
 supervisor and the guard").
 
-**The volume (`machine/volume.go`).** A machine with a volume (mounted at `/data` by Fly, as the core asked) keeps the
+**The volume (`rust/machine/src/volume.rs`).** A machine with a volume (mounted at `/data` by Fly, as the core asked) keeps the
 session's state on it: before restoring anything, boot bind-mounts each of the snapshot's directories (`~/workspace`,
 `~/artifacts`, `~/.claude/projects`, the harnesses' state) from `/data/home/<path>`, so every path stays the same, and
 the supervisor copies the snapshot's single files (`~/.claude.json`, the Jarvis records) there every minute and before the
@@ -728,7 +728,7 @@ start only here; the chat app has no New chat.
 
 ### The supervisor and the guard (Deyao, 2026-10-16)
 
-**The supervisor** is two long-running processes that talk to the control plane (`machine/supervisor.go`), both
+**The supervisor** is two long-running processes that talk to the control plane (`rust/machine/src/supervisor.rs`), both
 children of the keeper (below), split so it doesn't bloat (Deyao, 2026-10-24): **supervisor-core** (`jarvis-machine
 supervisor --core`) keeps the control plane alive (answering stop, snapshot, Upgrade and pause, the guarded execs and
 deliveries, the secrets, the log, the teardown's uploads); **supervisor-normal** (`supervisor --normal`) does the
@@ -769,7 +769,7 @@ snapshot, and resume-harness is refused then too.
 
 **The keeper (Deyao, 2026-10-21):** "The supervisor should be the main child. Nothing should be able to kill the supervisor other than a sigterm or
 sigkill from something with higher privilege." Fly ends a machine when its main child (the image's entry point) ends,
-so that process is the supervisor's and nothing in the session can end it (`machine/keeper.go`, DECISIONS 218):
+so that process is the supervisor's and nothing in the session can end it (`rust/machine/src/keeper.rs`, DECISIONS 218):
 
 - **The keeper** is `jarvis-machine boot`, run as root for the machine's whole life. Its children, each in its own
   session (setsid): the boot steps (`jarvis-machine prepare`, user `claude`, which end by handing the harness's env
@@ -924,9 +924,9 @@ Deyao handing a feature a shell, and the session's own allow list is the session
 | An archived snapshot (restore) | (a) its sha256 in the config, plus the old cert (core-signed) and its machine's signature |
 | Repo contents (CLAUDE.md, hooks, skills) | (d) GitHub, for exactly the repos the cert names (a cert whose config names none: the repos of the deploy-key stores in the cert) |
 | Secrets | the cert's stores, sealed to the machine by the core; held by the supervisor in RAM only (env-name keys only), served on its socket and put in the harness's env |
-| The Claude login | (d) Anthropic: the router hands the pair of the session's Claude account (DECISIONS 185: one Claude key store per account, `claude-<name>`, the router's own; picked when the session is made and kept until Deyao switches it, `POST /api/sessions/:id/account` (DECISIONS 202), the router's word) over `/m/claude-login` (machine-signed); taken at boot, kept in step by a long poll with the router's refresh protocol (`machine/claudelogin.go`, `router/claudelogin.go`, `router/claudeaccounts.go`); no router write, no grant, no machine-side account check (Deyao, 2026-10-15) |
+| The Claude login | (d) Anthropic: the router hands the pair of the session's Claude account (DECISIONS 185: one Claude key store per account, `claude-<name>`, the router's own; picked when the session is made and kept until Deyao switches it, `POST /api/sessions/:id/account` (DECISIONS 202), the router's word) over `/m/claude-login` (machine-signed); taken at boot, kept in step by a long poll with the router's refresh protocol (`rust/machine/src/claudelogin.rs`, `router/claudelogin.go`, `router/claudeaccounts.go`); no router write, no grant, no machine-side account check (Deyao, 2026-10-15) |
 | Wakeups, crons | (c) the session's own signed request + the core's attestation; the line records what it delivered (in the snapshot): a wakeup once, a cron once per run and at most every half period |
-| "continue" after a re-login, "upgraded" after an Upgrade (the 15-minute watchdog is the supervisor's own: machine/stall.go) | the image: texts built into it; the router picks when, never what (numbers, or a size: small, medium, large or a doubling past it) |
+| "continue" after a re-login, "upgraded" after an Upgrade (the 15-minute watchdog is the supervisor's own: rust/machine/src/stall.rs) | the image: texts built into it; the router picks when, never what (numbers, or a size: small, medium, large or a doubling past it) |
 | An Inbox request's outcome | (c) the session's own signed filing (an Inbox request, or the wakeup/cron/watch whose message Deyao denied or let lapse) + image texts; per item the router names an outcome word, an id, a status number, and a proof the machine checks for approvals (phone grant, core-signed cert or approval, core key answer); the core attests it; each item once |
 | An upward peer message into a session holding a sensitive store | also the phone's signature over that very message ("Message approvals") |
 | An added store | (a) the new cert, phone-approved |
@@ -950,7 +950,7 @@ Deyao: a message from a session holding less into a session holding a sensitive 
 message**, never by letting a router feature in for a while; Jarvis's own messages never need him (Deyao, 2026-10-21;
 DECISIONS 210). So an **upward peer message** into such a session (from a session holding fewer stores, or less
 permissive), and every resume prompt that goes into an already running session (any session: nothing else vouches for
-Deyao's words from the app), waits in the Inbox as a **pending message** (`router/messages.go`, `machine/messages.go`).
+Deyao's words from the app), waits in the Inbox as a **pending message** (`router/messages.go`, `rust/machine/src/messages.rs`).
 Jarvis's own messages (an Inbox outcome, the watchdog's check-in, a login "continue", a lease or upgrade note), the
 session's own wakeups, cron runs and watches, and equal or downward peer messages go straight in, vouched for by the
 core's attestation as "Inputs to a machine" says (the machine checks a peer message's direction against its own cert):
@@ -1087,7 +1087,7 @@ any of the line's stores is sensitive, and the **line id** (the line's first mac
 
 ## Target design: succession certs, grants and the kernel (Deyao, 2026-10-14)
 
-Built beside the old core (DECISIONS 216; kernel/, router/kernelline.go, machine/kernelboot.go, the app's Security/KernelSetup.swift),
+Built beside the old core (DECISIONS 216; kernel/, router/kernelline.go, rust/machine/src/kernelboot.rs, the app's Security/KernelSetup.swift),
 not yet on the box: docs/RUNBOOK.md "Bringing the kernel up". DECISIONS 166 has the why, docs/PLAN-grants.md the build. It replaces the core's succession-cert options,
 the holders' shell grants ("Grants" above), the core's automatic locks and the Claude login's own channel.
 

@@ -11,7 +11,7 @@ package main
 //   restart           POST /api/sessions/:id/restart {env, rollback: {dropFromMarker}, prompt, upgrade}: pause (if
 //                     running) + resume on the same image (upgrade: the newest, through its resume-upgrade approval). `env` patches the machine env with NON-secret
 //                     keys only (secrets come from stores); a rollback is applied by the next machine to the
-//                     snapshot it has verified (machine/rollback.go), since the router can't edit a
+//                     snapshot it has verified (rust/machine/src/rollback.rs), since the router can't edit a
 //                     machine-signed snapshot.
 //   API proxy         New session / resume {apiProxy}: SESSION_API_PROXY=1 in the machine env
 //   idempotent create the New Session form's requestId: a repeat answers the session it already made

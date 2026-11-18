@@ -519,7 +519,7 @@ func TestAPeerMessageIntoASensitiveSessionIsHeld(t *testing.T) {
 	}
 }
 
-// the router's twins render what machine/deliver.go deliveryText renders (its tests pin the same strings)
+// the router's twins render what rust/machine/src/deliver.rs delivery_text renders (its tests pin the same strings)
 func TestMessageTextTwins(t *testing.T) {
 	req := func(path, body string) *SignedRequest {
 		return &SignedRequest{Method: "POST", Path: path, Body: base64.StdEncoding.EncodeToString([]byte(body))}

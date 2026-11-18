@@ -1,15 +1,17 @@
 # Jarvis 4 session image: the base (session-image/base/: tools, harnesses, entrypoint, supervisor, carried over from
 # Jarvis 1's session image) with Jarvis 4's machine side in front of it. jarvis-machine is the entry point: it makes the machine's key pairs, waits
 # for the core's init (which prints them), takes the core's key from its Fly config (the core sets it), checks the succession cert, restores the predecessor's snapshot, pulls the secrets,
-# then runs the base's entrypoint as its child (the keeper: machine/keeper.go). The base is pinned by digest in BASE below; moving it is a visible commit (the
+# then runs the base's entrypoint as its child (the keeper: rust/machine/src/keeper.rs). The base is pinned by digest in BASE below; moving it is a visible commit (the
 # images workflow's pin job writes it after building a changed session-image/base/, and builds this image from that
 # new base in the same run through --build-arg BASE).
 ARG BASE=ghcr.io/de0ch/jarvis4-session:base-sha-b34a98d668f1@sha256:441b426ad469dd05faabe289e2caeea03e44dcc2ec3266d1e5b8c2c225e2345e
-FROM golang:1.25-bookworm AS build
-WORKDIR /src/machine
-COPY kernel/ /src/kernel/
-COPY machine/ ./
-RUN CGO_ENABLED=0 go build -trimpath -o /out/jarvis-machine .
+# jarvis-machine (rust/machine) and e2e-kernel (rust/e2e-kernel, the kernel e2e a session runs: docs/RUNBOOK.md); their
+# tests run in images.yml's test job, which this build waits for
+FROM rust:1.99.1-bookworm AS build
+WORKDIR /src/rust
+COPY rust/ ./
+RUN cargo build --release --locked -p jarvis-machine -p e2e-kernel \
+ && install -D target/release/jarvis-machine /out/jarvis-machine && install -D target/release/e2e-kernel /out/e2e-kernel
 
 # the aviary harness (aviary/README.md): aviary-gateway from this repo. The supervisor, its keeper and Claude Code are
 # not in this image: a session's sandbox runs in DE0CH/aviary's own sandbox image, fetched by the digest
@@ -27,7 +29,7 @@ COPY session-image/tools/ ./
 RUN cargo test --release --locked && cargo build --release --locked && install -D target/release/jarvis-tools /out/jarvis-tools
 
 FROM ${BASE}
-COPY --from=build /out/jarvis-machine /usr/local/bin/jarvis-machine
+COPY --from=build /out/jarvis-machine /out/e2e-kernel /usr/local/bin/
 COPY --from=aviary /out/aviary-gateway /usr/local/bin/
 COPY --from=tools /out/jarvis-tools /usr/local/bin/jarvis-tools
 # the aviary release's pins as the harness reads them (aviary-sandbox: aviary's sandbox image, by digest)
@@ -44,7 +46,7 @@ COPY --chmod=755 session-image/bin/jarvis-message session-image/bin/jarvis-chann
 USER root
 # Only vouched inputs shape a machine (docs/DESIGN.md "Inputs to a machine"):
 #  - the image's own ENV, recorded here, is the env jarvis-machine keeps (everything the machine's config adds
-#    besides the core's key and the router's address is dropped at boot: machine/vouch.go cleanEnv);
+#    besides the core's key and the router's address is dropped at boot: rust/machine/src/vouch.rs clean_env);
 #  - the OpenClaw and dsh runtime bundles, and aviary's sandbox image (aviary.json), are pinned by sha256, not only by URL.
 RUN mkdir -p /opt/jarvis && env | grep -Ev '^(HOSTNAME|HOME|PWD|OLDPWD|SHLVL|_|TERM|USER|LOGNAME|SHELL)=' | sort > /opt/jarvis/image.env
 COPY session-image/openclaw-runtime.json /opt/jarvis/openclaw-runtime.json
@@ -73,7 +75,7 @@ RUN set -e; for d in $(find /etc/claude-code -type d); do [ -r "$d" ] && [ -x "$
     for f in /etc/claude-code/*.json; do python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$f"; done; \
     for b in jarvis-machine jarvis-request jarvis-message jarvis-channel jarvis-channel-send schedule-wakeup schedule-cron retire-session; do [ -x /usr/local/bin/$b ] || { echo "not runnable: $b" >&2; exit 1; }; done; \
     ls /etc/claude-code/managed-settings.d >/dev/null 2>&1 || [ ! -e /etc/claude-code/managed-settings.d ]
-# The entry point runs as root: jarvis-machine boot is the keeper (machine/keeper.go), Fly's main child for the
+# The entry point runs as root: jarvis-machine boot is the keeper (rust/machine/src/keeper.rs), Fly's main child for the
 # machine's whole life, which the session (user claude) can't signal; it starts the boot steps and the harness as
 # user claude and the supervisor's worker as root with claude's file access (DECISIONS 2026-10-21).
 USER root

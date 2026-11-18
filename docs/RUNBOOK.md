@@ -198,7 +198,7 @@ and keep the app-wrapped private half in the store `github-<repo>` (the app keep
 for Claude to do. Remove deletes both. Repo stores have no backup: a Recover brings them back from the
 core's line state when it is done on the same phone (DESIGN "Core continuity"); otherwise "Make key" again, which also
 deletes the old key on GitHub. Sessions that include a repo's store clone, pull and push it over SSH
-(`machine/deploykeys.go`).
+(`rust/machine/src/deploykeys.rs`).
 
 Once the kernel serves, the same flow runs through the kernel's secrets and its **minter** (DECISIONS 232): secrets
 opens the token store and hands the token, sealed, to the minter, the only kernel component that reaches GitHub; it
@@ -705,7 +705,7 @@ Storage Box copies. Nothing else waits on it; the router reports search unreacha
 
 ## Testing
 
-- Unit: `go test ./...` in core/, router/, machine/ (the core's guarantees are tested in core/).
+- Unit: `go test ./...` in core/ and router/, `cargo test` in rust/ (the machine: rust/machine) (the core's guarantees are tested in core/).
 - The app's crypto against the real core and router: the `ios` workflow's interop job (`ios/interop`, runs on
   Linux too with swift-crypto: `ios/ci/standins.sh W`, then `swift run Interop` with the `INTEROP_*` env).
 - App code that needs no simulator (ResumeOnce: a continuation answered at most once): `swift run Units` in

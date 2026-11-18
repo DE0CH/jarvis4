@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-// machineSign: what the machine does with its signing key (machine/main.go sign)
+// machineSign: what the machine does with its signing key (rust/machine/src/crypto.rs (jarvis_sig::Signer::sign))
 func machineSign(k *ecdh.PrivateKey, payload string) string {
 	e, _ := ecdsa.ParseRawPrivateKey(elliptic.P256(), k.Bytes())
 	h := sha256.Sum256([]byte(payload))

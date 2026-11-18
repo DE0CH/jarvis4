@@ -4,7 +4,7 @@ package main
 //
 // A session that runs builds, agents and a few Chromes thrashes: for minutes its machine is too short on memory to
 // do anything, then the kernel OOM-kills the biggest process, and the Claude app shows "Can't reach your computer"
-// (2026-10-12, the YYC AI megathread session). The machine reports its RAM every 10 s (machine/memory.go,
+// (2026-10-12, the YYC AI megathread session). The machine reports its RAM every 10 s (rust/machine/src/memory.rs,
 // POST /m/memory); Watch decides when it is starving:
 //   - the kernel OOM-killed something since the last sample (oom_kill went up),
 //   - memory pressure: PSI "full" avg60 ≥ memPSIFullPct, or MemAvailable < memLowAvailPct of MemTotal,
@@ -42,7 +42,7 @@ type MemProc struct {
 	Comm  string `json:"comm"`
 }
 
-// MemSample: what the machine reports (machine/memory.go memSample)
+// MemSample: what the machine reports (rust/machine/src/memory.rs MemSample)
 type MemSample struct {
 	TotalKb   int64     `json:"totalKb"`
 	AvailKb   int64     `json:"availKb"`
@@ -146,7 +146,7 @@ func memMessage(name, size string, a *MemAlert) string {
 	return msg + fmt.Sprintf("\nIt is on %s, the largest size the running core starts (%s needs the new core), so there is no Upgrade for it now: free memory in the session (fewer heavy jobs at once).", sizeText(cur), sizeText(nextSize(size)))
 }
 
-// upgradedText: the "upgraded" delivery's text; machine/deliver.go builds the same and checks both sizes
+// upgradedText: the "upgraded" delivery's text; rust/machine/src/deliver.rs builds the same and checks both sizes
 func upgradedText(from, to string) string {
 	return fmt.Sprintf("Jarvis: this session ran out of memory and was moved from a %s to a %s machine. ", sizeText(from), sizeText(to)) +
 		"To free memory for the move, every process of the old machine was stopped: Claude itself, background jobs, builds, dev servers, browsers. " +

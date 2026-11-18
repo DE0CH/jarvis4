@@ -1,6 +1,6 @@
 package main
 
-// Message approvals (docs/DESIGN.md "Message approvals"; machine/messages.go): every message Jarvis delivers into a
+// Message approvals (docs/DESIGN.md "Message approvals"; rust/machine/src/messages.rs): every message Jarvis delivers into a
 // session holding a sensitive store (a wakeup, a cron run, a watch, a login "continue", an
 // Inbox outcome, a peer message, a lease or upgrade note), and every resume prompt into any session, waits in the Inbox
 // as a pending message until Deyao delivers or denies THAT message (Deyao, 2026-10-20: "he should approve or deny the
@@ -80,7 +80,7 @@ type MessageRule struct {
 	Doc     *Doc      `json:"doc"`
 }
 
-// messageApproval: what the phone signs (machine/messages.go checks the same fields)
+// messageApproval: what the phone signs (rust/machine/src/messages.rs checks the same fields)
 type messageApproval struct {
 	Kind     string        `json:"kind"` // messages | message-rule
 	Session  string        `json:"session"`
@@ -127,7 +127,7 @@ func ruleText(k string) string { return messageKinds[k][1] }
 // previewOnly: kinds only the machine renders (its cert, the proofs): a paused session is started for them first
 func previewOnly(kind string) bool { return kind == "peer" || kind == "request-outcome" }
 
-// needsApproval: the session's machine takes this delivery only as the phone approved it (machine/messages.go
+// needsApproval: the session's machine takes this delivery only as the phone approved it (rust/machine/src/messages.rs
 // needsMessageApproval decides the same): a resume prompt (Deyao's words from the app) always; into a session holding a
 // sensitive store, an UPWARD peer message (words from a session holding less, or less permissive). Jarvis's own
 // messages (Inbox outcomes, "continue", lease and upgrade notes) and the session's own wakeups, crons and
@@ -143,7 +143,7 @@ func (r *Router) needsApproval(sid string, d Delivery) bool {
 	return false
 }
 
-// ---- the router's twins of the machine's texts (machine/deliver.go deliveryText) --------------------------------
+// ---- the router's twins of the machine's texts (rust/machine/src/deliver.rs delivery_text) --------------------------------
 
 var watchNameRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,40}$`)
 
@@ -369,7 +369,7 @@ func oldImageText(d Delivery) (string, bool) {
 	return "", false
 }
 
-// peerTwinText: machine/peer.go peerText, with the receiver's stores and mode as the router sent them
+// peerTwinText: rust/machine/src/peer.rs peer_text, with the receiver's stores and mode as the router sent them
 func peerTwinText(n *PeerNote) (string, bool) {
 	if n == nil || strings.TrimSpace(n.Text) == "" {
 		return "", false
@@ -451,7 +451,7 @@ func (r *Router) previewText(sid string, d Delivery) (string, error) {
 
 // linePhone: the line a message approval names and the phone key that signs it. An old-core line: its core-signed
 // cert. A kernel line: the session's id, and the phone secrets' signed key statement names (the machine reads the
-// same statement, machine/kernelboot.go); "" when the kernel can't be asked.
+// same statement, rust/machine/src/kernelboot.rs); "" when the kernel can't be asked.
 func (r *Router) linePhone(sid string) (line, phone string) {
 	kernel := false
 	r.st.Do(func(d *persisted) {

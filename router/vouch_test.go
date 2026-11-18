@@ -2,7 +2,7 @@ package main
 
 // The router's side of vouched inputs (vouch.go). The router isn't trusted, so these tests only check that it asks
 // the core and the machine for the right things; the refusals that count are in core/vouch_test.go and
-// machine/vouch_test.go.
+// rust/machine/src/tests/vouch.rs.
 
 import (
 	"bytes"
@@ -303,7 +303,7 @@ func TestResumeWithPromptAlwaysReachesThePhone(t *testing.T) {
 // An image attached on New session: its sha256 and size go into the signed config, the app can read the staged bytes
 // back for the approval page, and the machine's listing carries the core's attestation of each file as it is now (the
 // input log): a file swapped after the phone signed is attested under its own hash, which the machine refuses
-// (machine/rollback_test.go TestFetchAttachments).
+// (rust/machine/src/tests/misc.rs fetch_attachments).
 func TestAnAttachmentIsSignedByHashAndAttestedIntoTheInputLog(t *testing.T) {
 	rg, vc := v2Rig(t)
 	r := rg.r

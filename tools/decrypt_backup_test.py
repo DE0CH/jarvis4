@@ -100,7 +100,7 @@ def at(unix):
 
 def key_backup(store, key, value, when, by="setup", explanation="", signer=None, cert=None, identity=None):
     """keys/<store>/<key>.json: infra/setup.py key_write's request (value None = a delete), then the router's object.
-    by "machine": the same sealing, signed by the machine key with its core-signed cert (machine/putkey.go)"""
+    by "machine": the same sealing, signed by the machine key with its core-signed cert (rust/machine/src/putkey.rs)"""
     os.environ["JARVIS2_SETUP_KEY"] = pem(signer if by == "setup" and signer else SETUP)
     req = S.key_write(store, key, value, ME, explanation)
     os.environ["JARVIS2_SETUP_KEY"] = pem(SETUP)

@@ -529,7 +529,7 @@ func main() {
 	// no stores: a new line with the same stores, options and image as the first session would get the same
 	// challenge nonce (the core derives it from the request), which the core refuses to certify twice
 	// no stores, the Claude account claude-e2e (claudeAccountStep): the machine logs into Claude by itself at boot,
-	// with no grant (machine/claudelogin.go), from that account's pair at the router
+	// with no grant (rust/machine/src/claudelogin.rs), from that account's pair at the router
 	s, b = call(router, "POST", "/api/sessions", map[string]any{"label": "e2e one-shot", "stores": []string{}, "size": "small", "harness": "claude",
 		"oneShot": true, "prompt": "e2e: nothing to do", "account": "claude-e2e"}, nil)
 	must(s, b, "create one-shot")
@@ -543,7 +543,7 @@ func main() {
 	om := machineOf(os1)
 	step("a new session's Claude is logged in with no grant: the machine took its account's pair from the router at boot")
 	expectOnMachine(om, "grep -c e2e-fake-refresh /home/claude/.claude/.credentials.json; stat -c %a /home/claude/.claude/.credentials.json", "1\n600")
-	// the Claude login sync is the supervisor's (machine/claudelogin.go credsSync, started once booted)
+	// the Claude login sync is the supervisor's (rust/machine/src/claudelogin.rs creds_sync, started once booted)
 	expectOnMachine(om, "grep -c 'the supervisor keeps the pair in step' /run/jarvis/supervisor.log", "1")
 	// the supervisor (the keeper and its worker) is out of the OOM killer's reach; the harness is not
 	expectOnMachine(om, "for p in /proc/[0-9]*; do case \"$(tr '\\0' ' ' < $p/cmdline 2>/dev/null)\" in '/proc/self/exe supervisor '*|'/usr/local/bin/jarvis-machine boot '*) cat $p/oom_score_adj;; esac; done | sort | uniq -c | awk '{print $1, $2}'", "2 -1000")

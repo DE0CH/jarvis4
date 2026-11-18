@@ -1,6 +1,6 @@
 package main
 
-// The machine's pushed pane (machine/screen.go), one row per session in session_screens: the router runs as replicas
+// The machine's pushed pane (rust/machine/src/screen.rs), one row per session in session_screens: the router runs as replicas
 // and the push reaches any of them, so it lives in the database, not in a replica's memory; and apart from the
 // versioned records, so a push every 2 s doesn't make every replica read the whole state again.
 

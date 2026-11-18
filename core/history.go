@@ -243,7 +243,7 @@ type KeyBackup struct {
 }
 
 // sealBackup: a value sealed to the master public key under infoBackup with the store's and key's names as associated
-// data — the format of every writer's backup (infra/setup.py key_write, machine/putkey.go)
+// data — the format of every writer's backup (infra/setup.py key_write, rust/machine/src/putkey.rs)
 func sealBackup(master, store, key, value string) (KeyBackup, error) {
 	rb, err := b64.DecodeString(master)
 	if err != nil {

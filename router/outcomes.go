@@ -7,7 +7,7 @@ package main
 // does (leases.go):
 //
 //   - the delivery carries the session's OWN signed filing request (the intent POST, the batch, the add-store, the
-//     new-session proposal) and the item's index in it; the machine (machine/outcomes.go) builds the text from that
+//     new-session proposal) and the item's index in it; the machine (rust/machine/src/outcomes.rs) builds the text from that
 //     body and texts built into the image, never from router prose;
 //   - per item the router names only strict-format values: the outcome (a word), the Inbox id or session id (a
 //     [a-z0-9-] id), an HTTP status (a number), and a proof document;
@@ -81,7 +81,7 @@ type OutcomeItem struct {
 	Proof   *Doc   `json:"proof,omitempty"`
 }
 
-// outcomeRecord: what the core attests for a request-outcome delivery (machine/outcomes.go builds the same bytes)
+// outcomeRecord: what the core attests for a request-outcome delivery (rust/machine/src/outcomes.rs builds the same bytes)
 type outcomeRecord struct {
 	Request string              `json:"request"` // the filing's signature
 	Items   []outcomeRecordItem `json:"items"`

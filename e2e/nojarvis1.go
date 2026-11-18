@@ -337,7 +337,7 @@ func contentSetupStep(secret string) {
 }
 
 // loginRefreshStep: a newer Claude pair (what the router's own refresh stores) reaches a running session's machine
-// by itself (machine/claudelogin.go credsSync), with Jarvis 1 out of reach
+// by itself (rust/machine/src/claudelogin.rs creds_sync), with Jarvis 1 out of reach
 func loginRefreshStep(m string) {
 	step("the Claude login: a newer pair at the router reaches the running session's credentials file by itself")
 	expectBlackholed(m)

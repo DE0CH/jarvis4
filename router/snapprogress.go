@@ -1,6 +1,6 @@
 package main
 
-// The final snapshot's progress (machine/snapprogress.go): while the supervisor makes and uploads the snapshot of a
+// The final snapshot's progress (rust/machine/src/snapshot.rs): while the supervisor makes and uploads the snapshot of a
 // pause, destroy or Upgrade, it reports numbers every few seconds:
 //
 //	POST /m/snapshot-progress  {phase: "measuring" | "uploading" | "writing", done, total /* uncompressed bytes */,

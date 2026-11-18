@@ -1,5 +1,6 @@
-//! The snapshot format against Go's machine/snapformat.go, both ways (machine/snapformat_rustvec_test.go): go-s2.bin
-//! is what Go wrote, read here; rust-s2.bin what this port writes, read by the Go test.
+//! The snapshot format against what the Go machine wrote: go-s2.bin is an S2 stream Go's machine/snapformat.go wrote
+//! (flushed mid-way), read here; rust-s2.bin is what this port writes, which the Go machine read (checked both ways
+//! before machine/ was deleted, 2026-11-17: snapshots Go machines stored still restore).
 //! `GEN_RUST_VECTORS=1 cargo test -p jarvis-machine --test snapformat_vectors` writes rust-s2.bin again.
 #![allow(clippy::unwrap_used)]
 

@@ -1,7 +1,7 @@
 package main
 
 // Each Claude account's pair is the router's own (claudelogin.go, claudeaccounts.go); a session takes its account's and
-// keeps in step by itself (machine/claudelogin.go), so the router never writes credentials into a session (Deyao,
+// keeps in step by itself (rust/machine/src/claudelogin.rs), so the router never writes credentials into a session (Deyao,
 // 2026-10-14: no login repair). A turn that stopped on "Please run /login" only gets "continue" once its pair is in
 // step.
 

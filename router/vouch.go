@@ -1,7 +1,7 @@
 package main
 
 // The router's part of "only vouched inputs shape a machine that gets secrets" (docs/DESIGN.md "Inputs to a
-// machine"; machine/vouch.go and machine/deliver.go do the checking, core/vouch.go and core/audit.go the signing).
+// machine"; rust/machine/src/vouch.rs and rust/machine/src/deliver.rs do the checking, core/vouch.go and core/audit.go the signing).
 // The router is untrusted: nothing here is a check anyone relies on. It
 //
 //   - puts the session's settings into the succession challenge (Options.Config: title, first prompt, model,
@@ -35,7 +35,7 @@ import (
 	"time"
 )
 
-// SessionConfig: Options.Config (machine/vouch.go reads it strictly; the app's shell shows and checks it)
+// SessionConfig: Options.Config (rust/machine/src/vouch.rs reads it strictly; the app's shell shows and checks it)
 type SessionConfig struct {
 	V           int             `json:"v"`
 	Label       string          `json:"label,omitempty"`
@@ -265,7 +265,7 @@ func (r *Router) machineConfig(machine string) (map[string]any, error) {
 
 // ---- deliveries ----------------------------------------------------------------------------------------------
 
-// SignedRequest: a machine's request exactly as it signed it (machine/deliver.go checks it against its line's keys)
+// SignedRequest: a machine's request exactly as it signed it (rust/machine/src/deliver.rs checks it against its line's keys)
 type SignedRequest struct {
 	Machine string `json:"machine"`
 	Method  string `json:"method"`
@@ -296,7 +296,7 @@ type Delivery struct {
 	Outcomes []OutcomeItem `json:"outcomes,omitempty"`
 	// peermsg.go: a peer message, with its verified sender and direction
 	Peer *PeerNote `json:"peer,omitempty"`
-	// resume-prompt: Deyao's words from the app (machine/deliver.go takes them only under the phone's approval)
+	// resume-prompt: Deyao's words from the app (rust/machine/src/deliver.rs takes them only under the phone's approval)
 	Text string `json:"text,omitempty"`
 	// messages.go: the phone's approval of this very message (a signed batch it is in, or a rule for its kind)
 	Approval *Doc `json:"approval,omitempty"`
@@ -710,7 +710,7 @@ func (r *Router) registerVouch(app appRoute, m machineRoute) {
 			return
 		}
 		out := map[string]any{"cert": cert}
-		if cc != nil { // machine/restore.go: an earlier core's cert, through the master key's claim of it
+		if cc != nil { // rust/machine/src/restore.rs: an earlier core's cert, through the master key's claim of it
 			out["coreCert"], out["coreState"] = cc, r.coreStateDoc()
 		}
 		writeJSON(w, 200, out)
@@ -758,7 +758,7 @@ var pulledMachines sync.Map // machine → its secrets pull went through (it is 
 func markPulled(machine string)     { pulledMachines.Store(machine, true) }
 func hasPulled(machine string) bool { _, ok := pulledMachines.Load(machine); return ok }
 
-// restoreMachineID: the archived line's machine, as the restoring machine's config check wants it (machine/vouch.go
+// restoreMachineID: the archived line's machine, as the restoring machine's config check wants it (rust/machine/src/vouch.rs
 // machineIDRE): an old core's cert names it in machine.id; a kernel line's (the spawner's) only in succ, "fly-<id>",
 // its machine carrying keys and image but no id
 func restoreMachineID(cert *Doc) (string, error) {
@@ -781,4 +781,4 @@ func restoreMachineID(cert *Doc) (string, error) {
 	return id, nil
 }
 
-var restoreMachineRE = regexp.MustCompile(`^[a-z0-9]{1,40}$`) // machine/vouch.go machineIDRE
+var restoreMachineRE = regexp.MustCompile(`^[a-z0-9]{1,40}$`) // rust/machine/src/vouch.rs MACHINE_ID_RE

@@ -1,4 +1,4 @@
-# jarvis-request blocks until a checked outcome of its request is recorded (machine/outcomes.go recordOutcome), prints
+# jarvis-request blocks until a checked outcome of its request is recorded (rust/machine/src/outcomes.rs record_outcome), prints
 # it and exits 0 (approved) or 1; an older outcome of the same id is not this filing's; wait reads any recorded one.
 import importlib.machinery, importlib.util, json, os, sys, tempfile, threading, time
 loader = importlib.machinery.SourceFileLoader("jr", os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis-request"))

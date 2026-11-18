@@ -33,7 +33,7 @@ func machineCertOnto(t *testing.T, succ doc.Object) *sig.Doc {
 	return &sig.Doc{Payload: string(p)}
 }
 
-// a kernel machine's object is "<runner>-<id>", as the machine checks it (machine/main.go machineObject): the
+// a kernel machine's object is "<runner>-<id>", as the machine checks it (rust/machine/src/main.rs machine_object): the
 // spawner's cert onto it first, else the session's runner, else the default
 func TestKernelObjectNamesTheRunner(t *testing.T) {
 	awsCert := &Session{Runner: "aws", Kernel: &KernelLine{MachineCert: machineCertOnto(t, doc.Object("aws-"+awsMachine))}}
@@ -98,7 +98,7 @@ func TestAnAWSMachinesInputsAreAttestedUnderItsAWSName(t *testing.T) {
 	if err := json.Unmarshal([]byte(a.Payload), &ch); err != nil {
 		t.Fatal(err)
 	}
-	// machine/kernelboot.go KernelInputSubject over machineObject (aws-<id> on AWS)
+	// rust/machine/src/kernelboot.rs kernel_input_subject over machineObject (aws-<id> on AWS)
 	h := sha256.Sum256([]byte("jarvis2-input\n" + string(obj) + "\nadd-store\n" + sum))
 	if ch.Subject != hex.EncodeToString(h[:]) || ch.About != "input" {
 		t.Fatalf("challenge %+v: not over %s", ch, obj)

@@ -1,6 +1,6 @@
 package main
 
-// Snapshots straight between the machines and the bucket (machine/snapdirect.go, DECISIONS 241). The machines' way to
+// Snapshots straight between the machines and the bucket (rust/machine/src/snapdirect.rs, DECISIONS 241). The machines' way to
 // the router, Fly's WireGuard peer into m-gateway, carries about 6 MB/s per connection and 15 MB/s in all (measured
 // 2026-10-25: the Deepseek session's 1.75 GB snapshot took 14.5 min up and 4.5 min down), while the bucket answers a
 // Fly machine at 86 MB/s on one stream. So the router only signs the way and checks what arrived:

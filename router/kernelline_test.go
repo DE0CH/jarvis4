@@ -64,7 +64,7 @@ func fakeFlyList(k *kerneltest.Kernel, destroyed bool) []flyMachineDetail {
 	return out
 }
 
-// kdo: a request signed by a kernel machine's key, as the supervisor signs it (machine/main.go client.raw)
+// kdo: a request signed by a kernel machine's key, as the supervisor signs it (rust/machine/src/client.rs Client::raw)
 func kdo(t *testing.T, h http.Handler, m *kerneltest.FakeMachine, method, path, body string) (int, []byte) {
 	t.Helper()
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -632,7 +632,7 @@ func TestAnUpgradeResumeRestoresTheLastSnapshot(t *testing.T) {
 // a resume after a machine that never got past boot restores the line's last snapshot: that machine's kill passes on
 // the hash its source named, so the source comes from a machine with no snapshot of its own, and the next machine's
 // GET /m/snapshot was refused "no snapshot" (2026-11-16: a machine whose restore ran out of disk, paused, resumed).
-// The machine takes the snapshot by the hash its source names (machine/kernelboot.go kernelRestore).
+// The machine takes the snapshot by the hash its source names (rust/machine/src/kernelboot.rs kernel_restore).
 func TestAResumeAfterAMachineThatNeverBootedRestoresTheLastSnapshot(t *testing.T) {
 	rg, k := kernelRig(t)
 	sid, err := rg.r.CreateSession(NewSession{Label: "never booted", Harness: "claude"})

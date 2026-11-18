@@ -2,7 +2,7 @@ package main
 
 // A session's live status, reported by its own machine (Jarvis 1 read it by Fly exec: readRegistry in
 // server.js, lib/stall.js normalize, lib/claudelogin.js parse, lib/downgrade.js parse). The machine runs the
-// registry command (machine/status.go) every ~10 s and POSTs the raw text to /m/status when it changes and at
+// registry command (rust/machine/src/status.rs) every ~10 s and POSTs the raw text to /m/status when it changes and at
 // least once a minute; the router parses it here. Nothing in it is a secret: claude's registry files, ai-title
 // lines, background-job counts, the one-shot marker, the ids of transcripts ending on "Please run /login", the
 // credentials file's expiry time, the transcripts' refusal entries and the subagent/background-job counts.
@@ -45,14 +45,14 @@ type Registry struct {
 	Refusals        []Refusal `json:"refusals"`
 	Workers         *Workers  `json:"workers"` // nil: the machine doesn't count them (an image from before)
 	// accountswap.go: the account Anthropic named for the token installed by an account switch
-	// (machine/claudelogin.go afterSwitch); AccountSection: the image reports it at all
+	// (rust/machine/src/claudelogin.rs after_switch); AccountSection: the image reports it at all
 	AccountProof   string `json:"accountProof,omitempty"`
 	AccountSection bool   `json:"accountSection,omitempty"`
-	// the keeper's record of the harness (machine/keeper.go): how often it was started on this machine and how it
+	// the keeper's record of the harness (rust/machine/src/keeper.rs): how often it was started on this machine and how it
 	// last ended; nil: an image from before the keeper
 	Harness *HarnessRun `json:"harness,omitempty"`
 	// when Deyao last sent the host conversation a prompt (ms; 0 = none in the transcript's tail); HumanSection: the
-	// image reports it at all (machine/status.go __HUMAN__, images from 2026-11-02 on)
+	// image reports it at all (rust/machine/src/status.rs __HUMAN__, images from 2026-11-02 on)
 	LastHumanAt  int64 `json:"lastHumanAt,omitempty"`
 	HumanSection bool  `json:"humanSection,omitempty"`
 }
@@ -72,7 +72,7 @@ func parseHuman(section string) map[string]int64 {
 	return out
 }
 
-// HarnessRun: the __HARNESS__ section (machine/keeper.go harnessState). Starts > 1: the harness's launcher died and
+// HarnessRun: the __HARNESS__ section (rust/machine/src/keeper.rs harness_state). Starts > 1: the harness's launcher died and
 // the keeper started it again, the machine staying up.
 type HarnessRun struct {
 	Starts     int    `json:"starts"`
@@ -93,7 +93,7 @@ func parseHarness(section string) *HarnessRun {
 	return nil
 }
 
-// Workers: what the host conversation's harness has running besides itself (machine/workers.go, from Claude
+// Workers: what the host conversation's harness has running besides itself (rust/machine/src/workers.rs, from Claude
 // Code's hooks): subagents (foreground and background) and every other background job by Claude Code's own type
 // label (shell, monitor, workflow, teammate, …)
 type Workers struct {

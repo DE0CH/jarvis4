@@ -1,7 +1,6 @@
 package kerneltest
 
-// The documents a kernel machine boots from, for the Rust machine's tests (rust/machine/src/tests/kernelboot.rs, the
-// port of machine/kernelboot_test.go): two lines on the blue copy, log-notary challenges, a roster another key signed,
+// The documents a kernel machine boots from, for the Rust machine's tests (rust/machine/src/tests/kernelboot.rs): two lines on the blue copy, log-notary challenges, a roster another key signed,
 // and the same kernel after a copy flip onto green. GEN_RUST_VECTORS=1 go test -run TestRustMachineVectors writes
 // rust/machine/tests/vectors/kernelboot.json again; without it the file is only checked to parse.
 

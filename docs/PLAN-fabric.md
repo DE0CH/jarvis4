@@ -107,7 +107,7 @@ The image check: hermit starts the one image its `hermit.json` names, and the sp
 another digest than the source's (`wrong-image`), so a session's sources name the fabric image hermit runs, and a
 resume after a pin moved starts on the new image (the router writes the new source on the current pin, as for Fly).
 
-The snapshot on the fabric holds only the small files (`machine/main.go` `fabricStatePaths`): the Jarvis records
+The snapshot on the fabric holds only the small files (`rust/machine/src/snapshot.rs` `fabric_state_paths`): the Jarvis records
 (grants, the line's keys, deliveries) keep travelling signed, the directories stay on JuiceFS. So hermit, its hosts,
 the JuiceFS metadata database and the bucket are trusted with the session's files between machines, as Deyao
 accepted hermit and its hosts as trusted like Fly.

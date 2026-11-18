@@ -285,7 +285,7 @@ func TestAccountSwitchTransparentRemoteControlAndProof(t *testing.T) {
 	}
 }
 
-// the keeper's harness record (machine/keeper.go): parsed when the image sends it, nil from an older image, and the
+// the keeper's harness record (rust/machine/src/keeper.rs): parsed when the image sends it, nil from an older image, and the
 // workers' section before it is unchanged
 func TestRegistryHarnessSection(t *testing.T) {
 	base := `{"pid":7,"sessionId":"s1","bridgeSessionId":"cse_1","status":"idle","startedAt":1}` + "\n__TITLES__\n__BG__\n__ONESHOT__\n__AUTH__\n__CREDS__\n5\n__REFUSAL__\n"
