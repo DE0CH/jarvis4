@@ -288,17 +288,18 @@ impl MemDav {
                     w.write_header(201);
                 }
                 "PUT" => {
+                    // the body first: a server refusing a file still consumes the request, and a client cut off
+                    // mid-upload never reads the answer (the Storage Box answers 507 the same way)
+                    let b = req.read_body(1 << 30);
+                    // answered mid-upload, a client may see its send fail ("receiver is gone") instead of the 507:
+                    // the body is read first, as the Storage Box does
                     if !m.fail.is_empty() && p.starts_with(&m.fail) {
-                        // the body read first, as the Storage Box does: answered mid-upload, the client may see its
-                        // send fail ("receiver is gone") instead of the 507
-                        let _ = req.read_body(1 << 30);
                         return w.write_header(507);
                     }
                     let parent = dav_parent(&p);
                     if parent != "." && !m.dirs.contains(&parent) {
                         return w.write_header(409);
                     }
-                    let b = req.read_body(1 << 30);
                     m.files.insert(p, b);
                     w.write_header(201);
                 }

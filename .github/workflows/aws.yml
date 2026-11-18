@@ -16,6 +16,7 @@ on:
   workflow_run:
     workflows: [images]
     types: [completed]
+    branches: [main]  # a branch's images run (the gate's CI) applies nothing
   schedule:
     - cron: "17 4 * * *"
   workflow_dispatch:

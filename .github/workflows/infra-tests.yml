@@ -2,8 +2,7 @@ name: infra-tests
 # infra/test-postgres.sh (the throwaway Postgres of CI's stand-ins and the e2e scripts): a fresh database takes pgvector,
 # as magpie's migrations need in the aviary replica (infra/test-postgres_test.sh).
 on:
-  push:
-    branches: [main]
+  push:  # every branch: the gate (rust/gate) waits for it
     paths: [infra/test-postgres.sh, infra/test-postgres_test.sh, .github/workflows/infra-tests.yml]
   pull_request:
     paths: [infra/test-postgres.sh, infra/test-postgres_test.sh, .github/workflows/infra-tests.yml]
