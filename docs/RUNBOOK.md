@@ -74,6 +74,21 @@ They push a branch (`claude/<topic>`; `wip/<topic>` only runs CI), and the gate 
   main's ruleset (update, no deletion, no force push, the required status `gate`; admins and deploy keys bypass). Until
   `pin.txt` says a release, the gate's steps warn and pass, so a repo can be set up before the first release.
 
+- Where the gate is (2026-11-18): every repo sessions hold a deploy key for. DE0CH is on GitHub Pro (USD 4.00/month)
+  so the private ones (claude-env, kamyee-ai-chat, tailscale-acl, YYC) have the ruleset too. Bots that push main
+  (aviary's clients.yml, china-train's gates.yml, jarvis3's egress-allowlist.yml, yyc-code's image pins and
+  talos-nodes.yml) push with a deploy key: the job takes the main-only environment `merge` (talos-nodes: its own
+  environment's PIN_DEPLOY_KEY, made by `gate key`) and its commit says `[skip ci]`, so the push starts no workflow,
+  as a workflow-token push didn't (the workflow token can't pass the ruleset in a personal account's repo, and GitHub
+  refuses GitHub Actions as a bypass actor there). A pushed head commit whose message merely mentions that marker
+  skips every workflow: never write it in a commit message otherwise.
+- A repo's first gate commit lands by hand (merge.yml runs from the default branch's copy, so a branch can't merge
+  itself before the gate is on main): once every workflow on the branch head is green, fast-forward main to it with
+  the repo's deploy key.
+- DE0CH/vectorcraft has Actions switched off (no more work there, Deyao 2026-11-18): no CI, so the gate merges nothing.
+- A repo whose main is already red holds every branch until that is fixed (DE0CH/qwen-code's `de0ch` and DE0CH/yyc-code's
+  news-stream-tests were red on 2026-11-18): the gate counts what main's red workflow says on the branch too.
+
 ### A core release: blue/green and the flip
 
 The control box runs two cores, `core-blue` and `core-green` (`k8s/control/apps/core/core.yaml`, DESIGN "Core
