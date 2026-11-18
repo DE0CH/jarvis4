@@ -58,9 +58,11 @@ fn passed(conclusion: &str) -> bool {
 /// the workflow reads starts a newer run. Run ids grow with time; a re-run keeps its id and its newest result.
 pub fn latest(runs: &[Run], commits: &std::collections::BTreeSet<String>, own: &str) -> Vec<Run> {
     let mut by: std::collections::BTreeMap<&str, &Run> = std::collections::BTreeMap::new();
+    // a run held for approval never ran: GitHub holds the pull_request runs of a pull request the gate opened with the
+    // workflow token ("action_required"); the same commit's push run is the one that counts
     for r in runs
         .iter()
-        .filter(|r| r.path != own && commits.contains(&r.sha))
+        .filter(|r| r.path != own && commits.contains(&r.sha) && r.conclusion != "action_required")
     {
         if by.get(r.path.as_str()).is_none_or(|o| r.id > o.id) {
             by.insert(&r.path, r);
@@ -251,6 +253,20 @@ mod tests {
             decide("claude/x", &l, true, true, Rel::Ahead),
             Action::Fail("ios.yml failure".into())
         );
+    }
+
+    #[test]
+    fn a_run_held_for_approval_never_ran_and_the_push_run_counts() {
+        let runs = vec![
+            on("c1", "ci.yml", 3, "in_progress", ""),
+            on("c1", "ci.yml", 5, "completed", "action_required"),
+            on("c1", "branch.yml", 4, "completed", "success"),
+        ];
+        let l = latest(&runs, &commits(&["c1"]), ".github/workflows/merge.yml");
+        assert!(matches!(
+            decide("claude/x", &l, true, true, Rel::Ahead),
+            Action::Wait(_)
+        ));
     }
 
     #[test]
