@@ -19,7 +19,7 @@ Access apps:
   "Jarvis 4 setup"   jarvis4.deyaochen.com/setup    service token jarvis4-setup only (the setup session)
   "Jarvis 4 health"  jarvis4.deyaochen.com/healthz  service token jarvis2-health-probe only (Grafana's uptime probe,
                                                     the same token as Jarvis 2's; router/healthz.go)
-  "Jarvis 4 devices" jarvis4.deyaochen.com/api/remotes, /api/sessions/*/start and /api/machine-signatures/verify:
+  "Jarvis 4 devices" jarvis4.deyaochen.com/api/remotes, /api/sessions/*/start, /api/machine-signatures/verify and /api/sessions/*/chat-schedule:
                      Deyao's email, or ANY service token of the account (Deyao's paired OpenClaw/Paseo apps, hermit-jarvis);
                      the router admits a token only when it is a paired device's or hermit-jarvis's (router/devices.go)
   "Jarvis 4 kernel id" kernel-id.deyaochen.com      service token jarvis2-kernel-id only (setup sessions)
@@ -105,7 +105,7 @@ def service_token(name, vals, idkey, secretkey):
     return tok
 
 
-DEVICE_PATHS = ["/api/remotes", "/api/sessions/*/start", "/api/machine-signatures/verify"]
+DEVICE_PATHS = ["/api/remotes", "/api/sessions/*/start", "/api/machine-signatures/verify", "/api/sessions/*/chat-schedule"]
 
 
 def devices():

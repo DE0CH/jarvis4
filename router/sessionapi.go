@@ -54,8 +54,6 @@ func (r *Router) registerSessionAPI(app appRoute, m machineRoute) {
 	})
 	app("GET /api/sessions/{id}/crons", func(w http.ResponseWriter, req *http.Request) { r.getCrons(w, req.PathValue("id")) })
 	app("POST /api/sessions/{id}/crons", func(w http.ResponseWriter, req *http.Request) { appArmRefused(w, "cron", "schedule-cron") })
-	// hermit-jarvis: the next fire of an aviary session's chat schedules (schedule.go ChatSchedule)
-	app("PUT /api/sessions/{id}/chat-schedule", func(w http.ResponseWriter, req *http.Request) { r.putChatSchedule(w, req) })
 	app("DELETE /api/sessions/{id}/crons/{name}", func(w http.ResponseWriter, req *http.Request) {
 		r.deleteCron(w, req.PathValue("id"), req.PathValue("name"))
 	})

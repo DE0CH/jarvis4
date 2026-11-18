@@ -324,6 +324,10 @@ func (r *Router) registerDevices(app appRoute, public publicRoute) {
 	// whose machine signed a request for a service outside Jarvis 4 (machinesig.go; hermit-jarvis)
 	r.appPatterns["POST /api/machine-signatures/verify"] = true
 	public("POST /api/machine-signatures/verify", r.requireDeyaoOrDevice(r.verifyMachineSignature))
+	// the next fire of an aviary session's chat schedules (schedule.go ChatSchedule; hermit-jarvis), on the devices'
+	// Access app as the signature check is: hermit-jarvis's service token reaches only its paths
+	r.appPatterns["PUT /api/sessions/{id}/chat-schedule"] = true
+	public("PUT /api/sessions/{id}/chat-schedule", r.requireDeyaoOrDevice(r.putChatSchedule))
 	public("POST /api/sessions/{id}/start", r.requireDeyaoOrDevice(func(w http.ResponseWriter, req *http.Request) {
 		if err := r.resumeWithPrompt(req.PathValue("id"), false, ""); err != nil {
 			scheduleErr(w, err)
