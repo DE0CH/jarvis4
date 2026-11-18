@@ -804,7 +804,7 @@ an Inbox item (`kind: "message"`, `callerText` = who sends it, `explanation` = t
 |---|---|
 | `GET /api/messages[?session=]` | `{messages: [{id, session, sessionName, kind, kindLabel, from, text, note, sha256, created, expires, state /* pending \| approved \| failed */, error, ruleable, ruleText}], rules: [{id, session, kind, kindLabel, text, until, created}]}` |
 | `POST /api/messages/draft` | `{ids}` (pending, one session) → `{text, session, line}`: exactly what the phone signs, `{kind: "messages", session /* line */, items: [{id, delivery, sha256, from, text}], issued, expires /* +1 h */}` |
-| `POST /api/messages/approve` | `{payload, sig}` → `{ok, delivering: [ids]}`; refused unless the cert's phone key signed it for that line and every item is that pending message unchanged. Each is delivered (a paused session is started; an Inbox outcome waits for it to run). |
+| `POST /api/messages/approve` | `{payload, sig}` → `{ok, delivering: [ids]}`; refused unless the cert's phone key signed it for that line and every item is that pending message unchanged. Each is delivered (a paused session is started). |
 | `POST /api/messages/deny` | `{ids}` → `{ok, denied}`; `DELETE /api/requests/{id}` denies one too |
 | `POST /api/sessions/:id/message-rules/draft` | `{kind}` → `{text}`: `{kind: "message-rule", session, delivery, issued, until /* +1 year */}`; no rule for `peer` or `resume-prompt` |
 | `POST /api/sessions/:id/message-rules` | `{payload, sig}` → the rule; that session's pending messages of the kind go in under it |

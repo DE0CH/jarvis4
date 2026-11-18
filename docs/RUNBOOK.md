@@ -250,12 +250,12 @@ grant, unlock, add-store, new-session, jarvis1-import); at most 20 items; every 
   prompt goes in a `--file` item). A batch counts as one of the session's 3 waiting proposals.
 - `infra/setup.py requests` / `jarvis-request list` show the batches (`b…` ids) after the loose requests.
 
-**The outcome comes back by itself** (Deyao, 2026-10-13): once Deyao decides an item a session filed, that session gets
-a message from Jarvis, `[Inbox outcome] … APPROVED / DENIED / LAPSED / DROPPED / FAILED: …` (a batch in one message,
-numbered like its items), with what was checked (the phone's grant, the new cert naming the store, the new session's
-id). No polling needed; a paused session hears at its next start. `jarvis-request outcomes` lists them;
-`jarvis-request wait ID` blocks on one (exit 0 approved). An outcome that wasn't delivered shows `not delivered: …` in
-`outcomes` (e.g. an image from before outcomes); the router logs `[outcome]` lines.
+**The outcome is the filing command's answer** (Deyao, 2026-11-17): every filing command blocks until Deyao decides
+and prints the checked outcome, `APPROVED / DENIED / LAPSED / DROPPED / FAILED: … (Inbox ID)` (a batch numbered like
+its items), with what was checked (the phone's grant, the new cert naming the store, the new session's id). It is never
+a message into the conversation. A long wait goes to the background like any long command; a paused session's machine
+records the outcome at its next start, and `jarvis-request wait ID` reads it (exit 0 approved). `jarvis-request
+outcomes` lists them; one that wasn't delivered shows `not delivered: …` there; the router logs `[outcome]` lines.
 
 ### Emptying the core without its kit
 

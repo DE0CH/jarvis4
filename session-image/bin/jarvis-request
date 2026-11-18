@@ -275,7 +275,7 @@ def show(o):
         line += f" HTTP {o['status']}"
     line += " at " + o["at"]
     if not o.get("delivered"):
-        line += " (not yet delivered as a message)"
+        line += " (not yet delivered to this session)"
     elif o.get("error"):
         line += " (" + o["error"] + ")"
     print(line)

@@ -309,7 +309,7 @@ enum MessageKind {
   static let labels: [String: String] = [
     "wakeup": "Wakeup", "cron": "Recurring wakeup", "watch": "Watch met", "watch-fail": "Watch gave up",
     "continue": "Login “continue”", "upgraded": "Upgrade note", "lease-granted": "Lease granted", "lease-taken": "Lease taken over",
-    "lease-back": "Lease handed back", "request-outcome": "Inbox outcome", "peer": "Peer message", "resume-prompt": "Resume prompt",
+    "lease-back": "Lease handed back", "peer": "Peer message", "resume-prompt": "Resume prompt",
   ]
   /// never a rule: each of these is a message someone wrote, approved one by one
   static let neverRuled: Set<String> = ["peer", "resume-prompt"]
