@@ -3,7 +3,8 @@
 # branch push: the branch's pull request and the commit's `gate` status pending. `merge` runs when a workflow on a
 # branch finishes (merge.yml's workflow_run, from the caller's main): green on main's head moves main to the tested
 # commit with the caller's merge deploy key (environment `merge`, main only), green on an older base merges main into
-# the branch. The binary is gate-release.yml's release, pinned below by its pin job.
+# the branch. The binary is gate-release.yml's release; rust/gate/pin.txt names it and its sha256 (the release job
+# writes it), so one file updates every repo's gate.
 name: gate
 on:
   workflow_call:
@@ -13,17 +14,31 @@ on:
       sha: { type: string, required: true }
       workflows: { type: string, default: "", description: "merge: the workflows that are the repo's CI, comma-separated (merge.yml's workflow_run list)" }
 env:
-  GATE_URL: https://github.com/DE0CH/jarvis4/releases/download/gate-unreleased/gate-x86_64-linux
-  GATE_SHA256: unreleased
+  PIN_URL: https://raw.githubusercontent.com/DE0CH/jarvis4/main/rust/gate/pin.txt
 jobs:
   open:
     if: inputs.command == 'open'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: the gate binary
-        run: curl -fsSL -o gate "$GATE_URL" && echo "$GATE_SHA256  gate" | sha256sum -c - && chmod +x gate
-      - run: ./gate open
+      - name: the gate binary (rust/gate/pin.txt names it and its sha256)
+        id: bin
+        run: |
+          set -e
+          pin="$(curl -fsSL "$PIN_URL")"
+          sum="${pin%% *}"; url="${pin#* }"
+          if [ "$sum" = unreleased ]; then
+            # the gate's first install: nothing is decided until gate-release.yml has published it
+            echo "::warning::the gate is not released yet (rust/gate/pin.txt: unreleased)"
+            echo ready=0 >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          curl -fsSL -o gate "$url"
+          echo "$sum  gate" | sha256sum -c -
+          chmod +x gate
+          echo ready=1 >> "$GITHUB_OUTPUT"
+      - if: steps.bin.outputs.ready == '1'
+        run: ./gate open
         env:
           GH_TOKEN: ${{ github.token }}
           GATE_BRANCH: ${{ inputs.branch }}
@@ -35,9 +50,24 @@ jobs:
     timeout-minutes: 15
     environment: merge
     steps:
-      - name: the gate binary
-        run: curl -fsSL -o gate "$GATE_URL" && echo "$GATE_SHA256  gate" | sha256sum -c - && chmod +x gate
-      - run: ./gate merge
+      - name: the gate binary (rust/gate/pin.txt names it and its sha256)
+        id: bin
+        run: |
+          set -e
+          pin="$(curl -fsSL "$PIN_URL")"
+          sum="${pin%% *}"; url="${pin#* }"
+          if [ "$sum" = unreleased ]; then
+            # the gate's first install: nothing is decided until gate-release.yml has published it
+            echo "::warning::the gate is not released yet (rust/gate/pin.txt: unreleased)"
+            echo ready=0 >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          curl -fsSL -o gate "$url"
+          echo "$sum  gate" | sha256sum -c -
+          chmod +x gate
+          echo ready=1 >> "$GITHUB_OUTPUT"
+      - if: steps.bin.outputs.ready == '1'
+        run: ./gate merge
         env:
           GH_TOKEN: ${{ github.token }}
           GATE_BRANCH: ${{ inputs.branch }}

@@ -14,6 +14,7 @@ jobs:
     if: >-
       github.event.workflow_run.head_branch != github.event.repository.default_branch &&
       github.event.workflow_run.head_repository.full_name == github.repository
-    uses: DE0CH/jarvis4/.github/workflows/gate.yml@main
+    uses: ./.github/workflows/gate.yml
+    secrets: inherit
     with: { command: merge, branch: "${{ github.event.workflow_run.head_branch }}", sha: "${{ github.event.workflow_run.head_sha }}",
             workflows: "branch, images, ios, web, transitions, aviary, infra-tests, k8s, services, gate-release" }

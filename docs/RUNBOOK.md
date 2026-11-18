@@ -61,9 +61,15 @@ They push a branch (`claude/<topic>`; `wip/<topic>` only runs CI), and the gate 
   the admin role bypass it.
 - The agent's side: a Claude Code hook (DE0CH/claude-env `.claude/hooks/git-guard.py`) denies a commit on main and a
   push to it before it runs, so a session learns the branch path from the denial.
-- `gate-release.yml` builds the binary on every branch that touches it and, on main, releases `gate-<sha12>` and pins
-  it in `gate.yml`. Every other agent-pushed repo has the same `branch.yml` and `merge.yml`, calling this repo's
-  `gate.yml@main`, a `merge` environment with its own `jarvis-merge` key, and the `gate` ruleset.
+- `gate-release.yml` builds the binary on every branch that touches it and, on main, releases `gate-<sha12>` and writes
+  `rust/gate/pin.txt` (its sha256 and URL): every repo's `gate.yml` reads that one file, so a new gate reaches all of
+  them without touching them.
+- Every agent-pushed repo has the same three workflows, written by `gate vendor <dir> --workflows "ci1, ci2"` (the repo's
+  own CI workflow names; `rust/gate/templates/` is the source): `gate.yml` (a copy: a private repo can't call another
+  private repo's reusable workflow), `branch.yml`, `merge.yml`. `gate setup` does the GitHub side of one repo
+  (GATE_REPOS=owner/name,…): the deploy key `jarvis-merge` and its secret in the `merge` environment (main only), and
+  main's ruleset (update, no deletion, no force push, the required status `gate`; admins and deploy keys bypass). Until
+  `pin.txt` says a release, the gate's steps warn and pass, so a repo can be set up before the first release.
 
 ### A core release: blue/green and the flip
 

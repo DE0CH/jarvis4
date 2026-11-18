@@ -7,5 +7,6 @@ on:
 permissions: { contents: read, pull-requests: write, statuses: write }
 jobs:
   gate:
-    uses: DE0CH/jarvis4/.github/workflows/gate.yml@main
+    uses: ./.github/workflows/gate.yml
+    secrets: inherit
     with: { command: open, branch: "${{ github.ref_name }}", sha: "${{ github.sha }}" }

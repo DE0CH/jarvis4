@@ -1,6 +1,6 @@
 # gate-release.yml — builds rust/gate (static, musl) on every push that touches it; on main it publishes the binary as
-# release gate-<sha12> and pins it in gate.yml (GATE_URL, GATE_SHA256) with the pin deploy key (environment
-# `release`), so every repo's next gate run uses it.
+# release gate-<sha12> and writes rust/gate/pin.txt (its sha256 and URL) with the pin deploy key (environment
+# `release`), so every repo's next gate run uses it: each repo's gate.yml reads that one file.
 name: gate-release
 on:
   push:
@@ -40,9 +40,10 @@ jobs:
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" gate-x86_64-linux --target "$GITHUB_SHA" \
             --title "$tag" --notes "rust/gate at $GITHUB_SHA (sha256 $sum)"
           url="https://github.com/${GITHUB_REPOSITORY}/releases/download/$tag/gate-x86_64-linux"
-          sed -i -E "s#^  GATE_URL: .*#  GATE_URL: $url#; s#^  GATE_SHA256: .*#  GATE_SHA256: $sum#" .github/workflows/gate.yml
+          printf '%s  %s\n' "$sum" "$url" > rust/gate/pin.txt
           git diff --quiet && exit 0
           git config user.name jarvis4-ci && git config user.email jarvis4-ci@users.noreply.github.com
-          git commit -qam "gate-pin: $tag"
+          git add rust/gate/pin.txt
+          git commit -qm "gate-pin: $tag"
           for i in 1 2 3 4 5; do git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0; sleep $((i * 5)); done
           exit 1

@@ -3,6 +3,9 @@
 //!
 //!   gate open    branch.yml, on every push to a branch other than main: open the branch's pull request (a draft for
 //!                wip/<topic>) and set the commit's `gate` status pending
+//!   gate vendor  a repo's three workflows (gate.yml, branch.yml, merge.yml) from rust/gate/templates
+//!   gate setup   one repo's GitHub side, idempotent: the deploy key jarvis-merge and its secret in the `merge`
+//!                environment, and main's ruleset requiring the gate (setup.rs; GH_TOKEN is a repo admin's)
 //!   gate merge   merge.yml, when any workflow on a branch finishes (workflow_run: GitHub runs it from main's copy,
 //!                so a branch can't change it): once every workflow on the head commit is done, set `gate` green or
 //!                red; green on main's head fast-forwards main to that exact commit with the merge deploy key; green
@@ -13,6 +16,8 @@
 //! GATE_WORKFLOWS (the workflows that make up the repo's CI, comma-separated: merge.yml's list) and MERGE_DEPLOY_KEY (the repo's deploy key `jarvis-merge`, which main's ruleset lets push).
 
 mod decide;
+mod setup;
+mod vendor;
 
 use anyhow::{Context, Result, anyhow, bail};
 use decide::{Action, Rel, Run};
@@ -357,10 +362,21 @@ fn update(gh: &Gh, g: &Git, branch: &str, base: &str, sha: &str, pr: Option<&Val
 
 fn main() -> ExitCode {
     let cmd = std::env::args().nth(1).unwrap_or_default();
+    // vendor and its help need no token: it only writes files
+    if cmd == "vendor" {
+        return match vendor() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("gate: {e:#}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let res = Gh::from_env().and_then(|gh| match cmd.as_str() {
         "open" => open(&gh),
         "merge" => merge(&gh),
-        _ => Err(anyhow!("usage: gate open|merge")),
+        "setup" => setup_repos(&gh),
+        _ => Err(anyhow!("usage: gate open|merge|setup|vendor")),
     });
     match res {
         Ok(()) => ExitCode::SUCCESS,
@@ -369,4 +385,197 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+// ---- gate setup ----------------------------------------------------------------------------------------------------
+
+/// every repo the gate runs in, by its workflows (GATE_REPOS: owner/name, comma-separated); `--dry-run` prints the
+/// payloads only
+fn setup_repos(gh: &Gh) -> Result<()> {
+    let repos = env("GATE_REPOS")?;
+    let dry = std::env::args().any(|a| a == "--dry-run");
+    for repo in repos.split(',').map(str::trim).filter(|r| !r.is_empty()) {
+        match setup_one(gh, repo, dry) {
+            Ok(lines) => {
+                for l in lines {
+                    println!("{repo}: {l}");
+                }
+            }
+            Err(e) => eprintln!("{repo}: {e:#}"),
+        }
+    }
+    Ok(())
+}
+
+fn setup_one(gh: &Gh, repo: &str, dry: bool) -> Result<Vec<String>> {
+    let mut done = vec![];
+    let base = gh.get(&format!("/repos/{repo}"))?;
+    let branch = base["default_branch"]
+        .as_str()
+        .unwrap_or("main")
+        .to_string();
+    if dry {
+        println!("{repo}: ruleset {}", setup::ruleset_payload(&branch));
+        return Ok(done);
+    }
+    // the deploy key: generated fresh, the one titled jarvis-merge replaced
+    let dir = tempfile::tempdir()?;
+    let key = dir.path().join("key");
+    let st = Command::new("ssh-keygen")
+        .args([
+            "-q",
+            "-t",
+            "ed25519",
+            "-N",
+            "",
+            "-C",
+            &format!("jarvis4-gate@{repo}"),
+            "-f",
+        ])
+        .arg(&key)
+        .status()
+        .context("running ssh-keygen")?;
+    if !st.success() {
+        bail!("ssh-keygen failed");
+    }
+    let public = std::fs::read_to_string(key.with_extension("pub"))?;
+    let private = std::fs::read_to_string(&key)?;
+    let keys = gh.get(&format!("/repos/{repo}/keys"))?;
+    for k in keys.as_array().cloned().unwrap_or_default() {
+        if k["title"] == setup::KEY_TITLE {
+            let id = k["id"].as_u64().unwrap_or(0);
+            gh.call(
+                reqwest::Method::DELETE,
+                &format!("/repos/{repo}/keys/{id}"),
+                None,
+            )?;
+            done.push(format!("deploy key {id} replaced"));
+        }
+    }
+    if !public.contains("ed25519") {
+        bail!("ssh-keygen wrote no ed25519 key");
+    }
+    gh.post(
+        &format!("/repos/{repo}/keys"),
+        &json!({"title": setup::KEY_TITLE, "key": public.trim(), "read_only": false}),
+    )?;
+    done.push("deploy key jarvis-merge (write)".into());
+    // its private half, sealed to the repo, as the merge environment's secret
+    let pk = gh.get(&format!("/repos/{repo}/actions/secrets/public-key"))?;
+    let sealed = seal(pk["key"].as_str().unwrap_or(""), private.as_bytes())?;
+    gh.call(
+        reqwest::Method::PUT,
+        &format!("/repos/{repo}/actions/secrets/{}", setup::SECRET),
+        Some(&json!({"encrypted_value": sealed, "key_id": pk["key_id"]})),
+    )?;
+    done.push(format!("secret {} in environment merge", setup::SECRET));
+    // the environment: main only
+    gh.call(
+        reqwest::Method::PUT,
+        &format!("/repos/{repo}/environments/merge"),
+        Some(&setup::environment_payload()),
+    )?;
+    let pol = gh.get(&format!(
+        "/repos/{repo}/environments/merge/deployment-branch-policies"
+    ))?;
+    let have = pol["branch_policies"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .any(|p| p["name"] == branch.as_str() && p["type"] == "branch");
+    if !have {
+        gh.post(
+            &format!("/repos/{repo}/environments/merge/deployment-branch-policies"),
+            &setup::branch_policy_payload(&branch),
+        )?;
+        done.push(format!("environment merge: {branch} only"));
+    } else {
+        done.push(format!("environment merge: {branch} only (there)"));
+    }
+    // main's ruleset: made, or the one this tool made before updated in place
+    let want = setup::ruleset_payload(&branch);
+    let rs = gh.get(&format!("/repos/{repo}/rulesets"))?;
+    let mine = rs
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .find(|r| r["name"] == want["name"]);
+    match mine {
+        Some(r) => {
+            let id = r["id"].as_u64().unwrap_or(0);
+            gh.call(
+                reqwest::Method::PUT,
+                &format!("/repos/{repo}/rulesets/{id}"),
+                Some(&want),
+            )?;
+            done.push(format!("ruleset {id} (gate required on {branch})"));
+        }
+        None => {
+            gh.post(&format!("/repos/{repo}/rulesets"), &want)?;
+            done.push(format!("ruleset made (gate required on {branch})"));
+        }
+    }
+    Ok(done)
+}
+
+/// GitHub's sealed box for an Actions secret (libsodium crypto_box_seal)
+fn seal(public_b64: &str, plain: &[u8]) -> Result<String> {
+    use base64::Engine;
+    let raw = base64::engine::general_purpose::STANDARD.decode(public_b64)?;
+    let pk: [u8; 32] = raw
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow!("GitHub's public key is not 32 bytes"))?;
+    let sealed = crypto_box::PublicKey::from(pk)
+        .seal(&mut rand_core::OsRng, plain)
+        .map_err(|e| anyhow!("sealing the secret: {e}"))?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(sealed))
+}
+
+/// gate vendor <dir> [--workflows "a, b"] [--branch main]
+fn vendor() -> Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    let mut dir = None;
+    let mut wfs: Vec<String> = vec!["branch".into()];
+    let mut branch = "main".to_string();
+    let mut i = 2;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--workflows" => {
+                i += 1;
+                if let Some(w) = args.get(i) {
+                    wfs.extend(
+                        w.split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty()),
+                    );
+                }
+            }
+            "--branch" => {
+                i += 1;
+                if let Some(b) = args.get(i) {
+                    branch = b.clone();
+                }
+            }
+            a if !a.starts_with("--") => dir = Some(a.to_string()),
+            a => bail!("unknown {a}"),
+        }
+        i += 1;
+    }
+    let dir = dir.ok_or_else(|| {
+        anyhow!("usage: gate vendor <dir> [--workflows \"a, b\"] [--branch main]")
+    })?;
+    let wf = Path::new(&dir).join(".github/workflows");
+    std::fs::create_dir_all(&wf)?;
+    for (name, body) in [
+        ("gate.yml", vendor::GATE.to_string()),
+        ("branch.yml", vendor::branch_for(&branch)),
+        ("merge.yml", vendor::merge_for(&wfs, &branch)),
+    ] {
+        std::fs::write(wf.join(name), body)?;
+        println!("{}", wf.join(name).display());
+    }
+    Ok(())
 }
