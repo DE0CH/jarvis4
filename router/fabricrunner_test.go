@@ -99,13 +99,11 @@ func TestFabricEnvEndpoint(t *testing.T) {
 	if r.sourceImage(&Session{Runner: "fabric"}) != os.Getenv("FABRIC_SESSION_IMAGE") || r.sourceImage(&Session{Runner: "fly"}) != r.cfg.SessionImage {
 		t.Fatal("the source image by runner")
 	}
-	// offered on the New session page with a fabric hermit, and not without one
-	offered := false
+	// not offered on the New session page until a fabric session pauses and is destroyed as on the other runners
 	for _, g := range sessionRunners() {
-		offered = offered || g.ID == "fabric"
-	}
-	if !offered {
-		t.Fatal("New session does not offer the fabric with a fabric hermit")
+		if g.ID == "fabric" {
+			t.Fatal("New session offers the fabric before its sessions can pause")
+		}
 	}
 	t.Setenv("FABRIC_HERMIT_URL", "")
 	if validRunner("fabric") || len(sessionRunners()) != 2 {
