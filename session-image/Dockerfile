@@ -4,7 +4,7 @@
 # then runs the base's entrypoint as its child (the keeper: rust/machine/src/keeper.rs). The base is pinned by digest in BASE below; moving it is a visible commit (the
 # images workflow's pin job writes it after building a changed session-image/base/, and builds this image from that
 # new base in the same run through --build-arg BASE).
-ARG BASE=ghcr.io/de0ch/jarvis4-session:base-sha-b34a98d668f1@sha256:441b426ad469dd05faabe289e2caeea03e44dcc2ec3266d1e5b8c2c225e2345e
+ARG BASE=ghcr.io/de0ch/jarvis4-session:base-sha-2a2c59ac6d5f@sha256:4f4295c1d77c187939aab98a6f6e4f1e52d6d4a08c262a9ef2286bb62c62fc74
 # jarvis-machine (rust/machine) and e2e-kernel (rust/e2e-kernel, the kernel e2e a session runs: docs/RUNBOOK.md); their
 # tests run in images.yml's test job, which this build waits for
 FROM rust:1.99.1-bookworm AS build
