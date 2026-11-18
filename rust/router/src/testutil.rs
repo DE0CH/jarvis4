@@ -15,7 +15,9 @@ use std::sync::Arc;
 pub struct TestDb {
     pub url: String,
     base: String,
-    schema: String,
+    pub schema: String,
+    /// every DB handed out (db), closed when the test ends: a router's LISTEN reconnects until its DB is closed
+    opened: std::sync::Mutex<Vec<Arc<std::sync::atomic::AtomicBool>>>,
 }
 
 impl TestDb {
@@ -29,13 +31,25 @@ impl TestDb {
         c.batch_execute(&format!("CREATE SCHEMA {schema}"))
             .unwrap_or_else(|e| panic!("{e}"));
         let sep = if base.contains('?') { '&' } else { '?' };
-        let url = format!("{base}{sep}options=-c%20search_path%3D{schema}");
-        TestDb { url, base, schema }
+        // the connections carry the schema's name, so the test's end can find every one of them
+        let url =
+            format!("{base}{sep}application_name={schema}&options=-c%20search_path%3D{schema}");
+        TestDb {
+            url,
+            base,
+            schema,
+            opened: Default::default(),
+        }
     }
 
     /// a migrated database on this schema
     pub fn db(&self) -> DB {
-        DB::open(&self.url).unwrap_or_else(|e| panic!("{e:#}"))
+        let db = DB::open(&self.url).unwrap_or_else(|e| panic!("{e:#}"));
+        self.opened
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(db.done.clone());
+        db
     }
 }
 
@@ -45,9 +59,18 @@ impl Default for TestDb {
     }
 }
 
+/// A test's database ends with the test: its DBs are closed and every connection to its schema is ended (routers'
+/// threads outlive the test and hold their pools and LISTEN, which ran CI's Postgres out of connections).
 impl Drop for TestDb {
     fn drop(&mut self) {
+        for d in self.opened.lock().unwrap_or_else(|e| e.into_inner()).iter() {
+            d.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
         if let Ok(mut c) = crate::db::connect_one(&self.base) {
+            let _ = c.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = $1",
+                &[&self.schema],
+            );
             let _ = c.batch_execute(&format!("DROP SCHEMA {} CASCADE", self.schema));
         }
     }
