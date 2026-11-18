@@ -184,6 +184,16 @@ struct Git {
 impl Git {
     fn new(repo: &str) -> Result<Git> {
         let dir = tempfile::tempdir()?;
+        // from a session (a repo's first landing by hand): GATE_GIT_URL is the remote as the session's own ssh config
+        // names it (its deploy key), and no MERGE_DEPLOY_KEY is needed
+        if let Ok(url) = std::env::var("GATE_GIT_URL")
+            && !url.is_empty()
+            && std::env::var("MERGE_DEPLOY_KEY")
+                .unwrap_or_default()
+                .is_empty()
+        {
+            return Git::at(dir, "ssh".into(), url);
+        }
         let key = dir.path().join("merge-key");
         let mut k = env("MERGE_DEPLOY_KEY")?;
         if !k.ends_with('\n') {
