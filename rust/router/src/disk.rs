@@ -304,7 +304,7 @@ impl Router {
                 if let Err(e) = r.handover_resume(&id, "", false) {
                     return fail(e);
                 }
-                let msg = r.wait_start_outcome(&id, crate::sessionops::UPGRADE_START_WAIT);
+                let msg = r.wait_start_outcome(&id, crate::memory::UPGRADE_START_WAIT);
                 if !msg.is_empty() {
                     return fail(anyhow!("{msg}"));
                 }
