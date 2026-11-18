@@ -33,12 +33,16 @@ import (
 	"github.com/DE0CH/jarvis4/kernel/spawner"
 )
 
-// sessionRunners: what New session offers. Not the fabric (fabricrunner.go) until a session pauses and is destroyed on
-// it as on the others: on 2026-11-18 a fabric session's final snapshot could not reach the snapshot bucket (a network
-// error from the sandbox), so its destroy stopped at "snapshot failed". A request that names the fabric is still
-// taken (validRunner).
+// sessionRunners: what New session offers (the fabric only once the router has a fabric hermit: fabricrunner.go).
+// Hidden on 2026-11-18 when a fabric session's final snapshot could not reach the snapshot bucket (its sandbox had no
+// resolvers); offered again with sandboxd aviary-15f22fb9c7fd, checked on the fabric replica (aviary
+// testing/fabric-replica: egress by name, pause, freeze and thaw).
 func sessionRunners() []struct{ ID, Label string } {
-	return []struct{ ID, Label string }{{"aws", "AWS"}, {"fly", "Fly"}}
+	out := []struct{ ID, Label string }{{"aws", "AWS"}, {"fly", "Fly"}}
+	if fabricEnabled() {
+		out = append(out, struct{ ID, Label string }{"fabric", "Fabric (gVisor)"})
+	}
+	return out
 }
 
 func validRunner(id string) bool {
