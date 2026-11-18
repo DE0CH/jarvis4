@@ -174,9 +174,61 @@ pub fn session_file_access() -> Result<()> {
     }
     let groups: Vec<Gid> = s.groups.iter().map(|g| Gid::from_raw(*g)).collect();
     nix::unistd::setgroups(&groups).map_err(|e| anyhow!("setgroups: {e}"))?;
-    nix::unistd::setfsgid(Gid::from_raw(s.gid));
-    nix::unistd::setfsuid(Uid::from_raw(s.uid));
+    // setfsgid/setfsuid where the kernel has them; gVisor has neither (ENOSYS, measured with precopy-20261102.1): there
+    // the effective ids take the file identity instead, with the real and saved ids left root (the session still can't
+    // signal it) and the capabilities a file identity change drops dropped, the rest raised again, as setfsuid does
+    if !set_fs_ids(s.gid, s.uid) {
+        effective_file_identity(s.gid, s.uid)?;
+    }
     not_dumpable();
+    Ok(())
+}
+
+/// setfsgid then setfsuid (Linux answers the previous id and never fails; gVisor fails with ENOSYS, which nix reports
+/// as the id u32::MAX). Whether the kernel has them.
+fn set_fs_ids(gid: u32, uid: u32) -> bool {
+    let g = nix::unistd::setfsgid(Gid::from_raw(gid));
+    if g.as_raw() == u32::MAX && nix::errno::Errno::last() == nix::errno::Errno::ENOSYS {
+        return false;
+    }
+    nix::unistd::setfsuid(Uid::from_raw(uid));
+    true
+}
+
+/// The capabilities Linux drops from the effective set when the file uid leaves 0 (capabilities(7), "Effect of user
+/// ID changes on capabilities"): CAP_CHOWN, CAP_DAC_OVERRIDE, CAP_DAC_READ_SEARCH, CAP_FOWNER, CAP_FSETID,
+/// CAP_LINUX_IMMUTABLE, CAP_MKNOD (low word) and CAP_MAC_OVERRIDE (bit 32). The effective set (low, high words) a
+/// file identity of user claude leaves from `permitted`.
+#[must_use]
+pub fn file_identity_caps(permitted: [u32; 2]) -> [u32; 2] {
+    const FS_LOW: u32 = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 9) | (1 << 27);
+    const FS_HIGH: u32 = 1; // CAP_MAC_OVERRIDE, capability 32
+    [permitted[0] & !FS_LOW, permitted[1] & !FS_HIGH]
+}
+
+/// Where there is no setfsuid: effective gid and uid become user claude's (real and saved stay root's 0), then the
+/// effective capabilities are raised again to [`file_identity_caps`] of the permitted set (an effective uid change
+/// cleared them all).
+fn effective_file_identity(gid: u32, uid: u32) -> Result<()> {
+    use caps::{CapSet, Capability};
+    let root_g = Gid::from_raw(0);
+    let root_u = Uid::from_raw(0);
+    nix::unistd::setresgid(root_g, Gid::from_raw(gid), root_g)
+        .map_err(|e| anyhow!("setresgid: {e}"))?;
+    nix::unistd::setresuid(root_u, Uid::from_raw(uid), root_u)
+        .map_err(|e| anyhow!("setresuid: {e}"))?;
+    let permitted = caps::read(None, CapSet::Permitted).map_err(|e| anyhow!("capget: {e}"))?;
+    let mut words = [0u32; 2];
+    for c in &permitted {
+        let i = c.index();
+        words[usize::from(i / 32)] |= 1 << (i % 32);
+    }
+    let keep = file_identity_caps(words);
+    let effective: caps::CapsHashSet = permitted
+        .into_iter()
+        .filter(|c: &Capability| keep[usize::from(c.index() / 32)] & (1 << (c.index() % 32)) != 0)
+        .collect();
+    caps::set(None, CapSet::Effective, &effective).map_err(|e| anyhow!("capset: {e}"))?;
     Ok(())
 }
 

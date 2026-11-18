@@ -173,3 +173,18 @@ fn supervisor_log_push() {
     }
     crate::secrets::HELD.set(HashMap::new());
 }
+
+/// gVisor has no setfsuid (ENOSYS): the supervisors' file identity is then the effective one, with the capabilities
+/// Linux drops on a file identity change dropped (fabric boot check 2, 2026-11-18: both supervisors exited on
+/// "setfsgid: function not implemented" and the machine refused to start)
+#[test]
+fn a_file_identity_drops_the_file_capabilities_and_keeps_the_rest() {
+    use crate::session::file_identity_caps;
+    // a root sandbox's permitted set under gVisor (measured): ffffdfff, and the high word's CAP_MAC_OVERRIDE
+    assert_eq!(file_identity_caps([0xffff_dfff, 0x1]), [0xf7ff_dde0, 0x0]);
+    // Linux, every capability: what setfsuid leaves (measured: f7fffde0)
+    assert_eq!(file_identity_caps([0xffff_ffff, 0x0]), [0xf7ff_fde0, 0x0]);
+    // CAP_KILL (5), CAP_SETUID (7), CAP_SYS_ADMIN (21) stay
+    let kept = file_identity_caps([u32::MAX, u32::MAX])[0];
+    assert!(kept & (1 << 5) != 0 && kept & (1 << 7) != 0 && kept & (1 << 21) != 0);
+}
