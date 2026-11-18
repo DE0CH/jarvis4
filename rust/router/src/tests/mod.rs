@@ -2,6 +2,7 @@
 
 mod archive;
 mod batch2;
+mod content_drain;
 mod core_mq_sealed;
 mod db;
 mod devices;
