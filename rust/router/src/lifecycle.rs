@@ -414,7 +414,7 @@ pub fn aws_state_at(v: &AwsInstanceView, now: GoTime) -> GoTime {
     now
 }
 
-fn parse_at(s: &str) -> GoTime {
+pub fn parse_at(s: &str) -> GoTime {
     GoTime::parse(s).unwrap_or_default()
 }
 
@@ -901,7 +901,7 @@ impl Router {
     }
 
     /// a session's lifecycle log, its records' JSON in order
-    fn lc_lines(&self, session: &str) -> Vec<Vec<u8>> {
+    pub fn lc_lines(&self, session: &str) -> Vec<Vec<u8>> {
         let _g = self.lc.file.lock().unwrap_or_else(|e| e.into_inner());
         self.st.read_log(session, LOG_LIFECYCLE).unwrap_or_else(|e| {
             crate::logf!("[lifecycle] reading {session}: {e:#}");
