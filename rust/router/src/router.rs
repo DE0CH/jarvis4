@@ -141,6 +141,8 @@ pub struct Router {
     pub claude: OnceLock<Arc<crate::claudeaccounts::ClaudeAccounts>>,
     /// this router, for what it hands out a weak reference to (set by new)
     pub me: OnceLock<std::sync::Weak<Router>>,
+    /// nextcore.rs: the next core and the flip
+    pub next: crate::nextcore::NextCores,
     pub muxes: OnceLock<(Arc<Mux>, Arc<Mux>)>,
     /// http.rs: every app route's pattern (apicalls.rs classifies them)
     pub app_patterns: OnceLock<BTreeMap<String, bool>>,
@@ -183,6 +185,7 @@ impl Router {
             setup_seen: Mutex::new(BTreeMap::new()),
             claude: OnceLock::new(),
             me: OnceLock::new(),
+            next: crate::nextcore::NextCores::from_env(),
             muxes: OnceLock::new(),
             app_patterns: OnceLock::new(),
             sup: Default::default(),
