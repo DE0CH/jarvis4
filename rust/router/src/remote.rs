@@ -246,7 +246,7 @@ impl Router {
     /// harness, + url, token, webUrl (openclaw) | pairUrl (a Paseo harness) | webUrl (aviary, dsh) — only on a started
     /// session whose front end is up, else error}]}. harness=paseo: every session a Paseo daemon fronts (opencode and
     /// paseo-claude), what the Paseo app lists; harness=aviary: what hermit-jarvis lists (paused ones too, and one whose
-    /// resume waits for Deyao's approval, as paused).
+    /// resume waits for Deyao's approval, as paused; a new one waiting for approval as approval).
     pub fn remotes(self: &Arc<Self>, w: &mut W, req: &mut Req) {
         let harness = req.query("harness");
         if !remote_harness(&harness) && harness != "paseo" {
@@ -260,17 +260,15 @@ impl Router {
         let mut all: Vec<Session> = self.st.do_(|d| {
             d.sessions
                 .values()
-                // "approval" with no pause behind it: a new session Deyao has not approved yet, not a session. One that
-                // was paused and waits for its resume's approval (a restart onto a newer image) is listed, as paused: a
-                // session missing here is a destroyed one to hermit-jarvis, which then ends its conversation
-                .filter(|s| {
-                    matches(&s.harness)
-                        && s.state != "destroying"
-                        && (s.state != "approval" || s.paused_at.is_some())
-                })
+                // "approval" with no pause behind it: a new session waiting for Deyao's approval, listed as "approval"
+                // (hermit-jarvis proposes one for a new conversation in the chat and holds its first message until it is
+                // up: POST /api/remotes). One that was paused and waits for its resume's approval (a restart onto a newer
+                // image) is listed as paused. A session missing here is a destroyed (or denied) one to hermit-jarvis,
+                // which then ends its conversation
+                .filter(|s| matches(&s.harness) && s.state != "destroying")
                 .map(|s| {
                     let mut x = s.clone();
-                    if x.state == "approval" {
+                    if x.state == "approval" && x.paused_at.is_some() {
                         x.state = "paused".into();
                     }
                     x

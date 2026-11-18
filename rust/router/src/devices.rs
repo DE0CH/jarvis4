@@ -291,6 +291,99 @@ impl Router {
         false
     }
 
+    /// who called a devices route, for the Inbox (require_deyao_or_device admitted it): hermit-jarvis is the chat (Deyao
+    /// typing there), any other service token a paired app, an email login Deyao on the web
+    pub fn device_caller(&self, req: &Req) -> crate::inbox::Caller {
+        let tok = req.header("Cf-Access-Jwt-Assertion");
+        let kind = |k: &str| crate::inbox::Caller {
+            kind: k.into(),
+            ..Default::default()
+        };
+        for aud in [
+            self.cfg.app_aud.clone(),
+            std::env::var("ACCESS_DEVICES_AUD").unwrap_or_default(),
+        ] {
+            if aud.is_empty() {
+                continue;
+            }
+            let Ok(c) = self.access().verify(&tok, &aud) else {
+                continue;
+            };
+            let h = std::env::var("HERMIT_CLIENT_ID").unwrap_or_default();
+            return if !c.email.is_empty() {
+                kind("web")
+            } else if !h.is_empty() && c.common_name == h {
+                kind("chat")
+            } else {
+                kind("device")
+            };
+        }
+        kind("web") // no Access in front (a test router, NoAccess)
+    }
+
+    /// POST /api/remotes {harness, requestId}: a new session of that harness with the defaults (what the app's New
+    /// session makes with nothing picked: the harness's stores, model and account, no prompt), proposed into the Inbox
+    /// as the app's New session is, so it starts only once Deyao approves it there. requestId makes it idempotent while
+    /// the session exists (a repeat answers the same session). → {id, state}; 400 for a harness that is not one of these
+    /// apps'.
+    pub fn propose_remote(self: &Arc<Self>, w: &mut W, req: &mut Req) {
+        #[derive(serde::Deserialize, Default)]
+        #[serde(default)]
+        struct In {
+            harness: String,
+            #[serde(rename = "requestId")]
+            request_id: String,
+        }
+        let b = req.read_body(1 << 16);
+        let i: In = match serde_json::Deserializer::from_slice(&b)
+            .into_iter::<serde_json::Value>()
+            .next()
+        {
+            Some(Ok(v)) => {
+                jarvis_go::unmarshal(jarvis_go::marshal(&v).as_bytes()).unwrap_or_default()
+            }
+            Some(Err(e)) => return write_json(w, 400, &json!({"error": format!("bad JSON: {e}")})),
+            None => return write_json(w, 400, &json!({"error": "bad JSON: EOF"})),
+        };
+        if !crate::remote::remote_harness(&i.harness) {
+            return write_json(
+                w,
+                400,
+                &json!({"error": "harness must be openclaw, opencode, paseo-claude, aviary or dsh"}),
+            );
+        }
+        if i.request_id.is_empty() || i.request_id.len() > 200 {
+            return write_json(w, 400, &json!({"error": "requestId: 1 to 200 characters"}));
+        }
+        let mut args = serde_json::Map::new();
+        args.insert("harness".into(), json!(i.harness));
+        let ns = crate::flows::NewSession {
+            harness: i.harness.clone(),
+            request_id: i.request_id.clone(),
+            origin: Some(crate::inbox::Origin {
+                caller: self.device_caller(req),
+                call: crate::inbox::ApiCall {
+                    method: "POST".into(),
+                    path: "/api/remotes".into(),
+                    args,
+                },
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let id = match self.create_session(ns) {
+            Err(e) => return crate::sessionapi::schedule_err(w, &e),
+            Ok(id) => id,
+        };
+        let state = self.st.do_(|d| {
+            d.sessions
+                .get(&id)
+                .map(|s| s.state.clone())
+                .unwrap_or_default()
+        });
+        write_json(w, 200, &json!({"id": id, "state": state}));
+    }
+
     /// Deyao's email, or no email and a paired device's client id, or hermit-jarvis's (HERMIT_CLIENT_ID: the aviary
     /// harness's hermit, a server in the services tenant; its own Access service token hermit-jarvis, named in
     /// k8s/cluster/router/router.yaml as the health probe's is; aviary/README.md "Its credential")
@@ -388,6 +481,11 @@ pub fn register_devices(reg: &mut Registrar) {
             reg.handle(pattern, h);
         };
     device_route(reg, "GET /api/remotes", |r, w, req| r.remotes(w, req));
+    // a new session of a harness with the defaults, proposed into the Inbox like the app's New session (hermit-jarvis,
+    // for a new conversation in the chat: Deyao, 2026-11-18); on the same path, so the same Access app
+    device_route(reg, "POST /api/remotes", |r, w, req| {
+        r.propose_remote(w, req)
+    });
     // whose machine signed a request for a service outside Jarvis 4 (machinesig.rs; hermit-jarvis)
     device_route(reg, "POST /api/machine-signatures/verify", |r, w, req| {
         r.verify_machine_signature(w, req)
