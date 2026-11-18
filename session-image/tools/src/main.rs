@@ -3,6 +3,7 @@
 //!   schedule-wakeup, schedule-cron  arm, list and cancel the session's router crons (schedule.rs); in an aviary
 //!                                   sandbox a wakeup is a magpie schedule instead (aviary.rs)
 //!   retire-session                  check the session can go, then ask the router to destroy it (retire.rs)
+//!   time-machine                    a fabric session waits frozen until a time or anything that arrives (timemachine.rs)
 //!   aviary-sandbox                  (as root) an aviary session's sandbox in aviary's own image (aviary_sandbox.rs)
 //! or `jarvis-tools <tool> …`. Every router call goes to `$JARVIS_URL/api/sessions/$SESSION_ID/…`: the machine's local
 //! proxy signs it with the machine key and forwards it to the router (/m/api).
@@ -11,6 +12,7 @@ mod aviary;
 mod aviary_sandbox;
 mod retire;
 mod schedule;
+mod timemachine;
 
 use serde_json::Value;
 use std::process::ExitCode;
@@ -78,13 +80,14 @@ fn main() -> ExitCode {
             "ERROR",
         ),
         "aviary-sandbox" => (aviary_sandbox::run(&args), aviary_sandbox::TAG),
+        "time-machine" => (timemachine::run(&args), "ERROR"),
         "retire-session" => (
             retire::run(args.first().is_some_and(|a| a == "--check")),
             "BLOCKED",
         ),
         _ => (
             Err(
-                "usage: jarvis-tools schedule-wakeup|schedule-cron|retire-session|aviary-sandbox …"
+                "usage: jarvis-tools schedule-wakeup|schedule-cron|retire-session|time-machine|aviary-sandbox …"
                     .into(),
             ),
             "ERROR",
