@@ -228,17 +228,29 @@ from the AMI). What this shows for the build:
 ### Lazy eviction (Deyao, 2026-11-18)
 
 A freeze does not go to S3 by itself. Freezing pauses the sandbox where it is (`runsc pause`: its memory stays on its
-host, nothing is written), and a thaw of a sandbox still there is `runsc resume` on that host, at once. The one rule:
-**a frozen sandbox's slot counts as free capacity, taken back by evicting it when the slot is needed.** Evicting is
+host, nothing is written), and a thaw of a sandbox still there is `runsc resume` on that host, at once. Evicting is
 the push below (record the paused sandbox into S3, delete it there): the sandbox stays `frozen`, now with no host, and
-its thaw is a placement and a restore. Everything else follows from the rule:
+its thaw is a placement and a restore. A frozen sandbox is evicted only when its slot is needed: by a new sandbox, or
+because evicting it lets an AWS host go (Deyao, 2026-11-18).
 
-- A new sandbox (a start, a thaw of an evicted one) with no free slot on any host evicts the frozen sandbox with the
-  most time left before its `until` (none = the most of all; ties: the oldest freeze), and takes its slot. Only when
-  no frozen sandbox is left does the scaler start another AWS host.
-- The scaler's scale-in sees a host holding only frozen sandboxes as empty: taking that host away needs its slots,
-  so its frozen sandboxes are evicted first. A drain (an AMI or gVisor upgrade) the same.
-- A wakeup, message or condition that comes for a frozen sandbox thaws it from wherever it is.
+**The algorithm** (pure functions in hermit's `fabric/packing.rs` and `fabric/placement.rs`, tested alone): a frozen
+sandbox takes no capacity. Its slot is free in every plan, and it never moves.
+
+- Packing is today's `plan_packing` over the running sandboxes only: the fewest hosts that hold them, moves only when
+  that uses strictly fewer hosts. A host left with no running sandbox in the target is empty, frozen ones or not,
+  and goes by the release rule.
+- Placement of a new sandbox (a start, a thaw of an evicted one): a host with a free slot, counting the frozen ones as
+  taken. If there is none, the host of the frozen sandbox with the most time left before its `until` (no `until` = the
+  most of all; ties: the oldest freeze), its slot taken. If there is no frozen sandbox either, the scaler launches a host.
+- What is evicted is derived from the plan, never chosen by a rule of its own. On each host the target's running
+  sandboxes plus its frozen ones may not exceed its slots; the frozen ones over that are evicted, most time left
+  first. A released host's frozen sandboxes are all evicted.
+
+**The effects** (the scaler's pass, as for migrations): it carries out the plan's evictions, moves, placements and
+terminations. Their order is not logic of its own, it follows from capacity: sandboxd refuses a sandbox its memory
+can't hold, so a move or start into a slot a frozen sandbox still holds waits for the next pass, after that eviction.
+A host is terminated only once it holds no sandbox at all, so its evictions come first. A wakeup, message or condition
+that comes for a frozen sandbox thaws it from wherever it is.
 
 ### How a frozen image travels (engineering design, 2026-11-17)
 
