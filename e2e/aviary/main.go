@@ -16,7 +16,8 @@
 //
 //   - Claude Code's model calls reach the stand-in model through the machine's gateway: a Bash tool call that writes
 //     ~/artifacts/e2e-aviary.txt and arms a wakeup with the session's schedule-wakeup, then an answer naming the
-//     tool's output (so the command ran in the sandbox);
+//     tool's output (so the command ran in the sandbox); the tool also leaves jarvis-request waiting 45 s on a
+//     request no one decides, and the conversation is marked as needing Deyao meanwhile (magpie's waitingOnPerson);
 //
 //   - the wakeup arrives as a later turn: in an aviary sandbox schedule-wakeup arms a magpie schedule, whose fire is
 //     the turn (<scheduled-message …>), answered by the stand-in;
@@ -277,7 +278,10 @@ func reply(req map[string]any) (kind string, content []map[string]any) {
 		}
 		cmd := "echo E2E-OUT-" + token + " | tee ~/artifacts/e2e-aviary.txt && echo E2E-CTX=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-none}. && " +
 			"echo E2E-ROOT=$(test -e /opt/image-setup/Dockerfile && ! test -e /usr/local/bin/harness-aviary.sh && command -v jarvis > /dev/null && echo aviary || echo machine). && " +
-			"schedule-wakeup --name e2e 60s 'E2E-WAKEUP " + token + "'"
+			"schedule-wakeup --name e2e 60s 'E2E-WAKEUP " + token + "' && " +
+			// a command that waits on Deyao (an Inbox request no one decides), 45 s in the background: the conversation
+			// needs him meanwhile (Deyao, 2026-11-18: the chat's yellow mark)
+			"(setsid jarvis-request wait e2e-person-wait-" + token + " --timeout 45 > /dev/null 2>&1 &)"
 		return "tool", []map[string]any{{"type": "tool_use", "id": "toolu_e2e_" + token, "name": "Bash",
 			"input": map[string]any{"command": cmd, "description": "e2e: write the marker and arm the wakeup"}}}
 	}
@@ -475,6 +479,13 @@ func magpieContextWindow() int64 {
 	}
 	walk(list)
 	return window
+}
+
+// magpieWaiting: a conversation of magpie's admin list waits on the person (a command in its sandbox waits on him).
+func magpieWaiting() bool {
+	hdr := []string{"Authorization", "Bearer " + os.Getenv("E2E_MAGPIE_ADMIN"), "Aviary-Admin", "e2e@example.com"}
+	code, b := call("GET", os.Getenv("E2E_MAGPIE")+"/v1/admin/conversations", nil, hdr...)
+	return code == 200 && strings.Contains(string(b), `"waitingOnPerson":true`)
 }
 
 func magpieText() string {
@@ -788,6 +799,11 @@ func main() {
 		t := magpieText()
 		return strings.Contains(t, "E2E-DONE "+token) && strings.Contains(t, "E2E-OUT-"+token)
 	})
+	step("a command waiting on Deyao (jarvis-request) marks the conversation as needing him, until it ends")
+	// the supervisor's person wait → its heartbeat's `waiting` → magpie's waitingOnPerson → pigeon's needs_input
+	// (Deyao, 2026-11-18: what waits on him shows yellow in the chat)
+	waitFor("magpie's waitingOnPerson while jarvis-request waits", 40*time.Second, func() bool { return magpieWaiting() })
+	waitFor("magpie's waitingOnPerson cleared once jarvis-request ended", 90*time.Second, func() bool { return !magpieWaiting() })
 	step("the screenshot is an image of the first message, as Deyao's own in the chat: never a path in its text")
 	models.Lock()
 	sawImage := models.image
