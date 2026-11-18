@@ -141,4 +141,5 @@ spec:
         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis4-router } }
         - namespaceSelector: { matchLabels: { jarvis2/ns: kernel } }
         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: services } }
+        - podSelector: { matchLabels: { app: fabric-console } }
       ports: [{ port: 8080, protocol: TCP }]

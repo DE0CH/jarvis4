@@ -1,0 +1,28 @@
+# A one-off: the console of a fabric sandbox (hermit's admin route GET /v1/admin/sandboxes/{id}/log), printed to the
+# logs, for a session whose machine failed at boot (Fabric boot check 2, 2026-11-18: the supervisor's secrets socket
+# was missing). Taken out again once read; podSelector app: fabric-console in hermit-in.
+apiVersion: batch/v1
+kind: Job
+metadata: { name: fabric-console-1, namespace: jarvis4-fabric }
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata: { labels: { app: fabric-console } }
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      containers:
+        - name: console
+          image: curlimages/curl:8.11.1
+          env:
+            - { name: ADMIN, valueFrom: { secretKeyRef: { name: hermit, key: HERMIT_ACCEPT_ADMIN } } }
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              sleep 20
+              H=http://hermit.jarvis4-fabric.svc.cluster.local; S=01a1ec61-195a-72c2-862f-0189ca8a3638
+              curl -s -H "aviary-protocol: hermit-core=1" -H "authorization: Bearer $ADMIN" -H 'aviary-admin: jarvis4@deyaochen.com' "$H/v1/admin/sandboxes/$S/log" | sed 's/\\n/\n/g' | tail -150
+          resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { memory: 64Mi } }
+          securityContext: { runAsNonRoot: true, runAsUser: 100, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
