@@ -729,7 +729,7 @@ impl LoginHub {
             Ok(r) => r,
         };
         let status = resp.status().as_u16();
-        let b = crate::util::read_limited(resp, 1 << 20);
+        let b = crate::util::read_limited(resp, 1 << 20).unwrap_or_default();
         if status == 401 || status == 403 {
             return fail(409, &format!("Claude refused the access token (HTTP {status}): Re-login"), true);
         }
@@ -940,7 +940,7 @@ pub fn fetch_profile(access_token: &str) -> Result<OauthProfile> {
         .header("User-Agent", "jarvis2-router/1")
         .send()?;
     let status = resp.status().as_u16();
-    let b = crate::util::read_limited(resp, 1 << 20);
+    let b = crate::util::read_limited(resp, 1 << 20).unwrap_or_default();
     if status != 200 {
         return Err(anyhow!("profile: HTTP {status}"));
     }
@@ -961,7 +961,7 @@ pub fn token_call(body: &Value) -> std::result::Result<Map<String, Value>, (anyh
         .send()
         .map_err(|e| (anyhow::Error::from(e), false))?;
     let status = resp.status().as_u16();
-    let out = crate::util::read_limited(resp, 1 << 20);
+    let out = crate::util::read_limited(resp, 1 << 20).unwrap_or_default();
     let j: Map<String, Value> = serde_json::from_slice(&out).unwrap_or_default();
     let has_token = j.get("access_token").is_some_and(|v| !v.is_null());
     if status != 200 || !has_token {

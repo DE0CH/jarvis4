@@ -291,7 +291,7 @@ impl StorageBox {
         if st != 207 && st >= 300 {
             return Err(anyhow!("PROPFIND {dir}: HTTP {st}"));
         }
-        let body = crate::util::read_limited(resp, 16 << 20);
+        let body = crate::util::read_limited(resp, 16 << 20)?;
         let all = parse_multistatus(&body).map_err(|e| anyhow!("PROPFIND {dir}: {e:#}"))?;
         let me = format!("/{}/", dir.trim_matches('/'));
         Ok(Some(

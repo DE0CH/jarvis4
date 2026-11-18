@@ -133,7 +133,7 @@ fn dav_status(b: &StorageBox, method: &str, p: &str, hdr: &[(&'static str, &str)
     let h: BTreeMap<&str, String> = hdr.iter().map(|(k, v)| (*k, v.to_string())).collect();
     let resp = b.do_(method, p, None, &h)?;
     let st = resp.status().as_u16();
-    let body = if method == "GET" { crate::util::read_limited(resp, CONTENT_MAX_FILE as u64 + 1) } else { vec![] };
+    let body = if method == "GET" { crate::util::read_limited(resp, CONTENT_MAX_FILE as u64 + 1)? } else { vec![] };
     Ok((st, body))
 }
 

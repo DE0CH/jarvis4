@@ -110,7 +110,7 @@ pub fn cf_call(method: &str, path: &str, body: Option<&Value>) -> Result<Value> 
         errors: Option<Box<serde_json::value::RawValue>>,
         result: Value,
     }
-    let j: J = serde_json::from_slice(&crate::util::read_limited(resp, 1 << 20)).unwrap_or_default();
+    let j: J = serde_json::from_slice(&crate::util::read_limited(resp, 1 << 20).unwrap_or_default()).unwrap_or_default();
     if !j.success {
         let e = j.errors.map(|e| e.get().to_string()).unwrap_or_default();
         return Err(anyhow!(

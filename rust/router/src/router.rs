@@ -58,13 +58,20 @@ pub fn env(k: &str, def: &str) -> String {
     }
 }
 
-/// a lifecycle action holds the session already (409)
+/// a lifecycle action holds the session already (409); the detail follows the message (Go's fmt.Errorf("%w: …",
+/// errBusy, …)), "" for none
 #[derive(Debug)]
-pub struct Busy;
+pub struct Busy(pub String);
+
+pub const BUSY_MSG: &str = "the session is in the middle of another action";
 
 impl std::fmt::Display for Busy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("the session is in the middle of another action")
+        if self.0.is_empty() {
+            f.write_str(BUSY_MSG)
+        } else {
+            write!(f, "{BUSY_MSG}: {}", self.0)
+        }
     }
 }
 

@@ -167,7 +167,7 @@ impl DiscordClient {
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or_default()
                 .to_string();
-            let b = crate::util::read_limited(resp, 32 << 20);
+            let b = crate::util::read_limited(resp, 32 << 20).unwrap_or_default();
             match status {
                 429 if i < 3 => {
                     let wait = retry_after(&b, &ra);
