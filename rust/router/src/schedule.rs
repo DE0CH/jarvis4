@@ -45,12 +45,14 @@ fn re(s: &str) -> regex::Regex {
     regex::Regex::new(s).unwrap_or_else(|_| unreachable!())
 }
 
-pub(crate) static SCHEDULE_NAME_RE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"^[A-Za-z0-9_-]{1,40}$"));
+pub(crate) static SCHEDULE_NAME_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| re(r"^[A-Za-z0-9_-]{1,40}$"));
 /// Go's \s: ASCII whitespace only
 static SPACE_RE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"[\t\n\x0C\r ]+"));
 static HHMM_RE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"^(\d{1,2}):(\d{2})$"));
 /// the machine's refusal of a cron run it already has (rust/machine/src/deliver.rs replay_guard)
-static SESSION_HAS_RUN_RE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"cron run (\d+) was already delivered \(last (\d+)\)"));
+static SESSION_HAS_RUN_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| re(r"cron run (\d+) was already delivered \(last (\d+)\)"));
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -139,7 +141,11 @@ pub struct Schedule {
 
 impl Schedule {
     pub fn empty(&self) -> bool {
-        self.wakeups.is_empty() && self.crons.is_empty() && self.resume_prompt.is_empty() && self.watches.is_empty() && self.chat.is_none()
+        self.wakeups.is_empty()
+            && self.crons.is_empty()
+            && self.resume_prompt.is_empty()
+            && self.watches.is_empty()
+            && self.chat.is_none()
     }
 }
 
@@ -164,7 +170,11 @@ pub struct Skip(pub String);
 
 impl std::fmt::Display for Skip {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.0.is_empty() { f.write_str("busy") } else { write!(f, "busy: {}", self.0) }
+        if self.0.is_empty() {
+            f.write_str("busy")
+        } else {
+            write!(f, "busy: {}", self.0)
+        }
     }
 }
 
@@ -233,12 +243,17 @@ fn parse_time_text(s: &str) -> Option<i64> {
     // "2006-01-02T15:04Z07:00"
     if let Ok(t) = time::OffsetDateTime::parse(
         s,
-        format_description!("[year]-[month]-[day]T[hour]:[minute][offset_hour sign:mandatory]:[offset_minute]"),
+        format_description!(
+            "[year]-[month]-[day]T[hour]:[minute][offset_hour sign:mandatory]:[offset_minute]"
+        ),
     ) {
         return Some(ms(t));
     }
     if let Some(base) = s.strip_suffix('Z')
-        && let Ok(t) = time::PrimitiveDateTime::parse(base, format_description!("[year]-[month]-[day]T[hour]:[minute]"))
+        && let Ok(t) = time::PrimitiveDateTime::parse(
+            base,
+            format_description!("[year]-[month]-[day]T[hour]:[minute]"),
+        )
     {
         return Some(ms(t.assume_utc()));
     }
@@ -284,10 +299,14 @@ pub fn normalize_wakeup(b: &Map<String, Value>, now: GoTime) -> Result<Wakeup> {
     let name = wakeup_name(b.get("name"))?;
     let prompt = clean_prompt(b.get("prompt"));
     if prompt.is_empty() {
-        return Err(bad("prompt is required — what the session should do when it wakes"));
+        return Err(bad(
+            "prompt is required — what the session should do when it wakes",
+        ));
     }
     if prompt.chars().count() > SCHEDULE_MAX_PROMPT {
-        return Err(bad(format!("prompt longer than {SCHEDULE_MAX_PROMPT} characters")));
+        return Err(bad(format!(
+            "prompt longer than {SCHEDULE_MAX_PROMPT} characters"
+        )));
     }
     let ms = now_ms(now);
     let mut at = if let Some(v) = present(b, "delaySeconds") {
@@ -306,17 +325,29 @@ pub fn normalize_wakeup(b: &Map<String, Value>, now: GoTime) -> Result<Wakeup> {
     if at - ms > WAKEUP_MAX_DELAY_MS {
         return Err(bad("the wakeup is more than 400 days away"));
     }
-    Ok(Wakeup { name, at, prompt, armed_at: ms, signed: None })
+    Ok(Wakeup {
+        name,
+        at,
+        prompt,
+        armed_at: ms,
+        signed: None,
+    })
 }
 
 /// the next instant after now whose wall-clock time in tz is hh:mm
 pub fn next_time_of_day(hh: i8, mm: i8, tz: &jiff::tz::TimeZone, now: GoTime) -> i64 {
     let ms = now_ms(now);
-    let Ok(ts) = jiff::Timestamp::from_millisecond(ms) else { return ms + 86_400_000 };
+    let Ok(ts) = jiff::Timestamp::from_millisecond(ms) else {
+        return ms + 86_400_000;
+    };
     let local = ts.to_zoned(tz.clone());
     for d in -1..=2i64 {
-        let Ok(day) = local.date().checked_add(jiff::Span::new().days(d)) else { continue };
-        let Ok(t) = day.at(hh, mm, 0, 0).to_zoned(tz.clone()) else { continue };
+        let Ok(day) = local.date().checked_add(jiff::Span::new().days(d)) else {
+            continue;
+        };
+        let Ok(t) = day.at(hh, mm, 0, 0).to_zoned(tz.clone()) else {
+            continue;
+        };
         let t = t.timestamp().as_millisecond();
         if t > ms {
             return t;
@@ -336,12 +367,20 @@ pub fn normalize_cron(b: &Map<String, Value>, now: GoTime) -> Result<Cron> {
     }
     let prompt = clean_prompt(b.get("prompt"));
     if prompt.is_empty() {
-        return Err(bad("prompt is required — what the session should do each time"));
+        return Err(bad(
+            "prompt is required — what the session should do each time",
+        ));
     }
     if prompt.chars().count() > SCHEDULE_MAX_PROMPT {
-        return Err(bad(format!("prompt longer than {SCHEDULE_MAX_PROMPT} characters")));
+        return Err(bad(format!(
+            "prompt longer than {SCHEDULE_MAX_PROMPT} characters"
+        )));
     }
-    let every_err = || bad(format!("everySeconds must be {CRON_MIN_EVERY}–{CRON_MAX_EVERY}"));
+    let every_err = || {
+        bad(format!(
+            "everySeconds must be {CRON_MIN_EVERY}–{CRON_MAX_EVERY}"
+        ))
+    };
     let mut every = CRON_DEFAULT_EVERY;
     if let Some(v) = present(b, "everySeconds") {
         every = number(v).ok_or_else(every_err)?.round() as i64;
@@ -357,7 +396,12 @@ pub fn normalize_cron(b: &Map<String, Value>, now: GoTime) -> Result<Cron> {
         .to_string();
     let tz = match jiff::tz::TimeZone::get(&tz_name) {
         Ok(t) if tz_name != "Local" => t,
-        _ => return Err(bad(format!("unknown time zone {}", jarvis_go::fmt::go_quote(&tz_name)))),
+        _ => {
+            return Err(bad(format!(
+                "unknown time zone {}",
+                jarvis_go::fmt::go_quote(&tz_name)
+            )));
+        }
     };
     let ms = now_ms(now);
     let next = if let Some(t) = present(b, "time") {
@@ -365,7 +409,9 @@ pub fn normalize_cron(b: &Map<String, Value>, now: GoTime) -> Result<Cron> {
             Value::String(s) => s.trim().to_string(),
             o => jarvis_go::fmt::go_sprint(o).trim().to_string(),
         };
-        let m = HHMM_RE.captures(&txt).ok_or_else(|| bad("time must be HH:MM"))?;
+        let m = HHMM_RE
+            .captures(&txt)
+            .ok_or_else(|| bad("time must be HH:MM"))?;
         let hh: i8 = m[1].parse().unwrap_or(99);
         let mm: i8 = m[2].parse().unwrap_or(99);
         if hh > 23 || mm > 59 {
@@ -378,7 +424,8 @@ pub fn normalize_cron(b: &Map<String, Value>, now: GoTime) -> Result<Cron> {
             _ => return Err(bad("delaySeconds must be a positive number")),
         }
     } else if let Some(v) = present(b, "at") {
-        let mut next = parse_time(v).ok_or_else(|| bad("at must be an ISO-8601 time or ms epoch"))?;
+        let mut next =
+            parse_time(v).ok_or_else(|| bad("at must be an ISO-8601 time or ms epoch"))?;
         if next <= ms && every > 0 {
             // a first firing already past: the next slot of its period
             next += ((ms - next) / (every * 1000) + 1) * every * 1000;
@@ -387,9 +434,19 @@ pub fn normalize_cron(b: &Map<String, Value>, now: GoTime) -> Result<Cron> {
     } else {
         ms + every * 1000
     };
-    let mut c = Cron { name, prompt, every, tz: tz_name, next_at: next, armed_at: ms, ..Default::default() };
+    let mut c = Cron {
+        name,
+        prompt,
+        every,
+        tz: tz_name,
+        next_at: next,
+        armed_at: ms,
+        ..Default::default()
+    };
     if let Some(v) = present(b, "until").filter(|v| v.as_str() != Some("")) {
-        let u = parse_time(v).filter(|u| *u > next).ok_or_else(|| bad("until must be a time after the first firing"))?;
+        let u = parse_time(v)
+            .filter(|u| *u > next)
+            .ok_or_else(|| bad("until must be a time after the first firing"))?;
         if u - ms > CRON_MAX_UNTIL_MS {
             return Err(bad("until is more than 400 days away"));
         }
@@ -414,7 +471,10 @@ pub fn advance_cron(c: &Cron, now: GoTime) -> Option<i64> {
 // ---- views (lib/wakeup.js view, lib/cron.js view) ----------------------------------------------------------
 
 pub fn iso(ms: i64) -> String {
-    let t = GoTime::from_unix_nanos(ms as i128 * 1_000_000).utc().0.unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
+    let t = GoTime::from_unix_nanos(ms as i128 * 1_000_000)
+        .utc()
+        .0
+        .unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
     format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
         t.year(),
@@ -449,13 +509,17 @@ pub fn cron_view(c: &Cron) -> Value {
 }
 
 pub fn sorted_wakeups(s: Option<&Schedule>) -> Vec<Wakeup> {
-    let mut out: Vec<Wakeup> = s.map(|s| s.wakeups.values().cloned().collect()).unwrap_or_default();
+    let mut out: Vec<Wakeup> = s
+        .map(|s| s.wakeups.values().cloned().collect())
+        .unwrap_or_default();
     out.sort_by_key(|w| w.at);
     out
 }
 
 pub fn sorted_crons(s: Option<&Schedule>) -> Vec<Cron> {
-    let mut out: Vec<Cron> = s.map(|s| s.crons.values().cloned().collect()).unwrap_or_default();
+    let mut out: Vec<Cron> = s
+        .map(|s| s.crons.values().cloned().collect())
+        .unwrap_or_default();
     out.sort_by_key(|c| c.next_at);
     out
 }
@@ -476,7 +540,10 @@ pub fn schedule_view(d: &Persisted, sid: &str, v: &mut Map<String, Value>) {
     }
     v.insert("wakeups".into(), json!(ws));
     v.insert("crons".into(), json!(cs));
-    v.insert("watches".into(), json!(crate::watches::watches_view_of(d, sid)));
+    v.insert(
+        "watches".into(),
+        json!(crate::watches::watches_view_of(d, sid)),
+    );
 }
 
 // ---- firing state ---------------------------------------------------------------------------------------------
@@ -503,7 +570,11 @@ pub fn sched_forget(key: &str) {
 /// the key is free and not backing off → mark it busy
 pub(crate) fn sched_claim(key: &str) -> bool {
     let mut g = sched_run();
-    if g.busy.contains(key) || g.attempts.get(key).is_some_and(|(_, at)| Instant::now() < *at) {
+    if g.busy.contains(key)
+        || g.attempts
+            .get(key)
+            .is_some_and(|(_, at)| Instant::now() < *at)
+    {
         return false;
     }
     g.busy.insert(key.to_string());
@@ -517,7 +588,10 @@ pub(crate) fn sched_release(key: &str) {
 /// record a failed attempt; true = it has failed SCHEDULE_MAX_ATTEMPT times
 pub(crate) fn sched_failed(key: &str) -> bool {
     let mut g = sched_run();
-    let a = g.attempts.entry(key.to_string()).or_insert((0, Instant::now()));
+    let a = g
+        .attempts
+        .entry(key.to_string())
+        .or_insert((0, Instant::now()));
     a.0 += 1;
     if a.0 >= SCHEDULE_MAX_ATTEMPT {
         g.attempts.remove(key);
@@ -532,7 +606,12 @@ pub(crate) fn sched_failed(key: &str) -> bool {
 /// over 60 s and the router gave up). Counting it keeps the router's run number the session's; otherwise every later
 /// occurrence sent that same number again and was refused (2026-11-18).
 pub fn session_has_run(err: Option<&anyhow::Error>, run: i64) -> Option<i64> {
-    let m = SESSION_HAS_RUN_RE.captures(&format!("{:#}", err?))?.get(2)?.as_str().parse::<i64>().ok()?;
+    let m = SESSION_HAS_RUN_RE
+        .captures(&format!("{:#}", err?))?
+        .get(2)?
+        .as_str()
+        .parse::<i64>()
+        .ok()?;
     (m >= run).then_some(m)
 }
 
@@ -546,28 +625,42 @@ pub static DELIVER_VOUCHED_HOOK: RwLock<Option<DeliverHook>> = RwLock::new(None)
 pub static RESUME_FAILED_HOOK: RwLock<Option<ResumeHook>> = RwLock::new(None);
 
 pub fn deliver_vouched_hook(r: &Arc<Router>, sid: &str, d: Delivery) -> Result<()> {
-    if let Some(h) = DELIVER_VOUCHED_HOOK.read().unwrap_or_else(|e| e.into_inner()).clone() {
+    if let Some(h) = DELIVER_VOUCHED_HOOK
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+    {
         return h(r, sid, d);
     }
     r.deliver_vouched(sid, d)
 }
 
 fn resume_failed_hook(r: &Arc<Router>, sid: &str) -> Result<()> {
-    if let Some(h) = RESUME_FAILED_HOOK.read().unwrap_or_else(|e| e.into_inner()).clone() {
+    if let Some(h) = RESUME_FAILED_HOOK
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+    {
         return h(r, sid);
     }
     r.resume(sid, false)
 }
 
 fn label_of(s: &crate::state::Session, sid: &str) -> String {
-    [&s.label, &s.title].into_iter().find(|x| !x.is_empty()).cloned().unwrap_or_else(|| sid.to_string())
+    [&s.label, &s.title]
+        .into_iter()
+        .find(|x| !x.is_empty())
+        .cloned()
+        .unwrap_or_else(|| sid.to_string())
 }
 
 impl Router {
     /// records the next fire of an aviary session's chat schedules (None: none armed) as hermit-jarvis reports it
     pub fn set_chat_schedule(&self, sid: &str, next_at: Option<GoTime>, now: GoTime) -> Result<()> {
         self.st.do_(|d| {
-            let Some(s) = d.sessions.get(sid) else { return Err(crate::sessionapi::no_session()) };
+            let Some(s) = d.sessions.get(sid) else {
+                return Err(crate::sessionapi::no_session());
+            };
             if s.harness != "aviary" {
                 return Err(BadReq("only an aviary session has chat schedules".into()).into());
             }
@@ -580,15 +673,27 @@ impl Router {
                         }
                     }
                 }
-                Some(t) => sched(d, sid).chat = Some(ChatSchedule { next_at: now_ms(t), reported_at: now_ms(now) }),
+                Some(t) => {
+                    sched(d, sid).chat = Some(ChatSchedule {
+                        next_at: now_ms(t),
+                        reported_at: now_ms(now),
+                    })
+                }
             }
             Ok(())
         })
     }
 
     /// the session, refused when it is gone or going (Jarvis 1 answers 409 "session is destroying")
-    pub fn live_session<'a>(&self, d: &'a Persisted, sid: &str) -> Result<&'a crate::state::Session> {
-        let s = d.sessions.get(sid).ok_or_else(crate::sessionapi::no_session)?;
+    pub fn live_session<'a>(
+        &self,
+        d: &'a Persisted,
+        sid: &str,
+    ) -> Result<&'a crate::state::Session> {
+        let s = d
+            .sessions
+            .get(sid)
+            .ok_or_else(crate::sessionapi::no_session)?;
         if s.state == "destroyed" || s.state == "destroying" {
             return Err(anyhow!("session is {}", s.state));
         }
@@ -627,7 +732,11 @@ impl Router {
                 return Err(crate::sessionapi::no_session());
             }
             let s = sched(d, sid);
-            let names: Vec<String> = if all { s.wakeups.keys().cloned().collect() } else { names.to_vec() };
+            let names: Vec<String> = if all {
+                s.wakeups.keys().cloned().collect()
+            } else {
+                names.to_vec()
+            };
             for n in &names {
                 s.wakeups.remove(n);
             }
@@ -684,13 +793,21 @@ impl Router {
     /// A kernel line's resume carries no one-time inputs (it spawns from the line's source), so its prompt is filed at
     /// once as a pending message (messages.rs): the app that sent it opens it for Face ID straight away, and the
     /// approved message goes in as soon as the session is up (Deyao, 2026-10-24: "The resume with message is broken").
-    pub fn resume_with_prompt(self: &Arc<Self>, sid: &str, upgrade: bool, prompt: &str) -> Result<()> {
+    pub fn resume_with_prompt(
+        self: &Arc<Self>,
+        sid: &str,
+        upgrade: bool,
+        prompt: &str,
+    ) -> Result<()> {
         if prompt.is_empty() {
             return self.resume(sid, upgrade);
         }
         let (before, kernel) = self.st.do_(|d| {
             (
-                d.schedules.get(sid).map(|s| s.resume_prompt.clone()).unwrap_or_default(),
+                d.schedules
+                    .get(sid)
+                    .map(|s| s.resume_prompt.clone())
+                    .unwrap_or_default(),
                 d.sessions.get(sid).is_some_and(|s| s.kernel.is_some()),
             )
         });
@@ -699,17 +816,25 @@ impl Router {
             let earlier = self.st.do_(|d| {
                 d.messages
                     .values()
-                    .filter(|x| x.session == sid && x.kind == "resume-prompt" && x.state == "pending")
-                    .next_back()
+                    .rfind(|x| {
+                        x.session == sid && x.kind == "resume-prompt" && x.state == "pending"
+                    })
                     .cloned()
             });
-            let dl = Delivery { kind: "resume-prompt".into(), text: prompt.into(), ..Default::default() };
+            let dl = Delivery {
+                kind: "resume-prompt".into(),
+                text: prompt.into(),
+                ..Default::default()
+            };
             let (text, from, note) = crate::messages::message_text(&dl).unwrap_or_default();
             let pm = self.hold_message(sid, &dl, &text, &from, &note, None)?;
             if let Err(e) = self.resume(sid, upgrade) {
                 let eid = earlier.as_ref().map(|x| x.id.clone()).unwrap_or_default();
                 self.st.do_(|d| {
-                    if d.messages.get(&pm.id).is_some_and(|x| x.state == "pending" && x.id != eid) {
+                    if d.messages
+                        .get(&pm.id)
+                        .is_some_and(|x| x.state == "pending" && x.id != eid)
+                    {
                         d.messages.remove(&pm.id);
                     }
                     if let Some(e) = &earlier
@@ -745,9 +870,16 @@ impl Router {
     pub fn pending_schedule(&self, sid: &str) -> Vec<String> {
         self.st.do_(|d| {
             let s = d.schedules.get(sid);
-            let mut out: Vec<String> = sorted_wakeups(s).iter().map(|w| format!("wakeup {}", w.name)).collect();
+            let mut out: Vec<String> = sorted_wakeups(s)
+                .iter()
+                .map(|w| format!("wakeup {}", w.name))
+                .collect();
             out.extend(sorted_crons(s).iter().map(|c| format!("cron {}", c.name)));
-            out.extend(crate::watches::sorted_watches(s).iter().map(|w| format!("watch {}", w.name)));
+            out.extend(
+                crate::watches::sorted_watches(s)
+                    .iter()
+                    .map(|w| format!("watch {}", w.name)),
+            );
             if s.is_some_and(|s| s.chat.is_some()) {
                 out.push("chat schedule (schedule-wakeup --list)".into());
             }
@@ -788,7 +920,9 @@ impl Router {
 
     /// one pass; non-reentrant, each item re-read inside its busy section before it fires
     pub fn schedule_tick(self: &Arc<Self>, now: GoTime) {
-        let Ok(_t) = SCHED_TICKING.try_lock() else { return };
+        let Ok(_t) = SCHED_TICKING.try_lock() else {
+            return;
+        };
         let ms = now_ms(now);
         // (sid, kind, name, armed_at, label)
         let items: Vec<(String, &'static str, String, i64, String)> = self.st.do_(|d| {
@@ -803,7 +937,9 @@ impl Router {
                     continue;
                 }
                 let label = label_of(&ss, &sid);
-                let Some(s) = d.schedules.get_mut(&sid) else { continue };
+                let Some(s) = d.schedules.get_mut(&sid) else {
+                    continue;
+                };
                 for w in s.wakeups.values().filter(|w| w.at <= ms) {
                     items.push((sid.clone(), "w", w.name.clone(), w.armed_at, label.clone()));
                 }
@@ -812,11 +948,16 @@ impl Router {
                 }
                 if !s.resume_prompt.is_empty() {
                     match ss.state.as_str() {
-                        "started" => items.push((sid.clone(), "resume", String::new(), 0, label.clone())),
+                        "started" => {
+                            items.push((sid.clone(), "resume", String::new(), 0, label.clone()))
+                        }
                         "paused" | "failed" => {
                             // the start that should have carried it failed or was rejected: it never turns up after
                             // some later, unrelated start
-                            crate::logf!("[resume-prompt] {sid}: the session is {}; prompt dropped", ss.state);
+                            crate::logf!(
+                                "[resume-prompt] {sid}: the session is {}; prompt dropped",
+                                ss.state
+                            );
                             s.resume_prompt.clear();
                         }
                         _ => {}
@@ -829,7 +970,11 @@ impl Router {
             items
         });
         for (sid, kind, name, armed_at, label) in items {
-            let key = if kind == "resume" { format!("{sid}/resume") } else { format!("{sid}/{kind}/{name}") };
+            let key = if kind == "resume" {
+                format!("{sid}/resume")
+            } else {
+                format!("{sid}/{kind}/{name}")
+            };
             if !sched_claim(&key) {
                 continue;
             }
@@ -846,7 +991,10 @@ impl Router {
                         format!("Recurring wakeup “{name}” for session “{label}”"),
                         r.fire_cron(&sid, &name, armed_at),
                     ),
-                    _ => (format!("The prompt for the resumed session “{label}”"), r.fire_resume_prompt(&sid)),
+                    _ => (
+                        format!("The prompt for the resumed session “{label}”"),
+                        r.fire_resume_prompt(&sid),
+                    ),
                 };
                 let Err(err) = res else {
                     sched_forget(&key);
@@ -867,7 +1015,10 @@ impl Router {
                     crate::logf!("[schedule] {key}: {err:#} — skipped at once");
                     sched_forget(&key);
                     r.drop_failed(&sid, kind, &name, armed_at, &err);
-                    r.dm(&format!("{what} could not be delivered: {}.{again}", crate::flows::FLY_LIMIT_TEXT));
+                    r.dm(&format!(
+                        "{what} could not be delivered: {}.{again}",
+                        crate::flows::FLY_LIMIT_TEXT
+                    ));
                     return;
                 }
                 let drop = sched_failed(&key);
@@ -888,7 +1039,9 @@ impl Router {
     fn drop_failed(&self, sid: &str, kind: &str, name: &str, armed_at: i64, cause: &anyhow::Error) {
         let now = GoTime::now();
         self.st.do_(|d| {
-            let Some(s) = d.schedules.get_mut(sid) else { return };
+            let Some(s) = d.schedules.get_mut(sid) else {
+                return;
+            };
             match kind {
                 "w" => {
                     if s.wakeups.get(name).is_some_and(|w| w.armed_at == armed_at) {
@@ -896,8 +1049,14 @@ impl Router {
                     }
                 }
                 "c" => {
-                    let Some(c) = s.crons.get_mut(name).filter(|c| c.armed_at == armed_at) else { return };
-                    c.missed = Some(Missed { at: now_ms(now), run: c.runs + 1, error: crate::flows::known_error(cause) });
+                    let Some(c) = s.crons.get_mut(name).filter(|c| c.armed_at == armed_at) else {
+                        return;
+                    };
+                    c.missed = Some(Missed {
+                        at: now_ms(now),
+                        run: c.runs + 1,
+                        error: crate::flows::known_error(cause),
+                    });
                     match advance_cron(c, now) {
                         Some(n) => c.next_at = n,
                         None => {
@@ -913,15 +1072,32 @@ impl Router {
     fn fire_wakeup(self: &Arc<Self>, sid: &str, name: &str, armed_at: i64) -> Result<()> {
         let w = self
             .st
-            .do_(|d| d.schedules.get(sid).and_then(|s| s.wakeups.get(name)).cloned())
+            .do_(|d| {
+                d.schedules
+                    .get(sid)
+                    .and_then(|s| s.wakeups.get(name))
+                    .cloned()
+            })
             .unwrap_or_default();
         if w.name.is_empty() || w.armed_at != armed_at || w.at > now_ms(GoTime::now()) {
             return Ok(()); // cancelled, replaced or already fired
         }
         // vouch.rs: the session's own signed request, attested by the core
-        let Some(signed) = w.signed.clone() else { return Err(anyhow!(crate::vouch::NOT_VOUCHED)) };
-        self.deliver_scheduled(sid, Delivery { kind: "wakeup".into(), request: Some(signed), ..Default::default() })?;
-        crate::logf!("[wakeup] {sid} {} delivered", jarvis_go::fmt::go_quote(name));
+        let Some(signed) = w.signed.clone() else {
+            return Err(anyhow!(crate::vouch::NOT_VOUCHED));
+        };
+        self.deliver_scheduled(
+            sid,
+            Delivery {
+                kind: "wakeup".into(),
+                request: Some(signed),
+                ..Default::default()
+            },
+        )?;
+        crate::logf!(
+            "[wakeup] {sid} {} delivered",
+            jarvis_go::fmt::go_quote(name)
+        );
         self.st.do_(|d| {
             // compare-and-clear: never one re-armed meanwhile
             if let Some(s) = d.schedules.get_mut(sid)
@@ -936,7 +1112,12 @@ impl Router {
     fn fire_cron(self: &Arc<Self>, sid: &str, name: &str, armed_at: i64) -> Result<()> {
         let c = self
             .st
-            .do_(|d| d.schedules.get(sid).and_then(|s| s.crons.get(name)).cloned())
+            .do_(|d| {
+                d.schedules
+                    .get(sid)
+                    .and_then(|s| s.crons.get(name))
+                    .cloned()
+            })
             .unwrap_or_default();
         if c.name.is_empty() || c.armed_at != armed_at || c.next_at > now_ms(GoTime::now()) {
             return Ok(());
@@ -946,7 +1127,12 @@ impl Router {
             // vouch.rs: the session's own signed request, attested by the core; no shell needed
             Some(signed) => self.deliver_scheduled(
                 sid,
-                Delivery { kind: "cron".into(), request: Some(signed), run, ..Default::default() },
+                Delivery {
+                    kind: "cron".into(),
+                    request: Some(signed),
+                    run,
+                    ..Default::default()
+                },
             ),
             None => Err(anyhow!(crate::vouch::NOT_VOUCHED)),
         };
@@ -969,12 +1155,21 @@ impl Router {
     /// than that after the last (rust/machine/src/deliver.rs replay_guard).
     fn cron_fired(&self, sid: &str, name: &str, armed_at: i64, run: i64, now: GoTime, early: bool) {
         self.st.do_(|d| {
-            let Some(s) = d.schedules.get_mut(sid) else { return };
+            let Some(s) = d.schedules.get_mut(sid) else {
+                return;
+            };
             let Some(cur) = s.crons.get_mut(name).filter(|c| c.armed_at == armed_at) else {
                 return; // cancelled or replaced meanwhile
             };
-            let after = if early { now.add(time::Duration::milliseconds(cur.every * 1000 / 2)) } else { now };
-            let (mut next, mut ok) = (Some(cur.next_at), cur.until.is_none_or(|u| cur.next_at <= u));
+            let after = if early {
+                now.add(time::Duration::milliseconds(cur.every * 1000 / 2))
+            } else {
+                now
+            };
+            let (mut next, mut ok) = (
+                Some(cur.next_at),
+                cur.until.is_none_or(|u| cur.next_at <= u),
+            );
             if cur.next_at <= now_ms(after) {
                 next = advance_cron(cur, after);
                 ok = next.is_some();
@@ -982,7 +1177,10 @@ impl Router {
             match next.filter(|_| ok) {
                 None => {
                     s.crons.remove(name);
-                    crate::logf!("[cron] {sid} {} reached its end", jarvis_go::fmt::go_quote(name));
+                    crate::logf!(
+                        "[cron] {sid} {} reached its end",
+                        jarvis_go::fmt::go_quote(name)
+                    );
                 }
                 Some(n) => {
                     cur.next_at = n;
@@ -1039,12 +1237,26 @@ impl Router {
         }
         let what = format!("Wakeup “{name}” of session “{label}”");
         let dl = if kind == "c" {
-            Delivery { kind: "cron".into(), request: Some(signed), run, ..Default::default() }
+            Delivery {
+                kind: "cron".into(),
+                request: Some(signed),
+                run,
+                ..Default::default()
+            }
         } else {
-            Delivery { kind: "wakeup".into(), request: Some(signed), ..Default::default() }
+            Delivery {
+                kind: "wakeup".into(),
+                request: Some(signed),
+                ..Default::default()
+            }
         };
         crate::logf!("[schedule] {key}: Run now");
-        let (r, sid, kind, name) = (self.clone(), sid.to_string(), kind.to_string(), name.to_string());
+        let (r, sid, kind, name) = (
+            self.clone(),
+            sid.to_string(),
+            kind.to_string(),
+            name.to_string(),
+        );
         std::thread::spawn(move || {
             let k2 = key.clone();
             let _rel = crate::flows::scopeguard(move || sched_release(&k2));
@@ -1059,7 +1271,9 @@ impl Router {
                     res = Ok(());
                 }
                 match res {
-                    Err(e) if is_skip(&e) && Instant::now() < deadline => std::thread::sleep(SCHEDULE_WAIT_STEP),
+                    Err(e) if is_skip(&e) && Instant::now() < deadline => {
+                        std::thread::sleep(SCHEDULE_WAIT_STEP)
+                    }
                     other => break other,
                 }
             };
@@ -1074,11 +1288,18 @@ impl Router {
                             .and_then(|s| s.crons.get_mut(&name))
                             .filter(|c| c.armed_at == armed_at)
                         {
-                            c.missed = Some(Missed { at: now_ms(GoTime::now()), run, error: ke.clone() });
+                            c.missed = Some(Missed {
+                                at: now_ms(GoTime::now()),
+                                run,
+                                error: ke.clone(),
+                            });
                         }
                     });
                 }
-                r.dm(&format!("Run now: {what} could not be delivered: {}", crate::flows::known_error(&e)));
+                r.dm(&format!(
+                    "Run now: {what} could not be delivered: {}",
+                    crate::flows::known_error(&e)
+                ));
                 return;
             }
             crate::logf!("[schedule] {key}: Run now delivered");
@@ -1114,13 +1335,26 @@ impl Router {
     }
 
     fn fire_resume_prompt(self: &Arc<Self>, sid: &str) -> Result<()> {
-        let text = self.st.do_(|d| d.schedules.get(sid).map(|s| s.resume_prompt.clone()).unwrap_or_default());
+        let text = self.st.do_(|d| {
+            d.schedules
+                .get(sid)
+                .map(|s| s.resume_prompt.clone())
+                .unwrap_or_default()
+        });
         if text.is_empty() {
             return Ok(());
         }
         // Deyao's own words: the machine takes them only as the phone signed them (messages.rs), so they wait in the
         // Inbox
-        deliver_vouched_hook(self, sid, Delivery { kind: "resume-prompt".into(), text: text.clone(), ..Default::default() })?;
+        deliver_vouched_hook(
+            self,
+            sid,
+            Delivery {
+                kind: "resume-prompt".into(),
+                text: text.clone(),
+                ..Default::default()
+            },
+        )?;
         crate::logf!("[resume-prompt] {sid} handed over");
         self.st.do_(|d| {
             if let Some(s) = d.schedules.get_mut(sid).filter(|s| s.resume_prompt == text) {
@@ -1137,8 +1371,16 @@ impl Router {
             match state.as_str() {
                 "started" => return Ok(()),
                 "" | "paused" | "failed" | "destroying" => {
-                    let e = self.st.do_(|d| d.sessions.get(sid).map(|s| s.error.clone()).unwrap_or_default());
-                    return Err(anyhow!("the session didn't start (state {} {e})", jarvis_go::fmt::go_quote(&state)));
+                    let e = self.st.do_(|d| {
+                        d.sessions
+                            .get(sid)
+                            .map(|s| s.error.clone())
+                            .unwrap_or_default()
+                    });
+                    return Err(anyhow!(
+                        "the session didn't start (state {} {e})",
+                        jarvis_go::fmt::go_quote(&state)
+                    ));
                 }
                 _ => {}
             }
@@ -1152,7 +1394,9 @@ impl Router {
     /// the session's state, and whether its cert says it holds a sensitive store
     pub fn session_state(&self, sid: &str) -> (String, bool) {
         self.st.read(|d| {
-            let Some(s) = d.sessions.get(sid) else { return (String::new(), false) };
+            let Some(s) = d.sessions.get(sid) else {
+                return (String::new(), false);
+            };
             #[derive(Deserialize, Default)]
             #[serde(default)]
             struct C {
@@ -1171,7 +1415,9 @@ impl Router {
 /// the same, for callers that hold the state lock (the autopilot's veto)
 pub fn schedule_due_within(p: &Persisted, sid: &str, d: Duration) -> bool {
     let lim = now_ms(GoTime::now()) + d.as_millis() as i64;
-    let Some(s) = p.schedules.get(sid) else { return false };
+    let Some(s) = p.schedules.get(sid) else {
+        return false;
+    };
     s.wakeups.values().any(|w| w.at < lim)
         || s.crons.values().any(|c| c.next_at < lim)
         || s.chat.as_ref().is_some_and(|c| c.next_at < lim)
@@ -1185,6 +1431,11 @@ pub fn json_map(b: &[u8]) -> Result<Map<String, Value>> {
     serde_json::from_slice(b).map_err(|e| bad(format!("bad JSON: {e}")))
 }
 
+/// auto-pause (autopilot.rs) leaves a session running when a wakeup or cron fires within 10 minutes
+pub fn auto_pause_veto(d: &Persisted, sid: &str) -> bool {
+    schedule_due_within(d, sid, Duration::from_secs(600))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1192,25 +1443,35 @@ mod tests {
     #[test]
     fn crons_and_times() {
         let now = GoTime::parse("2026-11-18T10:00:00Z").unwrap_or_default();
-        let b: Map<String, Value> = serde_json::from_str(r#"{"name":"daily","prompt":" go  on ","time":"09:30","tz":"Asia/Hong_Kong"}"#).unwrap_or_default();
+        let b: Map<String, Value> = serde_json::from_str(
+            r#"{"name":"daily","prompt":" go  on ","time":"09:30","tz":"Asia/Hong_Kong"}"#,
+        )
+        .unwrap_or_default();
         let c = normalize_cron(&b, now).unwrap_or_else(|e| panic!("{e:#}"));
         assert_eq!(c.prompt, "go on");
         assert_eq!(iso(c.next_at), "2026-11-19T01:30:00.000Z");
-        let b: Map<String, Value> = serde_json::from_str(r#"{"name":"x","prompt":"p","everySeconds":60}"#).unwrap_or_default();
+        let b: Map<String, Value> =
+            serde_json::from_str(r#"{"name":"x","prompt":"p","everySeconds":60}"#)
+                .unwrap_or_default();
         assert!(normalize_cron(&b, now).is_err());
         assert_eq!(parse_time(&json!("2026-11-18T10:00")), Some(1763460000000));
         assert_eq!(parse_time(&json!("2026-11-18")), Some(1763424000000));
-        let mut cr = Cron { next_at: 1000, every: 10, ..Default::default() };
-        assert_eq!(advance_cron(&cr, GoTime::from_unix_nanos(25_000 * 1_000_000)), Some(31_000));
+        let mut cr = Cron {
+            next_at: 1000,
+            every: 10,
+            ..Default::default()
+        };
+        assert_eq!(
+            advance_cron(&cr, GoTime::from_unix_nanos(25_000 * 1_000_000)),
+            Some(31_000)
+        );
         cr.until = Some(20_000);
-        assert_eq!(advance_cron(&cr, GoTime::from_unix_nanos(25_000 * 1_000_000)), None);
+        assert_eq!(
+            advance_cron(&cr, GoTime::from_unix_nanos(25_000 * 1_000_000)),
+            None
+        );
         let e = anyhow!("the machine refused or failed: cron run 4 was already delivered (last 5)");
         assert_eq!(session_has_run(Some(&e), 4), Some(5));
         assert_eq!(session_has_run(Some(&e), 6), None);
     }
-}
-
-/// auto-pause (autopilot.rs) leaves a session running when a wakeup or cron fires within 10 minutes
-pub fn auto_pause_veto(d: &Persisted, sid: &str) -> bool {
-    schedule_due_within(d, sid, Duration::from_secs(600))
 }

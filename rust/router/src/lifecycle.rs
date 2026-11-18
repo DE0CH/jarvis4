@@ -165,13 +165,16 @@ impl std::fmt::Display for FlyLogsRefused {
 
 impl std::error::Error for FlyLogsRefused {}
 
+/// a machine's Fly log lines after a token → them and the next token
+pub type FlyLogsFn = fn(&str, &str) -> Result<(Vec<FlyLogLine>, String)>;
+
 /// Fly and AWS, read only, and how often (tests swap them)
 #[derive(Clone)]
 pub struct LcHooks {
     pub poll_every: Duration,
     pub tail: Duration,
     pub fly_events: fn(&str) -> Result<Vec<FlyEvent>>,
-    pub fly_logs: fn(&str, &str) -> Result<(Vec<FlyLogLine>, String)>,
+    pub fly_logs: FlyLogsFn,
     /// a read token is there
     pub fly_on: fn() -> bool,
     /// an instance as EC2 describes it now (None: EC2 doesn't know it)
@@ -262,7 +265,8 @@ pub fn lc_fly_events(machine: &str) -> Result<Vec<FlyEvent>> {
 }
 
 /// Fly's logs API (tests point it at a fake)
-pub static FLY_LOGS_BASE: LazyLock<RwLock<String>> = LazyLock::new(|| RwLock::new("https://api.fly.io".into()));
+pub static FLY_LOGS_BASE: LazyLock<RwLock<String>> =
+    LazyLock::new(|| RwLock::new("https://api.fly.io".into()));
 
 /// the machine's log lines after next ("" = Fly's latest page), and the token for the next call
 pub fn lc_fly_logs(machine: &str, next: &str) -> Result<(Vec<FlyLogLine>, String)> {
@@ -282,7 +286,10 @@ pub fn lc_fly_logs(machine: &str, next: &str) -> Result<(Vec<FlyLogLine>, String
     if !token.starts_with("FlyV1 ") && !token.starts_with("Bearer ") {
         token = format!("Bearer {token}");
     }
-    let base = FLY_LOGS_BASE.read().unwrap_or_else(|e| e.into_inner()).clone();
+    let base = FLY_LOGS_BASE
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
     let resp = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()?
@@ -344,7 +351,11 @@ pub fn lc_fly_logs(machine: &str, next: &str) -> Result<(Vec<FlyLogLine>, String
             provider: d.attributes.meta.event.provider,
         })
         .collect();
-    let next = if out.meta.next_token.is_empty() { next.to_string() } else { out.meta.next_token };
+    let next = if out.meta.next_token.is_empty() {
+        next.to_string()
+    } else {
+        out.meta.next_token
+    };
     Ok((lines, next))
 }
 
@@ -396,7 +407,8 @@ pub fn aws_state_text(v: &AwsInstanceView) -> String {
 }
 
 static AWS_TRANSITION_AT_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"\((\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) GMT\)").unwrap_or_else(|_| unreachable!())
+    regex::Regex::new(r"\((\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) GMT\)")
+        .unwrap_or_else(|_| unreachable!())
 });
 
 /// when a stop or terminate began, if EC2 says (its transition reason carries the time it was asked for), else now
@@ -443,7 +455,12 @@ impl LcHandle {
     }
 
     pub fn note(&self, machine: &str, text: &str) {
-        self.add(LcEntry { at: now_text(), source: "router".into(), machine: machine.into(), text: text.into() });
+        self.add(LcEntry {
+            at: now_text(),
+            source: "router".into(),
+            machine: machine.into(),
+            text: text.into(),
+        });
     }
 
     pub fn add(&self, e: LcEntry) {
@@ -452,7 +469,14 @@ impl LcHandle {
             let g = self.run.lock();
             (g.op.session.clone(), g.op.id.clone())
         };
-        r.lc_write(&session, LcRec { op_id: id, entry: Some(e), ..Default::default() });
+        r.lc_write(
+            &session,
+            LcRec {
+                op_id: id,
+                entry: Some(e),
+                ..Default::default()
+            },
+        );
     }
 
     /// a machine the operation involves (its Fly events and logs are read from now on)
@@ -469,7 +493,13 @@ impl LcHandle {
             g.op.machines.push(m.to_string());
             g.op.clone()
         };
-        r.lc_write(&op.session, LcRec { op: Some(op.clone()), ..Default::default() });
+        r.lc_write(
+            &op.session,
+            LcRec {
+                op: Some(op.clone()),
+                ..Default::default()
+            },
+        );
     }
 
     /// the operation is over (state done or failed); its Fly tail goes on for the hooks' tail. A joined handle ends
@@ -492,7 +522,13 @@ impl LcHandle {
             op.ended = now_text();
             op
         };
-        r.lc_write(&op.session, LcRec { op: Some(op.clone()), ..Default::default() });
+        r.lc_write(
+            &op.session,
+            LcRec {
+                op: Some(op.clone()),
+                ..Default::default()
+            },
+        );
         let mut g = self.run.lock();
         g.op.state = op.state;
         g.op.error = op.error;
@@ -571,7 +607,11 @@ impl Router {
         if let Some(prev) = g.cur.get(session).cloned() {
             let (running, pjob, pkind) = {
                 let p = prev.lock();
-                (p.op.state == "running" && !p.ending, prev.job, p.op.kind.clone()) // one ending is over: nothing joins it
+                (
+                    p.op.state == "running" && !p.ending,
+                    prev.job,
+                    p.op.kind.clone(),
+                ) // one ending is over: nothing joins it
             };
             if running && pjob {
                 drop(g);
@@ -606,7 +646,13 @@ impl Router {
         g.cur.insert(session.to_string(), run.clone());
         drop(g);
         let op = run.lock().op.clone();
-        self.lc_write(session, LcRec { op: Some(op), ..Default::default() });
+        self.lc_write(
+            session,
+            LcRec {
+                op: Some(op),
+                ..Default::default()
+            },
+        );
         if let Some(r) = me.clone() {
             let run2 = run.clone();
             std::thread::spawn(move || r.lc_poll(&run2));
@@ -664,7 +710,13 @@ impl Router {
                     op.ended = now_text();
                     op.error = "the router restarted while it ran: its log ends here (the supervisor's own log goes on)".into();
                     let s = op.session.clone();
-                    self.lc_write(&s, LcRec { op: Some(op), ..Default::default() });
+                    self.lc_write(
+                        &s,
+                        LcRec {
+                            op: Some(op),
+                            ..Default::default()
+                        },
+                    );
                 }
             }
         }
@@ -717,7 +769,10 @@ impl Router {
                     if e.downcast_ref::<FlyLogsRefused>().is_some() {
                         run.lock().logs_off = true;
                         logs_off = true;
-                        h.note("", &format!("{e:#} for the router's read-only token: Fly's events only"));
+                        h.note(
+                            "",
+                            &format!("{e:#} for the router's read-only token: Fly's events only"),
+                        );
                     }
                     continue;
                 }
@@ -728,7 +783,9 @@ impl Router {
                 if l.provider == "app" {
                     continue; // the machine's own output: the supervisor pushes its lines itself
                 }
-                let Some(at) = GoTime::parse(&l.timestamp) else { continue };
+                let Some(at) = GoTime::parse(&l.timestamp) else {
+                    continue;
+                };
                 if at.before(&from) {
                     continue;
                 }
@@ -740,7 +797,11 @@ impl Router {
                 if !run.lock().seen.insert(k) {
                     continue;
                 }
-                let provider = if l.provider.is_empty() { "platform" } else { &l.provider };
+                let provider = if l.provider.is_empty() {
+                    "platform"
+                } else {
+                    &l.provider
+                };
                 h.add(LcEntry {
                     at: at.utc().rfc3339_nano(),
                     source: "fly".into(),
@@ -758,9 +819,9 @@ impl Router {
             return; // the next poll asks again (EC2 throttled, the network)
         };
         let h = LcHandle::new(Some(self.clone()), run.clone(), false);
-        let key = v
-            .as_ref()
-            .map_or("gone".to_string(), |v| format!("{}|{}|{}", v.state, v.reason_code, v.transition));
+        let key = v.as_ref().map_or("gone".to_string(), |v| {
+            format!("{}|{}|{}", v.state, v.reason_code, v.transition)
+        });
         let (last, seen) = {
             let mut g = run.lock();
             let last = g.aws_last.insert(m.to_string(), key.clone());
@@ -771,7 +832,12 @@ impl Router {
         }
         let now = GoTime::now();
         let add = |at: GoTime, text: String| {
-            h.add(LcEntry { at: at.utc().rfc3339_nano(), source: "aws".into(), machine: m.into(), text });
+            h.add(LcEntry {
+                at: at.utc().rfc3339_nano(),
+                source: "aws".into(),
+                machine: m.into(),
+                text,
+            });
         };
         let Some(v) = v else {
             if seen {
@@ -805,7 +871,9 @@ impl Router {
         loop {
             let end = Instant::now() + hooks.poll_every;
             while Instant::now() < end && !run.stop.load(Ordering::SeqCst) {
-                std::thread::sleep(Duration::from_millis(100).min(end.saturating_duration_since(Instant::now())));
+                std::thread::sleep(
+                    Duration::from_millis(100).min(end.saturating_duration_since(Instant::now())),
+                );
             }
             if run.stop.load(Ordering::SeqCst) {
                 self.lc_poll_once(run);
@@ -814,7 +882,11 @@ impl Router {
             self.lc_poll_once(run);
             let (ended, state, session) = {
                 let g = run.lock();
-                (parse_at(&g.op.ended), g.op.state.clone(), g.op.session.clone())
+                (
+                    parse_at(&g.op.ended),
+                    g.op.state.clone(),
+                    g.op.session.clone(),
+                )
             };
             let tail = time::Duration::try_from(hooks.tail).unwrap_or(time::Duration::ZERO);
             if state != "running" && (ended.since() > tail || self.draining()) {
@@ -834,7 +906,9 @@ impl Router {
         let mut order = vec![];
         let mut entries: BTreeMap<String, Vec<LcEntry>> = BTreeMap::new();
         for raw in self.lc_lines(session) {
-            let Ok(rec) = jarvis_go::unmarshal::<LcRec>(&raw) else { continue };
+            let Ok(rec) = jarvis_go::unmarshal::<LcRec>(&raw) else {
+                continue;
+            };
             if let Some(op) = rec.op {
                 if !by_id.contains_key(&op.id) {
                     order.push(op.id.clone());
@@ -845,12 +919,20 @@ impl Router {
                 entries.entry(rec.op_id).or_default().push(e);
             }
         }
-        let ops = order.into_iter().filter_map(|id| by_id.remove(&id)).collect();
+        let ops = order
+            .into_iter()
+            .filter_map(|id| by_id.remove(&id))
+            .collect();
         (ops, entries)
     }
 
     /// an operation with its entries and the supervisor lines of its machines, in time order
-    pub fn lc_op_log(&self, op: &LcOp, own: &[LcEntry], sup: &[crate::supervisorlog::SupLine]) -> Vec<LcEntry> {
+    pub fn lc_op_log(
+        &self,
+        op: &LcOp,
+        own: &[LcEntry],
+        sup: &[crate::supervisorlog::SupLine],
+    ) -> Vec<LcEntry> {
         let from = parse_at(&op.started).add(-LC_LEAD);
         let tail = time::Duration::try_from(self.lc.hooks().tail).unwrap_or(time::Duration::ZERO);
         let to = if op.state != "running" {
@@ -864,7 +946,12 @@ impl Router {
             if !op.machines.contains(&l.machine) || at.before(&from) || at.after(&to) {
                 continue;
             }
-            out.push(LcEntry { at: l.at.clone(), source: "supervisor".into(), machine: l.machine.clone(), text: l.text.clone() });
+            out.push(LcEntry {
+                at: l.at.clone(),
+                source: "supervisor".into(),
+                machine: l.machine.clone(),
+                text: l.text.clone(),
+            });
         }
         out.sort_by_key(|e| parse_at(&e.at)); // stable: same-time entries keep their order
         out
@@ -888,7 +975,10 @@ impl Router {
         let mut out = vec![];
         let ops = self.lc_all(sid);
         if !ops.is_empty() {
-            out.push(("jarvis2/lifecycle.json".into(), jarvis_go::fmt::marshal_indent1(&ops).into_bytes()));
+            out.push((
+                "jarvis2/lifecycle.json".into(),
+                jarvis_go::fmt::marshal_indent1(&ops).into_bytes(),
+            ));
         }
         if let Ok(lines) = self.st.read_log(sid, LOG_SUPERVISOR)
             && !lines.is_empty()
@@ -903,10 +993,12 @@ impl Router {
     /// a session's lifecycle log, its records' JSON in order
     pub fn lc_lines(&self, session: &str) -> Vec<Vec<u8>> {
         let _g = self.lc.file.lock().unwrap_or_else(|e| e.into_inner());
-        self.st.read_log(session, LOG_LIFECYCLE).unwrap_or_else(|e| {
-            crate::logf!("[lifecycle] reading {session}: {e:#}");
-            vec![]
-        })
+        self.st
+            .read_log(session, LOG_LIFECYCLE)
+            .unwrap_or_else(|e| {
+                crate::logf!("[lifecycle] reading {session}: {e:#}");
+                vec![]
+            })
     }
 
     /// a start's operation ends when the machine first reports (booted), fails, or LC_BOOT_MAX passes; a drain ends
@@ -917,17 +1009,30 @@ impl Router {
             let (booted, state, err_msg, cur) = self.st.do_(|d| {
                 d.sessions
                     .get(sid)
-                    .map(|s| (s.booted == machine, s.state.clone(), s.error.clone(), s.machine_id.clone()))
+                    .map(|s| {
+                        (
+                            s.booted == machine,
+                            s.state.clone(),
+                            s.error.clone(),
+                            s.machine_id.clone(),
+                        )
+                    })
                     .unwrap_or_default()
             });
             if booted {
-                op.note(machine, "the machine reported in: booted, the harness is starting");
+                op.note(
+                    machine,
+                    "the machine reported in: booted, the harness is starting",
+                );
                 op.end_joined("done", "");
                 return;
             }
             if cur != machine || state == "failed" {
                 let why = if err_msg.is_empty() {
-                    format!("the session moved on from machine {machine} ({})", crate::sessionapi::or_state(&state))
+                    format!(
+                        "the session moved on from machine {machine} ({})",
+                        crate::sessionapi::or_state(&state)
+                    )
                 } else {
                     err_msg
                 };
@@ -935,14 +1040,20 @@ impl Router {
                 return;
             }
             if self.draining() {
-                op.note(machine, "the router is updating: this log ends here; the supervisor's own log goes on");
+                op.note(
+                    machine,
+                    "the router is updating: this log ends here; the supervisor's own log goes on",
+                );
                 op.end_joined("done", "");
                 return;
             }
             if Instant::now() > end {
                 op.end_joined(
                     "failed",
-                    &format!("the machine hasn't reported in within {}", crate::flows::wait_text(LC_BOOT_MAX)),
+                    &format!(
+                        "the machine hasn't reported in within {}",
+                        crate::flows::wait_text(LC_BOOT_MAX)
+                    ),
                 );
                 return;
             }
@@ -997,10 +1108,17 @@ mod tests {
             source: "flyd".into(),
             timestamp: 0,
             request: Some(FlyEventRequest {
-                exit_event: Some(FlyExitEvent { exit_code: 137, oom_killed: true, requested_stop: false }),
+                exit_event: Some(FlyExitEvent {
+                    exit_code: 137,
+                    oom_killed: true,
+                    requested_stop: false,
+                }),
             }),
         };
-        assert_eq!(event_text(&e), "Fly: machine exit → stopped (flyd), exit code 137, killed for memory (OOM)");
+        assert_eq!(
+            event_text(&e),
+            "Fly: machine exit → stopped (flyd), exit code 137, killed for memory (OOM)"
+        );
         let v = AwsInstanceView {
             state: "stopping".into(),
             transition: "User initiated (2026-11-04 13:18:40 GMT)".into(),
@@ -1008,6 +1126,9 @@ mod tests {
         };
         let now = GoTime::parse("2026-11-04T13:20:00Z").unwrap_or_default();
         assert_eq!(aws_state_at(&v, now).rfc3339(), "2026-11-04T13:18:40Z");
-        assert_eq!(aws_state_text(&v), "AWS: instance stopping: User initiated (2026-11-04 13:18:40 GMT)");
+        assert_eq!(
+            aws_state_text(&v),
+            "AWS: instance stopping: User initiated (2026-11-04 13:18:40 GMT)"
+        );
     }
 }

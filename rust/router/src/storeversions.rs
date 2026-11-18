@@ -66,7 +66,9 @@ pub struct KeyReceipt {
 }
 
 fn receipt_of(e: Option<&VerEntry>) -> KeyReceipt {
-    e.and_then(|e| e.receipt.as_ref()).and_then(|d| d.decode().ok()).unwrap_or_default()
+    e.and_then(|e| e.receipt.as_ref())
+        .and_then(|d| d.decode().ok())
+        .unwrap_or_default()
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -119,7 +121,8 @@ struct RestorePlan {
     expires: Instant,
 }
 
-static RESTORE_PENDING: LazyLock<Mutex<BTreeMap<String, RestorePlan>>> = LazyLock::new(Default::default);
+static RESTORE_PENDING: LazyLock<Mutex<BTreeMap<String, RestorePlan>>> =
+    LazyLock::new(Default::default);
 
 /// the newest version's keys, for exactly the names the store has now (a name the router never saw written is None);
 /// a newest version that isn't the store as it is makes every key unseen
@@ -127,7 +130,9 @@ pub fn current_keys(latest: Option<&StoreVer>, names: &[String], version: &str) 
     names
         .iter()
         .map(|n| {
-            let e = latest.filter(|l| l.version == version).and_then(|l| l.keys.get(n).cloned().flatten());
+            let e = latest
+                .filter(|l| l.version == version)
+                .and_then(|l| l.keys.get(n).cloned().flatten());
             (n.clone(), e)
         })
         .collect()
@@ -176,7 +181,13 @@ pub fn key_rows(keys: &VerKeys) -> Vec<VerKeyRow> {
 
 /// a removed key's delete marker over its last backup (keys/<store>/<key>.json): writer "replay" with secrets' signed
 /// receipt of the delete; a few tries, the store already changed
-fn put_removal(b: &BackupBucket, store: &str, key: &str, receipt: &Doc, ident: &[u8]) -> Result<()> {
+fn put_removal(
+    b: &BackupBucket,
+    store: &str,
+    key: &str,
+    receipt: &Doc,
+    ident: &[u8],
+) -> Result<()> {
     let mut obj = json!({"kind": "key-backup", "store": store, "key": key, "deleted": true, "sealed": null, "backupSha256": "", "e": "",
         "dataSha256": "", "writer": {"by": "replay", "receipt": receipt}, "explanation": "removed by a restore",
         "at": GoTime::now().utc().rfc3339()});
@@ -201,7 +212,12 @@ pub fn is_repo_store(r: &Router, store: &str) -> bool {
 }
 
 fn core_err(status: u16, msg: impl Into<String>) -> anyhow::Error {
-    CoreError { status, body: vec![], msg: msg.into() }.into()
+    CoreError {
+        status,
+        body: vec![],
+        msg: msg.into(),
+    }
+    .into()
 }
 
 impl Router {
@@ -229,55 +245,88 @@ impl Router {
                     version: row.get(2),
                     // as the database has them: a null key is one never seen written, not a zero value
                     cause: serde_json::from_str(&cause).unwrap_or_default(),
-                    keys: serde_json::from_str::<Option<VerKeys>>(&keys).ok().flatten().unwrap_or_default(),
+                    keys: serde_json::from_str::<Option<VerKeys>>(&keys)
+                        .ok()
+                        .flatten()
+                        .unwrap_or_default(),
                 }
             })
             .collect())
     }
 
     /// the next version of a store; the oldest beyond STORE_VERSIONS_KEPT go
-    pub fn add_version(&self, store: &str, version: &str, cause: &VerCause, keys: &VerKeys) -> Result<i64> {
+    pub fn add_version(
+        &self,
+        store: &str,
+        version: &str,
+        cause: &VerCause,
+        keys: &VerKeys,
+    ) -> Result<i64> {
         let db = self.versions_db().ok_or_else(|| anyhow!("no database"))?;
         let (cb, kb) = (jarvis_go::marshal(cause), jarvis_go::marshal(keys));
         let mut c = db.conn()?;
         let mut tx = c.transaction()?;
-        tx.execute("SELECT pg_advisory_xact_lock(hashtext('store-versions:' || $1))", &[&store])?;
+        tx.execute(
+            "SELECT pg_advisory_xact_lock(hashtext('store-versions:' || $1))",
+            &[&store],
+        )?;
         let seq: i32 = tx
-            .query_one("SELECT (coalesce(max(seq), 0) + 1)::int FROM store_versions WHERE store = $1", &[&store])?
+            .query_one(
+                "SELECT (coalesce(max(seq), 0) + 1)::int FROM store_versions WHERE store = $1",
+                &[&store],
+            )?
             .get(0);
         tx.execute(
             "INSERT INTO store_versions (store, seq, version, cause, keys) VALUES ($1, $2, $3, $4::text::jsonb, $5::text::jsonb)",
             &[&store, &seq, &version, &cb, &kb],
         )?;
-        tx.execute("DELETE FROM store_versions WHERE store = $1 AND seq <= $2", &[&store, &(seq - STORE_VERSIONS_KEPT)])?;
+        tx.execute(
+            "DELETE FROM store_versions WHERE store = $1 AND seq <= $2",
+            &[&store, &(seq - STORE_VERSIONS_KEPT)],
+        )?;
         tx.commit()?;
         Ok(seq as i64)
     }
 
     /// one store's row of secrets' signed list (its key names and version); None: no such store
     pub fn secrets_store(&self, store: &str) -> Result<Option<SecretsStore>> {
-        let d = self.store_core().call("/stores", &json!({"nonce": format!("versions-{}", crate::util::rand_id())}))?;
+        let d = self.store_core().call(
+            "/stores",
+            &json!({"nonce": format!("versions-{}", crate::util::rand_id())}),
+        )?;
         #[derive(Deserialize, Default)]
         #[serde(default)]
         struct List {
             stores: Vec<crate::storedocs::CoreStoreRow>,
         }
         let list: List = d.decode()?;
-        Ok(list.stores.into_iter().find(|s| s.name == store).map(|s| SecretsStore {
-            names: s.keys.into_iter().map(|k| k.name).collect(),
-            version: s.version,
-            sensitive: s.sensitive,
-        }))
+        Ok(list
+            .stores
+            .into_iter()
+            .find(|s| s.name == store)
+            .map(|s| SecretsStore {
+                names: s.keys.into_iter().map(|k| k.name).collect(),
+                version: s.version,
+                sensitive: s.sensitive,
+            }))
     }
 
     /// after secrets took a write on a box with no core, the store's new version (best effort: the write stands either
     /// way; a version the router missed only makes its keys unseen)
-    pub fn record_key_write(&self, store: &str, key: &str, entry: Option<VerEntry>, receipt: Option<&Doc>) {
+    pub fn record_key_write(
+        &self,
+        store: &str,
+        key: &str,
+        entry: Option<VerEntry>,
+        receipt: Option<&Doc>,
+    ) {
         let Some(receipt) = receipt else { return };
         if self.secrets_stores.get().is_none() || self.versions_db().is_none() {
             return;
         }
-        let Ok(rc) = receipt.decode::<KeyReceipt>() else { return };
+        let Ok(rc) = receipt.decode::<KeyReceipt>() else {
+            return;
+        };
         if rc.kind != "key-written" {
             return;
         }
@@ -286,14 +335,36 @@ impl Router {
         }
     }
 
-    fn record_version(&self, store: &str, key: &str, entry: Option<VerEntry>, receipt: &Doc, rc: &KeyReceipt) -> Result<()> {
-        let names = self.secrets_store(store)?.map(|s| s.names).unwrap_or_default();
+    fn record_version(
+        &self,
+        store: &str,
+        key: &str,
+        entry: Option<VerEntry>,
+        receipt: &Doc,
+        rc: &KeyReceipt,
+    ) -> Result<()> {
+        let names = self
+            .secrets_store(store)?
+            .map(|s| s.names)
+            .unwrap_or_default();
         let vs = self.store_versions(store)?;
         // the version before this write: the newest kept one, if this write is the only change since (else unseen keys)
         let latest = vs.first();
-        let mut keys: VerKeys =
-            names.iter().map(|n| (n.clone(), latest.and_then(|l| l.keys.get(n).cloned().flatten()))).collect();
-        let mut cause = VerCause { kind: "write".into(), key: key.into(), writer: strip_sig(rc.writer.as_deref()), ..Default::default() };
+        let mut keys: VerKeys = names
+            .iter()
+            .map(|n| {
+                (
+                    n.clone(),
+                    latest.and_then(|l| l.keys.get(n).cloned().flatten()),
+                )
+            })
+            .collect();
+        let mut cause = VerCause {
+            kind: "write".into(),
+            key: key.into(),
+            writer: strip_sig(rc.writer.as_deref()),
+            ..Default::default()
+        };
         if rc.deleted {
             keys.remove(key);
             cause.kind = "delete".into();
@@ -314,20 +385,29 @@ impl Router {
 
     /// the router's list of a store's versions (StoreVersionsDoc's shape, unsigned: each key's receipt is secrets')
     pub fn kernel_store_versions(&self, store: &str, nonce: &str) -> Result<Value> {
-        let s = self.secrets_store(store)?.ok_or_else(|| core_err(404, format!("no store {store}")))?;
+        let s = self
+            .secrets_store(store)?
+            .ok_or_else(|| core_err(404, format!("no store {store}")))?;
         let rows: Vec<Value> = self
             .store_versions(store)?
             .iter()
             .map(|v| json!({"seq": v.seq, "at": v.at.utc().rfc3339(), "version": v.version, "cause": v.cause, "keys": key_rows(&v.keys)}))
             .collect();
-        Ok(json!({"kind": "store-versions", "nonce": nonce, "store": store, "current": s.version, "sensitive": s.sensitive, "versions": rows}))
+        Ok(
+            json!({"kind": "store-versions", "nonce": nonce, "store": store, "current": s.version, "sensitive": s.sensitive, "versions": rows}),
+        )
     }
 
     /// what putting version seq back changes (RestoreBegin's shape, unsigned; "replay": true)
     pub fn kernel_restore_begin(&self, store: &str, seq: i64) -> Result<Value> {
-        let s = self.secrets_store(store)?.ok_or_else(|| core_err(404, format!("no store {store}")))?;
+        let s = self
+            .secrets_store(store)?
+            .ok_or_else(|| core_err(404, format!("no store {store}")))?;
         if is_repo_store(self, store) {
-            return Err(Forbidden(format!("store {store} holds a repo's deploy key: a repo's key is made again, not restored")).into());
+            return Err(Forbidden(format!(
+                "store {store} holds a repo's deploy key: a repo's key is made again, not restored"
+            ))
+            .into());
         }
         let vs = self.store_versions(store)?;
         let to = vs
@@ -345,9 +425,10 @@ impl Router {
             let have = cur.get(&k).cloned().flatten();
             match (&want, &have) {
                 (None, None) if present => keep.push(k), // never seen written, still there
-                (None, _) => cannot.push(k),            // its value then is one the router never saw
+                (None, _) => cannot.push(k), // its value then is one the router never saw
                 (Some(w), Some(h))
-                    if present && receipt_of(Some(h)).e == receipt_of(Some(w)).e
+                    if present
+                        && receipt_of(Some(h)).e == receipt_of(Some(w)).e
                         && receipt_of(Some(h)).data_sha256 == receipt_of(Some(w)).data_sha256 =>
                 {
                     keep.push(k)
@@ -359,9 +440,18 @@ impl Router {
                 }
             }
         }
-        let remove: Vec<String> = cur.keys().filter(|k| !to.keys.contains_key(*k)).cloned().collect();
+        let remove: Vec<String> = cur
+            .keys()
+            .filter(|k| !to.keys.contains_key(*k))
+            .cloned()
+            .collect();
         if put_names.is_empty() && remove.is_empty() {
-            return Err(core_err(409, format!("store {store} already is version {seq} (as far as the router saw it written)")));
+            return Err(core_err(
+                409,
+                format!(
+                    "store {store} already is version {seq} (as far as the router saw it written)"
+                ),
+            ));
         }
         let from = latest.map_or(0, |l| l.seq);
         let id = crate::util::rand_id();
@@ -381,20 +471,35 @@ impl Router {
                 },
             );
         }
-        Ok(json!({"kind": "store-restore-begin", "pending": id, "store": store, "sensitive": s.sensitive, "replay": true,
+        Ok(
+            json!({"kind": "store-restore-begin", "pending": id, "store": store, "sensitive": s.sensitive, "replay": true,
             "from": {"seq": from, "version": s.version},
             "to": {"seq": to.seq, "version": to.version, "at": to.at.utc().rfc3339()},
-            "put": put, "remove": remove, "keep": keep, "cannot": cannot, "t": ""}))
+            "put": put, "remove": remove, "keep": keep, "cannot": cannot, "t": ""}),
+        )
     }
 
     /// the plan applied — each backup back into the bucket, then each entry replayed (or deleted) in secrets, if the
     /// store is still exactly as the plan saw it; one new version
     pub fn kernel_restore_finish(&self, pending: &str) -> Result<Value> {
-        let p = RESTORE_PENDING.lock().unwrap_or_else(|e| e.into_inner()).remove(pending);
-        let p = p.filter(|p| Instant::now() <= p.expires).ok_or_else(|| core_err(404, "no such pending restore"))?;
+        let p = RESTORE_PENDING
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(pending);
+        let p = p
+            .filter(|p| Instant::now() <= p.expires)
+            .ok_or_else(|| core_err(404, "no such pending restore"))?;
         let s = match self.secrets_store(&p.store)? {
             Some(s) if s.version == p.current => s,
-            _ => return Err(core_err(409, format!("store {} changed since this restore was asked for: review it again", p.store))),
+            _ => {
+                return Err(core_err(
+                    409,
+                    format!(
+                        "store {} changed since this restore was asked for: review it again",
+                        p.store
+                    ),
+                ));
+            }
         };
         let b = crate::backups::backup_bucket_from_env().ok_or_else(|| {
             anyhow!("the router has no backup credential (BACKUP_READ_ACCESS_KEY): nothing is restored without its backups")
@@ -410,7 +515,9 @@ impl Router {
                 && let Some(bk) = &e.backup
             {
                 b.put(&format!("keys/{}/{k}.json", p.store), bk.get().as_bytes())
-                    .map_err(|e| anyhow!("the backups weren't written, so nothing was restored: {e:#}"))?;
+                    .map_err(|e| {
+                        anyhow!("the backups weren't written, so nothing was restored: {e:#}")
+                    })?;
             }
         }
         let mut last = s.version.clone();
@@ -436,24 +543,39 @@ impl Router {
                 }),
             );
         }
-        let ident = sc.raw("GET", "/identity", None).map(|(_, b)| b).unwrap_or_default();
+        let ident = sc
+            .raw("GET", "/identity", None)
+            .map(|(_, b)| b)
+            .unwrap_or_default();
         let mut unmarked = vec![];
         for k in &p.remove {
             let d = sc
-                .call("/stores/write-key", &json!({"store": p.store, "key": k, "delete": true, "writer": "replay"}))
+                .call(
+                    "/stores/write-key",
+                    &json!({"store": p.store, "key": k, "delete": true, "writer": "replay"}),
+                )
                 .map_err(|err| anyhow!("removing {k}: {err:#}"))?;
             last = d.decode::<KeyReceipt>().unwrap_or_default().version;
             keys.remove(k);
             if let Err(e) = put_removal(&b, &p.store, k, &d, &ident) {
-                crate::logf!("store {}: {k} removed, but its delete marker isn't in the bucket: {e:#}", p.store);
+                crate::logf!(
+                    "store {}: {k} removed, but its delete marker isn't in the bucket: {e:#}",
+                    p.store
+                );
                 unmarked.push(k.clone());
             }
         }
-        let cause = VerCause { kind: "restore".into(), from: p.to.seq, ..Default::default() };
-        let seq = self.add_version(&p.store, &last, &cause, &keys).unwrap_or_else(|e| {
-            crate::logf!("store {}: the restored version wasn't kept: {e:#}", p.store);
-            0
-        });
+        let cause = VerCause {
+            kind: "restore".into(),
+            from: p.to.seq,
+            ..Default::default()
+        };
+        let seq = self
+            .add_version(&p.store, &last, &cause, &keys)
+            .unwrap_or_else(|e| {
+                crate::logf!("store {}: the restored version wasn't kept: {e:#}", p.store);
+                0
+            });
         if !unmarked.is_empty() {
             self.dm(&format!(
                 "🔴 Jarvis 4: store {} was restored, but the bucket couldn't take the removal of {}: a Recover from the bucket alone would bring {} back.",
@@ -479,7 +601,9 @@ impl Router {
             &p.store,
             &format!("Store {} was restored to its version {}. Unlock gives these sessions the store as it is now.", p.store, p.to.seq),
         );
-        Ok(json!({"ok": true, "restored": {"kind": "store-restored", "pending": pending, "store": p.store,
-            "from": p.to.seq, "seq": seq, "version": last}, "refreshAsked": asked}))
+        Ok(
+            json!({"ok": true, "restored": {"kind": "store-restored", "pending": pending, "store": p.store,
+            "from": p.to.seq, "seq": seq, "version": last}, "refreshAsked": asked}),
+        )
     }
 }

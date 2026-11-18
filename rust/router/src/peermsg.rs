@@ -67,13 +67,18 @@ pub struct PeerNote {
 }
 
 pub fn mode_of(s: &Session) -> &'static str {
-    if s.permission_mode == "bypass" { "bypass" } else { "auto" }
+    if s.permission_mode == "bypass" {
+        "bypass"
+    } else {
+        "auto"
+    }
 }
 
 /// the stores the session's machine holds, as its latest cert names them (the machine checks against the same list);
 /// the router's list when there is no cert yet
 pub fn peer_stores(s: &Session) -> Vec<String> {
-    crate::flows::cert_stores_harness(s.cert.as_ref(), s.stores.as_deref().unwrap_or_default(), "").0
+    crate::flows::cert_stores_harness(s.cert.as_ref(), s.stores.as_deref().unwrap_or_default(), "")
+        .0
 }
 
 fn sorted(mut v: Vec<String>) -> Vec<String> {
@@ -85,7 +90,12 @@ fn sorted(mut v: Vec<String>) -> Vec<String> {
 /// bypasses while the sender doesn't)
 pub fn peer_direction(from: &Session, to: &Session) -> (&'static str, Vec<String>, bool) {
     let have: BTreeSet<String> = peer_stores(from).into_iter().collect();
-    let extra = sorted(peer_stores(to).into_iter().filter(|s| !have.contains(s)).collect());
+    let extra = sorted(
+        peer_stores(to)
+            .into_iter()
+            .filter(|s| !have.contains(s))
+            .collect(),
+    );
     let mode_up = mode_of(to) == "bypass" && mode_of(from) != "bypass";
     if !extra.is_empty() || mode_up {
         return ("upward", extra, mode_up);
@@ -129,13 +139,25 @@ pub fn resolve_peer(d: &Persisted, to: &str) -> Result<Session> {
         .collect();
     match hit.len() {
         1 => Ok(hit[0].clone()),
-        0 => Err(BadRequest(format!("no session {} (its id, or its exact title)", jarvis_go::fmt::go_quote(to))).into()),
-        n => Err(BadRequest(format!("{n} sessions are titled {}: use the session id", jarvis_go::fmt::go_quote(to))).into()),
+        0 => Err(BadRequest(format!(
+            "no session {} (its id, or its exact title)",
+            jarvis_go::fmt::go_quote(to)
+        ))
+        .into()),
+        n => Err(BadRequest(format!(
+            "{n} sessions are titled {}: use the session id",
+            jarvis_go::fmt::go_quote(to)
+        ))
+        .into()),
     }
 }
 
 fn list_or_none(ss: &[String]) -> String {
-    if ss.is_empty() { "none".into() } else { clip(&ss.join(", "), 120) }
+    if ss.is_empty() {
+        "none".into()
+    } else {
+        clip(&ss.join(", "), 120)
+    }
 }
 
 /// the Inbox item's words, by the router: who wants to tell whom, and why it is upward
@@ -143,7 +165,10 @@ pub fn peer_explanation(from: &Session, to: &Session) -> String {
     let (_, extra, mode_up) = peer_direction(from, to);
     let mut why = vec![];
     if !extra.is_empty() {
-        why.push(format!("the receiver holds {}, which the sender doesn't", list_or_none(&extra)));
+        why.push(format!(
+            "the receiver holds {}, which the sender doesn't",
+            list_or_none(&extra)
+        ));
     }
     if mode_up {
         why.push("the receiver runs in bypass mode and the sender doesn't".to_string());
@@ -178,7 +203,10 @@ pub fn peer_attested(n: Option<&PeerNote>) -> Result<(Vec<u8>, String)> {
     let n = n
         .filter(|n| !n.from.is_empty() && !n.to.is_empty() && !n.text.is_empty())
         .ok_or_else(|| anyhow!("peer: no note"))?;
-    Ok((jarvis_go::marshal(n).into_bytes(), format!("session:{}", n.from)))
+    Ok((
+        jarvis_go::marshal(n).into_bytes(),
+        format!("session:{}", n.from),
+    ))
 }
 
 pub type PeerHook = Arc<dyn Fn(&Arc<Router>, &PeerNote, &Origin) -> Result<()> + Send + Sync>;
@@ -188,17 +216,29 @@ pub static DELIVER_PEER_HOOK: RwLock<Option<PeerHook>> = RwLock::new(None);
 impl Router {
     /// the sending session, the receiving one (its id or exact title) and the cleaned text, checked as a message is
     /// checked wherever it is filed (alone or as a batch item)
-    pub fn peer_parties(&self, sender: &str, to: &str, text: &str) -> Result<(Session, Session, String)> {
+    pub fn peer_parties(
+        &self,
+        sender: &str,
+        to: &str,
+        text: &str,
+    ) -> Result<(Session, Session, String)> {
         let clean = clean_peer_text(text);
         if clean.is_empty() {
             return Err(BadRequest("an empty message".into()).into());
         }
         let n = clean.chars().count();
         if n > PEER_NOTE_MAX {
-            return Err(BadRequest(format!("a message longer than {PEER_NOTE_MAX} characters ({n})")).into());
+            return Err(BadRequest(format!(
+                "a message longer than {PEER_NOTE_MAX} characters ({n})"
+            ))
+            .into());
         }
         let (from, recv) = self.st.do_(|d| -> Result<(Session, Session)> {
-            let from = d.sessions.get(sender).cloned().ok_or_else(crate::sessionapi::no_session)?;
+            let from = d
+                .sessions
+                .get(sender)
+                .cloned()
+                .ok_or_else(crate::sessionapi::no_session)?;
             Ok((from, resolve_peer(d, to)?))
         })?;
         if recv.id == from.id {
@@ -223,8 +263,15 @@ impl Router {
         let mut args = Map::new();
         args.insert("to".into(), json!(recv.id));
         let o = Origin {
-            caller: Caller { kind: "session".into(), session: sender.into(), ..Default::default() },
-            call: ApiCall { method: method.into(), path: path.strip_prefix("/m").unwrap_or(path).into(), args, ..Default::default() },
+            caller: Caller {
+                kind: "session".into(),
+                session: sender.into(),
+            },
+            call: ApiCall {
+                method: method.into(),
+                path: path.strip_prefix("/m").unwrap_or(path).into(),
+                args,
+            },
             signed: Some(signed),
             ..Default::default()
         };
@@ -232,8 +279,10 @@ impl Router {
         let (held, is_held) = held_peer_note(note.clone(), &recv);
         if is_held {
             self.go_peer_note(held, o, "");
-            return Ok(json!({"delivering": true, "direction": note.direction, "to": recv.id, "waiting": "message",
-                "note": "the receiving session holds a sensitive store: Deyao delivers or denies this message in the Inbox; you hear the outcome"}));
+            return Ok(
+                json!({"delivering": true, "direction": note.direction, "to": recv.id, "waiting": "message",
+                "note": "the receiving session holds a sensitive store: Deyao delivers or denies this message in the Inbox; you hear the outcome"}),
+            );
         }
         if note.direction != "upward" {
             let dir = note.direction.clone();
@@ -242,11 +291,17 @@ impl Router {
         }
         let (q, dup) = self.file_request(
             REQUEST_KIND_PEER,
-            RequestParams { session: recv.id.clone(), text, ..Default::default() },
+            RequestParams {
+                session: recv.id.clone(),
+                text,
+                ..Default::default()
+            },
             &peer_explanation(&from, &recv),
             o,
         )?;
-        Ok(json!({"id": q.id, "duplicate": dup, "expires": q.expires, "direction": "upward", "waiting": "inbox", "to": recv.id}))
+        Ok(
+            json!({"id": q.id, "duplicate": dup, "expires": q.expires, "direction": "upward", "waiting": "inbox", "to": recv.id}),
+        )
     }
 
     /// deliver_peer_note in the background
@@ -258,29 +313,68 @@ impl Router {
     /// the note into the receiving session (started if paused); a failure is the sender's outcome. ref: the Inbox id
     /// an approved upward message had ("" for one delivered at once: the receiver's id names it then).
     fn deliver_peer_note(self: &Arc<Self>, note: &PeerNote, o: &Origin, r#ref: &str) {
-        let res = match DELIVER_PEER_HOOK.read().unwrap_or_else(|e| e.into_inner()).clone() {
+        let res = match DELIVER_PEER_HOOK
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        {
             Some(h) => h(self, note, o),
             None => self.deliver_vouched_opts(
                 &note.to,
-                Delivery { kind: "peer".into(), peer: Some(note.clone()), ..Default::default() },
+                Delivery {
+                    kind: "peer".into(),
+                    peer: Some(note.clone()),
+                    ..Default::default()
+                },
                 true,
                 Some(o),
             ),
         };
-        let rf = if r#ref.is_empty() { note.to.clone() } else { r#ref.to_string() };
+        let rf = if r#ref.is_empty() {
+            note.to.clone()
+        } else {
+            r#ref.to_string()
+        };
         match res {
             // messages.rs: the receiver holds a sensitive store; Deyao decides, the sender hears
             Err(e) if crate::messages::is_awaiting_approval(&e) => {
-                crate::logf!("peer message {} → {} ({}) waits for Deyao", note.from, note.to, note.direction);
+                crate::logf!(
+                    "peer message {} → {} ({}) waits for Deyao",
+                    note.from,
+                    note.to,
+                    note.direction
+                );
             }
             Err(e) => {
-                crate::logf!("peer message {} → {} ({}) not delivered: {e:#}", note.from, note.to, note.direction);
-                self.st.do_(|d| note_outcome(d, Some(o), REQUEST_KIND_PEER, &rf, OUTCOME_FAILED, 0, None));
+                crate::logf!(
+                    "peer message {} → {} ({}) not delivered: {e:#}",
+                    note.from,
+                    note.to,
+                    note.direction
+                );
+                self.st.do_(|d| {
+                    note_outcome(d, Some(o), REQUEST_KIND_PEER, &rf, OUTCOME_FAILED, 0, None)
+                });
             }
             Ok(()) => {
-                crate::logf!("peer message {} → {} ({}) delivered", note.from, note.to, note.direction);
+                crate::logf!(
+                    "peer message {} → {} ({}) delivered",
+                    note.from,
+                    note.to,
+                    note.direction
+                );
                 if note.approved {
-                    self.st.do_(|d| note_outcome(d, Some(o), REQUEST_KIND_PEER, &rf, OUTCOME_APPROVED, 0, None));
+                    self.st.do_(|d| {
+                        note_outcome(
+                            d,
+                            Some(o),
+                            REQUEST_KIND_PEER,
+                            &rf,
+                            OUTCOME_APPROVED,
+                            0,
+                            None,
+                        )
+                    });
                 }
             }
         }
@@ -290,7 +384,11 @@ impl Router {
     pub fn approve_peer(self: &Arc<Self>, id: &str) -> Result<Value> {
         let found = self.st.do_(|d| {
             crate::inbox::prune_requests(d, GoTime::now());
-            let x = d.inbox.get(id).filter(|x| x.kind == REQUEST_KIND_PEER)?.clone();
+            let x = d
+                .inbox
+                .get(id)
+                .filter(|x| x.kind == REQUEST_KIND_PEER)?
+                .clone();
             let f = d.sessions.get(&x.origin.caller.session)?.clone();
             let t = d.sessions.get(&x.params.session)?.clone();
             d.inbox.remove(id);
@@ -306,7 +404,8 @@ impl Router {
 
     /// an Inbox id that is a peer message (the approve route serves both kinds)
     pub fn is_peer_request(&self, id: &str) -> bool {
-        self.st.do_(|d| d.inbox.get(id).is_some_and(|x| x.kind == REQUEST_KIND_PEER))
+        self.st
+            .do_(|d| d.inbox.get(id).is_some_and(|x| x.kind == REQUEST_KIND_PEER))
     }
 }
 
@@ -331,7 +430,11 @@ pub fn register_peer_messages(reg: &mut Registrar) {
         match r.send_peer(&sid, &i.to, &i.text, signed, &method, &path) {
             Err(e) => crate::inbox::write_request_err(w, &e),
             Ok(out) => {
-                let code = if out.get("delivering") == Some(&json!(true)) { 202 } else { 200 };
+                let code = if out.get("delivering") == Some(&json!(true)) {
+                    202
+                } else {
+                    200
+                };
                 write_json(w, code, &out);
             }
         }

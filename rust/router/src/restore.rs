@@ -54,16 +54,25 @@ fn utc_date(t: GoTime) -> String {
 impl Router {
     /// the scratch directory the archive's files are fetched into and checked in (then gone)
     pub fn restores_dir(&self, sid: &str) -> PathBuf {
-        Path::new(&self.cfg.data_dir).join("tmp").join(format!("restore-{sid}"))
+        Path::new(&self.cfg.data_dir)
+            .join("tmp")
+            .join(format!("restore-{sid}"))
     }
 
     /// the record's archived snapshot onto the volume, then a new session with the record's options, waiting for the
     /// phone (approval kind new-session, options.restore names what it restores)
     pub fn restore_record(self: &Arc<Self>, record_id: &str, request_id: &str) -> Result<String> {
-        let mut rec = self.record(record_id).ok_or_else(|| anyhow!("no such previous session"))?;
-        let archive = rec.archive.clone().ok_or_else(|| anyhow!("this session was destroyed without an archive: nothing to restore"))?;
+        let mut rec = self
+            .record(record_id)
+            .ok_or_else(|| anyhow!("no such previous session"))?;
+        let archive = rec.archive.clone().ok_or_else(|| {
+            anyhow!("this session was destroyed without an archive: nothing to restore")
+        })?;
         if archive.signer.is_empty() {
-            bail!("this archive has no signed snapshot, so it can't be restored: {}", archive.no_snapshot);
+            bail!(
+                "this archive has no signed snapshot, so it can't be restored: {}",
+                archive.no_snapshot
+            );
         }
         // an archive marked unverified (its snapshot wasn't named in its kill: an earlier core's machine) is checked
         // like any other below (check_restore_files: its cert by this core or an earlier core the master key claimed,
@@ -73,9 +82,16 @@ impl Router {
             Some(h) => h.clone(),
             None => {
                 // a harness the policy no longer has: restored on claude, as create_session falls back
-                crate::logf!("restore {record_id}: no harness {} in the policy; restoring on claude", rec.session.harness);
+                crate::logf!(
+                    "restore {record_id}: no harness {} in the policy; restoring on claude",
+                    rec.session.harness
+                );
                 rec.session.harness = "claude".into();
-                self.policy.harnesses.get("claude").cloned().ok_or_else(|| anyhow!("no harness claude in the policy"))?
+                self.policy
+                    .harnesses
+                    .get("claude")
+                    .cloned()
+                    .ok_or_else(|| anyhow!("no harness claude in the policy"))?
             }
         };
         // the record's stores, less the shared login's old store (its account comes as the account)
@@ -113,7 +129,12 @@ impl Router {
             &b,
             &archive.file,
             &dir,
-            &["jarvis2/snapshot.tar.gz", "jarvis2/snapshot.sig", "jarvis2/cert.json", "jarvis2/core-cert.json"],
+            &[
+                "jarvis2/snapshot.tar.gz",
+                "jarvis2/snapshot.sig",
+                "jarvis2/cert.json",
+                "jarvis2/core-cert.json",
+            ],
         ) {
             Ok(f) => f,
             Err(e) => return fail(e),
@@ -134,7 +155,11 @@ impl Router {
             .ok()
             .and_then(|b| jarvis_go::unmarshal::<MasterCert>(&b).ok())
             .filter(|mc| !mc.statement.is_empty());
-        let label = if rec.session.label.is_empty() { archive.title.clone() } else { rec.session.label.clone() };
+        let label = if rec.session.label.is_empty() {
+            archive.title.clone()
+        } else {
+            rec.session.label.clone()
+        };
         let s = Session {
             id: sid.clone(),
             state: "approval".into(),
@@ -167,26 +192,48 @@ impl Router {
             Ok(c) => c,
             Err(e) => return unadd(e),
         };
-        let what = if label.is_empty() { record_id.to_string() } else { label.clone() };
+        let what = if label.is_empty() {
+            record_id.to_string()
+        } else {
+            label.clone()
+        };
         let options = BTreeMap::from([
             ("model".to_string(), s.model.clone()),
             ("size".to_string(), s.size.clone()),
             ("permissionMode".to_string(), s.permission_mode.clone()),
             ("repos".to_string(), s.repos.clone()),
-            ("restore".to_string(), format!("{what} (destroyed {})", utc_date(rec.destroyed_at))),
+            (
+                "restore".to_string(),
+                format!("{what} (destroyed {})", utc_date(rec.destroyed_at)),
+            ),
         ]);
         if self.kernel_serves() {
             // kernelline.rs: the restore on the kernel; the phone signs the snapshot's hash into the source
             let res = match self.snap(&restore_snap(&sid)) {
                 None => Err(anyhow!("the restore's snapshot is gone")),
-                Some(sn) => self.kernel_new_session_approval(&s, &config, &options, &Default::default(), &sn.sha256),
+                Some(sn) => self.kernel_new_session_approval(
+                    &s,
+                    &config,
+                    &options,
+                    &Default::default(),
+                    &sn.sha256,
+                ),
             };
             if let Err(e) = res {
                 return unadd(e);
             }
             return Ok(sid);
         }
-        let ch = match self.succession(None, "", s.stores.as_deref().unwrap_or_default(), &s.harness, &s.permission_mode, &self.cfg.session_image, &config, "") {
+        let ch = match self.succession(
+            None,
+            "",
+            s.stores.as_deref().unwrap_or_default(),
+            &s.harness,
+            &s.permission_mode,
+            &self.cfg.session_image,
+            &config,
+            "",
+        ) {
             Ok(ch) => ch,
             Err(e) => return unadd(e),
         };
@@ -224,14 +271,22 @@ impl Router {
         let c: Option<C> = cert.decode().ok();
         let machine_key = match c {
             // a kernel line's: the spawner's cert
-            Some(C { kind, machine: Some(m) }) if kind == "succession" => m.signing_key,
-            Some(C { kind, machine: Some(m) }) if kind == "succession-cert" => {
+            Some(C {
+                kind,
+                machine: Some(m),
+            }) if kind == "succession" => m.signing_key,
+            Some(C {
+                kind,
+                machine: Some(m),
+            }) if kind == "succession-cert" => {
                 if let Ok(key) = self.core.key()
                     && let Some(k) = key.get("signingKey").filter(|k| !k.is_empty())
                     && !verify_p256(k, cert.payload.as_bytes(), &cert.sig)
                     && !self.earlier_core_signed(dir, &cert)
                 {
-                    bail!("the archive's cert isn't signed by this core, nor by an earlier core the master key claimed");
+                    bail!(
+                        "the archive's cert isn't signed by this core, nor by an earlier core the master key claimed"
+                    );
                 }
                 m.signing_key
             }
@@ -247,7 +302,11 @@ impl Router {
 
     /// the sha256 of the archived snapshot a restoring session still holds ("" = none, or not restoring)
     pub fn restore_sum(&self, sid: &str) -> String {
-        let restoring = self.st.do_(|d| d.sessions.get(sid).is_some_and(|s| s.restore_cert.is_some()));
+        let restoring = self.st.do_(|d| {
+            d.sessions
+                .get(sid)
+                .is_some_and(|s| s.restore_cert.is_some())
+        });
         if !restoring {
             return String::new();
         }
@@ -261,7 +320,10 @@ impl Router {
     /// running machine while no machine of the line has left a snapshot, kernelline.rs kernel_pred)
     pub fn restore_files_for(&self, machine: &str) -> Option<Snap> {
         let sid = self.st.do_(|d| {
-            let s = d.machines.get(machine).and_then(|sid| d.sessions.get(sid))?;
+            let s = d
+                .machines
+                .get(machine)
+                .and_then(|sid| d.sessions.get(sid))?;
             if s.restore_cert.is_none()
                 || s.machine_id != machine
                 || !crate::grants::cert_field(d.certs.get(machine), "predecessorId").is_empty()
@@ -290,10 +352,19 @@ impl Router {
             let (state, from, kernel, booted) = self.st.do_(|d| {
                 d.sessions
                     .get(&sid)
-                    .map(|s| (s.state.clone(), s.restore_from.clone(), s.kernel.is_some(), !s.booted.is_empty()))
+                    .map(|s| {
+                        (
+                            s.state.clone(),
+                            s.restore_from.clone(),
+                            s.kernel.is_some(),
+                            !s.booted.is_empty(),
+                        )
+                    })
                     .unwrap_or_default()
             });
-            if matches!(state.as_str(), "approval" | "starting" | "initialising") || (kernel && !booted) {
+            if matches!(state.as_str(), "approval" | "starting" | "initialising")
+                || (kernel && !booted)
+            {
                 continue;
             }
             if state == "started" || (kernel && booted) {
@@ -310,13 +381,23 @@ impl Router {
         let now = GoTime::now().utc();
         self.st.do_(|d| {
             for x in d.records.iter_mut().filter(|x| x.session.id == record_id) {
-                x.restored.push(crate::archive::RestoreMark { session: sid.into(), at: now });
+                x.restored.push(crate::archive::RestoreMark {
+                    session: sid.into(),
+                    at: now,
+                });
             }
         });
         if let Some(b) = self.box_()
             && let Err(e) = crate::archive::update_index(&b, |mut list| {
-                for e in list.iter_mut().filter(|e| e.get("id") == Some(&json!(record_id))) {
-                    let mut prev = e.get("restored").and_then(Value::as_array).cloned().unwrap_or_default();
+                for e in list
+                    .iter_mut()
+                    .filter(|e| e.get("id") == Some(&json!(record_id)))
+                {
+                    let mut prev = e
+                        .get("restored")
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default();
                     prev.push(json!({"sessionId": sid, "at": now}));
                     e.insert("restored".into(), Value::Array(prev));
                 }
@@ -330,7 +411,10 @@ impl Router {
     /// the archive's core-cert.json is the master key's claim (the running core's master) of a core whose key signed
     /// the cert — the router's early check of what rust/machine/src/restore.rs checks again (core continuity)
     pub fn earlier_core_signed(&self, dir: &Path, cert: &Doc) -> bool {
-        let Some(mc) = std::fs::read(dir.join("core-cert.json")).ok().and_then(|b| jarvis_go::unmarshal::<MasterCert>(&b).ok()) else {
+        let Some(mc) = std::fs::read(dir.join("core-cert.json"))
+            .ok()
+            .and_then(|b| jarvis_go::unmarshal::<MasterCert>(&b).ok())
+        else {
             return false;
         };
         #[derive(Deserialize, Default)]
@@ -338,8 +422,11 @@ impl Router {
         struct Cs {
             master: String,
         }
-        let Some(cs) = self.core_state_doc().and_then(|st| st.decode::<Cs>().ok()) else { return false };
-        if cs.master.is_empty() || !verify_p256(&cs.master, mc.statement.as_bytes(), &mc.master_sig) {
+        let Some(cs) = self.core_state_doc().and_then(|st| st.decode::<Cs>().ok()) else {
+            return false;
+        };
+        if cs.master.is_empty() || !verify_p256(&cs.master, mc.statement.as_bytes(), &mc.master_sig)
+        {
             return false;
         }
         #[derive(Deserialize, Default)]
@@ -357,14 +444,18 @@ impl Router {
             core: Key,
             identity: Option<Key>,
         }
-        let Ok(claim) = jarvis_go::unmarshal::<Claim>(mc.statement.as_bytes()) else { return false };
+        let Ok(claim) = jarvis_go::unmarshal::<Claim>(mc.statement.as_bytes()) else {
+            return false;
+        };
         if claim.kind != "claim" || claim.master != cs.master {
             return false;
         }
         if verify_p256(&claim.core.signing_key, cert.payload.as_bytes(), &cert.sig) {
             return true;
         }
-        claim.identity.is_some_and(|i| verify_p256(&i.signing_key, cert.payload.as_bytes(), &cert.sig))
+        claim
+            .identity
+            .is_some_and(|i| verify_p256(&i.signing_key, cert.payload.as_bytes(), &cert.sig))
     }
 
     /// the running core's signed state (its master key), as /identity answers it

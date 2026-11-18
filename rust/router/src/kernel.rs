@@ -123,7 +123,13 @@ impl KernelClient {
     }
 
     /// POST (body Some) or GET → the raw answer
-    pub fn call(&self, role: &str, method: &str, path: &str, body: Option<&Value>) -> Result<Vec<u8>> {
+    pub fn call(
+        &self,
+        role: &str,
+        method: &str,
+        path: &str,
+        body: Option<&Value>,
+    ) -> Result<Vec<u8>> {
         let (b, seq) = self.call_seq(role, method, path, body)?;
         if role == "secrets" && seq > 0 {
             let h = self.on_secrets_seq.read().ok().and_then(|g| g.clone());
@@ -135,11 +141,23 @@ impl KernelClient {
     }
 
     /// call without the line-state hook (the keeper's own fetches)
-    pub fn call_no_hook(&self, role: &str, method: &str, path: &str, body: Option<&Value>) -> Result<Vec<u8>> {
+    pub fn call_no_hook(
+        &self,
+        role: &str,
+        method: &str,
+        path: &str,
+        body: Option<&Value>,
+    ) -> Result<Vec<u8>> {
         self.call_seq(role, method, path, body).map(|(b, _)| b)
     }
 
-    fn call_seq(&self, role: &str, method: &str, path: &str, body: Option<&Value>) -> Result<(Vec<u8>, i64)> {
+    fn call_seq(
+        &self,
+        role: &str,
+        method: &str,
+        path: &str,
+        body: Option<&Value>,
+    ) -> Result<(Vec<u8>, i64)> {
         let _g = self.gate.read();
         let dep = self.dep(role);
         let r = self.do_(role, &dep, method, path, body);
@@ -179,7 +197,14 @@ impl KernelClient {
     }
 
     /// one request to one Deployment (dep), its errors named by role
-    pub fn do_(&self, role: &str, dep: &str, method: &str, path: &str, body: Option<&Value>) -> Result<(Vec<u8>, i64)> {
+    pub fn do_(
+        &self,
+        role: &str,
+        dep: &str,
+        method: &str,
+        path: &str,
+        body: Option<&Value>,
+    ) -> Result<(Vec<u8>, i64)> {
         let m = reqwest::Method::from_bytes(method.as_bytes())?;
         let mut req = self
             .http
@@ -369,15 +394,19 @@ impl Router {
         let Some(k) = self.kernel.clone() else { return };
         let r = Arc::downgrade(self);
         *k.active.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(move || {
-            r.upgrade().map(|r| r.serving_copy()).unwrap_or_else(|| "blue".into())
+            r.upgrade()
+                .map(|r| r.serving_copy())
+                .unwrap_or_else(|| "blue".into())
         }));
         let kl = crate::linestate::LineKeeper::new_kernel(self.st.clone(), k.clone());
         let kl2 = kl.clone();
-        *k.on_secrets_seq.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(move |s| kl2.seen(s)));
+        *k.on_secrets_seq.write().unwrap_or_else(|e| e.into_inner()) =
+            Some(Arc::new(move |s| kl2.seen(s)));
         let _ = self.kernel_lines.set(kl.clone());
         let r = Arc::downgrade(self);
-        *k.roster.write().unwrap_or_else(|e| e.into_inner()) =
-            Some(Arc::new(move || r.upgrade().and_then(|r| r.current_roster())));
+        *k.roster.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(move || {
+            r.upgrade().and_then(|r| r.current_roster())
+        }));
         let r = Arc::downgrade(self);
         *k.on_stale.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(move |dep, msg| {
             if let Some(r) = r.upgrade() {
@@ -395,7 +424,8 @@ impl Router {
                 Box::new(move || drop(g))
             }));
             let kl3 = kl.clone();
-            *c.on_line_seq.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(move |s| kl3.seen(s)));
+            *c.on_line_seq.write().unwrap_or_else(|e| e.into_inner()) =
+                Some(Arc::new(move |s| kl3.seen(s)));
             let _ = self.secrets_stores.set(Arc::new(c));
         }
     }
@@ -403,7 +433,11 @@ impl Router {
     /// the kernel copy that serves (Persisted.kernel_copy; "" = blue)
     pub fn serving_copy(&self) -> String {
         self.st.read(|d| {
-            if d.kernel_copy == "green" { "green".to_string() } else { "blue".to_string() }
+            if d.kernel_copy == "green" {
+                "green".to_string()
+            } else {
+                "blue".to_string()
+            }
         })
     }
 

@@ -37,18 +37,25 @@ pub const MAX_SESSION_RUNNERS: usize = 10;
 pub const RUNNER_USER_DATA_MAX: usize = 32 << 10;
 
 /// the Cloud API (a test's fake)
-pub static HETZNER_API: LazyLock<RwLock<String>> = LazyLock::new(|| RwLock::new("https://api.hetzner.cloud/v1".into()));
+pub static HETZNER_API: LazyLock<RwLock<String>> =
+    LazyLock::new(|| RwLock::new("https://api.hetzner.cloud/v1".into()));
 
-static HETZNER_CLIENT: LazyLock<reqwest::blocking::Client> =
-    LazyLock::new(|| reqwest::blocking::Client::builder().timeout(Duration::from_secs(40)).build().unwrap_or_default());
+static HETZNER_CLIENT: LazyLock<reqwest::blocking::Client> = LazyLock::new(|| {
+    reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(40))
+        .build()
+        .unwrap_or_default()
+});
 
 fn re(s: &str) -> regex::Regex {
     regex::Regex::new(s).unwrap_or_else(|_| unreachable!())
 }
 
-static RUNNER_NAME_RE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"));
+static RUNNER_NAME_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| re(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"));
 static RUNNER_WORD_RE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"^[a-z0-9][a-z0-9.-]{0,62}$"));
-static RUNNER_LABEL_RE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"^[A-Za-z0-9]([A-Za-z0-9._-]{0,61}[A-Za-z0-9])?$"));
+static RUNNER_LABEL_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| re(r"^[A-Za-z0-9]([A-Za-z0-9._-]{0,61}[A-Za-z0-9])?$"));
 
 /// what a session may do to its runner besides deleting it
 fn runner_action(a: &str) -> bool {
@@ -132,12 +139,17 @@ impl HzServer {
         if let Some(l) = self.location.as_ref().filter(|l| !l.name.is_empty()) {
             return l.name.clone();
         }
-        self.datacenter.as_ref().map(|d| d.location.name.clone()).unwrap_or_default()
+        self.datacenter
+            .as_ref()
+            .map(|d| d.location.name.clone())
+            .unwrap_or_default()
     }
 
     /// the server's address, the first of its /64
     pub fn ipv6(&self) -> String {
-        let Some(v6) = &self.public_net.ipv6 else { return String::new() };
+        let Some(v6) = &self.public_net.ipv6 else {
+            return String::new();
+        };
         let mut ip = jarvis_go::fmt::cut(&v6.ip, "/").0.to_string();
         if ip.ends_with("::") {
             ip.push('1');
@@ -169,7 +181,11 @@ pub struct HzError {
 
 impl std::fmt::Display for HzError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Hetzner: {} ({}, HTTP {})", self.message, self.code, self.status)
+        write!(
+            f,
+            "Hetzner: {} ({}, HTTP {})",
+            self.message, self.code, self.status
+        )
     }
 }
 
@@ -183,14 +199,19 @@ fn hetzner_live(method: &str, path: &str, input: Option<&Value>) -> Result<Vec<u
     if tok.is_empty() {
         return Err(NoRunners.into());
     }
-    let base = HETZNER_API.read().unwrap_or_else(|e| e.into_inner()).clone();
+    let base = HETZNER_API
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
     let m = reqwest::Method::from_bytes(method.as_bytes())?;
     let mut req = HETZNER_CLIENT
         .request(m, format!("{base}{path}"))
         .header("Authorization", format!("Bearer {tok}"))
         .header("User-Agent", "jarvis4-router/1");
     if let Some(i) = input {
-        req = req.header("Content-Type", "application/json").body(jarvis_go::marshal(i));
+        req = req
+            .header("Content-Type", "application/json")
+            .body(jarvis_go::marshal(i));
     }
     let resp = req.send().map_err(|e| anyhow!("Hetzner: {e}"))?;
     let st = resp.status().as_u16();
@@ -208,8 +229,17 @@ fn hetzner_live(method: &str, path: &str, input: Option<&Value>) -> Result<Vec<u
             error: E,
         }
         let e: Out = jarvis_go::unmarshal(&b).unwrap_or_default();
-        let message = if e.error.message.is_empty() { "no error text".into() } else { e.error.message };
-        return Err(HzError { status: st, code: e.error.code, message }.into());
+        let message = if e.error.message.is_empty() {
+            "no error text".into()
+        } else {
+            e.error.message
+        };
+        return Err(HzError {
+            status: st,
+            code: e.error.code,
+            message,
+        }
+        .into());
     }
     Ok(b)
 }
@@ -222,7 +252,11 @@ fn hetzner(method: &str, path: &str, input: Option<&Value>) -> Result<Vec<u8>> {
 }
 
 /// a call whose answer is decoded into T
-fn hetzner_json<T: serde::de::DeserializeOwned + Default>(method: &str, path: &str, input: Option<&Value>) -> Result<T> {
+fn hetzner_json<T: serde::de::DeserializeOwned + Default>(
+    method: &str,
+    path: &str,
+    input: Option<&Value>,
+) -> Result<T> {
     let b = hetzner(method, path, input)?;
     if b.is_empty() {
         return Ok(T::default());
@@ -231,7 +265,8 @@ fn hetzner_json<T: serde::de::DeserializeOwned + Default>(method: &str, path: &s
 }
 
 pub fn hz_gone(err: &anyhow::Error) -> bool {
-    err.downcast_ref::<HzError>().is_some_and(|e| e.status == 404)
+    err.downcast_ref::<HzError>()
+        .is_some_and(|e| e.status == 404)
 }
 
 /// every server of the project matching the label selector ("" = all)
@@ -292,7 +327,11 @@ fn hz_key_by_name(name: &str) -> Result<Option<HzKey>> {
     struct Out {
         ssh_keys: Vec<HzKey>,
     }
-    let out: Out = hetzner_json("GET", &format!("/ssh_keys?name={}", jarvis_go::fmt::query_escape(name)), None)?;
+    let out: Out = hetzner_json(
+        "GET",
+        &format!("/ssh_keys?name={}", jarvis_go::fmt::query_escape(name)),
+        None,
+    )?;
     Ok(out.ssh_keys.into_iter().next())
 }
 
@@ -394,11 +433,17 @@ pub fn runner_view_of(s: &HzServer) -> RunnerView {
         ..Default::default()
     };
     if s.server_type.cores > 0 {
-        v.guest = format!("{} vCPU · {} GB", s.server_type.cores, jarvis_go::fmt::go_float_g(s.server_type.memory));
+        v.guest = format!(
+            "{} vCPU · {} GB",
+            s.server_type.cores,
+            jarvis_go::fmt::go_float_g(s.server_type.memory)
+        );
     }
     for (k, val) in &s.labels {
         if k != "session" && k != "purpose" {
-            v.labels.get_or_insert_with(BTreeMap::new).insert(k.clone(), val.clone());
+            v.labels
+                .get_or_insert_with(BTreeMap::new)
+                .insert(k.clone(), val.clone());
         }
     }
     v
@@ -409,7 +454,12 @@ fn own_runner(sid: &str, name: &str) -> Result<HzServer> {
     runners_of(sid)?
         .into_iter()
         .find(|s| s.name == name)
-        .ok_or_else(|| anyhow!("this session has no runner {}", jarvis_go::fmt::go_quote(name)))
+        .ok_or_else(|| {
+            anyhow!(
+                "this session has no runner {}",
+                jarvis_go::fmt::go_quote(name)
+            )
+        })
 }
 
 /// the session's key object goes once it has no runner left
@@ -480,7 +530,11 @@ fn runner_err(w: &mut W, err: &anyhow::Error) {
     let status = if err.downcast_ref::<NoRunners>().is_some() {
         503
     } else if let Some(he) = err.downcast_ref::<HzError>() {
-        if he.status == 409 || he.code == "uniqueness_error" { 409 } else { 502 }
+        if he.status == 409 || he.code == "uniqueness_error" {
+            409
+        } else {
+            502
+        }
     } else {
         400
     };
@@ -506,14 +560,24 @@ impl Router {
                 *v = def.into();
             }
             if !RUNNER_WORD_RE.is_match(v) {
-                return Err(anyhow!("{field} {} is not a Hetzner name", jarvis_go::fmt::go_quote(v)));
+                return Err(anyhow!(
+                    "{field} {} is not a Hetzner name",
+                    jarvis_go::fmt::go_quote(v)
+                ));
             }
         }
-        if key_body(&i.ssh_key).is_empty() || (!i.ssh_key.starts_with("ssh-") && !i.ssh_key.starts_with("ecdsa-")) {
-            return Err(anyhow!("sshKey must be the session's OpenSSH public key (root's authorized key on the runner)"));
+        if key_body(&i.ssh_key).is_empty()
+            || (!i.ssh_key.starts_with("ssh-") && !i.ssh_key.starts_with("ecdsa-"))
+        {
+            return Err(anyhow!(
+                "sshKey must be the session's OpenSSH public key (root's authorized key on the runner)"
+            ));
         }
         if i.user_data.len() > RUNNER_USER_DATA_MAX {
-            return Err(anyhow!("userData is {} bytes; Hetzner takes at most {RUNNER_USER_DATA_MAX}", i.user_data.len()));
+            return Err(anyhow!(
+                "userData is {} bytes; Hetzner takes at most {RUNNER_USER_DATA_MAX}",
+                i.user_data.len()
+            ));
         }
         let mut labels = BTreeMap::new();
         for (k, v) in &i.labels {
@@ -521,7 +585,9 @@ impl Router {
                 continue;
             }
             if !RUNNER_LABEL_RE.is_match(k) || (!v.is_empty() && !RUNNER_LABEL_RE.is_match(v)) {
-                return Err(anyhow!("label {k}={v}: letters, digits, '.', '_' and '-' only, at most 63 characters"));
+                return Err(anyhow!(
+                    "label {k}={v}: letters, digits, '.', '_' and '-' only, at most 63 characters"
+                ));
             }
             labels.insert(k.clone(), v.clone());
         }
@@ -529,9 +595,13 @@ impl Router {
         labels.insert("purpose".into(), RUNNER_PURPOSE.into());
         let have = runners_of(sid)?;
         if have.len() >= MAX_SESSION_RUNNERS {
-            return Err(anyhow!("this session has {} runners, the most one session may have: delete one first", have.len()));
+            return Err(anyhow!(
+                "this session has {} runners, the most one session may have: delete one first",
+                have.len()
+            ));
         }
-        let key = ensure_runner_key(sid, &i.ssh_key).map_err(|e| anyhow!("the session's SSH key: {e:#}"))?;
+        let key = ensure_runner_key(sid, &i.ssh_key)
+            .map_err(|e| anyhow!("the session's SSH key: {e:#}"))?;
         let mut body = json!({"name": i.name, "server_type": i.type_, "image": i.image, "location": i.location,
             "labels": labels, "ssh_keys": [key], "start_after_create": true,
             // IPv6 only: the account is at its limit of primary IPv4 addresses (Deyao, 2026-10-13)
@@ -545,8 +615,21 @@ impl Router {
             server: HzServer,
         }
         let out: Out = hetzner_json("POST", "/servers", Some(&body))?;
-        crate::logf!("runners: session {sid} made {} ({}, {} in {})", i.name, out.server.id, i.type_, i.location);
-        self.lc_note(sid, "", &format!("runner {} made (Hetzner {} in {})", i.name, i.type_, i.location));
+        crate::logf!(
+            "runners: session {sid} made {} ({}, {} in {})",
+            i.name,
+            out.server.id,
+            i.type_,
+            i.location
+        );
+        self.lc_note(
+            sid,
+            "",
+            &format!(
+                "runner {} made (Hetzner {} in {})",
+                i.name, i.type_, i.location
+            ),
+        );
         Ok(runner_view_of(&out.server))
     }
 
@@ -564,23 +647,38 @@ impl Router {
     /// a session's runners go with it (a destroy, a pause nothing will wake). It never fails the action: a runner
     /// Hetzner didn't delete stays on the Machines view, standing out.
     pub fn end_runners(&self, sid: &str, op: &LcHandle, why: &str) {
-        if std::env::var("HETZNER_RUNNERS_TOKEN").unwrap_or_default().is_empty() {
+        if std::env::var("HETZNER_RUNNERS_TOKEN")
+            .unwrap_or_default()
+            .is_empty()
+        {
             return;
         }
         let (gone, err) = delete_session_runners(sid);
         if !gone.is_empty() {
-            crate::logf!("runners: session {sid} ({why}): deleted {}", gone.join(", "));
-            op.note("", &format!("deleted the session's runners ({why}): {}", gone.join(", ")));
+            crate::logf!(
+                "runners: session {sid} ({why}): deleted {}",
+                gone.join(", ")
+            );
+            op.note(
+                "",
+                &format!("deleted the session's runners ({why}): {}", gone.join(", ")),
+            );
         }
         if let Some(e) = err {
             crate::logf!("runners: session {sid} ({why}): {e:#}");
-            op.note("", &format!("a runner was not deleted (it shows on the Machines view): {e:#}"));
+            op.note(
+                "",
+                &format!("a runner was not deleted (it shows on the Machines view): {e:#}"),
+            );
         }
     }
 
     /// a paused session keeps its runners only when something armed will run it again
     pub fn runners_after_pause(&self, sid: &str, op: &LcHandle) {
-        if std::env::var("HETZNER_RUNNERS_TOKEN").unwrap_or_default().is_empty() {
+        if std::env::var("HETZNER_RUNNERS_TOKEN")
+            .unwrap_or_default()
+            .is_empty()
+        {
             return;
         }
         if !self.st.do_(|d| crate::schedule::will_wake(d, sid)) {
@@ -589,7 +687,13 @@ impl Router {
         if let Ok(have) = runners_of(sid)
             && !have.is_empty()
         {
-            op.note("", &format!("kept the session's {} runner(s): a wakeup or cron is armed", have.len()));
+            op.note(
+                "",
+                &format!(
+                    "kept the session's {} runner(s): a wakeup or cron is armed",
+                    have.len()
+                ),
+            );
         }
     }
 
@@ -615,7 +719,10 @@ impl Router {
     pub fn runners_for_machines(&self) -> (Value, i64) {
         match self.runners_overview() {
             Err(e) if e.downcast_ref::<NoRunners>().is_some() => (Value::Null, 0),
-            Err(e) => (json!({"project": RUNNERS_PROJECT, "runners": [], "attention": 0, "error": format!("{e:#}")}), 0),
+            Err(e) => (
+                json!({"project": RUNNERS_PROJECT, "runners": [], "attention": 0, "error": format!("{e:#}")}),
+                0,
+            ),
             Ok((views, n)) => (
                 json!({"project": RUNNERS_PROJECT, "runners": views, "attention": n, "checkedAt": GoTime::now().utc()}),
                 n,
@@ -633,10 +740,19 @@ impl Router {
         let mut v = runner_view_of(&s);
         self.st.do_(|d| runner_attention(d, &mut v));
         if !v.deletable {
-            return Err(anyhow!("runner {} belongs to session {} ({}): it goes with its session", s.name, v.session_id, v.session_state));
+            return Err(anyhow!(
+                "runner {} belongs to session {} ({}): it goes with its session",
+                s.name,
+                v.session_id,
+                v.session_state
+            ));
         }
         delete_server(id)?;
-        crate::logf!("runners: {} ({id}) deleted from the Machines view ({})", s.name, v.attention);
+        crate::logf!(
+            "runners: {} ({id}) deleted from the Machines view ({})",
+            s.name,
+            v.attention
+        );
         if !v.session_id.is_empty() && runners_of(&v.session_id).is_ok_and(|l| l.is_empty()) {
             drop_runner_key(&v.session_id);
         }
@@ -645,7 +761,11 @@ impl Router {
 }
 
 /// the session itself, through its machine's proxy: its own runners only
-fn own(reg: &mut Registrar, pattern: &str, f: impl Fn(&Arc<Router>, &mut W, &mut Req, &str, &[u8]) + Send + Sync + 'static) {
+fn own(
+    reg: &mut Registrar,
+    pattern: &str,
+    f: impl Fn(&Arc<Router>, &mut W, &mut Req, &str, &[u8]) + Send + Sync + 'static,
+) {
     reg.m(pattern, move |r, w, req, machine, body| {
         let sid = match r.machine_session(machine) {
             Ok(s) => s,
@@ -653,7 +773,13 @@ fn own(reg: &mut Registrar, pattern: &str, f: impl Fn(&Arc<Router>, &mut W, &mut
         };
         let id = req.path_value("id");
         if id != sid {
-            return write_error(w, 403, &format!("this machine is session {sid}, not {id}: a session's runners are its own"));
+            return write_error(
+                w,
+                403,
+                &format!(
+                    "this machine is session {sid}, not {id}: a session's runners are its own"
+                ),
+            );
         }
         f(r, w, req, &sid, body)
     });
@@ -677,38 +803,65 @@ pub fn register_runners(reg: &mut Registrar) {
             Ok(()) => write_json(w, 200, &json!({"ok": true, "id": id})),
         }
     });
-    own(reg, "GET /m/api/sessions/{id}/runners", |_, w, _, sid, _| match runners_of(sid) {
-        Err(e) => runner_err(w, &e),
-        Ok(have) => {
-            let views: Vec<RunnerView> = have.iter().map(runner_view_of).collect();
-            write_json(w, 200, &json!({"runners": views}));
-        }
-    });
-    own(reg, "POST /m/api/sessions/{id}/runners", |r, w, _, sid, b| {
-        let Ok(i) = jarvis_go::unmarshal::<NewRunner>(b) else {
-            return write_error(w, 400, "the body must be JSON: {name, type, location, image, sshKey, userData, labels}");
-        };
-        match r.create_runner(sid, i) {
+    own(
+        reg,
+        "GET /m/api/sessions/{id}/runners",
+        |_, w, _, sid, _| match runners_of(sid) {
             Err(e) => runner_err(w, &e),
-            Ok(v) => write_json(w, 200, &v),
-        }
-    });
-    own(reg, "DELETE /m/api/sessions/{id}/runners/{name}", |r, w, req, sid, _| {
-        match r.delete_runner(sid, &req.path_value("name")) {
+            Ok(have) => {
+                let views: Vec<RunnerView> = have.iter().map(runner_view_of).collect();
+                write_json(w, 200, &json!({"runners": views}));
+            }
+        },
+    );
+    own(
+        reg,
+        "POST /m/api/sessions/{id}/runners",
+        |r, w, _, sid, b| {
+            let Ok(i) = jarvis_go::unmarshal::<NewRunner>(b) else {
+                return write_error(
+                    w,
+                    400,
+                    "the body must be JSON: {name, type, location, image, sshKey, userData, labels}",
+                );
+            };
+            match r.create_runner(sid, i) {
+                Err(e) => runner_err(w, &e),
+                Ok(v) => write_json(w, 200, &v),
+            }
+        },
+    );
+    own(
+        reg,
+        "DELETE /m/api/sessions/{id}/runners/{name}",
+        |r, w, req, sid, _| match r.delete_runner(sid, &req.path_value("name")) {
             Err(e) => runner_err(w, &e),
             Ok(()) => write_json(w, 200, &json!({"ok": true})),
-        }
-    });
-    own(reg, "POST /m/api/sessions/{id}/runners/{name}/{action}", |_, w, req, sid, _| {
-        let action = req.path_value("action");
-        if !runner_action(&action) {
-            return write_error(w, 400, "a runner's actions are poweron, poweroff, shutdown, reboot and reset");
-        }
-        let res = own_runner(sid, &req.path_value("name"))
-            .and_then(|s| hetzner("POST", &format!("/servers/{}/actions/{action}", s.id), Some(&json!({}))));
-        match res {
-            Err(e) => runner_err(w, &e),
-            Ok(_) => write_json(w, 200, &json!({"ok": true})),
-        }
-    });
+        },
+    );
+    own(
+        reg,
+        "POST /m/api/sessions/{id}/runners/{name}/{action}",
+        |_, w, req, sid, _| {
+            let action = req.path_value("action");
+            if !runner_action(&action) {
+                return write_error(
+                    w,
+                    400,
+                    "a runner's actions are poweron, poweroff, shutdown, reboot and reset",
+                );
+            }
+            let res = own_runner(sid, &req.path_value("name")).and_then(|s| {
+                hetzner(
+                    "POST",
+                    &format!("/servers/{}/actions/{action}", s.id),
+                    Some(&json!({})),
+                )
+            });
+            match res {
+                Err(e) => runner_err(w, &e),
+                Ok(_) => write_json(w, 200, &json!({"ok": true})),
+            }
+        },
+    );
 }

@@ -243,7 +243,9 @@ impl StateDB {
             .isolation_level(postgres::IsolationLevel::RepeatableRead)
             .read_only(true)
             .start()?;
-        let ver: i64 = tx.query_one("SELECT v FROM state_version WHERE id = 1", &[])?.get(0);
+        let ver: i64 = tx
+            .query_one("SELECT v FROM state_version WHERE id = 1", &[])?
+            .get(0);
         if ver == g.ver {
             return Ok(true);
         }
@@ -259,7 +261,11 @@ impl StateDB {
         Ok(true)
     }
 
-    pub(crate) fn do_once(&self, g: &mut StateInner, f: &mut dyn FnMut(&mut Persisted)) -> Result<()> {
+    pub(crate) fn do_once(
+        &self,
+        g: &mut StateInner,
+        f: &mut dyn FnMut(&mut Persisted),
+    ) -> Result<()> {
         let r = (|| -> Result<(Rows, i64)> {
             let mut c = self.db.conn()?;
             let mut tx = c.transaction()?;
@@ -294,7 +300,10 @@ impl StateDB {
             if changed {
                 g.load.writes += 1;
                 ver = tx
-                    .query_one("UPDATE state_version SET v = v + 1 WHERE id = 1 RETURNING v", &[])?
+                    .query_one(
+                        "UPDATE state_version SET v = v + 1 WHERE id = 1 RETURNING v",
+                        &[],
+                    )?
                     .get(0);
             }
             tx.commit()?;
@@ -336,7 +345,11 @@ fn write_tx(
     let empty = BTreeMap::new();
     for (table, m) in &now {
         let o = old.get(table).unwrap_or(&empty);
-        let dels: Vec<String> = o.keys().filter(|id| !m.contains_key(*id)).cloned().collect();
+        let dels: Vec<String> = o
+            .keys()
+            .filter(|id| !m.contains_key(*id))
+            .cloned()
+            .collect();
         if !dels.is_empty() {
             any = true;
             match table.as_str() {
@@ -442,7 +455,11 @@ fn reload(q: &mut impl GenericClient, g: &mut StateInner) -> Result<()> {
 
 impl State {
     /// the records from the database, the snapshots directory under dir
-    pub fn open(db: DB, dir: &std::path::Path, seal: Option<crate::sealed::Sealer>) -> Result<State> {
+    pub fn open(
+        db: DB,
+        dir: &std::path::Path,
+        seal: Option<crate::sealed::Sealer>,
+    ) -> Result<State> {
         std::fs::create_dir_all(dir)?;
         let s = State {
             inner: Mutex::new(StateInner {
@@ -473,8 +490,10 @@ impl State {
         let db = self.db()?;
         let r = (|| -> Result<Option<Vec<u8>>> {
             let mut c = db.conn()?;
-            Ok(c.query_opt("SELECT body FROM router_docs WHERE name = $1", &[&name])?
-                .map(|r| r.get(0)))
+            Ok(
+                c.query_opt("SELECT body FROM router_docs WHERE name = $1", &[&name])?
+                    .map(|r| r.get(0)),
+            )
         })();
         match r {
             Ok(b) => b,

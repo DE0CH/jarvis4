@@ -276,7 +276,10 @@ pub struct Persisted {
     pub kernel_copy: String,
     #[serde(rename = "kernelRootKey", skip_serializing_if = "String::is_empty")]
     pub kernel_root_key: String,
-    #[serde(rename = "kernelRosterPending", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "kernelRosterPending",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub kernel_roster_pending: Option<RosterFiling>,
     #[serde(rename = "kernelRoster", skip_serializing_if = "Option::is_none")]
     pub kernel_roster: Option<RosterCurrent>,
@@ -290,6 +293,9 @@ pub struct Persisted {
     pub message_rules: BTreeMap<String, MessageRule>,
 }
 
+/// told of a session that has just become failed: its id and reason
+pub type FailedHook = Arc<dyn Fn(&str, &str) + Send + Sync>;
+
 /// State: the router's records, in memory under one lock and in Postgres (statedb.rs)
 pub struct State {
     pub(crate) inner: Mutex<StateInner>,
@@ -299,7 +305,7 @@ pub struct State {
     /// sealed.rs: the router's secrets in the database
     pub seal: Option<crate::sealed::Sealer>,
     /// failures.rs: told (outside the lock) of each session that has just become failed, with its reason
-    pub on_failed: Mutex<Option<Arc<dyn Fn(&str, &str) + Send + Sync>>>,
+    pub on_failed: Mutex<Option<FailedHook>>,
 }
 
 pub(crate) struct StateInner {
@@ -370,11 +376,7 @@ impl State {
             failed = crate::failures::stamp_failures(d, GoTime::now());
             r
         });
-        let hook = self
-            .on_failed
-            .lock()
-            .ok()
-            .and_then(|g| g.clone());
+        let hook = self.on_failed.lock().ok().and_then(|g| g.clone());
         if let Some(h) = hook {
             for (id, why) in failed {
                 let h = h.clone();
@@ -391,10 +393,10 @@ impl State {
     pub fn read<R>(&self, mut f: impl FnMut(&Persisted) -> R) -> R {
         let who = caller();
         let mut out = None;
-        if self.read_inner(&who, |d| out = Some(f(d))) {
-            if let Some(r) = out {
-                return r;
-            }
+        if self.read_inner(&who, |d| out = Some(f(d)))
+            && let Some(r) = out
+        {
+            return r;
         }
         self.do_locked(&who, |d| f(d))
     }

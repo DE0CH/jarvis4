@@ -51,7 +51,9 @@ static GITHUB_REPO_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
 
 /// "owner/name" from a GitHub URL or name ("" when it isn't one)
 pub fn parse_github_repo(s: &str) -> String {
-    let Some(m) = GITHUB_REPO_RE.captures(s.trim()) else { return String::new() };
+    let Some(m) = GITHUB_REPO_RE.captures(s.trim()) else {
+        return String::new();
+    };
     let name = &m[2];
     if name == "." || name == ".." || name.contains("..") {
         return String::new();
@@ -64,8 +66,21 @@ pub fn parse_github_repo(s: &str) -> String {
 pub fn repo_store(repo: &str) -> String {
     let lower = repo.to_lowercase();
     let (owner, name, _) = jarvis_go::fmt::cut(&lower, "/");
-    let slug = if owner != "de0ch" { format!("{owner}-{name}") } else { name.to_string() };
-    let s: String = slug.chars().map(|c| if c.is_ascii_lowercase() || c.is_ascii_digit() { c } else { '-' }).collect();
+    let slug = if owner != "de0ch" {
+        format!("{owner}-{name}")
+    } else {
+        name.to_string()
+    };
+    let s: String = slug
+        .chars()
+        .map(|c| {
+            if c.is_ascii_lowercase() || c.is_ascii_digit() {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
     format!("github-{}", s.trim_matches('-'))
 }
 
@@ -106,7 +121,10 @@ pub fn ssh_fingerprint(public: &str) -> String {
     let (_, b, ok) = jarvis_go::fmt::cut(public, " ");
     match base64::engine::general_purpose::STANDARD.decode(b) {
         Ok(w) if ok && !w.is_empty() => {
-            format!("SHA256:{}", base64::engine::general_purpose::STANDARD_NO_PAD.encode(Sha256::digest(&w)))
+            format!(
+                "SHA256:{}",
+                base64::engine::general_purpose::STANDARD_NO_PAD.encode(Sha256::digest(&w))
+            )
         }
         _ => String::new(),
     }
@@ -150,7 +168,8 @@ pub struct GhRepo {
 #[derive(Default)]
 pub struct GhCache(Mutex<Option<(Instant, GoTime, Vec<GhRepo>)>>);
 
-pub static GITHUB_API: LazyLock<RwLock<String>> = LazyLock::new(|| RwLock::new("https://api.github.com".into()));
+pub static GITHUB_API: LazyLock<RwLock<String>> =
+    LazyLock::new(|| RwLock::new("https://api.github.com".into()));
 
 pub fn github_api() -> String {
     GITHUB_API.read().unwrap_or_else(|e| e.into_inner()).clone()
@@ -182,7 +201,10 @@ impl Router {
             .filter_map(|e| {
                 let repo = parse_github_repo(&e.url);
                 if repo.is_empty() {
-                    crate::logf!("repos: {} isn't a GitHub repo: left off the list", jarvis_go::fmt::go_quote(&e.url));
+                    crate::logf!(
+                        "repos: {} isn't a GitHub repo: left off the list",
+                        jarvis_go::fmt::go_quote(&e.url)
+                    );
                     return None;
                 }
                 let mut n = repo_entry(&repo);
@@ -198,7 +220,10 @@ impl Router {
     fn update_repos(&self, f: impl FnOnce(Vec<RepoEntry>) -> Vec<RepoEntry>) -> Result<()> {
         let _g = self.ops.repos_mu.lock().unwrap_or_else(|e| e.into_inner());
         let next = f(self.read_repos());
-        self.st.write_doc("repos.json", jarvis_go::fmt::marshal_indent1(&next).as_bytes())
+        self.st.write_doc(
+            "repos.json",
+            jarvis_go::fmt::marshal_indent1(&next).as_bytes(),
+        )
     }
 
     /// a session asks for a repo that has its deploy key already and doesn't hold the key's store → its running machine
@@ -206,14 +231,27 @@ impl Router {
     /// deploy key" request, a new key for a repo that had one (Deyao, 2026-11-17). ("", "") for anything else, which
     /// asks for a key as before: a repo with no key, a session that holds the store (a rotation), an ask that names no
     /// session (no store, Deyao's own, the setup session's), one that makes the store sensitive.
-    pub fn existing_repo_store(&self, c: &Caller, kind: &str, p: &RequestParams) -> (String, String) {
-        if kind != REQUEST_KIND_REPO || p.action != "add" || p.session.is_empty() || (c.kind != "session" && c.kind != "actions") {
+    pub fn existing_repo_store(
+        &self,
+        c: &Caller,
+        kind: &str,
+        p: &RequestParams,
+    ) -> (String, String) {
+        if kind != REQUEST_KIND_REPO
+            || p.action != "add"
+            || p.session.is_empty()
+            || (c.kind != "session" && c.kind != "actions")
+        {
             return (String::new(), String::new());
         }
         let store = self
             .repos()
             .into_iter()
-            .filter(|e| e.repo.eq_ignore_ascii_case(&p.repo) && !e.fingerprint.is_empty() && (e.sensitive || !p.sensitive))
+            .filter(|e| {
+                e.repo.eq_ignore_ascii_case(&p.repo)
+                    && !e.fingerprint.is_empty()
+                    && (e.sensitive || !p.sensitive)
+            })
             .map(|e| e.store)
             .next_back()
             .unwrap_or_default();
@@ -250,7 +288,10 @@ impl Router {
         }
         if a.orphan {
             // only an orphan key went: the repo stays as it is
-            crate::logf!("repos: orphan deploy key {} of {repo} deleted on GitHub", a.key_id);
+            crate::logf!(
+                "repos: orphan deploy key {} of {repo} deleted on GitHub",
+                a.key_id
+            );
             return Ok(());
         }
         if a.replaced_key_id != 0 {
@@ -264,13 +305,18 @@ impl Router {
         let r2 = repo.clone();
         self.drop_requests(
             move |q: &InboxRequest| {
-                q.kind == REQUEST_KIND_REPO && q.params.repo.eq_ignore_ascii_case(&r2) && (q.params.action == "add") == added
+                q.kind == REQUEST_KIND_REPO
+                    && q.params.repo.eq_ignore_ascii_case(&r2)
+                    && (q.params.action == "add") == added
             },
             crate::outcomes::OUTCOME_APPROVED,
             Some(proof),
         );
         self.update_repos(|rs| {
-            let mut out: Vec<RepoEntry> = rs.into_iter().filter(|e| !e.repo.eq_ignore_ascii_case(&repo)).collect();
+            let mut out: Vec<RepoEntry> = rs
+                .into_iter()
+                .filter(|e| !e.repo.eq_ignore_ascii_case(&repo))
+                .collect();
             if added {
                 let mut e = repo_entry(&repo);
                 e.sensitive = a.sensitive;
@@ -284,11 +330,22 @@ impl Router {
 
     /// the core's answer unchanged; a finished add or remove also updates the list. A core from before deploy keys
     /// answers its mux's plain-text 404: say so plainly. inbox: the Inbox request this page answers
-    fn relay_deploy_key(self: &Arc<Self>, w: &mut W, path: &str, body: &[u8], finish: bool, inbox: &str) {
+    fn relay_deploy_key(
+        self: &Arc<Self>,
+        w: &mut W,
+        path: &str,
+        body: &[u8],
+        finish: bool,
+        inbox: &str,
+    ) {
         let (status, b) = match self.store_core().raw("POST", path, Some(body)) {
             Err(e) => {
                 crate::logf!("deploy keys {path}: {e:#}");
-                return write_json(w, 503, &json!({"error": "the core isn't running", "coreDown": true}));
+                return write_json(
+                    w,
+                    503,
+                    &json!({"error": "the core isn't running", "coreDown": true}),
+                );
             }
             Ok(x) => x,
         };
@@ -312,7 +369,8 @@ impl Router {
                 error: String,
             }
             if let Ok(e) = d.decode::<E>()
-                && (e.error.starts_with("github: HTTP 403") || e.error.starts_with("github: HTTP 404"))
+                && (e.error.starts_with("github: HTTP 403")
+                    || e.error.starts_with("github: HTTP 404"))
             {
                 return write_json(
                     w,
@@ -334,7 +392,11 @@ impl Router {
             let f = self.repo_followups(&a, &asked, inbox);
             if !f.is_empty() {
                 // beside the core's document, not under its signature: the phone checks each approval itself
-                return write_json(w, 200, &json!({"payload": d.payload, "sig": d.sig, "followups": f}));
+                return write_json(
+                    w,
+                    200,
+                    &json!({"payload": d.payload, "sig": d.sig, "followups": f}),
+                );
             }
         }
         w.set_header("Content-Type", "application/json");
@@ -377,7 +439,12 @@ impl Router {
     /// other asking session's approval waits in the Inbox on its own. A session that isn't running gets nothing (it asks
     /// for the store again when it runs). The approval's origin is the request's caller and call, without its signed
     /// filing: the session already hears the outcome of what it filed (the repo's), and its waiter pulls the store.
-    fn repo_followups(self: &Arc<Self>, a: &KeyAnswer, asked: &[RepoAsker], inbox: &str) -> Vec<String> {
+    fn repo_followups(
+        self: &Arc<Self>,
+        a: &KeyAnswer,
+        asked: &[RepoAsker],
+        inbox: &str,
+    ) -> Vec<String> {
         let store = repo_store(&parse_github_repo(&a.repo));
         let mut out = vec![];
         for q in asked {
@@ -385,7 +452,12 @@ impl Router {
                 d.sessions
                     .get(&q.session)
                     .filter(|s| s.state == "started" && s.has_line())
-                    .map(|s| (s.machine_id.clone(), s.stores.as_ref().is_some_and(|st| st.contains(&store))))
+                    .map(|s| {
+                        (
+                            s.machine_id.clone(),
+                            s.stores.as_ref().is_some_and(|st| st.contains(&store)),
+                        )
+                    })
                     .unwrap_or_default()
             });
             if machine.is_empty() || held {
@@ -404,11 +476,19 @@ impl Router {
             args.insert("repo".into(), json!(a.repo));
             args.insert("store".into(), json!(store));
             args.insert("for".into(), json!(q.request));
-            o.call = ApiCall { method: "POST".into(), path: "/api/repos/key/finish".into(), args, ..Default::default() };
+            o.call = ApiCall {
+                method: "POST".into(),
+                path: "/api/repos/key/finish".into(),
+                args,
+            };
             match self.add_store_approval(&machine, &store, o, &q.expl, "") {
                 Err(e) => crate::logf!("repos: the add-store of {store} for {}: {e:#}", q.session),
                 Ok(id) => {
-                    crate::logf!("repos: {} asked for {}: add-store {store} filed ({id})", q.session, a.repo);
+                    crate::logf!(
+                        "repos: {} asked for {}: add-store {store} filed ({id})",
+                        q.session,
+                        a.repo
+                    );
                     if q.request == inbox {
                         out.push(id);
                     }
@@ -422,10 +502,20 @@ impl Router {
     pub fn github_repos(&self, refresh: bool) -> Result<(Vec<GhRepo>, GoTime)> {
         let tok = std::env::var("GITHUB_READ_TOKEN").unwrap_or_default();
         if tok.is_empty() {
-            return Err(HttpStatusErr(503, "the router has no GITHUB_READ_TOKEN: it can't list your GitHub repos".into()).into());
+            return Err(HttpStatusErr(
+                503,
+                "the router has no GITHUB_READ_TOKEN: it can't list your GitHub repos".into(),
+            )
+            .into());
         }
         if !refresh
-            && let Some((at, t, repos)) = self.ops.gh.0.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
+            && let Some((at, t, repos)) = self
+                .ops
+                .gh
+                .0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
             && at.elapsed() < GH_TTL
         {
             return Ok((repos.clone(), *t));
@@ -469,15 +559,27 @@ impl Router {
             if st != 200 {
                 return Err(HttpStatusErr(
                     502,
-                    format!("GitHub /user/repos: HTTP {st} {}", crate::util::trim_to(&String::from_utf8_lossy(&b), 200)),
+                    format!(
+                        "GitHub /user/repos: HTTP {st} {}",
+                        crate::util::trim_to(&String::from_utf8_lossy(&b), 200)
+                    ),
                 )
                 .into());
             }
-            let items: Vec<Item> = jarvis_go::unmarshal(&b).map_err(|e| HttpStatusErr(502, format!("GitHub /user/repos: {e}")))?;
+            let items: Vec<Item> = jarvis_go::unmarshal(&b)
+                .map_err(|e| HttpStatusErr(502, format!("GitHub /user/repos: {e}")))?;
             let n = items.len();
             for it in items {
-                let url = if it.clone_url.is_empty() { format!("https://github.com/{}.git", it.full_name) } else { it.clone_url };
-                let pushed = if it.pushed_at.is_empty() { it.updated_at } else { it.pushed_at };
+                let url = if it.clone_url.is_empty() {
+                    format!("https://github.com/{}.git", it.full_name)
+                } else {
+                    it.clone_url
+                };
+                let pushed = if it.pushed_at.is_empty() {
+                    it.updated_at
+                } else {
+                    it.pushed_at
+                };
                 out.push(GhRepo {
                     full_name: it.full_name,
                     url,
@@ -496,7 +598,8 @@ impl Router {
             }
         }
         let now = GoTime::now();
-        *self.ops.gh.0.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), now, out.clone()));
+        *self.ops.gh.0.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some((Instant::now(), now, out.clone()));
         Ok((out, now))
     }
 }
@@ -506,7 +609,9 @@ pub fn repos_state_hook(r: &Arc<Router>, out: &mut Map<String, Value>) {
 }
 
 pub fn register_repos(reg: &mut Registrar) {
-    reg.app("GET /api/repos", |r, w, _| write_json(w, 200, &json!({"repos": r.repos()})));
+    reg.app("GET /api/repos", |r, w, _| {
+        write_json(w, 200, &json!({"repos": r.repos()}))
+    });
     // ---- deploy keys: the core's two calls, relayed; the list follows the core's signed answer ----------------
     reg.app("POST /api/repos/key/begin", |r, w, req| {
         #[derive(Deserialize, Default)]
@@ -577,4 +682,3 @@ pub fn register_repos(reg: &mut Registrar) {
         }
     });
 }
-

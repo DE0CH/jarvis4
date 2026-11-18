@@ -10,7 +10,7 @@
 //!  2. taking the login     until the machine's status reports the new account's pair on disk (credsExpiresAt)
 //!  3. checking the account until the status's __ACCOUNT__ names the new account
 //!  4. Remote Control       Claude Code stops Remote Control when the account under it changes; the supervisor types
-//!                          /remote-control and chooses Enable: until the host reports a new Remote Control session
+//!     /remote-control and chooses Enable: until the host reports a new Remote Control session
 //!  5. delivering continue  with `continue`: "continue" into its chat as the canned delivery the login repair uses
 //!
 //! Claude Code · Paseo (proxy_login_harness) is switched the same way, minus step 4. A session image from before
@@ -19,7 +19,7 @@
 use crate::autopilot::Registry;
 use crate::claudelogin::LoginHub;
 use crate::ctx::Ctx;
-use crate::http::{Registrar, decode_body_strict};
+use crate::http::Registrar;
 use crate::inbox::{ApiCall, Origin, RequestParams};
 use crate::nethttp::{Req, write_json};
 use crate::router::{Router, bad};
@@ -154,7 +154,13 @@ impl Router {
         c.cancel();
         match self.machine_account(machine).1 {
             Some(now) if !Arc::ptr_eq(&now, h) => (
-                now.poll(&Ctx::background(), &format!("m:{machine}"), have, 0, Duration::ZERO),
+                now.poll(
+                    &Ctx::background(),
+                    &format!("m:{machine}"),
+                    have,
+                    0,
+                    Duration::ZERO,
+                ),
                 true,
             ),
             None => (a, false),
@@ -163,9 +169,17 @@ impl Router {
     }
 
     /// the session's Claude account → store (see the file comment)
-    pub fn switch_account(self: &Arc<Self>, req: &Req, id: &str, i: AccountSwitchIn) -> Result<Map<String, Value>> {
+    pub fn switch_account(
+        self: &Arc<Self>,
+        req: &Req,
+        id: &str,
+        i: AccountSwitchIn,
+    ) -> Result<Map<String, Value>> {
         let store = crate::claudeaccounts::account_store_name(&i.account);
-        let Some(to) = (!store.is_empty()).then(|| self.accounts().hub(&store)).flatten() else {
+        let Some(to) = (!store.is_empty())
+            .then(|| self.accounts().hub(&store))
+            .flatten()
+        else {
             return Err(bad(format!(
                 "no Claude account {:?} (Settings → Claude accounts lists them)",
                 i.account
@@ -180,15 +194,27 @@ impl Router {
             .st
             .do_(|d| d.sessions.get(id).cloned())
             .ok_or_else(crate::sessionapi::no_session)?;
-        let harness = if s.harness.is_empty() { "claude".to_string() } else { s.harness.clone() };
-        let takes = self.policy.harnesses.get(&harness).is_some_and(|h| h.claude_account);
+        let harness = if s.harness.is_empty() {
+            "claude".to_string()
+        } else {
+            s.harness.clone()
+        };
+        let takes = self
+            .policy
+            .harnesses
+            .get(&harness)
+            .is_some_and(|h| h.claude_account);
         if s.claude_account.is_empty() && !takes {
-            return Err(bad(format!("the session's harness ({harness}) takes no Claude account")));
+            return Err(bad(format!(
+                "the session's harness ({harness}) takes no Claude account"
+            )));
         }
         let from = s.claude_account.clone();
         let obj = |v: Value| v.as_object().cloned().unwrap_or_default();
         if from == store {
-            return Ok(obj(json!({"ok": true, "unchanged": true, "account": store})));
+            return Ok(obj(
+                json!({"ok": true, "unchanged": true, "account": store}),
+            ));
         }
         let set_account = || {
             self.st.do_(|d| {
@@ -197,7 +223,10 @@ impl Router {
                 }
             });
             signal_account_switch();
-            crate::logf!("[account] {id}: Claude account {} → {store}", or_none(&from));
+            crate::logf!(
+                "[account] {id}: Claude account {} → {store}",
+                or_none(&from)
+            );
         };
         let stores = s.stores.clone().unwrap_or_default();
         let in_cert = *crate::claudestores::CLAUDE_STORE_IN_CERT;
@@ -209,15 +238,21 @@ impl Router {
                 ));
             }
             if in_cert && !stores.contains(&store) {
-                return Err(bad(format!("this session's cert names its Claude account's store: resume it first, then switch (the switch adds {store} to its cert)")));
+                return Err(bad(format!(
+                    "this session's cert names its Claude account's store: resume it first, then switch (the switch adds {store} to its cert)"
+                )));
             }
             set_account();
             self.st.do_(|d| {
                 if let Some(x) = d.sessions.get_mut(id) {
-                    x.ops.get_or_insert_with(Default::default).continue_after_start = i.continue_;
+                    x.ops
+                        .get_or_insert_with(Default::default)
+                        .continue_after_start = i.continue_;
                 }
             });
-            return Ok(obj(json!({"ok": true, "nextStart": true, "from": crate::http::null_if_empty(&from), "to": store, "continue": i.continue_})));
+            return Ok(obj(
+                json!({"ok": true, "nextStart": true, "from": crate::http::null_if_empty(&from), "to": store, "continue": i.continue_}),
+            ));
         }
         if harness != "claude" && !crate::harness::proxy_login_harness(&harness) {
             return Err(anyhow!(
@@ -230,9 +265,15 @@ impl Router {
                 s.state
             ));
         }
-        let unlock = self.lock_args(id, "account", json!({"store": store, "harness": harness, "continue": i.continue_}))?;
+        let unlock = self.lock_args(
+            id,
+            "account",
+            json!({"store": store, "harness": harness, "continue": i.continue_}),
+        )?;
         let j = self.ops.start_job(id, "account")?;
-        let mut out = obj(json!({"started": true, "kind": "account", "from": crate::http::null_if_empty(&from), "to": store}));
+        let mut out = obj(
+            json!({"started": true, "kind": "account", "from": crate::http::null_if_empty(&from), "to": store}),
+        );
         if in_cert && !stores.contains(&store) {
             let o = Origin {
                 caller: crate::inbox::app_caller(req),
@@ -240,7 +281,6 @@ impl Router {
                     method: req.method.clone(),
                     path: req.path.clone(),
                     args: obj(json!({"account": store})),
-                    ..Default::default()
                 },
                 via_call: crate::apicalls::via_call(req),
                 ..Default::default()
@@ -250,7 +290,9 @@ impl Router {
                 crate::titles::session_title(&s)
             );
             match self.add_store_approval(&s.machine_id, &store, o, &why, "") {
-                Err(e) => crate::logf!("[account] {id}: the add-store of {store}: {e:#} (the switch goes on: the login travels over the long poll)"),
+                Err(e) => crate::logf!(
+                    "[account] {id}: the add-store of {store}: {e:#} (the switch goes on: the login travels over the long poll)"
+                ),
                 Ok(aid) => {
                     out.insert("addStore".into(), json!(aid));
                 }
@@ -288,7 +330,13 @@ impl Router {
     }
 
     /// polls the machine's status until cond holds; an error when the machine stopped being the session's
-    pub fn wait_reg(&self, id: &str, machine: &str, d: Duration, cond: impl Fn(&Registry) -> bool) -> Result<Registry> {
+    pub fn wait_reg(
+        &self,
+        id: &str,
+        machine: &str,
+        d: Duration,
+        cond: impl Fn(&Registry) -> bool,
+    ) -> Result<Registry> {
         let end = Instant::now() + d;
         loop {
             let (g, ok) = self.live_reg(id, machine);
@@ -321,7 +369,8 @@ impl Router {
         self.ops.phase(j, "switching", None);
         if before.host_pid == 0 {
             // no status since this router started: the next report says what runs now
-            if let Ok(g) = self.wait_reg(id, machine, ms(&SWAP_LOGIN_WAIT_MS), |g| g.host_pid != 0) {
+            if let Ok(g) = self.wait_reg(id, machine, ms(&SWAP_LOGIN_WAIT_MS), |g| g.host_pid != 0)
+            {
                 before = g;
             }
         }
@@ -336,20 +385,36 @@ impl Router {
         crate::logf!("[account] {id}: the machine took {}'s login", to.store);
         if g.account_section {
             self.ops.phase(j, "checking the account", None);
-            self.wait_reg(id, machine, ms(&SWAP_CHECK_WAIT_MS), |g| !want.is_empty() && g.account_proof == want)
-                .map_err(|e| anyhow!("the machine didn't confirm {}'s token with Anthropic: {e:#}", to.store))?;
-            crate::logf!("[account] {id}: the installed token is {}'s (Anthropic's profile, asked by the machine)", to.store);
-            if !before.bridge_session_id.is_empty() && !crate::harness::proxy_login_harness(harness) {
+            self.wait_reg(id, machine, ms(&SWAP_CHECK_WAIT_MS), |g| {
+                !want.is_empty() && g.account_proof == want
+            })
+            .map_err(|e| {
+                anyhow!(
+                    "the machine didn't confirm {}'s token with Anthropic: {e:#}",
+                    to.store
+                )
+            })?;
+            crate::logf!(
+                "[account] {id}: the installed token is {}'s (Anthropic's profile, asked by the machine)",
+                to.store
+            );
+            if !before.bridge_session_id.is_empty() && !crate::harness::proxy_login_harness(harness)
+            {
                 self.ops.phase(j, "Remote Control", None);
                 let bid = before.bridge_session_id.clone();
                 let rc = ms(&SWAP_RC_WAIT_MS);
-                match self.wait_reg(id, machine, rc, |g| !g.bridge_session_id.is_empty() && g.bridge_session_id != bid) {
+                match self.wait_reg(id, machine, rc, |g| {
+                    !g.bridge_session_id.is_empty() && g.bridge_session_id != bid
+                }) {
                     Err(_) => {
                         let w = jarvis_go::fmt::duration_string(rc);
                         self.ops.note(j, &format!("Remote Control didn't come back within {w}: type /remote-control in the session's terminal"));
                         crate::logf!("[account] {id}: Remote Control didn't come back within {w}");
                     }
-                    Ok(_) => crate::logf!("[account] {id}: Remote Control is up again under {}", to.store),
+                    Ok(_) => crate::logf!(
+                        "[account] {id}: Remote Control is up again under {}",
+                        to.store
+                    ),
                 }
             }
         } else {
@@ -359,8 +424,15 @@ impl Router {
             return Ok(());
         }
         self.ops.phase(j, "delivering continue", None);
-        self.deliver_canned(id, crate::vouch::Delivery { kind: "continue".into(), ..Default::default() }, "continue")
-            .map_err(|e| anyhow!("delivering \"continue\": {e:#}"))?;
+        self.deliver_canned(
+            id,
+            crate::vouch::Delivery {
+                kind: "continue".into(),
+                ..Default::default()
+            },
+            "continue",
+        )
+        .map_err(|e| anyhow!("delivering \"continue\": {e:#}"))?;
         crate::logf!("[account] {id}: \"continue\" delivered");
         Ok(())
     }
@@ -428,7 +500,11 @@ pub fn register_account_switch(reg: &mut Registrar) {
         match r.switch_account(req, &req.path_value("id"), i) {
             Err(e) => crate::schedule::schedule_err(w, &e),
             Ok(out) => {
-                let code = if out.get("started") == Some(&json!(true)) { 202 } else { 200 };
+                let code = if out.get("started") == Some(&json!(true)) {
+                    202
+                } else {
+                    200
+                };
                 write_json(w, code, &out);
             }
         }

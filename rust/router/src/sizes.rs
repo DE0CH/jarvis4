@@ -12,7 +12,11 @@ use std::time::{Duration, Instant};
 pub const NAMED_SIZES: &[(&str, i64)] = &[("small", 2), ("medium", 4), ("large", 8)];
 
 pub fn named_size(s: &str) -> i64 {
-    NAMED_SIZES.iter().find(|(n, _)| *n == s).map(|(_, g)| *g).unwrap_or(0)
+    NAMED_SIZES
+        .iter()
+        .find(|(n, _)| *n == s)
+        .map(|(_, g)| *g)
+        .unwrap_or(0)
 }
 
 /// the size's memory in GB; 0 = not a size (the 1<<20 bound only keeps memory_mb an ordinary int)
@@ -123,7 +127,11 @@ impl crate::router::Router {
 /// the size Upgrade moves to, "" when the running core can't start it (nothing to offer)
 pub fn upgrade_target(size: &str) -> String {
     let next = next_size(size);
-    if core_takes_size(&next) { next } else { String::new() }
+    if core_takes_size(&next) {
+        next
+    } else {
+        String::new()
+    }
 }
 
 #[cfg(test)]
@@ -152,7 +160,10 @@ mod tests {
             r#"format!("{size} ({gb} GB)")"#,
             r#"format!("{} GB", size_mem_gb(size))"#,
         ] {
-            assert!(rs.contains(need), "rust/machine/src/deliver.rs's sizes differ from the router's (no {need})");
+            assert!(
+                rs.contains(need),
+                "rust/machine/src/deliver.rs's sizes differ from the router's (no {need})"
+            );
         }
     }
 }

@@ -256,7 +256,9 @@ impl LoginHub {
     /// (the row as the only truth, the refresh under a database lock) is in RUNBOOK "The Claude accounts".
     pub fn reload(&self) {
         let mut g = self.lock(); // across the read: a save in between must not be overwritten by the older document
-        let Ok(Some(b)) = self.st.read_sealed(&self.name) else { return };
+        let Ok(Some(b)) = self.st.read_sealed(&self.name) else {
+            return;
+        };
         if b == g.saved {
             return;
         }
@@ -307,7 +309,14 @@ impl LoginHub {
     /// a pair from somewhere (a push, Jarvis 1, a Re-login). Stored only when it expires later than the stored one
     /// (force: a Re-login, which always wins) and, unless switch_ok, only for the stored account (Anthropic's profile
     /// answers whose the access token is). account "" keeps the stored account record.
-    pub fn offer(&self, credentials: &str, account: &str, source: &str, switch_ok: bool, force: bool) -> Result<bool> {
+    pub fn offer(
+        &self,
+        credentials: &str,
+        account: &str,
+        source: &str,
+        switch_ok: bool,
+        force: bool,
+    ) -> Result<bool> {
         let (p, _) = parse_pair(credentials)?;
         let cur = self.current();
         if !force && p.expires_at <= cur.expires_at {
@@ -315,7 +324,8 @@ impl LoginHub {
         }
         let want = account_uuid(&cur.account);
         if !switch_ok && !want.is_empty() {
-            let prof = fetch_profile(&p.access_token).map_err(|e| anyhow!("checking the pair's account: {e:#}"))?;
+            let prof = fetch_profile(&p.access_token)
+                .map_err(|e| anyhow!("checking the pair's account: {e:#}"))?;
             if prof.account.uuid != want {
                 return Err(LoginErr::OtherAcct.into());
             }
@@ -368,7 +378,11 @@ impl LoginHub {
             let exp = creds_expiry(&g.f.credentials);
             let newer = exp > have && !g.f.credentials.is_empty();
             let a = LoginAnswer {
-                credentials: if newer { for_machine(&g.f.credentials) } else { String::new() },
+                credentials: if newer {
+                    for_machine(&g.f.credentials)
+                } else {
+                    String::new()
+                },
                 account: g.f.account.clone(),
                 expires_at: exp,
                 r#gen: g.r#gen,
@@ -422,7 +436,10 @@ impl LoginHub {
             }
             if !force && fl.rejected && fl.expires_at == exp {
                 // a dead grant: only a Re-login (or a newer pushed pair) helps
-                return Err(anyhow!("the Claude login's refresh was refused ({}): Re-login", fl.error));
+                return Err(anyhow!(
+                    "the Claude login's refresh was refused ({}): Re-login",
+                    fl.error
+                ));
             }
         }
         // 1. prepare: every participant takes its CLI's refresh lock and acknowledges
@@ -554,7 +571,13 @@ impl LoginHub {
         ];
         let parts: Vec<String> = q
             .iter()
-            .map(|(k, v)| format!("{}={}", jarvis_go::fmt::query_escape(k), jarvis_go::fmt::query_escape(v)))
+            .map(|(k, v)| {
+                format!(
+                    "{}={}",
+                    jarvis_go::fmt::query_escape(k),
+                    jarvis_go::fmt::query_escape(v)
+                )
+            })
             .collect();
         let url = format!("{}?{}", o.authorize, parts.join("&"));
         let mut g = self.lock();
@@ -583,22 +606,38 @@ impl LoginHub {
             ));
         };
         if code.is_empty() || state.is_empty() {
-            return Err(anyhow!("paste the whole code shown after sign-in (it has a # in it)"));
+            return Err(anyhow!(
+                "paste the whole code shown after sign-in (it has a # in it)"
+            ));
         }
         if state != p.state {
-            return Err(anyhow!("that code belongs to another sign-in: press Re-login again"));
+            return Err(anyhow!(
+                "that code belongs to another sign-in: press Re-login again"
+            ));
         }
         let _r = self.lock_refresh(); // not while a refresh is out
         let o = oauth();
-        let j = token_call(&json!({"grant_type": "authorization_code", "code": code, "redirect_uri": o.redirect,
-            "client_id": OAUTH_CLIENT_ID, "code_verifier": p.verifier, "state": state}))
+        let j = token_call(
+            &json!({"grant_type": "authorization_code", "code": code, "redirect_uri": o.redirect,
+            "client_id": OAUTH_CLIENT_ID, "code_verifier": p.verifier, "state": state}),
+        )
         .map_err(|(e, _)| e)?;
-        let at = j.get("access_token").and_then(Value::as_str).unwrap_or_default().to_string();
+        let at = j
+            .get("access_token")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
         let now = unix_ms();
         let mut oa_pair = Map::new();
         oa_pair.insert("accessToken".into(), json!(at));
-        oa_pair.insert("refreshToken".into(), j.get("refresh_token").cloned().unwrap_or(Value::Null));
-        oa_pair.insert("expiresAt".into(), json!(now + jnum(j.get("expires_in")).max(60) * 1000));
+        oa_pair.insert(
+            "refreshToken".into(),
+            j.get("refresh_token").cloned().unwrap_or(Value::Null),
+        );
+        oa_pair.insert(
+            "expiresAt".into(),
+            json!(now + jnum(j.get("expires_in")).max(60) * 1000),
+        );
         let rte = jnum(j.get("refresh_token_expires_in"));
         if rte > 0 {
             oa_pair.insert("refreshTokenExpiresAt".into(), json!(now + rte * 1000));
@@ -622,19 +661,28 @@ impl LoginHub {
                     oa_pair.insert("subscriptionType".into(), json!(sub));
                 }
                 if !prof.organization.rate_limit_tier.is_empty() {
-                    oa_pair.insert("rateLimitTier".into(), json!(prof.organization.rate_limit_tier));
+                    oa_pair.insert(
+                        "rateLimitTier".into(),
+                        json!(prof.organization.rate_limit_tier),
+                    );
                 }
                 let mut oa = Map::new();
                 oa.insert("accountUuid".into(), json!(prof.account.uuid));
                 oa.insert("emailAddress".into(), json!(prof.account.email));
                 oa.insert("organizationUuid".into(), json!(prof.organization.uuid));
-                oa.insert("hasExtraUsageEnabled".into(), json!(prof.organization.has_extra_usage_enabled));
+                oa.insert(
+                    "hasExtraUsageEnabled".into(),
+                    json!(prof.organization.has_extra_usage_enabled),
+                );
                 for (k, v) in [
                     ("displayName", &prof.account.display_name),
                     ("fullName", &prof.account.full_name),
                     ("billingType", &prof.organization.billing_type),
                     ("accountCreatedAt", &prof.account.created_at),
-                    ("subscriptionCreatedAt", &prof.organization.subscription_created_at),
+                    (
+                        "subscriptionCreatedAt",
+                        &prof.organization.subscription_created_at,
+                    ),
                 ] {
                     if !v.is_empty() {
                         oa.insert(k.into(), json!(v));
@@ -649,24 +697,39 @@ impl LoginHub {
                 );
                 if let Some(a) = j.get("account").and_then(Value::as_object) {
                     let mut oa = Map::new();
-                    oa.insert("accountUuid".into(), a.get("uuid").cloned().unwrap_or(Value::Null));
-                    oa.insert("emailAddress".into(), a.get("email_address").cloned().unwrap_or(Value::Null));
+                    oa.insert(
+                        "accountUuid".into(),
+                        a.get("uuid").cloned().unwrap_or(Value::Null),
+                    );
+                    oa.insert(
+                        "emailAddress".into(),
+                        a.get("email_address").cloned().unwrap_or(Value::Null),
+                    );
                     if let Some(org) = j.get("organization").and_then(Value::as_object) {
-                        oa.insert("organizationUuid".into(), org.get("uuid").cloned().unwrap_or(Value::Null));
+                        oa.insert(
+                            "organizationUuid".into(),
+                            org.get("uuid").cloned().unwrap_or(Value::Null),
+                        );
                     }
                     acct.insert("oauthAccount".into(), Value::Object(oa));
                 }
             }
         }
         let creds = jarvis_go::marshal(&json!({"claudeAiOauth": oa_pair}));
-        let account = if acct.is_empty() { String::new() } else { jarvis_go::marshal(&acct) };
+        let account = if acct.is_empty() {
+            String::new()
+        } else {
+            jarvis_go::marshal(&acct)
+        };
         let mut target = self.clone();
         if let Some(a) = self.accounts.get().and_then(Weak::upgrade)
             && let Err(e) = a.check_relogin(&self.store, &account_uuid(&account))
         {
             let t = a
                 .hub_for(&account_uuid(&account), &account_email(&account))
-                .map_err(|te| anyhow!("{e:#} (keeping it as its own account failed too: {te:#})"))?;
+                .map_err(|te| {
+                    anyhow!("{e:#} (keeping it as its own account failed too: {te:#})")
+                })?;
             crate::logf!(
                 "[login] {}: the sign-in is {}, kept in {} instead",
                 self.store,
@@ -688,7 +751,8 @@ impl LoginHub {
             let g = self.lock();
             if !force
                 && let Some(b) = &g.usage_body
-                && g.usage_at.is_some_and(|t| t.elapsed() < Duration::from_secs(60))
+                && g.usage_at
+                    .is_some_and(|t| t.elapsed() < Duration::from_secs(60))
             {
                 let mut b = b.clone();
                 b.insert("cached".into(), json!(true));
@@ -731,7 +795,11 @@ impl LoginHub {
         let status = resp.status().as_u16();
         let b = crate::util::read_limited(resp, 1 << 20).unwrap_or_default();
         if status == 401 || status == 403 {
-            return fail(409, &format!("Claude refused the access token (HTTP {status}): Re-login"), true);
+            return fail(
+                409,
+                &format!("Claude refused the access token (HTTP {status}): Re-login"),
+                true,
+            );
         }
         if status != 200 {
             return fail(502, &format!("usage endpoint HTTP {status}"), false);
@@ -789,7 +857,10 @@ impl LoginHub {
         let mut out = Map::new();
         out.insert("store".into(), json!(self.store));
         out.insert("hasLogin".into(), json!(!g.f.credentials.is_empty()));
-        out.insert("expiresAt".into(), if exp == 0 { Value::Null } else { json!(exp) });
+        out.insert(
+            "expiresAt".into(),
+            if exp == 0 { Value::Null } else { json!(exp) },
+        );
         out.insert("expired".into(), json!(exp != 0 && exp < now));
         out.insert("email".into(), json!(account_email(&g.f.account)));
         out.insert("accountUuid".into(), json!(account_uuid(&g.f.account)));
@@ -799,7 +870,11 @@ impl LoginHub {
         out.insert("participants".into(), json!(parts));
         out.insert(
             "loginInProgress".into(),
-            json!(g.f.pending.as_ref().is_some_and(|p| p.at.since() < std_dur(LOGIN_PENDING_TTL))),
+            json!(
+                g.f.pending
+                    .as_ref()
+                    .is_some_and(|p| p.at.since() < std_dur(LOGIN_PENDING_TTL))
+            ),
         );
         out.insert("preparing".into(), json!(g.preparing));
         if let Some(fl) = g.f.fail.as_ref().filter(|fl| fl.expires_at == exp) {
@@ -815,7 +890,11 @@ impl LoginHub {
 }
 
 fn null_if_zero_time(t: GoTime) -> Value {
-    if t.is_zero() { Value::Null } else { serde_json::to_value(t).unwrap_or(Value::Null) }
+    if t.is_zero() {
+        Value::Null
+    } else {
+        serde_json::to_value(t).unwrap_or(Value::Null)
+    }
 }
 
 pub fn unix_ms() -> i64 {
@@ -823,7 +902,9 @@ pub fn unix_ms() -> i64 {
 }
 
 fn ms_rfc3339(ms: i64) -> String {
-    GoTime::from_unix_nanos(ms as i128 * 1_000_000).utc().rfc3339()
+    GoTime::from_unix_nanos(ms as i128 * 1_000_000)
+        .utc()
+        .rfc3339()
 }
 
 fn b64url(b: &[u8]) -> String {
@@ -867,7 +948,8 @@ pub struct OauthPair {
 }
 
 pub fn parse_pair(credentials: &str) -> Result<(OauthPair, Map<String, Value>)> {
-    let d: Map<String, Value> = serde_json::from_str(credentials).map_err(|_| anyhow!("credentials are not JSON"))?;
+    let d: Map<String, Value> =
+        serde_json::from_str(credentials).map_err(|_| anyhow!("credentials are not JSON"))?;
     let p: OauthPair = d
         .get("claudeAiOauth")
         .filter(|v| v.is_object())
@@ -884,21 +966,32 @@ pub fn parse_pair(credentials: &str) -> Result<(OauthPair, Map<String, Value>)> 
 pub fn creds_expiry(raw: &str) -> i64 {
     serde_json::from_str::<Value>(raw)
         .ok()
-        .and_then(|v| v.pointer("/claudeAiOauth/expiresAt").and_then(Value::as_f64))
+        .and_then(|v| {
+            v.pointer("/claudeAiOauth/expiresAt")
+                .and_then(Value::as_f64)
+        })
         .map_or(0, |x| x as i64)
 }
 
 pub fn account_uuid(account: &str) -> String {
     serde_json::from_str::<Value>(account)
         .ok()
-        .and_then(|v| v.pointer("/oauthAccount/accountUuid").and_then(Value::as_str).map(String::from))
+        .and_then(|v| {
+            v.pointer("/oauthAccount/accountUuid")
+                .and_then(Value::as_str)
+                .map(String::from)
+        })
         .unwrap_or_default()
 }
 
 pub fn account_email(account: &str) -> String {
     serde_json::from_str::<Value>(account)
         .ok()
-        .and_then(|v| v.pointer("/oauthAccount/emailAddress").and_then(Value::as_str).map(String::from))
+        .and_then(|v| {
+            v.pointer("/oauthAccount/emailAddress")
+                .and_then(Value::as_str)
+                .map(String::from)
+        })
         .unwrap_or_default()
 }
 
@@ -975,7 +1068,10 @@ pub fn token_call(body: &Value) -> std::result::Result<Map<String, Value>, (anyh
         }
         let rejected = (400..500).contains(&status) && status != 429;
         // never the body: it may hold tokens
-        return Err((anyhow!("token endpoint HTTP {status} {}", why.trim()), rejected));
+        return Err((
+            anyhow!("token endpoint HTTP {status} {}", why.trim()),
+            rejected,
+        ));
     }
     Ok(j)
 }
@@ -1002,8 +1098,15 @@ pub fn oauth_refresh(credentials: &str) -> std::result::Result<String, (anyhow::
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
-    o.insert("accessToken".into(), j.get("access_token").cloned().unwrap_or(Value::Null));
-    if let Some(rt) = j.get("refresh_token").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+    o.insert(
+        "accessToken".into(),
+        j.get("access_token").cloned().unwrap_or(Value::Null),
+    );
+    if let Some(rt) = j
+        .get("refresh_token")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
         o.insert("refreshToken".into(), json!(rt));
     }
     let mut exp = jnum(j.get("expires_in"));
@@ -1016,8 +1119,15 @@ pub fn oauth_refresh(credentials: &str) -> std::result::Result<String, (anyhow::
     if rte > 0 {
         o.insert("refreshTokenExpiresAt".into(), json!(now + rte * 1000));
     }
-    if let Some(sc) = j.get("scope").and_then(Value::as_str).filter(|s| !s.is_empty()) {
-        o.insert("scopes".into(), json!(sc.split_whitespace().collect::<Vec<_>>()));
+    if let Some(sc) = j
+        .get("scope")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
+        o.insert(
+            "scopes".into(),
+            json!(sc.split_whitespace().collect::<Vec<_>>()),
+        );
     }
     d.insert("claudeAiOauth".into(), Value::Object(o));
     Ok(jarvis_go::marshal(&d))
@@ -1123,7 +1233,11 @@ fn as_string(raw: &Option<Box<serde_json::value::RawValue>>) -> String {
 }
 
 fn no_account(w: &mut W) {
-    write_json(w, 404, &json!({"error": "this session has no Claude account", "noAccount": true}));
+    write_json(
+        w,
+        404,
+        &json!({"error": "this session has no Claude account", "noAccount": true}),
+    );
 }
 
 impl Router {
@@ -1182,24 +1296,42 @@ impl Router {
 
     fn push_answer(&self, w: &mut W, h: &LoginHub, body: &[u8], source: &str, mut switch_ok: bool) {
         let Ok(b) = jarvis_go::unmarshal::<PushBody>(body) else {
-            write_json(w, 400, &json!({"error": "body must be {credentials, account?}"}));
+            write_json(
+                w,
+                400,
+                &json!({"error": "body must be {credentials, account?}"}),
+            );
             return;
         };
         let (creds, account) = (as_string(&b.credentials), as_string(&b.account));
         if source == "jarvis1" && b.relogin {
             switch_ok = true;
         }
-        match h.offer(&creds, &account, source, switch_ok, source == "jarvis1" && b.relogin) {
+        match h.offer(
+            &creds,
+            &account,
+            source,
+            switch_ok,
+            source == "jarvis1" && b.relogin,
+        ) {
             Err(e) if is_login_err(&e, LoginErr::NotNewer) => write_json(
                 w,
                 200,
                 &json!({"stored": false, "reason": "not newer than the stored credentials", "expiresAt": h.current().expires_at}),
             ),
             Err(e) => {
-                let status = if is_login_err(&e, LoginErr::OtherAcct) { 403 } else { 400 };
+                let status = if is_login_err(&e, LoginErr::OtherAcct) {
+                    403
+                } else {
+                    400
+                };
                 write_json(w, status, &json!({"error": format!("{e:#}")}));
             }
-            Ok(stored) => write_json(w, 200, &json!({"stored": stored, "expiresAt": creds_expiry(&creds)})),
+            Ok(stored) => write_json(
+                w,
+                200,
+                &json!({"stored": stored, "expiresAt": creds_expiry(&creds)}),
+            ),
         }
     }
 
@@ -1210,10 +1342,17 @@ impl Router {
             return true;
         }
         if aud.is_empty() || client_id.is_empty() {
-            write_json(w, 503, &json!({"error": "the router has no Access audience / client id for this path"}));
+            write_json(
+                w,
+                503,
+                &json!({"error": "the router has no Access audience / client id for this path"}),
+            );
             return false;
         }
-        match self.access().verify(&req.header("Cf-Access-Jwt-Assertion"), aud) {
+        match self
+            .access()
+            .verify(&req.header("Cf-Access-Jwt-Assertion"), aud)
+        {
             Ok(c) if c.email.is_empty() && c.common_name == client_id => true,
             _ => {
                 write_json(w, 403, &json!({"error": "Access service token required"}));
@@ -1232,7 +1371,9 @@ impl Router {
 pub fn register_claude_login(reg: &mut Registrar) {
     // ---- session machines (the session's own account) ----
     reg.m("GET /m/claude-login", |r, w, req, machine, _| {
-        let Some(h) = r.machine_account(machine).1 else { return no_account(w) };
+        let Some(h) = r.machine_account(machine).1 else {
+            return no_account(w);
+        };
         let (have, ack, wait) = poll_args(req);
         // accountswap.rs: a switch cuts it short
         let (a, ok) = r.poll_with_switch(&Ctx::background(), machine, &h, have, ack, wait);
@@ -1289,7 +1430,11 @@ pub fn register_claude_login(reg: &mut Registrar) {
         peer(|_, w, req, h| {
             let (have, ack, wait) = poll_args(req);
             w.set_header("Cache-Control", "no-store");
-            write_json(w, 200, &h.poll(&Ctx::background(), "jarvis1", have, ack, wait));
+            write_json(
+                w,
+                200,
+                &h.poll(&Ctx::background(), "jarvis1", have, ack, wait),
+            );
         }),
     );
     reg.public_fn(

@@ -50,13 +50,25 @@ pub static LOST_EVERY_MS: AtomicU64 = AtomicU64::new(20_000);
 
 /// a Fly state of a machine that isn't running
 pub fn machine_down(state: &str) -> bool {
-    matches!(state, "stopped" | "suspended" | "failed" | "destroyed" | "destroying" | "gone" | "released")
+    matches!(
+        state,
+        "stopped" | "suspended" | "failed" | "destroyed" | "destroying" | "gone" | "released"
+    )
 }
 
 /// "2006-01-02 15:04 UTC" (secs: "2006-01-02 15:04:05 UTC")
 fn utc_text(t: GoTime, secs: bool) -> String {
-    let Some(t) = t.utc().0 else { return "0001-01-01 00:00 UTC".into() };
-    let mut s = format!("{:04}-{:02}-{:02} {:02}:{:02}", t.year(), t.month() as u8, t.day(), t.hour(), t.minute());
+    let Some(t) = t.utc().0 else {
+        return "0001-01-01 00:00 UTC".into();
+    };
+    let mut s = format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}",
+        t.year(),
+        t.month() as u8,
+        t.day(),
+        t.hour(),
+        t.minute()
+    );
     if secs {
         s = format!("{s}:{:02}", t.second());
     }
@@ -90,8 +102,13 @@ pub fn lost_text(l: &LostMachine) -> String {
 
 impl Router {
     pub fn lost_loop(self: &Arc<Self>) {
-        if std::env::var("FLY_READ_TOKEN").unwrap_or_default().is_empty() {
-            crate::logf!("[lost] FLY_READ_TOKEN unset: machines stopped outside Jarvis aren't noticed");
+        if std::env::var("FLY_READ_TOKEN")
+            .unwrap_or_default()
+            .is_empty()
+        {
+            crate::logf!(
+                "[lost] FLY_READ_TOKEN unset: machines stopped outside Jarvis aren't noticed"
+            );
             return;
         }
         let mut seen = BTreeMap::new();
@@ -117,7 +134,11 @@ impl Router {
         let cands: Vec<(String, String, String)> = self.st.do_(|d| {
             d.sessions
                 .values()
-                .filter(|s| !s.machine_id.is_empty() && s.lost.is_none() && (s.state == "started" || s.state == "initialising"))
+                .filter(|s| {
+                    !s.machine_id.is_empty()
+                        && s.lost.is_none()
+                        && (s.state == "started" || s.state == "initialising")
+                })
                 .map(|s| {
                     let fabric = match &s.fabric {
                         Some(f) if self.runner_of(s) == "fabric" => f.conversation.clone(),
@@ -140,7 +161,10 @@ impl Router {
                     Ok(st) => st,
                 }
             } else {
-                state.get(&machine).cloned().unwrap_or_else(|| "gone".into())
+                state
+                    .get(&machine)
+                    .cloned()
+                    .unwrap_or_else(|| "gone".into())
             };
             if !machine_down(&st) || self.busy(&sid) {
                 continue;
@@ -159,7 +183,9 @@ impl Router {
         let evs = (self.lc.hooks().fly_events)(machine).ok()?;
         let mut best: Option<FlyEvent> = None;
         for e in evs {
-            if !matches!(e.kind.as_str(), "exit" | "stop" | "destroy" | "suspend") && !machine_down(&e.status) {
+            if !matches!(e.kind.as_str(), "exit" | "stop" | "destroy" | "suspend")
+                && !machine_down(&e.status)
+            {
                 continue;
             }
             if best.as_ref().is_none_or(|b| e.timestamp > b.timestamp) {
@@ -187,7 +213,13 @@ impl Router {
     /// the session's machine is down and Jarvis didn't take it down: the session says so
     pub fn mark_lost(self: &Arc<Self>, sid: &str, machine: &str, fly_state: &str) {
         let now = GoTime::now().utc();
-        let mut l = LostMachine { machine: machine.into(), at: now, seen: now, fly_state: fly_state.into(), ..Default::default() };
+        let mut l = LostMachine {
+            machine: machine.into(),
+            at: now,
+            seen: now,
+            fly_state: fly_state.into(),
+            ..Default::default()
+        };
         if let Some(ev) = self.lost_event(machine) {
             l.at = GoTime::from_unix_nanos(ev.timestamp as i128 * 1_000_000).utc();
             l.fly = crate::lifecycle::event_text(&ev);
@@ -205,8 +237,13 @@ impl Router {
             }
         };
         let changed = self.st.do_(|d| {
-            let Some(s) = d.sessions.get_mut(sid) else { return false };
-            if s.machine_id != machine || s.lost.is_some() || !(s.state == "started" || s.state == "initialising") {
+            let Some(s) = d.sessions.get_mut(sid) else {
+                return false;
+            };
+            if s.machine_id != machine
+                || s.lost.is_some()
+                || !(s.state == "started" || s.state == "initialising")
+            {
                 return false;
             }
             s.lost = Some(l.clone());
@@ -249,7 +286,13 @@ impl Router {
         );
         let snap = match self.kernel_kill(id, m, false, false) {
             Err(e) => {
-                self.set_state(id, "failed", &format!("Resume couldn't take machine {m} off the line ({e:#}): Resume tries again."));
+                self.set_state(
+                    id,
+                    "failed",
+                    &format!(
+                        "Resume couldn't take machine {m} off the line ({e:#}): Resume tries again."
+                    ),
+                );
                 return true;
             }
             Ok(s) => s,
@@ -275,7 +318,11 @@ impl Router {
             ),
         );
         if !refused.is_empty() {
-            self.set_state(id, "failed", &format!("resume: {refused}, so it would start empty: it doesn't"));
+            self.set_state(
+                id,
+                "failed",
+                &format!("resume: {refused}, so it would start empty: it doesn't"),
+            );
             return true;
         }
         false

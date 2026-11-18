@@ -94,7 +94,10 @@ static SPACE_RE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"[\t\n\x0C\r ]+")
 /// split a pasted path in the TUI). "." and ".." become "file".
 pub fn safe_name(raw: &str) -> String {
     let raw = raw.rsplit(['/', '\\']).next().unwrap_or(raw);
-    let s = SPACE_RE.replace_all(&CTRL_RE.replace_all(raw, ""), "_").trim().to_string();
+    let s = SPACE_RE
+        .replace_all(&CTRL_RE.replace_all(raw, ""), "_")
+        .trim()
+        .to_string();
     let s = jarvis_go::fmt::clip_bytes(&s, 200).to_string();
     if s.is_empty() || s == "." || s == ".." {
         return "file".into();
@@ -104,7 +107,10 @@ pub fn safe_name(raw: &str) -> String {
 
 /// the extensions Claude Code's TUI attaches inline
 pub fn is_image_name(n: &str) -> bool {
-    let ext = n.rsplit_once('.').map(|(_, e)| e.to_lowercase()).unwrap_or_default();
+    let ext = n
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_lowercase())
+        .unwrap_or_default();
     matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp") && n.contains('.')
 }
 
@@ -120,7 +126,12 @@ fn has_file(u: &Upload, name: &str) -> bool {
 /// under the state lock (admit_session). The files named must be in the upload; the upload must be the caller's own
 /// (owner: the proposing session, "" = the app) and not belong to another live session. is_image is the router's own
 /// reading of the name.
-pub fn bind_upload(d: &mut Persisted, sid: &str, owner: &str, input: &AttachmentsIn) -> Result<Vec<AttachFile>> {
+pub fn bind_upload(
+    d: &mut Persisted,
+    sid: &str,
+    owner: &str,
+    input: &AttachmentsIn,
+) -> Result<Vec<AttachFile>> {
     let (files, uid) = check_upload(d, sid, owner, input)?;
     if let Some(u) = d.uploads.get_mut(&uid) {
         u.session = sid.into();
@@ -130,12 +141,19 @@ pub fn bind_upload(d: &mut Persisted, sid: &str, owner: &str, input: &Attachment
 
 /// bind_upload's checks without binding (sid "" = not yet made: check_proposal, before a batch is filed) → the files
 /// and the upload's id
-pub fn check_upload(d: &Persisted, sid: &str, owner: &str, input: &AttachmentsIn) -> Result<(Vec<AttachFile>, String)> {
+pub fn check_upload(
+    d: &Persisted,
+    sid: &str,
+    owner: &str,
+    input: &AttachmentsIn,
+) -> Result<(Vec<AttachFile>, String)> {
     if !UPLOAD_ID_RE.is_match(&input.upload_id) {
         return Err(bad("attachments: missing uploadId"));
     }
     if input.files.len() > ATTACH_MAX_FILES {
-        return Err(bad(format!("too many attachments (max {ATTACH_MAX_FILES})")));
+        return Err(bad(format!(
+            "too many attachments (max {ATTACH_MAX_FILES})"
+        )));
     }
     let u = d
         .uploads
@@ -174,15 +192,30 @@ pub fn attach_env(s: &Session, e: &mut BTreeMap<String, String>) {
     let parts: Vec<String> = ops
         .attach
         .iter()
-        .map(|f| format!(r#"{{"name":{},"isImage":{}}}"#, jarvis_go::fmt::go_quote(&f.name), f.is_image))
+        .map(|f| {
+            format!(
+                r#"{{"name":{},"isImage":{}}}"#,
+                jarvis_go::fmt::go_quote(&f.name),
+                f.is_image
+            )
+        })
         .collect();
-    e.insert("SESSION_ATTACHMENTS_JSON".into(), format!("[{}]", parts.join(",")));
+    e.insert(
+        "SESSION_ATTACHMENTS_JSON".into(),
+        format!("[{}]", parts.join(",")),
+    );
 }
 
 impl Router {
     /// one file of a form's upload. owner: the session staging it ("" = the app); an upload takes files from its owner
     /// only.
-    pub fn stage_upload(&self, upload_id: &str, owner: &str, raw_name: &str, body: &mut dyn Read) -> Result<AttachFile> {
+    pub fn stage_upload(
+        &self,
+        upload_id: &str,
+        owner: &str,
+        raw_name: &str,
+        body: &mut dyn Read,
+    ) -> Result<AttachFile> {
         if !UPLOAD_ID_RE.is_match(upload_id) {
             return Err(bad("missing or bad x-upload-id"));
         }
@@ -216,17 +249,28 @@ impl Router {
         let mut b = vec![];
         body.take(ATTACH_MAX_BYTES as u64 + 1).read_to_end(&mut b)?;
         if b.len() > ATTACH_MAX_BYTES {
-            return Err(HttpStatusErr(413, format!("{name} is larger than {} MB", ATTACH_MAX_BYTES >> 20)).into());
+            return Err(HttpStatusErr(
+                413,
+                format!("{name} is larger than {} MB", ATTACH_MAX_BYTES >> 20),
+            )
+            .into());
         }
         self.obj_put_bytes(&upload_key(upload_id, &name), &b)?;
-        let af = AttachFile { name: name.clone(), size: b.len() as i64, is_image: is_image_name(&name) };
+        let af = AttachFile {
+            name: name.clone(),
+            size: b.len() as i64,
+            is_image: is_image_name(&name),
+        };
         self.st.do_(|d| {
-            let u = d.uploads.entry(upload_id.to_string()).or_insert_with(|| Upload {
-                id: upload_id.into(),
-                created: GoTime::now(),
-                owner: owner.into(),
-                ..Default::default()
-            });
+            let u = d
+                .uploads
+                .entry(upload_id.to_string())
+                .or_insert_with(|| Upload {
+                    id: upload_id.into(),
+                    created: GoTime::now(),
+                    owner: owner.into(),
+                    ..Default::default()
+                });
             u.files.retain(|x| x.name != name);
             u.files.push(af.clone());
         });
@@ -256,7 +300,10 @@ impl Router {
             let (sum, _) = self
                 .obj_sha256(&upload_key(&u.id, &f.name))
                 .map_err(|e| anyhow!("attachment {}: {e:#}", f.name))?;
-            out.insert(f.name.clone(), self.attest_input(machine, "attachment", "cert", &sum)?);
+            out.insert(
+                f.name.clone(),
+                self.attest_input(machine, "attachment", "cert", &sum)?,
+            );
         }
         Ok(out)
     }
@@ -281,7 +328,9 @@ impl Router {
                 .iter()
                 .filter(|(_, u)| {
                     let gone = (!u.session.is_empty() && !d.sessions.contains_key(&u.session))
-                        || (u.session.is_empty() && !u.owner.is_empty() && !d.sessions.contains_key(&u.owner));
+                        || (u.session.is_empty()
+                            && !u.owner.is_empty()
+                            && !d.sessions.contains_key(&u.owner));
                     gone || (u.session.is_empty() && now.sub(&u.created) > UPLOAD_TTL)
                 })
                 .map(|(id, _)| id.clone())
@@ -301,7 +350,14 @@ impl Router {
     }
 
     /// a stored attachment's bytes, served with ranges
-    fn serve_attachment(&self, w: &mut W, req: &crate::nethttp::Req, upload: &str, name: &str, no_store: bool) {
+    fn serve_attachment(
+        &self,
+        w: &mut W,
+        req: &crate::nethttp::Req,
+        upload: &str,
+        name: &str,
+        no_store: bool,
+    ) {
         let b = match self.obj_get_bytes(&upload_key(upload, name)) {
             Err(_) => return write_json(w, 404, &json!({"error": "no such attachment"})),
             Ok(b) => b,
@@ -315,7 +371,12 @@ impl Router {
 }
 
 pub fn uploads_on_destroy(r: &Arc<Router>, s: &Session) {
-    if let Some(up) = s.ops.as_ref().map(|o| o.upload.clone()).filter(|u| !u.is_empty()) {
+    if let Some(up) = s
+        .ops
+        .as_ref()
+        .map(|o| o.upload.clone())
+        .filter(|u| !u.is_empty())
+    {
         r.drop_upload(&up);
     }
 }

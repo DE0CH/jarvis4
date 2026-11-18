@@ -27,9 +27,42 @@ pub const AWS_BUDGET_REGIONS: &[&str] = &["eu-west-2", "ap-southeast-1", "ap-nor
 /// USD an hour, on-demand Linux, shared tenancy, for every instance type kernel/spawner/aws.go uses, per region (AWS's
 /// Price List API, read 2026-11-04). A type not listed is priced at the dearest listed (the cap errs high).
 const AWS_INSTANCE_RATES: &[(&str, &[(&str, f64)])] = &[
-    ("eu-west-2", &[("t3.medium", 0.0472), ("t3.large", 0.0944), ("m7i.xlarge", 0.2331), ("m7i.2xlarge", 0.4662), ("r7i.2xlarge", 0.6216), ("r7i.4xlarge", 1.2432), ("r7i.8xlarge", 2.4864)]),
-    ("ap-southeast-1", &[("t3.medium", 0.0528), ("t3.large", 0.1056), ("m7i.xlarge", 0.2520), ("m7i.2xlarge", 0.5040), ("r7i.2xlarge", 0.6384), ("r7i.4xlarge", 1.2768), ("r7i.8xlarge", 2.5536)]),
-    ("ap-northeast-1", &[("t3.medium", 0.0544), ("t3.large", 0.1088), ("m7i.xlarge", 0.2604), ("m7i.2xlarge", 0.5208), ("r7i.2xlarge", 0.6384), ("r7i.4xlarge", 1.2768), ("r7i.8xlarge", 2.5536)]),
+    (
+        "eu-west-2",
+        &[
+            ("t3.medium", 0.0472),
+            ("t3.large", 0.0944),
+            ("m7i.xlarge", 0.2331),
+            ("m7i.2xlarge", 0.4662),
+            ("r7i.2xlarge", 0.6216),
+            ("r7i.4xlarge", 1.2432),
+            ("r7i.8xlarge", 2.4864),
+        ],
+    ),
+    (
+        "ap-southeast-1",
+        &[
+            ("t3.medium", 0.0528),
+            ("t3.large", 0.1056),
+            ("m7i.xlarge", 0.2520),
+            ("m7i.2xlarge", 0.5040),
+            ("r7i.2xlarge", 0.6384),
+            ("r7i.4xlarge", 1.2768),
+            ("r7i.8xlarge", 2.5536),
+        ],
+    ),
+    (
+        "ap-northeast-1",
+        &[
+            ("t3.medium", 0.0544),
+            ("t3.large", 0.1088),
+            ("m7i.xlarge", 0.2604),
+            ("m7i.2xlarge", 0.5208),
+            ("r7i.2xlarge", 0.6384),
+            ("r7i.4xlarge", 1.2768),
+            ("r7i.8xlarge", 2.5536),
+        ],
+    ),
 ];
 
 /// USD per GB-month: gp3 provisioned storage and snapshot data stored (read 2026-11-04)
@@ -68,7 +101,9 @@ pub fn aws_storage_rate(region: &str) -> (f64, f64) {
     }
     AWS_STORAGE_RATES
         .iter()
-        .fold((0.0, 0.0), |(g, s), (_, a, b)| (f64::max(g, *a), f64::max(s, *b)))
+        .fold((0.0, 0.0), |(g, s), (_, a, b)| {
+            (f64::max(g, *a), f64::max(s, *b))
+        })
 }
 
 // ---- what AWS lists ------------------------------------------------------------------------------------------
@@ -169,7 +204,11 @@ pub fn aws_burn_rate(inv: &AwsInventory) -> AwsBurn {
         if s.state == "error" {
             continue;
         }
-        let gb = if s.bytes <= 0 { s.volume_gb as f64 } else { s.bytes as f64 / (1u64 << 30) as f64 };
+        let gb = if s.bytes <= 0 {
+            s.volume_gb as f64
+        } else {
+            s.bytes as f64 / (1u64 << 30) as f64
+        };
         let (_, snap) = aws_storage_rate(&s.region);
         b.rate_per_hour += gb * snap / HOURS_PER_MONTH;
         b.snapshots += 1;
@@ -244,8 +283,15 @@ pub fn aws_sign_v4(
         .map(|(k, v)| format!("{k}:{}\n", v.trim()))
         .collect();
     let signed = headers.keys().cloned().collect::<Vec<_>>().join(";");
-    let path = u.as_ref().map(|u| u.path().to_string()).filter(|p| !p.is_empty()).unwrap_or_else(|| "/".into());
-    let query = u.as_ref().and_then(|u| u.query().map(str::to_string)).unwrap_or_default();
+    let path = u
+        .as_ref()
+        .map(|u| u.path().to_string())
+        .filter(|p| !p.is_empty())
+        .unwrap_or_else(|| "/".into());
+    let query = u
+        .as_ref()
+        .and_then(|u| u.query().map(str::to_string))
+        .unwrap_or_default();
     let canon = [method, &path, &query, &canon_headers, &signed, &payload].join("\n");
     let scope = format!("{day}/{region}/{service}/aws4_request");
     let to_sign = format!(
@@ -260,7 +306,10 @@ pub fn aws_sign_v4(
         "AWS4-HMAC-SHA256 Credential={id}/{scope}, SignedHeaders={signed}, Signature={}",
         hex::encode(hmac_sha(&k, &to_sign))
     );
-    let mut out: Vec<(String, String)> = extra.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+    let mut out: Vec<(String, String)> = extra
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
     out.push(("X-Amz-Date".into(), amz_date));
     out.push(("X-Amz-Content-Sha256".into(), payload));
     out.push(("Authorization".into(), auth));
@@ -317,12 +366,30 @@ impl AwsCostApi {
         }
     }
 
-    fn post(&self, endpoint: &str, region: &str, service: &str, ctype: &str, target: &str, body: &[u8]) -> Result<Vec<u8>> {
+    fn post(
+        &self,
+        endpoint: &str,
+        region: &str,
+        service: &str,
+        ctype: &str,
+        target: &str,
+        body: &[u8],
+    ) -> Result<Vec<u8>> {
         let mut extra = vec![("Content-Type", ctype)];
         if !target.is_empty() {
             extra.push(("X-Amz-Target", target));
         }
-        let hs = aws_sign_v4("POST", endpoint, &extra, body, &self.id, &self.secret, region, service, GoTime::now());
+        let hs = aws_sign_v4(
+            "POST",
+            endpoint,
+            &extra,
+            body,
+            &self.id,
+            &self.secret,
+            region,
+            service,
+            GoTime::now(),
+        );
         let mut req = self.http.post(endpoint).body(body.to_vec());
         for (k, v) in hs {
             req = req.header(k, v);
@@ -357,14 +424,26 @@ impl AwsCostApi {
             {
                 msg = format!("{} {}", e.errors.error.code, e.errors.error.message);
             }
-            return Err(anyhow!("{service}: HTTP {status} {}", jarvis_go::fmt::clip_bytes(&msg, 300)));
+            return Err(anyhow!(
+                "{service}: HTTP {status} {}",
+                jarvis_go::fmt::clip_bytes(&msg, 300)
+            ));
         }
         Ok(b)
     }
 
     /// one EC2 Query action, every page (NextToken), each page's XML to page
-    fn ec2_call(&self, region: &str, params: &[(&str, &str)], mut page: impl FnMut(&[u8]) -> Result<String>) -> Result<()> {
-        let action = params.iter().find(|(k, _)| *k == "Action").map_or("", |x| x.1).to_string();
+    fn ec2_call(
+        &self,
+        region: &str,
+        params: &[(&str, &str)],
+        mut page: impl FnMut(&[u8]) -> Result<String>,
+    ) -> Result<()> {
+        let action = params
+            .iter()
+            .find(|(k, _)| *k == "Action")
+            .map_or("", |x| x.1)
+            .to_string();
         let mut next = String::new();
         loop {
             let mut p: Vec<(&str, &str)> = params.to_vec();
@@ -373,9 +452,18 @@ impl AwsCostApi {
                 p.push(("NextToken", &next));
             }
             p.sort();
-            let body = url::form_urlencoded::Serializer::new(String::new()).extend_pairs(p).finish();
+            let body = url::form_urlencoded::Serializer::new(String::new())
+                .extend_pairs(p)
+                .finish();
             let b = self
-                .post(&(self.ec2)(region), region, "ec2", "application/x-www-form-urlencoded; charset=utf-8", "", body.as_bytes())
+                .post(
+                    &(self.ec2)(region),
+                    region,
+                    "ec2",
+                    "application/x-www-form-urlencoded; charset=utf-8",
+                    "",
+                    body.as_bytes(),
+                )
                 .map_err(|e| anyhow!("{region} {action}: {e:#}"))?;
             let n = page(&b).map_err(|e| anyhow!("{region} {action}: {e:#}"))?;
             if n.is_empty() {
@@ -420,31 +508,35 @@ impl AwsCostApi {
             reservations: Items<Res>,
         }
         let mut out = vec![];
-        self.ec2_call(region, &[("Action", "DescribeInstances"), ("MaxResults", "1000")], |b| {
-            let r: R = quick_xml::de::from_reader(b)?;
-            for res in r.reservations.item {
-                for i in res.instances.item {
-                    let mut x = AwsInstance {
-                        id: i.id,
-                        region: region.into(),
-                        type_: i.type_,
-                        state: i.state.name,
-                        public_ip: i.ip,
-                        ..Default::default()
-                    };
-                    for t in i.tags.item {
-                        match t.key.as_str() {
-                            "Name" => x.name = t.value,
-                            "jarvis4_source" => x.source = t.value,
-                            "jarvis4_owner" => x.owner = t.value,
-                            _ => {}
+        self.ec2_call(
+            region,
+            &[("Action", "DescribeInstances"), ("MaxResults", "1000")],
+            |b| {
+                let r: R = quick_xml::de::from_reader(b)?;
+                for res in r.reservations.item {
+                    for i in res.instances.item {
+                        let mut x = AwsInstance {
+                            id: i.id,
+                            region: region.into(),
+                            type_: i.type_,
+                            state: i.state.name,
+                            public_ip: i.ip,
+                            ..Default::default()
+                        };
+                        for t in i.tags.item {
+                            match t.key.as_str() {
+                                "Name" => x.name = t.value,
+                                "jarvis4_source" => x.source = t.value,
+                                "jarvis4_owner" => x.owner = t.value,
+                                _ => {}
+                            }
                         }
+                        out.push(x);
                     }
-                    out.push(x);
                 }
-            }
-            Ok(r.next)
-        })?;
+                Ok(r.next)
+            },
+        )?;
         Ok(out)
     }
 
@@ -466,16 +558,20 @@ impl AwsCostApi {
             volumes: Items<V>,
         }
         let mut out = vec![];
-        self.ec2_call(region, &[("Action", "DescribeVolumes"), ("MaxResults", "500")], |b| {
-            let r: R = quick_xml::de::from_reader(b)?;
-            out.extend(r.volumes.item.into_iter().map(|v| AwsVolume {
-                id: v.id,
-                region: region.into(),
-                state: v.status,
-                size_gb: v.size,
-            }));
-            Ok(r.next)
-        })?;
+        self.ec2_call(
+            region,
+            &[("Action", "DescribeVolumes"), ("MaxResults", "500")],
+            |b| {
+                let r: R = quick_xml::de::from_reader(b)?;
+                out.extend(r.volumes.item.into_iter().map(|v| AwsVolume {
+                    id: v.id,
+                    region: region.into(),
+                    state: v.status,
+                    size_gb: v.size,
+                }));
+                Ok(r.next)
+            },
+        )?;
         Ok(out)
     }
 
@@ -500,17 +596,25 @@ impl AwsCostApi {
             snaps: Items<S>,
         }
         let mut out = vec![];
-        self.ec2_call(region, &[("Action", "DescribeSnapshots"), ("Owner.1", "self"), ("MaxResults", "1000")], |b| {
-            let r: R = quick_xml::de::from_reader(b)?;
-            out.extend(r.snaps.item.into_iter().map(|s| AwsSnapshot {
-                id: s.id,
-                region: region.into(),
-                state: s.status,
-                volume_gb: s.size,
-                bytes: s.full,
-            }));
-            Ok(r.next)
-        })?;
+        self.ec2_call(
+            region,
+            &[
+                ("Action", "DescribeSnapshots"),
+                ("Owner.1", "self"),
+                ("MaxResults", "1000"),
+            ],
+            |b| {
+                let r: R = quick_xml::de::from_reader(b)?;
+                out.extend(r.snaps.item.into_iter().map(|s| AwsSnapshot {
+                    id: s.id,
+                    region: region.into(),
+                    state: s.status,
+                    volume_gb: s.size,
+                    bytes: s.full,
+                }));
+                Ok(r.next)
+            },
+        )?;
         Ok(out)
     }
 
@@ -530,7 +634,10 @@ impl AwsCostApi {
         let mut out = vec![];
         self.ec2_call(region, &[("Action", "DescribeAddresses")], |b| {
             let r: R = quick_xml::de::from_reader(b)?;
-            out.extend(r.addrs.item.into_iter().map(|a| AwsAddress { region: region.into(), public_ip: a.ip }));
+            out.extend(r.addrs.item.into_iter().map(|a| AwsAddress {
+                region: region.into(),
+                public_ip: a.ip,
+            }));
             Ok(String::new())
         })?;
         Ok(out)
@@ -538,11 +645,22 @@ impl AwsCostApi {
 
     /// the key's own account (STS GetCallerIdentity: needs no permission)
     pub fn account(&self) -> Result<String> {
-        let a = self.st.lock().map(|g| g.account.clone()).unwrap_or_default();
+        let a = self
+            .st
+            .lock()
+            .map(|g| g.account.clone())
+            .unwrap_or_default();
         if !a.is_empty() {
             return Ok(a);
         }
-        let b = self.post(&self.sts, "us-east-1", "sts", "application/x-www-form-urlencoded; charset=utf-8", "", b"Action=GetCallerIdentity&Version=2011-06-15")?;
+        let b = self.post(
+            &self.sts,
+            "us-east-1",
+            "sts",
+            "application/x-www-form-urlencoded; charset=utf-8",
+            "",
+            b"Action=GetCallerIdentity&Version=2011-06-15",
+        )?;
         #[derive(Deserialize, Default)]
         #[serde(default)]
         struct Res {
@@ -579,7 +697,12 @@ impl AwsCoster for AwsCostApi {
             let (mut cur, mut slow_at) = self
                 .st
                 .lock()
-                .map(|g| (g.last.get(*region).cloned().unwrap_or_default(), g.slow_at.get(*region).copied().unwrap_or_default()))
+                .map(|g| {
+                    (
+                        g.last.get(*region).cloned().unwrap_or_default(),
+                        g.slow_at.get(*region).copied().unwrap_or_default(),
+                    )
+                })
                 .unwrap_or_default();
             match self.instances(region) {
                 Ok(i) => cur.instances = i,
@@ -641,7 +764,14 @@ impl AwsCoster for AwsCostApi {
                     {"Dimensions": {"Key": "RECORD_TYPE", "Values": ["Usage"]}},
                 ]},
             });
-            let b = self.post(&self.ce, "us-east-1", "ce", "application/x-amz-json-1.1", "AWSInsightsIndexService.GetCostAndUsage", jarvis_go::marshal(&q).as_bytes())?;
+            let b = self.post(
+                &self.ce,
+                "us-east-1",
+                "ce",
+                "application/x-amz-json-1.1",
+                "AWSInsightsIndexService.GetCostAndUsage",
+                jarvis_go::marshal(&q).as_bytes(),
+            )?;
             #[derive(Deserialize, Default)]
             #[serde(default)]
             struct Amount {
@@ -663,7 +793,11 @@ impl AwsCoster for AwsCostApi {
             let r: R = jarvis_go::unmarshal(&b)?;
             let mut total = 0.0;
             for p in r.results {
-                let a = p.total.get("UnblendedCost").map(|x| x.amount.clone()).unwrap_or_default();
+                let a = p
+                    .total
+                    .get("UnblendedCost")
+                    .map(|x| x.amount.clone())
+                    .unwrap_or_default();
                 total += a.parse::<f64>().map_err(|_| anyhow!("ce: amount {a:?}"))?;
             }
             Ok(total)
@@ -698,10 +832,15 @@ pub struct AwsBudgetPart {
     pub bill_err: String,
 }
 
-static AWS_BILL_ACCOUNT: LazyLock<Mutex<(String, String)>> = LazyLock::new(|| Mutex::new((String::new(), String::new())));
+static AWS_BILL_ACCOUNT: LazyLock<Mutex<(String, String)>> =
+    LazyLock::new(|| Mutex::new((String::new(), String::new())));
 
 /// the inventory every tick, Cost Explorer when the month's reading is older than AWS_BILLED_EVERY
-pub fn read_aws(aws: Option<&dyn AwsCoster>, prev: Option<&BudgetState>, now: GoTime) -> Option<AwsBudgetPart> {
+pub fn read_aws(
+    aws: Option<&dyn AwsCoster>,
+    prev: Option<&BudgetState>,
+    now: GoTime,
+) -> Option<AwsBudgetPart> {
     let aws = aws?;
     let mut p = AwsBudgetPart::default();
     let (inv, err) = aws.inventory(now);
@@ -713,11 +852,18 @@ pub fn read_aws(aws: Option<&dyn AwsCoster>, prev: Option<&BudgetState>, now: Go
         crate::logf!("[budget] AWS: {e:#} (counted from the last list)");
     }
     if !p.burn.unknown_types.is_empty() {
-        crate::logf!("[budget] AWS: no price for {}: priced as the dearest type", p.burn.unknown_types.join(", "));
+        crate::logf!(
+            "[budget] AWS: no price for {}: priced as the dearest type",
+            p.burn.unknown_types.join(", ")
+        );
     }
     let month = now.utc().rfc3339()[..7].to_string();
     let due = prev.is_none_or(|pv| {
-        pv.month != month || pv.aws_billed_at.as_ref().is_none_or(|at| now.sub(at) >= AWS_BILLED_EVERY)
+        pv.month != month
+            || pv
+                .aws_billed_at
+                .as_ref()
+                .is_none_or(|at| now.sub(at) >= AWS_BILLED_EVERY)
     });
     if due {
         let (usd, acct) = aws.billed(&month);
@@ -725,11 +871,21 @@ pub fn read_aws(aws: Option<&dyn AwsCoster>, prev: Option<&BudgetState>, now: Go
             if !acct.is_empty() {
                 g.0 = acct;
             }
-            g.1 = usd.as_ref().err().map(|e| format!("{e:#}")).unwrap_or_default();
+            g.1 = usd
+                .as_ref()
+                .err()
+                .map(|e| format!("{e:#}"))
+                .unwrap_or_default();
         }
         match usd {
             Err(e) => crate::logf!("[budget] AWS Cost Explorer: {e:#}"),
-            Ok(u) => p.billed = Some(AwsBilled { month, usd: u, at: now.utc() }),
+            Ok(u) => {
+                p.billed = Some(AwsBilled {
+                    month,
+                    usd: u,
+                    at: now.utc(),
+                })
+            }
         }
     }
     if let Ok(g) = AWS_BILL_ACCOUNT.lock() {

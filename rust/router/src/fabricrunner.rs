@@ -58,7 +58,14 @@ pub const FABRIC_REGION: &str = "fra";
 
 pub fn uuid_text(b: &[u8]) -> String {
     let h = hex::encode(b);
-    format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..])
+    format!(
+        "{}-{}-{}-{}-{}",
+        &h[0..8],
+        &h[8..12],
+        &h[12..16],
+        &h[16..20],
+        &h[20..]
+    )
 }
 
 /// a random lowercase UUID v4 (the session's conversation at hermit)
@@ -82,7 +89,10 @@ fn hermit_get(path: &str, token_env: &str, timeout: Duration) -> Result<(u16, Ve
         .header("Aviary-Protocol", "hermit-core=1")
         .send()?;
     let st = resp.status().as_u16();
-    Ok((st, crate::util::read_limited(resp, 64 << 10).unwrap_or_default()))
+    Ok((
+        st,
+        crate::util::read_limited(resp, 64 << 10).unwrap_or_default(),
+    ))
 }
 
 /// DELETE /v1/workspaces/{conversation} as caller magpie: the session's /workspace and its other folders (the home)
@@ -93,13 +103,19 @@ fn delete_fabric_files_live(conversation: &str) -> Result<()> {
         .timeout(Duration::from_secs(60))
         .build()?
         .delete(hermit_url(&format!("/v1/workspaces/{conversation}")))
-        .header("Authorization", format!("Bearer {}", env("FABRIC_HERMIT_MAGPIE_TOKEN")))
+        .header(
+            "Authorization",
+            format!("Bearer {}", env("FABRIC_HERMIT_MAGPIE_TOKEN")),
+        )
         .header("Aviary-Protocol", "hermit-core=1")
         .send()?;
     let st = resp.status().as_u16();
     if st / 100 != 2 {
         let b = crate::util::read_limited(resp, 2048).unwrap_or_default();
-        return Err(anyhow!("hermit: HTTP {st} {}", String::from_utf8_lossy(&b).trim()));
+        return Err(anyhow!(
+            "hermit: HTTP {st} {}",
+            String::from_utf8_lossy(&b).trim()
+        ));
     }
     Ok(())
 }
@@ -118,7 +134,10 @@ fn fabric_machine_state_live(conversation: &str, machine: &str) -> Result<String
         return Ok("released".into());
     }
     if st / 100 != 2 {
-        return Err(anyhow!("hermit: HTTP {st} {}", String::from_utf8_lossy(&b).trim()));
+        return Err(anyhow!(
+            "hermit: HTTP {st} {}",
+            String::from_utf8_lossy(&b).trim()
+        ));
     }
     #[derive(Deserialize, Default)]
     #[serde(default)]
@@ -147,7 +166,9 @@ pub static DELETE_FABRIC_FILES: RwLock<DeleteFilesFn> = RwLock::new(delete_fabri
 pub static FABRIC_MACHINE_STATE: RwLock<MachineStateFn> = RwLock::new(fabric_machine_state_live);
 
 pub fn fabric_machine_state(conversation: &str, machine: &str) -> Result<String> {
-    (*FABRIC_MACHINE_STATE.read().unwrap_or_else(|e| e.into_inner()))(conversation, machine)
+    (*FABRIC_MACHINE_STATE
+        .read()
+        .unwrap_or_else(|e| e.into_inner()))(conversation, machine)
 }
 
 impl Router {
@@ -165,11 +186,14 @@ impl Router {
 
     /// the session's machines run on the fabric
     pub fn is_fabric_session(&self, id: &str) -> bool {
-        self.st.do_(|d| d.sessions.get(id).is_some_and(|s| s.fabric.is_some()))
+        self.st
+            .do_(|d| d.sessions.get(id).is_some_and(|s| s.fabric.is_some()))
     }
 
     pub fn delete_fabric_files(&self, conversation: &str) -> Result<()> {
-        (*DELETE_FABRIC_FILES.read().unwrap_or_else(|e| e.into_inner()))(conversation)
+        (*DELETE_FABRIC_FILES
+            .read()
+            .unwrap_or_else(|e| e.into_inner()))(conversation)
     }
 
     /// the session's fabric line, its conversation made on first use
@@ -179,7 +203,10 @@ impl Router {
                 let s = d.sessions.get_mut(sid)?;
                 Some(
                     s.fabric
-                        .get_or_insert_with(|| FabricLine { conversation: new_conversation(), ..Default::default() })
+                        .get_or_insert_with(|| FabricLine {
+                            conversation: new_conversation(),
+                            ..Default::default()
+                        })
                         .clone(),
                 )
             })
@@ -204,7 +231,9 @@ impl Router {
             d.sessions
                 .values()
                 .filter_map(|s| s.fabric.as_ref())
-                .filter(|f| f.machine == machine && f.conversation == c.conversation && !f.env.is_empty())
+                .filter(|f| {
+                    f.machine == machine && f.conversation == c.conversation && !f.env.is_empty()
+                })
                 .map(|f| f.env.clone())
                 .next_back()
         })?;
@@ -230,7 +259,13 @@ impl Router {
                 return write_json(w, 401, &json!({"error": "a sandbox token is needed"}));
             };
             let ks = match keys.current(false) {
-                Err(e) => return write_json(w, 503, &json!({"error": format!("hermit's token keys: {e:#}")})),
+                Err(e) => {
+                    return write_json(
+                        w,
+                        503,
+                        &json!({"error": format!("hermit's token keys: {e:#}")}),
+                    );
+                }
                 Ok(k) => k,
             };
             let mut c = verify_hst(tok, &ks, GoTime::now());
@@ -245,7 +280,11 @@ impl Router {
                 Ok(c) => c,
             };
             match r.fabric_env_for(&c) {
-                None => write_json(w, 404, &json!({"error": "no session's machine is this sandbox"})),
+                None => write_json(
+                    w,
+                    404,
+                    &json!({"error": "no session's machine is this sandbox"}),
+                ),
                 Some(e) => write_json(w, 200, &json!({"env": e})),
             }
         })
@@ -268,7 +307,11 @@ const HST_CONTEXT: &[u8] = b"hermit-sandbox-token\x00";
 pub type HermitKeyMap = BTreeMap<u32, ed25519_dalek::VerifyingKey>;
 
 /// `hst1.<kid>.<payload>.<sig>` checked against keys (kid → Ed25519 public key) at now; Err is the reason
-pub fn verify_hst(tok: &str, keys: &HermitKeyMap, now: GoTime) -> std::result::Result<HstClaims, String> {
+pub fn verify_hst(
+    tok: &str,
+    keys: &HermitKeyMap,
+    now: GoTime,
+) -> std::result::Result<HstClaims, String> {
     if tok.len() > 600 {
         return Err("token too long".into());
     }
@@ -282,7 +325,8 @@ pub fn verify_hst(tok: &str, keys: &HermitKeyMap, now: GoTime) -> std::result::R
     let (Ok(payload), Ok(sig)) = (b64.decode(parts[2]), b64.decode(parts[3])) else {
         return Err("bad encoding".into());
     };
-    let sig = ed25519_dalek::Signature::from_slice(&sig).map_err(|_| "bad signature".to_string())?;
+    let sig =
+        ed25519_dalek::Signature::from_slice(&sig).map_err(|_| "bad signature".to_string())?;
     let mut msg = HST_CONTEXT.to_vec();
     msg.extend_from_slice(&payload);
     if ed25519_dalek::Verifier::verify(key, &msg, &sig).is_err() {
@@ -315,7 +359,10 @@ pub struct HermitKeys {
 
 impl HermitKeys {
     pub fn new(get: KeysFetch) -> HermitKeys {
-        HermitKeys { mu: Mutex::new(None), get }
+        HermitKeys {
+            mu: Mutex::new(None),
+            get,
+        }
     }
 
     pub fn current(&self, force: bool) -> Result<HermitKeyMap> {
@@ -341,7 +388,11 @@ impl HermitKeys {
 
 /// GET /v1/sandbox-token-keys as caller tools
 pub fn fetch_hermit_keys() -> Result<HermitKeyMap> {
-    let (st, b) = hermit_get("/v1/sandbox-token-keys", "FABRIC_HERMIT_TOOLS_TOKEN", Duration::from_secs(10))?;
+    let (st, b) = hermit_get(
+        "/v1/sandbox-token-keys",
+        "FABRIC_HERMIT_TOOLS_TOKEN",
+        Duration::from_secs(10),
+    )?;
     if st != 200 {
         return Err(anyhow!("hermit token keys: HTTP {st}"));
     }
@@ -365,8 +416,12 @@ pub fn parse_hermit_keys(b: &[u8]) -> Result<HermitKeyMap> {
     let v: V = jarvis_go::unmarshal(b)?;
     let mut out = BTreeMap::new();
     for k in v.keys {
-        let Ok(b) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(&k.public_key) else { continue };
-        let Ok(arr) = <[u8; 32]>::try_from(b.as_slice()) else { continue };
+        let Ok(b) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(&k.public_key) else {
+            continue;
+        };
+        let Ok(arr) = <[u8; 32]>::try_from(b.as_slice()) else {
+            continue;
+        };
         if k.alg == "Ed25519"
             && let Ok(vk) = ed25519_dalek::VerifyingKey::from_bytes(&arr)
         {
@@ -392,7 +447,11 @@ mod tests {
         msg.extend_from_slice(&p);
         let sig = sk.sign(&msg);
         let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
-        format!("hst1.{kid}.{}.{}", b64.encode(&p), b64.encode(sig.to_bytes()))
+        format!(
+            "hst1.{kid}.{}.{}",
+            b64.encode(&p),
+            b64.encode(sig.to_bytes())
+        )
     }
 
     #[test]
@@ -403,8 +462,14 @@ mod tests {
         let c = verify_hst(&token(&sk, 3, 2_000), &keys, now).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(c.sandbox, "11111111-1111-1111-1111-111111111111");
         assert_eq!(c.conversation, "22222222-2222-2222-2222-222222222222");
-        assert_eq!(verify_hst(&token(&sk, 3, 500), &keys, now), Err("token expired".into()));
-        assert_eq!(verify_hst(&token(&sk, 4, 2_000), &keys, now), Err("unknown kid 4".into()));
+        assert_eq!(
+            verify_hst(&token(&sk, 3, 500), &keys, now),
+            Err("token expired".into())
+        );
+        assert_eq!(
+            verify_hst(&token(&sk, 4, 2_000), &keys, now),
+            Err("unknown kid 4".into())
+        );
         let conv = new_conversation();
         assert_eq!(conv.len(), 36);
         assert_eq!(&conv[14..15], "4");

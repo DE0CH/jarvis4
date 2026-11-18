@@ -7,8 +7,9 @@ use crate::core::CoreError;
 use crate::router::Router;
 use std::sync::{Arc, LazyLock};
 
-static LOCKED_STORE_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"store (\S+) is locked").unwrap_or_else(|_| unreachable!()));
+static LOCKED_STORE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"store (\S+) is locked").unwrap_or_else(|_| unreachable!())
+});
 
 /// the store a pull's error says is locked ("?" when it doesn't say which), "" for any other error or none
 pub fn locked_store_of(err: Option<&anyhow::Error>) -> String {
@@ -28,8 +29,12 @@ impl Router {
         }
         let ask = self.st.do_(|d| {
             let sid = d.machines.get(machine).cloned()?;
-            let s = d.sessions.get_mut(&sid).filter(|s| s.machine_id == machine)?;
-            let ask = (!locked.is_empty() && s.locked_store.is_empty() && s.carry_lost).then(|| s.id.clone());
+            let s = d
+                .sessions
+                .get_mut(&sid)
+                .filter(|s| s.machine_id == machine)?;
+            let ask = (!locked.is_empty() && s.locked_store.is_empty() && s.carry_lost)
+                .then(|| s.id.clone());
             if err.is_none() {
                 s.carry_lost = false; // its secrets came: from now on they are carried as usual
             }

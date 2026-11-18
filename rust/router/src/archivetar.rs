@@ -45,18 +45,32 @@ pub fn mb(n: i64) -> String {
 pub fn safe_title(t: &str, fallback: &str) -> String {
     let t: String = t
         .chars()
-        .map(|c| if "/\\:*?\"<>|".contains(c) || (c as u32) < 0x20 { ' ' } else { c })
+        .map(|c| {
+            if "/\\:*?\"<>|".contains(c) || (c as u32) < 0x20 {
+                ' '
+            } else {
+                c
+            }
+        })
         .collect();
     let mut t = jarvis_go::fmt::fields_join(&t);
     if t.chars().count() > 60 {
         t = t.chars().take(60).collect::<String>().trim().to_string();
     }
-    if t.is_empty() { fallback.to_string() } else { t }
+    if t.is_empty() {
+        fallback.to_string()
+    } else {
+        t
+    }
 }
 
 /// the archive's name for a title (a leading "." is dropped)
 pub fn archive_file_for(s: &Session, title: &str) -> String {
-    let created = if s.created.is_zero() { GoTime::now() } else { s.created };
+    let created = if s.created.is_zero() {
+        GoTime::now()
+    } else {
+        s.created
+    };
     let day = created.utc().rfc3339()[..10].to_string();
     format!(
         "{ARCHIVES_ROOT}/{day} {}.tar.gz",
@@ -110,9 +124,15 @@ pub fn layout_snapshot(snap: &Path) -> Result<SnapshotLayout> {
         let name = crate::util::path_clean(&String::from_utf8_lossy(&h.path_bytes()));
         match h.entry_type() {
             tar::EntryType::Regular => {
-                regular.insert(name.clone(), (h.mtime().unwrap_or(0), h.size().unwrap_or(0) as i64));
+                regular.insert(
+                    name.clone(),
+                    (h.mtime().unwrap_or(0), h.size().unwrap_or(0) as i64),
+                );
                 if crate::tails::is_transcript(&name) {
-                    out.sums.insert(base(&name).to_string(), crate::livearchive::sum_reader(body)?);
+                    out.sums.insert(
+                        base(&name).to_string(),
+                        crate::livearchive::sum_reader(body)?,
+                    );
                 }
             }
             tar::EntryType::Symlink if name.starts_with("artifacts/") => {
@@ -131,9 +151,15 @@ pub fn layout_snapshot(snap: &Path) -> Result<SnapshotLayout> {
         if crate::tails::is_transcript(name) {
             transcripts.push(name.clone());
             out.is_transcript.insert(name.clone());
-            out.dests.entry(name.clone()).or_default().push(format!("transcript-{}", base(name)));
+            out.dests
+                .entry(name.clone())
+                .or_default()
+                .push(format!("transcript-{}", base(name)));
         } else if name.starts_with("artifacts/") {
-            out.dests.entry(name.clone()).or_default().push(name.clone());
+            out.dests
+                .entry(name.clone())
+                .or_default()
+                .push(name.clone());
         }
     }
     for (l, target) in &links {
@@ -148,7 +174,10 @@ pub fn layout_snapshot(snap: &Path) -> Result<SnapshotLayout> {
                 out.dests.entry(name.clone()).or_default().push(l.clone());
                 hit = true;
             } else if let Some(rest) = name.strip_prefix(&format!("{t}/")) {
-                out.dests.entry(name.clone()).or_default().push(format!("{l}/{rest}"));
+                out.dests
+                    .entry(name.clone())
+                    .or_default()
+                    .push(format!("{l}/{rest}"));
                 hit = true;
             }
         }
@@ -160,7 +189,10 @@ pub fn layout_snapshot(snap: &Path) -> Result<SnapshotLayout> {
         let (x, y) = (regular[a].0, regular[b].0);
         x.cmp(&y).then(a.cmp(b))
     });
-    out.transcripts = transcripts.iter().map(|t| format!("transcript-{}", base(t))).collect();
+    out.transcripts = transcripts
+        .iter()
+        .map(|t| format!("transcript-{}", base(t)))
+        .collect();
     for (name, ds) in out.dests.iter_mut() {
         ds.sort(); // the first name holds the bytes, the others link to it: the same on every pass
         out.bytes += regular.get(name).map_or(0, |x| x.1);
@@ -183,7 +215,12 @@ pub fn write_archive(w: impl Write, p: &ArchivePlan, progress: &dyn Fn(i64)) -> 
     let mut tw = tar::Builder::new(gz);
     let now = crate::util::unix_now() as u64;
     let mut raw: i64 = 0;
-    let mut add = |tw: &mut tar::Builder<_>, name: &str, size: u64, at: u64, body: &mut dyn Read| -> Result<()> {
+    let mut add = |tw: &mut tar::Builder<_>,
+                   name: &str,
+                   size: u64,
+                   at: u64,
+                   body: &mut dyn Read|
+     -> Result<()> {
         let mut h = tar::Header::new_gnu();
         h.set_size(size);
         h.set_mode(0o644);
@@ -201,16 +238,23 @@ pub fn write_archive(w: impl Write, p: &ArchivePlan, progress: &dyn Fn(i64)) -> 
     for (name, body) in &p.head {
         add(&mut tw, name, body.len() as u64, now, &mut &body[..])?;
     }
-    let disk = |tw: &mut tar::Builder<_>, add: &mut dyn FnMut(&mut tar::Builder<_>, &str, u64, u64, &mut dyn Read) -> Result<()>, name: &str, local: &Path| -> Result<()> {
-        let mut f = std::fs::File::open(local)?;
-        let md = f.metadata()?;
-        let at = md
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map_or(now, |d| d.as_secs());
-        add(tw, name, md.len(), at, &mut f)
-    };
+    // the archive's writer type is the caller's: no alias can name it here
+    #[allow(clippy::type_complexity)]
+    let disk =
+        |tw: &mut tar::Builder<_>,
+         add: &mut dyn FnMut(&mut tar::Builder<_>, &str, u64, u64, &mut dyn Read) -> Result<()>,
+         name: &str,
+         local: &Path|
+         -> Result<()> {
+            let mut f = std::fs::File::open(local)?;
+            let md = f.metadata()?;
+            let at = md
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(now, |d| d.as_secs());
+            add(tw, name, md.len(), at, &mut f)
+        };
     for (name, local) in &p.live {
         disk(&mut tw, &mut add, name, local)?;
     }
@@ -219,8 +263,13 @@ pub fn write_archive(w: impl Write, p: &ArchivePlan, progress: &dyn Fn(i64)) -> 
         for transcripts in [true, false] {
             walk_tar(snap, |h, body| {
                 let name = crate::util::path_clean(&String::from_utf8_lossy(&h.path_bytes()));
-                let Some(ds) = p.dests.get(&name) else { return Ok(()) };
-                if h.entry_type() != tar::EntryType::Regular || ds.is_empty() || p.transcripts.contains(&name) != transcripts {
+                let Some(ds) = p.dests.get(&name) else {
+                    return Ok(());
+                };
+                if h.entry_type() != tar::EntryType::Regular
+                    || ds.is_empty()
+                    || p.transcripts.contains(&name) != transcripts
+                {
                     return Ok(());
                 }
                 let at = h.mtime().unwrap_or(now);
@@ -245,7 +294,11 @@ pub fn write_archive(w: impl Write, p: &ArchivePlan, progress: &dyn Fn(i64)) -> 
         crate::util::walk_files(dir, &mut files)?;
         files.sort();
         for local in files {
-            let rel = local.strip_prefix(dir).unwrap_or(&local).to_string_lossy().into_owned();
+            let rel = local
+                .strip_prefix(dir)
+                .unwrap_or(&local)
+                .to_string_lossy()
+                .into_owned();
             disk(&mut tw, &mut add, &format!("discord/{rel}"), &local)?;
         }
     }
@@ -303,7 +356,11 @@ impl std::fmt::Display for NoArchive {
 impl std::error::Error for NoArchive {}
 
 /// an archive's entries, streamed from the Storage Box (f returns Ok(false) to stop early)
-pub fn walk_archive(b: &StorageBox, file: &str, mut f: impl FnMut(&tar::Header, &mut dyn Read) -> Result<bool>) -> Result<()> {
+pub fn walk_archive(
+    b: &StorageBox,
+    file: &str,
+    mut f: impl FnMut(&tar::Header, &mut dyn Read) -> Result<bool>,
+) -> Result<()> {
     let Some((rc, _)) = b.open(file)? else {
         return Err(NoArchive(file.to_string()).into());
     };
@@ -339,7 +396,12 @@ pub fn archive_tail(b: &StorageBox, file: &str, name: &str, n: usize) -> Result<
 }
 
 /// the named entries of an archive into dir (each under its base name); the names it found
-pub fn extract_archive(b: &StorageBox, file: &str, dir: &Path, names: &[&str]) -> Result<BTreeSet<String>> {
+pub fn extract_archive(
+    b: &StorageBox,
+    file: &str,
+    dir: &Path,
+    names: &[&str],
+) -> Result<BTreeSet<String>> {
     let want: BTreeSet<&str> = names.iter().copied().collect();
     let mut found = BTreeSet::new();
     walk_archive(b, file, |h, body| {
@@ -358,7 +420,12 @@ pub fn extract_archive(b: &StorageBox, file: &str, dir: &Path, names: &[&str]) -
 impl Router {
     /// the session's archive name, made unique against what is already in the folder and kept on the session, so a
     /// retried destroy writes the same one
-    pub fn pick_archive_file(&self, b: &StorageBox, s: &mut Session, title: &str) -> Result<String> {
+    pub fn pick_archive_file(
+        &self,
+        b: &StorageBox,
+        s: &mut Session,
+        title: &str,
+    ) -> Result<String> {
         if !s.archive_file.is_empty() {
             return Ok(s.archive_file.clone());
         }
@@ -390,7 +457,12 @@ impl Router {
 
     /// the plan streamed to <file>.part, its size checked against what was sent, then renamed to file → the bytes
     /// the Storage Box holds and how long the upload took
-    pub fn upload_archive(&self, b: &StorageBox, sid: &str, p: &ArchivePlan) -> Result<(i64, Duration)> {
+    pub fn upload_archive(
+        &self,
+        b: &StorageBox,
+        sid: &str,
+        p: &ArchivePlan,
+    ) -> Result<(i64, Duration)> {
         b.mkcols(ARCHIVES_ROOT)?;
         let part = format!("{}.part", p.file);
         let mut last = anyhow!("no upload");
@@ -402,9 +474,12 @@ impl Router {
             let progress = self.archive_progress(sid, p.raw_bytes);
             let s2 = sent.clone();
             let res = std::thread::scope(|sc| {
-                let wr = sc.spawn(move || write_archive(SentCounter { w: pw, n: s2 }, p, &*progress));
+                let wr =
+                    sc.spawn(move || write_archive(SentCounter { w: pw, n: s2 }, p, &*progress));
                 let up = b.put_stream(&part, pr);
-                let w = wr.join().unwrap_or_else(|_| Err(anyhow!("the archive writer panicked")));
+                let w = wr
+                    .join()
+                    .unwrap_or_else(|_| Err(anyhow!("the archive writer panicked")));
                 up.and(w)
             });
             let res = res.and_then(|()| {
@@ -442,7 +517,10 @@ impl Router {
         let sid = sid.to_string();
         Box::new(move |raw| {
             let mut g = last.lock().unwrap_or_else(|e| e.into_inner());
-            if g.is_some_and(|l| l.elapsed() < Duration::from_millis(ARCHIVE_PROGRESS_EVERY_MS.load(Ordering::Relaxed))) {
+            if g.is_some_and(|l| {
+                l.elapsed()
+                    < Duration::from_millis(ARCHIVE_PROGRESS_EVERY_MS.load(Ordering::Relaxed))
+            }) {
                 return;
             }
             *g = Some(Instant::now());
@@ -455,7 +533,11 @@ impl Router {
 
     /// the session's archive (its latest snapshot, or only its live copies) onto the Storage Box and into the index.
     /// None when there is neither (the session never ran).
-    pub fn archive_session(self: &Arc<Self>, b: &StorageBox, s: &Session) -> Result<Option<ArchiveInfo>> {
+    pub fn archive_session(
+        self: &Arc<Self>,
+        b: &StorageBox,
+        s: &Session,
+    ) -> Result<Option<ArchiveInfo>> {
         let mut s = s.clone();
         let scratch = Path::new(&self.cfg.data_dir).join("tmp");
         std::fs::create_dir_all(&scratch)?;
@@ -539,14 +621,20 @@ impl Router {
             if let Some(t) = &tail {
                 info.last = crate::tails::snippet(t);
             }
-            meta.insert("line".into(), json!(crate::grants::cert_field(Some(cert), "line")));
+            meta.insert(
+                "line".into(),
+                json!(crate::grants::cert_field(Some(cert), "line")),
+            );
             meta.insert("snapshotMachine".into(), json!(machine));
             meta.insert("snapshotAt".into(), json!(info.snapshot_at));
             meta.insert("unresolvedArtifactLinks".into(), json!(lay.unresolved));
             if !s.no_snapshot.is_empty() {
                 meta.insert(
                     "noSnapshot".into(),
-                    json!(format!("{}; this is the newest signed snapshot the router had", s.no_snapshot)),
+                    json!(format!(
+                        "{}; this is the newest signed snapshot the router had",
+                        s.no_snapshot
+                    )),
                 );
             }
             if !s.snapshot_note.is_empty() {
@@ -555,33 +643,55 @@ impl Router {
             man.insert("snapshot".into(), json!("jarvis2/snapshot.tar.gz"));
             man.insert("signer".into(), json!(machine));
             let sig = std::fs::read_to_string(format!("{}.sig", snap.display()))?;
-            p.sigs.push(("jarvis2/cert.json".into(), jarvis_go::marshal(cert).into_bytes()));
+            p.sigs.push((
+                "jarvis2/cert.json".into(),
+                jarvis_go::marshal(cert).into_bytes(),
+            ));
             if let Some(b) = self.core_cert() {
                 p.sigs.push(("jarvis2/core-cert.json".into(), b));
             }
-            p.sigs.push(("jarvis2/snapshot.sig".into(), sig.trim().as_bytes().to_vec()));
+            p.sigs.push((
+                "jarvis2/snapshot.sig".into(),
+                sig.trim().as_bytes().to_vec(),
+            ));
         } else {
             let mut why = "the session left no signed snapshot".to_string();
             if !s.no_snapshot.is_empty() {
                 why.push_str(&format!(" ({})", s.no_snapshot));
             }
-            why.push_str(": this record holds only its live transcript copies, so it can't be restored");
+            why.push_str(
+                ": this record holds only its live transcript copies, so it can't be restored",
+            );
             info.no_snapshot = why.clone();
-            meta.insert("line".into(), json!(crate::grants::cert_field(s.cert.as_ref(), "line")));
+            meta.insert(
+                "line".into(),
+                json!(crate::grants::cert_field(s.cert.as_ref(), "line")),
+            );
             meta.insert("snapshot".into(), Value::Null);
             meta.insert("noSnapshot".into(), json!(why));
             man.insert("snapshot".into(), Value::Null);
         }
         p.head = vec![
-            ("session.json".into(), jarvis_go::fmt::marshal_indent1(&meta).into_bytes()),
-            (format!("restore-{}.json", s.id), jarvis_go::marshal(&man).into_bytes()),
+            (
+                "session.json".into(),
+                jarvis_go::fmt::marshal_indent1(&meta).into_bytes(),
+            ),
+            (
+                format!("restore-{}.json", s.id),
+                jarvis_go::marshal(&man).into_bytes(),
+            ),
         ];
         self.lc_note(&s.id, "", &format!("uploading the archive to {file}"));
         p.tail = self.lifecycle_files(&s.id); // up to here
         let (discord, discord_done) = self.discord_export(&s, &tmp); // discord.rs: None without a channel
         p.discord = discord;
         p.raw_bytes = lay.bytes
-            + p.head.iter().chain(p.tail.iter()).chain(p.sigs.iter()).map(|(_, b)| b.len() as i64).sum::<i64>()
+            + p.head
+                .iter()
+                .chain(p.tail.iter())
+                .chain(p.sigs.iter())
+                .map(|(_, b)| b.len() as i64)
+                .sum::<i64>()
             + live_files
                 .iter()
                 .filter_map(|(_, l)| std::fs::metadata(l).ok())
@@ -609,7 +719,10 @@ impl Router {
         let sid = s.id.clone();
         update_index(b, |list| {
             std::iter::once(entry)
-                .chain(list.into_iter().filter(|e| e.get("id").and_then(|v| v.as_str()) != Some(sid.as_str())))
+                .chain(
+                    list.into_iter()
+                        .filter(|e| e.get("id").and_then(|v| v.as_str()) != Some(sid.as_str())),
+                )
                 .collect()
         })
         .map_err(|e| anyhow!("indexing the archive: {e:#}"))?;

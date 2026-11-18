@@ -111,7 +111,9 @@ impl Router {
                 for n in HOLDER_NAMES {
                     let name = format!("holders/{n}.key");
                     let k = match self.st.read_sealed(&name) {
-                        Ok(Some(b)) => Signer::from_scalar(&b).map(|_| b).map_err(|e| anyhow!("{e}")),
+                        Ok(Some(b)) => Signer::from_scalar(&b)
+                            .map(|_| b)
+                            .map_err(|e| anyhow!("{e}")),
                         Ok(None) => {
                             let s = Signer::generate().scalar();
                             self.st.write_sealed(&name, &s).map(|()| s)
@@ -133,7 +135,9 @@ impl Router {
 
     fn holder_signer(&self, holder: &str) -> Result<Signer> {
         let ks = self.holder_keys()?;
-        let k = ks.get(holder).ok_or_else(|| anyhow!("unknown holder {holder}"))?;
+        let k = ks
+            .get(holder)
+            .ok_or_else(|| anyhow!("unknown holder {holder}"))?;
         Signer::from_scalar(k).map_err(|e| anyhow!("{e}"))
     }
 
@@ -148,13 +152,25 @@ impl Router {
     }
 
     /// the exact text the phone signs. kind "grant" lasts minutes (≤ 10); "rule" lasts until `until`.
-    pub fn draft_grant(&self, session: &str, holder: &str, kind: &str, minutes: i64, until: GoTime) -> Result<String> {
+    pub fn draft_grant(
+        &self,
+        session: &str,
+        holder: &str,
+        kind: &str,
+        minutes: i64,
+        until: GoTime,
+    ) -> Result<String> {
         let public = self.holder_public_keys()?;
         let hk = public.get(holder).cloned().unwrap_or_default();
         if hk.is_empty() {
             return Err(anyhow!("unknown holder {holder}"));
         }
-        let line = self.st.do_(|d| d.sessions.get(session).map(session_line).unwrap_or_default());
+        let line = self.st.do_(|d| {
+            d.sessions
+                .get(session)
+                .map(session_line)
+                .unwrap_or_default()
+        });
         if line.is_empty() {
             return Err(anyhow!("the session has no certified machine yet"));
         }
@@ -187,7 +203,12 @@ impl Router {
 
     /// keep what the phone signed, after checking it against the phone key in the session's cert
     pub fn add_grant(self: &Arc<Self>, session: &str, doc: Option<&Doc>) -> Result<StoredGrant> {
-        let Some((doc, g)) = doc.and_then(|d| Some((d, jarvis_go::unmarshal::<GrantText>(d.payload.as_bytes()).ok()?))) else {
+        let Some((doc, g)) = doc.and_then(|d| {
+            Some((
+                d,
+                jarvis_go::unmarshal::<GrantText>(d.payload.as_bytes()).ok()?,
+            ))
+        }) else {
             return Err(anyhow!("bad grant"));
         };
         let public = self.holder_public_keys()?;
@@ -199,14 +220,22 @@ impl Router {
             .unwrap_or_default();
         let end = GoTime::parse(&format!("{}{}", g.expires, g.until));
         let (Some(end), false) = (end, holder.is_empty()) else {
-            return Err(anyhow!("the grant names no holder of this router, or has no end"));
+            return Err(anyhow!(
+                "the grant names no holder of this router, or has no end"
+            ));
         };
         let res = self.st.do_(|d| -> Result<(StoredGrant, String)> {
-            let Some(s) = d.sessions.get(session).filter(|s| session_line(s) == g.session) else {
+            let Some(s) = d
+                .sessions
+                .get(session)
+                .filter(|s| session_line(s) == g.session)
+            else {
                 return Err(anyhow!("the grant is for another session"));
             };
             let phone = cert_field(s.cert.as_ref(), "phone");
-            if phone.is_empty() || !crate::http::verify_p256(&phone, doc.payload.as_bytes(), &doc.sig) {
+            if phone.is_empty()
+                || !crate::http::verify_p256(&phone, doc.payload.as_bytes(), &doc.sig)
+            {
                 return Err(anyhow!("not signed by the phone this session's cert names"));
             }
             let sg = StoredGrant {
@@ -232,7 +261,9 @@ impl Router {
                 .inbox
                 .iter()
                 .filter(|(_, q)| {
-                    q.kind == crate::inbox::REQUEST_KIND_GRANT && q.params.session == session && q.params.holder == holder
+                    q.kind == crate::inbox::REQUEST_KIND_GRANT
+                        && q.params.session == session
+                        && q.params.holder == holder
                 })
                 .map(|(id, _)| id.clone())
                 .collect();
@@ -240,7 +271,15 @@ impl Router {
                 // a pending request for this feature is answered (inbox.rs)
                 if let Some(q) = d.inbox.remove(&id) {
                     // the phone-signed grant vouches
-                    crate::outcomes::note_outcome(d, Some(&q.origin), &q.kind, &q.id, crate::outcomes::OUTCOME_APPROVED, 0, Some(doc));
+                    crate::outcomes::note_outcome(
+                        d,
+                        Some(&q.origin),
+                        &q.kind,
+                        &q.id,
+                        crate::outcomes::OUTCOME_APPROVED,
+                        0,
+                        Some(doc),
+                    );
                     answered.insert(id, g.kind == "grant"); // a rule doesn't allow bypass
                 }
             }
@@ -269,7 +308,9 @@ impl Router {
                 .iter()
                 .filter(|(_, g)| {
                     // a holder no longer listed goes too
-                    !now.before(&g.ends) || !d.sessions.contains_key(&g.session) || !HOLDER_NAMES.contains(&g.holder.as_str())
+                    !now.before(&g.ends)
+                        || !d.sessions.contains_key(&g.session)
+                        || !HOLDER_NAMES.contains(&g.holder.as_str())
                 })
                 .map(|(id, _)| id.clone())
                 .collect();
@@ -282,7 +323,7 @@ impl Router {
                 .cloned()
                 .collect()
         });
-        out.sort_by(|a, b| a.ends.cmp(&b.ends));
+        out.sort_by_key(|a| a.ends);
         out
     }
 
@@ -294,22 +335,43 @@ impl Router {
 
     /// runs cmd as holder in the session's machine: with a live phone grant if one exists, else a standing rule, else
     /// no grant (the session's own allow list). The machine decides.
-    pub fn exec(&self, session: &str, holder: &str, cmd: &str, timeout: Duration) -> Result<ExecResult> {
+    pub fn exec(
+        &self,
+        session: &str,
+        holder: &str,
+        cmd: &str,
+        timeout: Duration,
+    ) -> Result<ExecResult> {
         self.exec_with(session, holder, cmd, timeout, false)
     }
 
     /// a live phone grant (not a rule) for holder on the session
     pub fn has_phone_grant(&self, session: &str, holder: &str) -> bool {
-        self.grants(session).iter().any(|g| g.holder == holder && g.kind == "grant")
+        self.grants(session)
+            .iter()
+            .any(|g| g.holder == holder && g.kind == "grant")
     }
 
     /// like exec, but only under a live phone grant, and the machine is told so (it refuses a rule or its allow list
     /// for this request). For raising a session to bypass (Deyao, 2026-10-09).
-    pub fn exec_phone(&self, session: &str, holder: &str, cmd: &str, timeout: Duration) -> Result<ExecResult> {
+    pub fn exec_phone(
+        &self,
+        session: &str,
+        holder: &str,
+        cmd: &str,
+        timeout: Duration,
+    ) -> Result<ExecResult> {
         self.exec_with(session, holder, cmd, timeout, true)
     }
 
-    fn exec_with(&self, session: &str, holder: &str, cmd: &str, timeout: Duration, phone_only: bool) -> Result<ExecResult> {
+    fn exec_with(
+        &self,
+        session: &str,
+        holder: &str,
+        cmd: &str,
+        timeout: Duration,
+        phone_only: bool,
+    ) -> Result<ExecResult> {
         let k = self.holder_signer(holder)?;
         let (machine, line) = self.st.do_(|d| {
             d.sessions
@@ -332,14 +394,22 @@ impl Router {
             }
         }
         if phone_only && grant.is_none() {
-            return Err(GrantNeeded { holder: holder.into(), phone: true }.into());
+            return Err(GrantNeeded {
+                holder: holder.into(),
+                phone: true,
+            }
+            .into());
         }
         let id = crate::util::rand_id();
         let req = jarvis_go::marshal(&json!({"id": id, "session": line, "holder": k.public_key(),
             "cmd": cmd, "timeout": timeout.as_secs(), "at": GoTime::now().unix(), "phoneOnly": phone_only}));
         let sig = k.sign(req.as_bytes());
         // mq.rs: a row of the machine's queue; its answer comes back on the row, to whichever replica waits
-        let item = ExecItem { request: req, sig, grant };
+        let item = ExecItem {
+            request: req,
+            sig,
+            grant,
+        };
         if !self.mq_put(&machine, "exec", &id, &serde_json::to_value(&item)?, 16)? {
             return Err(anyhow!(
                 "the machine has too many commands waiting (16): wait for them to finish, then try again"

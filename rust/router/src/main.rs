@@ -135,12 +135,17 @@ fn fatal(msg: impl std::fmt::Display) -> ! {
 fn main() {
     crate::procstat::mark_start();
     if std::env::args().nth(1).as_deref() == Some("m-gateway") {
-        fatal("m-gateway: the machines' WireGuard peer is not part of this build yet (the Go router's `router m-gateway` serves it)");
+        fatal(
+            "m-gateway: the machines' WireGuard peer is not part of this build yet (the Go router's `router m-gateway` serves it)",
+        );
     }
     let stall: u64 = env("SNAPSHOT_STALL_SECONDS", "600").parse().unwrap_or(0);
     let sigs_file = std::env::var("SESSION_IMAGE_SIGS_FILE").unwrap_or_default();
     let cfg = Config {
-        core_url: env("CORE_URL", "http://core.jarvis2-core.svc.cluster.local:8090"),
+        core_url: env(
+            "CORE_URL",
+            "http://core.jarvis2-core.svc.cluster.local:8090",
+        ),
         kernel_url: std::env::var("KERNEL_URL").unwrap_or_default(),
         no_core: std::env::var("NO_CORE").as_deref() == Ok("1"),
         data_dir: env("DATA_DIR", "/data"),
@@ -176,18 +181,28 @@ fn main() {
     let db = crate::db::open_db_wait(&db_url);
     // the blobs are in object storage (objstore.rs); only a throwaway router (CI's stand-ins, e2e) keeps them in memory
     let throwaway = std::env::var("ROUTER_THROWAWAY").as_deref() == Ok("1");
-    if std::env::var("OBJECTS_ACCESS_KEY").unwrap_or_default().is_empty() && !throwaway {
-        fatal("OBJECTS_ACCESS_KEY / OBJECTS_SECRET_KEY are required (Secret router-secrets-objects), or ROUTER_THROWAWAY=1 for a throwaway router");
+    if std::env::var("OBJECTS_ACCESS_KEY")
+        .unwrap_or_default()
+        .is_empty()
+        && !throwaway
+    {
+        fatal(
+            "OBJECTS_ACCESS_KEY / OBJECTS_SECRET_KEY are required (Secret router-secrets-objects), or ROUTER_THROWAWAY=1 for a throwaway router",
+        );
     }
     if !std::env::var("WG_CONFIG").unwrap_or_default().is_empty() {
-        fatal("WG_CONFIG: the machines' WireGuard peer runs in m-gateway (`router m-gateway`), not in the router");
+        fatal(
+            "WG_CONFIG: the machines' WireGuard peer runs in m-gateway (`router m-gateway`), not in the router",
+        );
     }
     let (addr, maddr) = (env("ADDR", ":8080"), env("MACHINE_ADDR", ":8081"));
     // each core call has its own deadline (core.rs core_call_timeout)
     let core = Arc::new(crate::core::CoreClient::new(&cfg.core_url));
     let seal = crate::sealed::sealer_from_env().unwrap_or_else(|e| fatal(format!("{e:#}")));
-    let st = crate::state::State::open(db, std::path::Path::new(&cfg.data_dir), Some(seal)).unwrap_or_else(|e| fatal(format!("{e:#}")));
-    let policy = crate::policy::load_policy(&env("POLICY_FILE", "/policy/stores.json")).unwrap_or_else(|e| fatal(format!("{e:#}")));
+    let st = crate::state::State::open(db, std::path::Path::new(&cfg.data_dir), Some(seal))
+        .unwrap_or_else(|e| fatal(format!("{e:#}")));
+    let policy = crate::policy::load_policy(&env("POLICY_FILE", "/policy/stores.json"))
+        .unwrap_or_else(|e| fatal(format!("{e:#}")));
     let r = Router::new(cfg, Arc::new(st), core.clone(), policy);
     if let Err(e) = r.probe_objects(throwaway) {
         fatal(format!("objects: {e:#}"));
@@ -218,7 +233,11 @@ fn main() {
     public.handle(
         "GET /readyz",
         Arc::new(move |w, _| {
-            let (code, state) = if s2.load(Ordering::SeqCst) { (503, "stopping") } else { (200, "serving") };
+            let (code, state) = if s2.load(Ordering::SeqCst) {
+                (503, "stopping")
+            } else {
+                (200, "serving")
+            };
             crate::nethttp::write_json(w, code, &serde_json::json!({"state": state}));
         }),
     );
@@ -228,12 +247,20 @@ fn main() {
     let machine_h = r.machine_handler();
     let fabric = std::env::var("FABRIC_MACHINE_ADDR").unwrap_or_default();
     let fabric_h = (!fabric.is_empty() && crate::fabricrunner::fabric_enabled()).then(|| {
-        r.fabric_machine_handler(Arc::new(crate::fabricrunner::HermitKeys::new(Box::new(crate::fabricrunner::fetch_hermit_keys))))
+        r.fabric_machine_handler(Arc::new(crate::fabricrunner::HermitKeys::new(Box::new(
+            crate::fabricrunner::fetch_hermit_keys,
+        ))))
     });
-    let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap_or_else(|e| fatal(e));
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap_or_else(|e| fatal(e));
     let stop = tokio_util::sync::CancellationToken::new();
     let mut servers = vec![];
-    for (a, h) in [(addr.clone(), public_h), (maddr.clone(), machine_h)].into_iter().chain(fabric_h.map(|h| (fabric.clone(), h))) {
+    for (a, h) in [(addr.clone(), public_h), (maddr.clone(), machine_h)]
+        .into_iter()
+        .chain(fabric_h.map(|h| (fabric.clone(), h)))
+    {
         let stop = stop.clone();
         servers.push(rt.spawn(async move {
             if let Err(e) = crate::nethttp::serve(&a, h, stop).await {
@@ -241,21 +268,28 @@ fn main() {
             }
         }));
     }
-    logf!("router {} on {addr} and {maddr} (core {})", crate::router::router_id(), core.url());
+    logf!(
+        "router {} on {addr} and {maddr} (core {})",
+        crate::router::router_id(),
+        core.url()
+    );
     // SIGTERM (a rollout, a node drain): this replica leaves the Service (readyz 503), hands the scheduler's lease on,
     // lets its running jobs end (up to JOB_GRACE_SECONDS, under the pod's terminationGracePeriodSeconds: a job still
     // running then is carried on by another replica once its lease lapses, jobs.rs), lets a Claude login refresh in
     // flight finish, then closes its listeners (a long poll ends; the machine polls again, through the gateway, on
     // another replica).
     rt.block_on(async {
-        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap_or_else(|e| fatal(e));
+        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .unwrap_or_else(|e| fatal(e));
         tokio::select! {
             _ = term.recv() => {}
             _ = tokio::signal::ctrl_c() => {}
         }
     });
     stopping.store(true, Ordering::SeqCst);
-    logf!("stopping: out of the Service, the scheduler's lease handed on, waiting for this replica's jobs");
+    logf!(
+        "stopping: out of the Service, the scheduler's lease handed on, waiting for this replica's jobs"
+    );
     r.release_lead();
     std::thread::sleep(Duration::from_secs(5)); // the readiness probe sees it first
     let grace: u64 = env("JOB_GRACE_SECONDS", "1740").parse().unwrap_or(0);
@@ -265,7 +299,9 @@ fn main() {
     }
     let n = r.my_running_jobs();
     if n > 0 {
-        logf!("stopping with {n} job(s) running: another replica carries them on once their lease lapses");
+        logf!(
+            "stopping with {n} job(s) running: another replica carries them on once their lease lapses"
+        );
     }
     r.drain_logins(Duration::from_secs(20));
     if let Some(l) = r.lines() {
@@ -273,7 +309,11 @@ fn main() {
     }
     stop.cancel();
     rt.block_on(async {
-        let _ = tokio::time::timeout(Duration::from_secs(30), futures_util::future::join_all(servers)).await;
+        let _ = tokio::time::timeout(
+            Duration::from_secs(30),
+            futures_util::future::join_all(servers),
+        )
+        .await;
     });
     logf!("stopped");
 }

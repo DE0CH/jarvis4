@@ -31,7 +31,11 @@ impl State {
         Ok(())
     }
 
-    fn log_rows(&self, sql: &str, params: &[&(dyn postgres::types::ToSql + Sync)]) -> Result<Vec<Vec<u8>>> {
+    fn log_rows(
+        &self,
+        sql: &str,
+        params: &[&(dyn postgres::types::ToSql + Sync)],
+    ) -> Result<Vec<Vec<u8>>> {
         let mut c = self.log_db()?.conn()?;
         Ok(c.query(sql, params)?
             .into_iter()
@@ -72,7 +76,10 @@ impl State {
     pub fn replace_log(&self, session: &str, kind: &str, lines: &[Vec<u8>]) -> Result<()> {
         let mut c = self.log_db()?.conn()?;
         let mut tx = c.transaction()?;
-        tx.execute("DELETE FROM session_log WHERE session_id = $1 AND kind = $2", &[&session, &kind])?;
+        tx.execute(
+            "DELETE FROM session_log WHERE session_id = $1 AND kind = $2",
+            &[&session, &kind],
+        )?;
         for l in lines {
             let s = std::str::from_utf8(l)?;
             tx.execute(
@@ -87,8 +94,10 @@ impl State {
     /// a session's log gone (its archive holds it)
     pub fn drop_log(&self, session: &str, kind: &str) {
         let res = self.log_db().and_then(|db| {
-            db.conn()?
-                .execute("DELETE FROM session_log WHERE session_id = $1 AND kind = $2", &[&session, &kind])?;
+            db.conn()?.execute(
+                "DELETE FROM session_log WHERE session_id = $1 AND kind = $2",
+                &[&session, &kind],
+            )?;
             Ok(())
         });
         if let Err(e) = res {
@@ -100,8 +109,11 @@ impl State {
     pub fn log_sessions(&self, kind: &str) -> Vec<String> {
         let Ok(db) = self.log_db() else { return vec![] };
         let Ok(mut c) = db.conn() else { return vec![] };
-        c.query("SELECT DISTINCT session_id FROM session_log WHERE kind = $1", &[&kind])
-            .map(|rows| rows.into_iter().map(|r| r.get::<_, String>(0)).collect())
-            .unwrap_or_default()
+        c.query(
+            "SELECT DISTINCT session_id FROM session_log WHERE kind = $1",
+            &[&kind],
+        )
+        .map(|rows| rows.into_iter().map(|r| r.get::<_, String>(0)).collect())
+        .unwrap_or_default()
     }
 }

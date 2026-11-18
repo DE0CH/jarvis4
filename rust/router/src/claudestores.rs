@@ -65,14 +65,19 @@ pub fn with_account_store_if(on: bool, stores: &[String], account: &str) -> Vec<
 impl Router {
     /// every account whose pair or record changed since it was last written into this core
     pub fn sync_account_stores(&self) {
-        let Ok(key) = self.store_core().key() else { return };
+        let Ok(key) = self.store_core().key() else {
+            return;
+        };
         let sk = key.get("signingKey").cloned().unwrap_or_default();
         for h in self.accounts().all() {
             let v = h.current();
             if v.credentials.is_empty() {
                 continue;
             }
-            let want = hex::encode(Sha256::digest(format!("{sk}\n{}\n{}", v.credentials, v.account)));
+            let want = hex::encode(Sha256::digest(format!(
+                "{sk}\n{}\n{}",
+                v.credentials, v.account
+            )));
             let skip = {
                 let mut g = ACCOUNT_STORES.lock().unwrap_or_else(|e| e.into_inner());
                 let st = g.entry(h.store.clone()).or_default();
@@ -98,7 +103,11 @@ impl Router {
                 }
                 Ok(()) => {
                     if st.written.is_empty() || !st.last_err.is_empty() {
-                        crate::logf!("[accounts] {}: written into the core's store {}", h.store, h.store);
+                        crate::logf!(
+                            "[accounts] {}: written into the core's store {}",
+                            h.store,
+                            h.store
+                        );
                     }
                     st.written = want;
                     st.retry = GoTime::default();
@@ -123,12 +132,18 @@ impl Router {
 
     /// the store made (not sensitive: a Claude login can't reach a code push) if the core lacks it, then both keys
     pub fn write_account_store(&self, store: &str, credentials: &str, account: &str) -> Result<()> {
-        if let Err(e) = self.store_core().call("/stores/create", &json!({"name": store}))
+        if let Err(e) = self
+            .store_core()
+            .call("/stores/create", &json!({"name": store}))
             && !format!("{e:#}").contains("exists")
         {
             return Err(anyhow!("making the store: {e:#}"));
         }
-        self.write_router_key(store, "CLAUDE_CREDENTIALS", Some(for_machine(credentials).as_bytes()))?;
+        self.write_router_key(
+            store,
+            "CLAUDE_CREDENTIALS",
+            Some(for_machine(credentials).as_bytes()),
+        )?;
         if account.is_empty() {
             return Ok(());
         }
@@ -137,14 +152,19 @@ impl Router {
 
     /// one key sealed to the core's store key and written as the router (core/keys.go writer "router"); None deletes it
     pub fn write_router_key(&self, store: &str, key: &str, value: Option<&[u8]>) -> Result<()> {
-        let mut input = json!({"store": store, "key": key, "writer": "router", "delete": value.is_none()});
+        let mut input =
+            json!({"store": store, "key": key, "writer": "router", "delete": value.is_none()});
         if let Some(value) = value {
             let store_key = self.router_store_key()?;
             let dk = crate::util::rand_bytes(32);
             let (e, wrapped) = seal_to_point(&store_key, &dk, "jarvis2/store-data-key", b"")
                 .map_err(|e| anyhow!("the store key: {e:#}"))?;
             input["wrapped"] = json!({"e": e, "wrapped": wrapped});
-            input["data"] = json!(b64(&gcm_seal_key(&dk, value, format!("{store}\n{key}").as_bytes())?));
+            input["data"] = json!(b64(&gcm_seal_key(
+                &dk,
+                value,
+                format!("{store}\n{key}").as_bytes()
+            )?));
         }
         match self.store_core().call("/stores/write-key", &input) {
             Err(e) if value.is_none() && format!("{e:#}").contains("has no key") => Ok(()),
@@ -185,13 +205,15 @@ impl Router {
             struct St {
                 phone: Phone,
             }
-            let id: Id = jarvis_go::unmarshal(jarvis_go::marshal(&t["identity"]).as_bytes()).map_err(|_| anyhow!("secrets' identity isn't readable"))?;
+            let id: Id = jarvis_go::unmarshal(jarvis_go::marshal(&t["identity"]).as_bytes())
+                .map_err(|_| anyhow!("secrets' identity isn't readable"))?;
             let st: St = id
                 .state
                 .as_ref()
                 .and_then(|s| s.decode().ok())
                 .ok_or_else(|| anyhow!("secrets' identity isn't readable"))?;
-            return jarvis_sig::store_key(&st.phone.agreement_key, &id.agreement_key).map_err(|e| anyhow!("{e}"));
+            return jarvis_sig::store_key(&st.phone.agreement_key, &id.agreement_key)
+                .map_err(|e| anyhow!("{e}"));
         }
         #[derive(Deserialize, Default)]
         #[serde(default)]
@@ -199,7 +221,10 @@ impl Router {
             #[serde(rename = "storeKey")]
             store_key: String,
         }
-        match serde_json::from_value::<Doc>(t["storeKey"].clone()).ok().and_then(|d| d.decode::<Sk>().ok()) {
+        match serde_json::from_value::<Doc>(t["storeKey"].clone())
+            .ok()
+            .and_then(|d| d.decode::<Sk>().ok())
+        {
             Some(sk) if !sk.store_key.is_empty() => Ok(sk.store_key),
             _ => Err(anyhow!("the core answered no store key")),
         }
@@ -212,7 +237,12 @@ fn b64(b: &[u8]) -> String {
 
 /// ephemeral ECDH with the recipient point, HKDF-SHA256(info), AES-256-GCM (nonce ‖ ciphertext ‖ tag), as
 /// rust/machine/src/putkey.rs seal_parts and core WrapToPoint → (e, sealed)
-pub fn seal_to_point(recipient_b64: &str, plain: &[u8], info: &str, aad: &[u8]) -> Result<(String, String)> {
+pub fn seal_to_point(
+    recipient_b64: &str,
+    plain: &[u8],
+    info: &str,
+    aad: &[u8],
+) -> Result<(String, String)> {
     use p256::elliptic_curve::sec1::ToEncodedPoint;
     let rb = base64::engine::general_purpose::STANDARD.decode(recipient_b64)?;
     let rk = p256::PublicKey::from_sec1_bytes(&rb).map_err(|_| anyhow!("bad public key"))?;
@@ -231,12 +261,12 @@ pub fn seal_to_point(recipient_b64: &str, plain: &[u8], info: &str, aad: &[u8]) 
 pub fn gcm_seal_key(key: &[u8], plain: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
     use aes_gcm::aead::{Aead, KeyInit, Payload};
     let c = aes_gcm::Aes256Gcm::new_from_slice(key).map_err(|_| anyhow!("bad key"))?;
-    let nonce = crate::util::rand_bytes(12);
+    let mut nonce = [0u8; 12];
+    nonce.copy_from_slice(&crate::util::rand_bytes(12));
     let ct = c
-        .encrypt(aes_gcm::Nonce::from_slice(&nonce), Payload { msg: plain, aad })
+        .encrypt(&aes_gcm::Nonce::from(nonce), Payload { msg: plain, aad })
         .map_err(|_| anyhow!("seal"))?;
-    let mut out = nonce;
+    let mut out = nonce.to_vec();
     out.extend_from_slice(&ct);
     Ok(out)
 }
-

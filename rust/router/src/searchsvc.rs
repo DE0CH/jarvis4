@@ -28,11 +28,31 @@ struct SvcRoute {
 
 /// method + path under /api (the app; sessions get the same under /m/api) → service + its own path
 const SEARCH_ROUTES: &[SvcRoute] = &[
-    SvcRoute { pattern: "GET /api/icloud/search", svc: "icloud", path: "/search" },
-    SvcRoute { pattern: "GET /api/icloud/file", svc: "icloud", path: "/file" },
-    SvcRoute { pattern: "GET /api/icloud/status", svc: "icloud", path: "/status" },
-    SvcRoute { pattern: "POST /api/icloud/relist", svc: "icloud", path: "/relist" },
-    SvcRoute { pattern: "POST /api/icloud/retry", svc: "icloud", path: "/retry" },
+    SvcRoute {
+        pattern: "GET /api/icloud/search",
+        svc: "icloud",
+        path: "/search",
+    },
+    SvcRoute {
+        pattern: "GET /api/icloud/file",
+        svc: "icloud",
+        path: "/file",
+    },
+    SvcRoute {
+        pattern: "GET /api/icloud/status",
+        svc: "icloud",
+        path: "/status",
+    },
+    SvcRoute {
+        pattern: "POST /api/icloud/relist",
+        svc: "icloud",
+        path: "/relist",
+    },
+    SvcRoute {
+        pattern: "POST /api/icloud/retry",
+        svc: "icloud",
+        path: "/retry",
+    },
 ];
 
 /// a search may take its time, but the service answers a connect at once inside the cluster; one that doesn't (the box
@@ -48,7 +68,9 @@ static SEARCH_CLIENT: LazyLock<reqwest::blocking::Client> = LazyLock::new(|| {
 
 fn service_base(_svc: &str) -> (String, &'static str) {
     (
-        crate::router::env("ICLOUD_INDEX_URL", "http://10.77.0.3:30091").trim_end_matches('/').to_string(),
+        crate::router::env("ICLOUD_INDEX_URL", "http://10.77.0.3:30091")
+            .trim_end_matches('/')
+            .to_string(),
         "the iCloud index",
     )
 }
@@ -107,7 +129,11 @@ fn forward_service(w: &mut W, req: &Req, rt: SvcRoute, body: Vec<u8>) {
         Err(e) => return write_error(w, 502, &format!("{name} unreachable: {e}")),
         Ok(r) => r,
     };
-    if let Some(ct) = resp.headers().get("Content-Type").and_then(|v| v.to_str().ok()) {
+    if let Some(ct) = resp
+        .headers()
+        .get("Content-Type")
+        .and_then(|v| v.to_str().ok())
+    {
         w.set_header("Content-Type", ct);
     }
     w.write_header(resp.status().as_u16());

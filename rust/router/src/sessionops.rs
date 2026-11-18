@@ -143,7 +143,13 @@ impl OpsState {
             g.busy.remove(id);
             return;
         }
-        g.busy.insert(id.into(), BusyMark { kind: kind.into(), since: GoTime::now() });
+        g.busy.insert(
+            id.into(),
+            BusyMark {
+                kind: kind.into(),
+                since: GoTime::now(),
+            },
+        );
     }
 
     pub fn busy_of(&self, id: &str) -> Option<BusyMark> {
@@ -185,11 +191,15 @@ impl OpsState {
     pub fn job_view(&self, id: &str) -> Option<Value> {
         let g = self.lock();
         let j = wj(g.wake.get(id)?).clone();
-        if j.finished_at.is_some_and(|f| f.since() > time::Duration::minutes(10)) {
+        if j.finished_at
+            .is_some_and(|f| f.since() > time::Duration::minutes(10))
+        {
             return None;
         }
-        Some(json!({"kind": j.kind, "phase": j.phase, "error": null_if_empty(&j.error), "startedAt": j.started_at,
-            "finishedAt": j.finished_at}))
+        Some(
+            json!({"kind": j.kind, "phase": j.phase, "error": null_if_empty(&j.error), "startedAt": j.started_at,
+            "finishedAt": j.finished_at}),
+        )
     }
 }
 
@@ -210,10 +220,16 @@ pub fn ops_env(_: &Arc<Router>, s: &Session, e: &mut BTreeMap<String, String>) {
 
 /// the state hook: each session's busy mark and job
 pub fn ops_state_hook(r: &Arc<Router>, out: &mut Map<String, Value>) {
-    let Some(Value::Array(ss)) = out.get_mut("sessions") else { return };
+    let Some(Value::Array(ss)) = out.get_mut("sessions") else {
+        return;
+    };
     for v in ss.iter_mut() {
         let Value::Object(v) = v else { continue };
-        let id = v.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
+        let id = v
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
         if let Some(b) = r.ops.busy_of(&id) {
             v.insert("busy".into(), json!(b));
         }
@@ -226,7 +242,14 @@ pub fn ops_state_hook(r: &Arc<Router>, out: &mut Map<String, Value>) {
 /// only for the start that succeeds the machine the rollback was asked against. While a session is paused its cert is
 /// the predecessor's, so a later start (another predecessor) never repeats it.
 pub fn rollback_env(s: &Session, e: &mut BTreeMap<String, String>) {
-    let Some(rb) = s.ops.as_ref().and_then(|o| o.rollback.as_ref()).filter(|rb| !rb.marker.is_empty()) else { return };
+    let Some(rb) = s
+        .ops
+        .as_ref()
+        .and_then(|o| o.rollback.as_ref())
+        .filter(|rb| !rb.marker.is_empty())
+    else {
+        return;
+    };
     if s.cert.is_none() || crate::sessionops::cert_machine(s.cert.as_ref()) != rb.pred {
         return;
     }
@@ -241,16 +264,29 @@ pub fn ops_options(s: &Session, o: &mut BTreeMap<String, String>) {
         o.insert("apiProxy".into(), "on".into());
     }
     if !ops.attach.is_empty() {
-        o.insert("attachments".into(), format!("{} file(s)", ops.attach.len()));
+        o.insert(
+            "attachments".into(),
+            format!("{} file(s)", ops.attach.len()),
+        );
     }
 }
 
 pub fn ops_view(s: &Session, v: &mut Map<String, Value>) {
     v.insert("apiProxy".into(), json!("off"));
     let Some(ops) = &s.ops else { return };
-    v.insert("apiProxy".into(), json!(crate::autopilot::on_off(!ops.api_proxy)));
-    if let Some(m) = ops.mode_after_grant.as_ref().filter(|m| GoTime::now().before(&m.until)) {
-        v.insert("modeAfterGrant".into(), json!({"mode": m.mode, "inbox": m.inbox, "until": m.until}));
+    v.insert(
+        "apiProxy".into(),
+        json!(crate::autopilot::on_off(!ops.api_proxy)),
+    );
+    if let Some(m) = ops
+        .mode_after_grant
+        .as_ref()
+        .filter(|m| GoTime::now().before(&m.until))
+    {
+        v.insert(
+            "modeAfterGrant".into(),
+            json!({"mode": m.mode, "inbox": m.inbox, "until": m.until}),
+        );
     }
     if !ops.env.is_empty() {
         v.insert("envKeys".into(), json!(ops.env.keys().collect::<Vec<_>>()));
@@ -261,11 +297,17 @@ pub fn ops_view(s: &Session, v: &mut Map<String, Value>) {
 /// (dup); attachments are bound to this session (uploads.rs).
 pub fn admit_session(d: &mut Persisted, s: &mut Session, input: &NewSession) -> Result<String> {
     if !input.request_id.is_empty()
-        && let Some(x) = d.sessions.values().find(|x| x.request_id == input.request_id)
+        && let Some(x) = d
+            .sessions
+            .values()
+            .find(|x| x.request_id == input.request_id)
     {
         return Ok(x.id.clone());
     }
-    let mut ops = SessionOps { api_proxy: input.api_proxy, ..Default::default() };
+    let mut ops = SessionOps {
+        api_proxy: input.api_proxy,
+        ..Default::default()
+    };
     if let Some(a) = input.attachments.as_ref().filter(|a| !a.files.is_empty()) {
         ops.attach = crate::uploads::bind_upload(d, &s.id, &input.attach_owner, a)?;
         ops.upload = a.upload_id.clone();
@@ -277,8 +319,12 @@ pub fn admit_session(d: &mut Persisted, s: &mut Session, input: &NewSession) -> 
 /// the switch kept for the grant request just answered, if a phone grant answered it (answered: request id → by a
 /// grant, not a rule); taken off the session once answered or lapsed. Inside st.do_.
 pub fn mode_after_grant(s: &mut Session, answered: &BTreeMap<String, bool>, now: GoTime) -> String {
-    let Some(ops) = s.ops.as_mut() else { return String::new() };
-    let Some(m) = ops.mode_after_grant.clone() else { return String::new() };
+    let Some(ops) = s.ops.as_mut() else {
+        return String::new();
+    };
+    let Some(m) = ops.mode_after_grant.clone() else {
+        return String::new();
+    };
     let hit = answered.get(&m.inbox).copied();
     if hit.is_none() && now.before(&m.until) {
         return String::new();
@@ -308,7 +354,9 @@ pub struct ResumeOptions {
 impl ResumeOptions {
     pub fn check(&self) -> Result<()> {
         if !self.size.is_empty() && crate::sizes::size_mem_gb(&self.size) == 0 {
-            return Err(anyhow!("size is small, medium, large or a doubling past it (16gb, 32gb, …)"));
+            return Err(anyhow!(
+                "size is small, medium, large or a doubling past it (16gb, 32gb, …)"
+            ));
         }
         Ok(())
     }
@@ -353,11 +401,16 @@ fn re(s: &str) -> regex::Regex {
 
 /// env keys a patch may never set: the router's and the harness's own settings, the session-API placeholders, the
 /// loader's
-static ENV_RESERVED: LazyLock<regex::Regex> =
-    LazyLock::new(|| re(r"^(JARVIS2?_|SESSION_|FLY_|CF_ACCESS_|LOBSTER_|CLAUDE_|ANTHROPIC_|LD_|HOME$|PATH$|USER$|SHELL$|TERM$)"));
+static ENV_RESERVED: LazyLock<regex::Regex> = LazyLock::new(|| {
+    re(
+        r"^(JARVIS2?_|SESSION_|FLY_|CF_ACCESS_|LOBSTER_|CLAUDE_|ANTHROPIC_|LD_|HOME$|PATH$|USER$|SHELL$|TERM$)",
+    )
+});
 /// env keys that name a secret: those come only from stores (core-sealed), never the unsigned machine env
 static ENV_SECRETISH: LazyLock<regex::Regex> = LazyLock::new(|| {
-    re(r"(?i)(TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|COOKIE|WEBHOOK|ACCESS_?KEY|API_?KEY|(^|_)(PASS|PWD|AUTH|KEY|API|DSN|SIG|SIGNATURE|SALT|OTP|TOTP|PIN|CERT)(_|$))")
+    re(
+        r"(?i)(TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|COOKIE|WEBHOOK|ACCESS_?KEY|API_?KEY|(^|_)(PASS|PWD|AUTH|KEY|API|DSN|SIG|SIGNATURE|SALT|OTP|TOTP|PIN|CERT)(_|$))",
+    )
 });
 static ENV_KEY_RE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$"));
 
@@ -369,7 +422,9 @@ pub fn env_key_allowed(k: &str) -> Result<()> {
         return Err(anyhow!("{k} is set by Jarvis itself"));
     }
     if ENV_SECRETISH.is_match(k) {
-        return Err(anyhow!("{k} looks like a secret: secrets go in a store, never the machine env"));
+        return Err(anyhow!(
+            "{k} looks like a secret: secrets go in a store, never the machine env"
+        ));
     }
     Ok(())
 }
@@ -403,7 +458,9 @@ pub fn normalize_env_patch(input: &Map<String, Value>) -> Result<BTreeMap<String
 /// registry's status is neither idle nor waiting) and the restart carries no prompt of its own: a resume starts no turn,
 /// so the cut-off one would never go on.
 pub fn restart_continues(before: Option<&Registry>, prompt: &str) -> bool {
-    prompt.is_empty() && before.is_some_and(|b| !b.status.is_empty() && b.status != "idle" && b.status != "waiting")
+    prompt.is_empty()
+        && before
+            .is_some_and(|b| !b.status.is_empty() && b.status != "idle" && b.status != "waiting")
 }
 
 impl Router {
@@ -411,14 +468,20 @@ impl Router {
     /// restarts); paused → the next start. Runs in the background; the job is the session's `wake` in /api/state.
     pub fn set_permission_mode(self: &Arc<Self>, id: &str, mode: &str) -> Result<Value> {
         let mode = if mode == "bypass" { "bypass" } else { "auto" };
-        let s = self.st.do_(|d| d.sessions.get(id).cloned()).ok_or_else(crate::sessionapi::no_session)?;
+        let s = self
+            .st
+            .do_(|d| d.sessions.get(id).cloned())
+            .ok_or_else(crate::sessionapi::no_session)?;
         if s.permission_mode == mode {
             return Ok(json!({"ok": true, "permissionMode": mode, "unchanged": true}));
         }
         if s.machine_id.is_empty() {
             // no machine: the mode applies at its next start (a paused or failed session)
             if s.state != "paused" && s.state != "failed" {
-                return Err(anyhow!("session is {}: set the mode once it is running, paused or failed", s.state));
+                return Err(anyhow!(
+                    "session is {}: set the mode once it is running, paused or failed",
+                    s.state
+                ));
             }
             self.st.do_(|d| {
                 if let Some(x) = d.sessions.get_mut(id) {
@@ -430,7 +493,11 @@ impl Router {
         // raising a running session to bypass needs a fresh phone grant (Deyao, 2026-10-09), checked here and by the
         // machine (exec_phone)
         if mode == "bypass" && !self.has_phone_grant(id, "terminal") {
-            return Err(GrantNeeded { holder: "terminal".into(), phone: true }.into());
+            return Err(GrantNeeded {
+                holder: "terminal".into(),
+                phone: true,
+            }
+            .into());
         }
         let unlock = self.lock_args(id, "mode", json!({"mode": mode}))?;
         let j = match self.ops.start_job(id, "permission-mode") {
@@ -442,12 +509,20 @@ impl Router {
         };
         let (r, id, m) = (self.clone(), id.to_string(), mode.to_string());
         std::thread::spawn(move || r.mode_run(&id, &m, j, unlock));
-        Ok(json!({"started": true, "kind": "permission-mode", "permissionMode": mode, "inPlace": true}))
+        Ok(
+            json!({"started": true, "kind": "permission-mode", "permissionMode": mode, "inPlace": true}),
+        )
     }
 
     /// the running session's switch to mode, under its job (jobs.rs: a replica carrying the job on runs it again:
     /// setting the mode the session already has is a no-op on the machine)
-    pub fn mode_run(self: &Arc<Self>, id: &str, mode: &str, j: WakeJob, unlock: crate::util::OnceFn) {
+    pub fn mode_run(
+        self: &Arc<Self>,
+        id: &str,
+        mode: &str,
+        j: WakeJob,
+        unlock: crate::util::OnceFn,
+    ) {
         let _u = crate::flows::scopeguard(move || unlock.call());
         self.ops.phase(&j, "switching", None);
         let cmd = format!("{SET_PERMISSION_MODE_CMD}{mode}");
@@ -458,7 +533,11 @@ impl Router {
         };
         let res = res.and_then(|r| {
             if r.code != 0 {
-                return Err(anyhow!("set-permission-mode exited {}: {}", r.code, clip(&format!("{}{}", r.stderr, r.stdout), 200)));
+                return Err(anyhow!(
+                    "set-permission-mode exited {}: {}",
+                    r.code,
+                    clip(&format!("{}{}", r.stderr, r.stdout), 200)
+                ));
             }
             Ok(())
         });
@@ -477,12 +556,22 @@ impl Router {
 
     /// the switch to mode waits on a fresh phone grant for holder: a grant request (10 minutes) goes into the Inbox,
     /// filed as the caller's, and the switch is kept on the session until that request lapses
-    pub fn ask_mode_grant(self: &Arc<Self>, req: &Req, id: &str, mode: &str, holder: &str) -> Result<Value> {
+    pub fn ask_mode_grant(
+        self: &Arc<Self>,
+        req: &Req,
+        id: &str,
+        mode: &str,
+        holder: &str,
+    ) -> Result<Value> {
         let mut args = Map::new();
         args.insert("mode".into(), json!(mode));
         let o = Origin {
             caller: crate::inbox::app_caller(req),
-            call: ApiCall { method: req.method.clone(), path: req.path.clone(), args, ..Default::default() },
+            call: ApiCall {
+                method: req.method.clone(),
+                path: req.path.clone(),
+                args,
+            },
             via_call: crate::apicalls::via_call(req),
             ..Default::default()
         };
@@ -494,14 +583,23 @@ impl Router {
         let via = o.via_call.clone();
         let (q, dup) = self.file_request(
             crate::inbox::REQUEST_KIND_GRANT,
-            RequestParams { session: id.into(), holder: holder.into(), minutes: 10, ..Default::default() },
+            RequestParams {
+                session: id.into(),
+                holder: holder.into(),
+                minutes: 10,
+                ..Default::default()
+            },
             &why,
             o,
         )?;
         self.st.do_(|d| {
             if let Some(s) = d.sessions.get_mut(id) {
                 s.ops.get_or_insert_with(Default::default).mode_after_grant =
-                    Some(ModeAfterGrant { mode: mode.into(), inbox: q.id.clone(), until: q.expires });
+                    Some(ModeAfterGrant {
+                        mode: mode.into(),
+                        inbox: q.id.clone(),
+                        until: q.expires,
+                    });
             }
             // an approved API call's review sheet follows the grant it brought about (apicalls.rs)
             if let Some(x) = d.call_results.get_mut(&via) {
@@ -511,7 +609,9 @@ impl Router {
                 x.awaiting = None;
             }
         });
-        Ok(json!({"waiting": "inbox", "inboxId": q.id, "duplicate": dup, "needsGrant": holder, "phoneGrant": true, "permissionMode": mode}))
+        Ok(
+            json!({"waiting": "inbox", "inboxId": q.id, "duplicate": dup, "needsGrant": holder, "phoneGrant": true, "permissionMode": mode}),
+        )
     }
 
     /// the switch a signed grant was waiting for; its outcome is the session's `wake` job, as when it is asked for
@@ -577,14 +677,25 @@ impl Router {
         if let Some(rb) = &input.rollback {
             marker = rb.drop_from_marker.trim().to_string();
             if marker.len() < 4 || marker.len() > 500 || marker.contains(['\n', '\r', '\0']) {
-                return Err(anyhow!("rollback.dropFromMarker: 4–500 characters on one line"));
+                return Err(anyhow!(
+                    "rollback.dropFromMarker: 4–500 characters on one line"
+                ));
             }
         }
         let prompt = crate::sessionapi::clean_resume_prompt(&input.prompt)?;
-        let s = self.st.do_(|d| d.sessions.get(id).cloned()).ok_or_else(crate::sessionapi::no_session)?;
+        let s = self
+            .st
+            .do_(|d| d.sessions.get(id).cloned())
+            .ok_or_else(crate::sessionapi::no_session)?;
         // paused or failed (Resume finishes a failed one's pause first), or running on its machine
-        if s.state != "paused" && s.state != "failed" && (s.machine_id.is_empty() || (s.state != "started" && s.state != "initialising")) {
-            return Err(anyhow!("session is {}: restart it once it is running, paused or failed", s.state));
+        if s.state != "paused"
+            && s.state != "failed"
+            && (s.machine_id.is_empty() || (s.state != "started" && s.state != "initialising"))
+        {
+            return Err(anyhow!(
+                "session is {}: restart it once it is running, paused or failed",
+                s.state
+            ));
         }
         // the whole job is one tracked lifecycle action (drain.rs): its pause and resume go on during a drain
         let end_job = self.begin_job(id, "restart")?;
@@ -596,7 +707,11 @@ impl Router {
             }
         };
         // a turn that runs now is cut off by the pause: the session is told to continue once it is back
-        let before = if s.machine_id.is_empty() { None } else { self.live_reg(id, &s.machine_id).0 };
+        let before = if s.machine_id.is_empty() {
+            None
+        } else {
+            self.live_reg(id, &s.machine_id).0
+        };
         let cont = restart_continues(before.as_ref(), &prompt);
         self.ops.set_busy(id, "restarting");
         let op = self.lc_begin_job(id, "restart"); // lifecycle.rs: its pause and resume are this one operation
@@ -663,28 +778,47 @@ impl Router {
             r.ops.phase(&j, "done", None);
             op.end_job(None);
         });
-        Ok(json!({"started": true, "kind": "restart", "env": keys, "rollback": has_marker, "upgrade": upgrade}))
+        Ok(
+            json!({"started": true, "kind": "restart", "env": keys, "rollback": has_marker, "upgrade": upgrade}),
+        )
     }
 
     /// "continue" into the restarted session once its new machine's harness is up and idle (the canned delivery the
     /// account switch uses). A harness that doesn't come up in time leaves a note on the job: the restart itself is
     /// done.
     fn continue_after_restart(self: &Arc<Self>, j: &WakeJob, id: &str) {
-        let machine = self.st.do_(|d| d.sessions.get(id).map(|x| x.machine_id.clone()).unwrap_or_default());
+        let machine = self.st.do_(|d| {
+            d.sessions
+                .get(id)
+                .map(|x| x.machine_id.clone())
+                .unwrap_or_default()
+        });
         self.ops.phase(j, "delivering continue", None);
         let wait = crate::accountswap::swap_up_wait();
         if let Err(e) = self.wait_reg(id, &machine, wait, |g| g.status == "idle") {
             let w = jarvis_go::fmt::duration_string(wait);
             self.ops.note(j, &format!("the restarted session's harness didn't come up idle within {w}: its cut-off turn was not continued"));
-            crate::logf!("[restart] {id}: no idle harness within {w}, \"continue\" not delivered: {e:#}");
+            crate::logf!(
+                "[restart] {id}: no idle harness within {w}, \"continue\" not delivered: {e:#}"
+            );
             return;
         }
-        if let Err(e) = self.deliver_canned(id, Delivery { kind: "continue".into(), ..Default::default() }, "continue") {
-            self.ops.note(j, &format!("\"continue\" could not be delivered: {e:#}"));
+        if let Err(e) = self.deliver_canned(
+            id,
+            Delivery {
+                kind: "continue".into(),
+                ..Default::default()
+            },
+            "continue",
+        ) {
+            self.ops
+                .note(j, &format!("\"continue\" could not be delivered: {e:#}"));
             crate::logf!("[restart] {id}: delivering \"continue\": {e:#}");
             return;
         }
-        crate::logf!("[restart] {id}: \"continue\" delivered (a turn was running when it was restarted)");
+        crate::logf!(
+            "[restart] {id}: \"continue\" delivered (a turn was running when it was restarted)"
+        );
     }
 
     /// polls until the session reaches state (or fails / disappears) AND the action that got it there has ended. An
@@ -694,7 +828,12 @@ impl Router {
     pub fn wait_state(&self, id: &str, want: &str, timeout: Duration) -> Result<()> {
         let deadline = Instant::now() + timeout;
         loop {
-            let (st, msg) = self.st.do_(|d| d.sessions.get(id).map(|x| (x.state.clone(), x.error.clone())).unwrap_or_default());
+            let (st, msg) = self.st.do_(|d| {
+                d.sessions
+                    .get(id)
+                    .map(|x| (x.state.clone(), x.error.clone()))
+                    .unwrap_or_default()
+            });
             let busy = self.busy(id);
             if st == want && !busy {
                 return Ok(());
@@ -720,7 +859,12 @@ impl Router {
     /// kill's own limit). want = the state it should end in; failed or anything else is the error.
     pub fn wait_action_end(&self, id: &str, want: &str) -> Result<()> {
         loop {
-            let (st, msg) = self.st.do_(|d| d.sessions.get(id).map(|x| (x.state.clone(), x.error.clone())).unwrap_or_default());
+            let (st, msg) = self.st.do_(|d| {
+                d.sessions
+                    .get(id)
+                    .map(|x| (x.state.clone(), x.error.clone()))
+                    .unwrap_or_default()
+            });
             if st.is_empty() {
                 return Err(crate::sessionapi::no_session());
             }
@@ -761,7 +905,9 @@ pub fn register_session_ops(reg: &mut Registrar) {
         match res {
             Err(e) => crate::schedule::schedule_err(w, &e),
             Ok(out) => {
-                let code = if out.get("started") == Some(&json!(true)) || out.get("waiting") == Some(&json!("inbox")) {
+                let code = if out.get("started") == Some(&json!(true))
+                    || out.get("waiting") == Some(&json!("inbox"))
+                {
                     202
                 } else {
                     200
@@ -794,9 +940,19 @@ pub fn register_session_ops(reg: &mut Registrar) {
         }
         let i: In = crate::http::decode_body(req, 1 << 20);
         if i.env.is_empty() {
-            return write_json(w, 400, &json!({"error": "body.env must be a non-empty object"}));
+            return write_json(
+                w,
+                400,
+                &json!({"error": "body.env must be a non-empty object"}),
+            );
         }
-        match r.restart(&req.path_value("id"), RestartRequest { env: i.env, ..Default::default() }) {
+        match r.restart(
+            &req.path_value("id"),
+            RestartRequest {
+                env: i.env,
+                ..Default::default()
+            },
+        ) {
             Err(e) => crate::schedule::schedule_err(w, &e),
             Ok(out) => write_json(w, 202, &out),
         }
@@ -805,7 +961,6 @@ pub fn register_session_ops(reg: &mut Registrar) {
     crate::uploads::register_uploads(reg); // uploads.rs
     crate::repos::register_repos(reg); // repos.rs: repo list, GitHub picker, usage
 }
-
 
 /// the machine a cert names (its machine.id; "" for none)
 pub fn cert_machine(c: Option<&crate::core::Doc>) -> String {
@@ -819,5 +974,7 @@ pub fn cert_machine(c: Option<&crate::core::Doc>) -> String {
     struct X {
         machine: M,
     }
-    c.and_then(|c| c.decode::<X>().ok()).map(|x| x.machine.id).unwrap_or_default()
+    c.and_then(|c| c.decode::<X>().ok())
+        .map(|x| x.machine.id)
+        .unwrap_or_default()
 }

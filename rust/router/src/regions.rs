@@ -7,7 +7,8 @@ use crate::state::Session;
 /// the Fly regions New session offers; the router's FLY_REGION (cfg.region) is the default. Every start is a new
 /// machine on a new volume from the line's snapshot, so a session's region only says where its next machine runs; the
 /// router, its database and the snapshots stay in Falkenstein.
-pub const SESSION_REGIONS: &[(&str, &str)] = &[("lhr", "London"), ("sin", "Singapore"), ("nrt", "Tokyo")];
+pub const SESSION_REGIONS: &[(&str, &str)] =
+    &[("lhr", "London"), ("sin", "Singapore"), ("nrt", "Tokyo")];
 
 pub fn valid_region(id: &str) -> bool {
     SESSION_REGIONS.iter().any(|(g, _)| *g == id)

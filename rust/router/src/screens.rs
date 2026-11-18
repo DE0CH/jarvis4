@@ -42,7 +42,10 @@ impl State {
     pub fn drop_screen(&self, session: &str) {
         let Some(db) = self.db() else { return };
         if let Ok(mut c) = db.conn() {
-            let _ = c.execute("DELETE FROM session_screens WHERE session_id = $1", &[&session]);
+            let _ = c.execute(
+                "DELETE FROM session_screens WHERE session_id = $1",
+                &[&session],
+            );
         }
     }
 }

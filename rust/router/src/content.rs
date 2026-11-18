@@ -35,8 +35,9 @@ pub const CONTENT_ROOT: &str = "claude-records/.content";
 pub const CONTENT_MAX_FILE: usize = 25 << 20;
 const CONTENT_CACHE_OK: Duration = Duration::from_secs(60);
 
-static CONTENT_NAME_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"^[a-z0-9]([a-z0-9-]{0,40}[a-z0-9])?$").unwrap_or_else(|_| unreachable!()));
+static CONTENT_NAME_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^[a-z0-9]([a-z0-9-]{0,40}[a-z0-9])?$").unwrap_or_else(|_| unreachable!())
+});
 
 /// a content error with its HTTP status
 #[derive(Debug)]
@@ -91,11 +92,16 @@ pub fn content_path(raw: &str) -> Result<String> {
     if p.chars().any(|c| (c as u32) < 0x20 || c as u32 == 0x7f) {
         bad = true;
     }
-    if p.split('/').any(|s| s.is_empty() || s == "." || s == ".." || s.len() > 255) {
+    if p.split('/')
+        .any(|s| s.is_empty() || s == "." || s == ".." || s.len() > 255)
+    {
         bad = true;
     }
     if bad {
-        return Err(content_fail(400, format!("invalid file path {}", jarvis_go::fmt::go_quote(p))));
+        return Err(content_fail(
+            400,
+            format!("invalid file path {}", jarvis_go::fmt::go_quote(p)),
+        ));
     }
     Ok(p.to_string())
 }
@@ -134,11 +140,20 @@ pub fn invalidate_content() {
     *CONTENT_CACHE.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
-fn dav_status(b: &StorageBox, method: &str, p: &str, hdr: &[(&'static str, &str)]) -> Result<(u16, Vec<u8>)> {
+fn dav_status(
+    b: &StorageBox,
+    method: &str,
+    p: &str,
+    hdr: &[(&'static str, &str)],
+) -> Result<(u16, Vec<u8>)> {
     let h: BTreeMap<&str, String> = hdr.iter().map(|(k, v)| (*k, v.to_string())).collect();
     let resp = b.do_(method, p, None, &h)?;
     let st = resp.status().as_u16();
-    let body = if method == "GET" { crate::util::read_limited(resp, CONTENT_MAX_FILE as u64 + 1)? } else { vec![] };
+    let body = if method == "GET" {
+        crate::util::read_limited(resp, CONTENT_MAX_FILE as u64 + 1)?
+    } else {
+        vec![]
+    };
     Ok((st, body))
 }
 
@@ -147,7 +162,8 @@ impl Router {
         self.box_().ok_or_else(|| {
             content_fail(
                 503,
-                "content stores need the router's Storage Box (STORAGEBOX_HOST/USER/PASSWORD)".into(),
+                "content stores need the router's Storage Box (STORAGEBOX_HOST/USER/PASSWORD)"
+                    .into(),
             )
         })
     }
@@ -157,11 +173,24 @@ impl Router {
         let n = content_name(name)?;
         let b = self.content_box()?;
         let base = format!("{CONTENT_ROOT}/{n}");
-        let Some(top) = b.children(&base)? else { return Ok(None) };
+        let Some(top) = b.children(&base)? else {
+            return Ok(None);
+        };
         let mut files = vec![];
-        fn walk(b: &StorageBox, base: &str, rel: &str, entries: Vec<DavEntry>, depth: u32, files: &mut Vec<ContentFile>) -> Result<()> {
+        fn walk(
+            b: &StorageBox,
+            base: &str,
+            rel: &str,
+            entries: Vec<DavEntry>,
+            depth: u32,
+            files: &mut Vec<ContentFile>,
+        ) -> Result<()> {
             for e in entries {
-                let p = if rel.is_empty() { e.name.clone() } else { format!("{rel}/{}", e.name) };
+                let p = if rel.is_empty() {
+                    e.name.clone()
+                } else {
+                    format!("{rel}/{}", e.name)
+                };
                 if e.dir {
                     if depth > 32 {
                         continue;
@@ -170,7 +199,11 @@ impl Router {
                     walk(b, base, &p, kids, depth + 1, files)?;
                     continue;
                 }
-                files.push(ContentFile { path: p, size: e.size, modified: e.modified });
+                files.push(ContentFile {
+                    path: p,
+                    size: e.size,
+                    modified: e.modified,
+                });
             }
             Ok(())
         }
@@ -182,7 +215,10 @@ impl Router {
     /// every store with its file count and size (cached a minute; any write through here drops it)
     pub fn content_stores(&self, fresh: bool) -> Result<Vec<ContentStore>> {
         if !fresh
-            && let Some((at, s)) = CONTENT_CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
+            && let Some((at, s)) = CONTENT_CACHE
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
             && at.elapsed() < CONTENT_CACHE_OK
         {
             return Ok(s.clone());
@@ -210,11 +246,15 @@ impl Router {
                 })
                 .collect();
             hs.into_iter()
-                .map(|h| h.join().unwrap_or_else(|_| Err(anyhow!("a content listing panicked"))))
+                .map(|h| {
+                    h.join()
+                        .unwrap_or_else(|_| Err(anyhow!("a content listing panicked")))
+                })
                 .collect()
         });
         let out = results.into_iter().collect::<Result<Vec<_>>>()?;
-        *CONTENT_CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), out.clone()));
+        *CONTENT_CACHE.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some((Instant::now(), out.clone()));
         Ok(out)
     }
 
@@ -222,7 +262,14 @@ impl Router {
     pub fn content_exists(&self, name: &str) -> Result<bool> {
         let n = content_name(name)?;
         let b = self.content_box()?;
-        match dav_status(&b, "PROPFIND", &format!("{CONTENT_ROOT}/{n}/"), &[("Depth", "0")])?.0 {
+        match dav_status(
+            &b,
+            "PROPFIND",
+            &format!("{CONTENT_ROOT}/{n}/"),
+            &[("Depth", "0")],
+        )?
+        .0
+        {
             404 => Ok(false),
             st if st == 207 || st < 300 => Ok(true),
             st => Err(anyhow!("PROPFIND {n}: HTTP {st}")),
@@ -237,7 +284,10 @@ impl Router {
         }
         for n in &set {
             if !self.content_exists(n)? {
-                return Err(content_fail(400, format!("no content store {}", jarvis_go::fmt::go_quote(n))));
+                return Err(content_fail(
+                    400,
+                    format!("no content store {}", jarvis_go::fmt::go_quote(n)),
+                ));
             }
         }
         Ok((!set.is_empty()).then(|| set.into_iter().collect()))
@@ -281,7 +331,10 @@ impl Router {
             return Err(anyhow!("GET {name}/{p}: HTTP {st}"));
         }
         if data.len() > CONTENT_MAX_FILE {
-            return Err(content_fail(413, format!("file over {} MB", CONTENT_MAX_FILE >> 20)));
+            return Err(content_fail(
+                413,
+                format!("file over {} MB", CONTENT_MAX_FILE >> 20),
+            ));
         }
         Ok(data)
     }
@@ -289,10 +342,16 @@ impl Router {
     /// the file into an existing store, its parent folders made
     pub fn write_content_file(&self, name: &str, p: &str, data: &[u8]) -> Result<ContentFile> {
         if data.len() > CONTENT_MAX_FILE {
-            return Err(content_fail(413, format!("file too large (max {} MB)", CONTENT_MAX_FILE >> 20)));
+            return Err(content_fail(
+                413,
+                format!("file too large (max {} MB)", CONTENT_MAX_FILE >> 20),
+            ));
         }
         if !self.content_exists(name)? {
-            return Err(content_fail(404, format!("no content store {}", jarvis_go::fmt::go_quote(name))));
+            return Err(content_fail(
+                404,
+                format!("no content store {}", jarvis_go::fmt::go_quote(name)),
+            ));
         }
         let b = self.content_box()?;
         if let Some(i) = p.rfind('/').filter(|i| *i > 0) {
@@ -301,7 +360,11 @@ impl Router {
         let r = b.put_bytes(&format!("{CONTENT_ROOT}/{name}/{p}"), data);
         invalidate_content();
         r?;
-        Ok(ContentFile { path: p.to_string(), size: data.len() as i64, modified: String::new() })
+        Ok(ContentFile {
+            path: p.to_string(),
+            size: data.len() as i64,
+            modified: String::new(),
+        })
     }
 
     /// the file, then any folders it leaves empty (up to the store's root)
@@ -345,7 +408,9 @@ impl Router {
         struct C {
             content: Vec<String>,
         }
-        serde_json::from_str::<C>(&config).map(|c| c.content).unwrap_or_default()
+        serde_json::from_str::<C>(&config)
+            .map(|c| c.content)
+            .unwrap_or_default()
     }
 
     pub fn machine_content_store(&self, machine: &str, name: &str) -> Result<String> {
@@ -407,16 +472,22 @@ fn own(
         };
         let id = req.path_value("id");
         if id != sid && id != machine {
-            return write_json(w, 403, &json!({"error": format!("this machine is session {sid}, not {id}")}));
+            return write_json(
+                w,
+                403,
+                &json!({"error": format!("this machine is session {sid}, not {id}")}),
+            );
         }
         f(r, w, req, machine, body)
     });
 }
 
 pub fn register_content(reg: &mut Registrar) {
-    reg.app("GET /api/content", |r, w, req| match r.content_stores(req.query("fresh") == "1") {
-        Err(e) => content_write_err(w, &e),
-        Ok(stores) => write_json(w, 200, &json!({"stores": stores})),
+    reg.app("GET /api/content", |r, w, req| {
+        match r.content_stores(req.query("fresh") == "1") {
+            Err(e) => content_write_err(w, &e),
+            Ok(stores) => write_json(w, 200, &json!({"stores": stores})),
+        }
     });
     reg.app("POST /api/content", |r, w, req| {
         #[derive(Deserialize, Default)]
@@ -444,13 +515,18 @@ pub fn register_content(reg: &mut Registrar) {
             Err(e) => content_write_err(w, &e),
             Ok(None) => content_write_err(
                 w,
-                &content_fail(404, format!("no content store {}", jarvis_go::fmt::go_quote(&name))),
+                &content_fail(
+                    404,
+                    format!("no content store {}", jarvis_go::fmt::go_quote(&name)),
+                ),
             ),
             Ok(Some(files)) => write_json(w, 200, &json!({"name": name, "files": files})),
         }
     });
     reg.app("GET /api/content/{name}/file", |r, w, req| {
-        let Some((n, p)) = file_op(w, req) else { return };
+        let Some((n, p)) = file_op(w, req) else {
+            return;
+        };
         match r.read_content_file(&n, &p) {
             Err(e) => content_write_err(w, &e),
             Ok(data) => {
@@ -458,7 +534,10 @@ pub fn register_content(reg: &mut Registrar) {
                 w.set_header("Content-Type", "application/octet-stream");
                 w.set_header(
                     "Content-Disposition",
-                    &format!("attachment; filename*=UTF-8''{}", jarvis_go::fmt::path_escape(base)),
+                    &format!(
+                        "attachment; filename*=UTF-8''{}",
+                        jarvis_go::fmt::path_escape(base)
+                    ),
                 );
                 w.set_header("Cache-Control", "no-store");
                 w.write(&data);
@@ -466,7 +545,9 @@ pub fn register_content(reg: &mut Registrar) {
         }
     });
     reg.app("POST /api/content/{name}/file", |r, w, req| {
-        let Some((n, p)) = file_op(w, req) else { return };
+        let Some((n, p)) = file_op(w, req) else {
+            return;
+        };
         let mut data = vec![];
         let res = (&mut req.body)
             .take(CONTENT_MAX_FILE as u64 + 1)
@@ -479,7 +560,9 @@ pub fn register_content(reg: &mut Registrar) {
         }
     });
     reg.app("DELETE /api/content/{name}/file", |r, w, req| {
-        let Some((n, p)) = file_op(w, req) else { return };
+        let Some((n, p)) = file_op(w, req) else {
+            return;
+        };
         match r.delete_content_file(&n, &p) {
             Err(e) => content_write_err(w, &e),
             Ok(()) => write_json(w, 200, &json!({"ok": true})),
@@ -487,46 +570,72 @@ pub fn register_content(reg: &mut Registrar) {
     });
 
     // ---- the session (through its machine's local proxy: Jarvis 1's content-sync, a task's script) ----------
-    own(reg, "GET /m/api/sessions/{id}/content", |r, w, _, machine, _| {
-        let mut stores = BTreeMap::new();
-        for n in r.cert_content(machine) {
-            match r.content_files(&n) {
-                Err(e) => return content_write_err(w, &e),
-                // a store deleted since the line began: empty
-                Ok(files) => {
-                    stores.insert(n, files.unwrap_or_default());
+    own(
+        reg,
+        "GET /m/api/sessions/{id}/content",
+        |r, w, _, machine, _| {
+            let mut stores = BTreeMap::new();
+            for n in r.cert_content(machine) {
+                match r.content_files(&n) {
+                    Err(e) => return content_write_err(w, &e),
+                    // a store deleted since the line began: empty
+                    Ok(files) => {
+                        stores.insert(n, files.unwrap_or_default());
+                    }
                 }
             }
-        }
-        write_json(w, 200, &json!({"ok": true, "stores": stores}));
-    });
-    own(reg, "GET /m/api/sessions/{id}/content/{name}/file", |r, w, req, machine, _| {
-        let Some((n, p)) = m_file(r, w, req, machine) else { return };
-        let data = match r.read_content_file(&n, &p) {
-            Err(e) => return content_write_err(w, &e),
-            Ok(d) => d,
-        };
-        match r.attest_content(machine, &data) {
-            Err(e) => write_json(w, 503, &json!({"error": format!("the core's attestation: {e:#}")})),
-            Ok(a) => {
-                w.set_header("Content-Type", "application/octet-stream");
-                w.set_header("X-Jarvis2-Attest", &jarvis_go::marshal(&a));
-                w.write(&data);
+            write_json(w, 200, &json!({"ok": true, "stores": stores}));
+        },
+    );
+    own(
+        reg,
+        "GET /m/api/sessions/{id}/content/{name}/file",
+        |r, w, req, machine, _| {
+            let Some((n, p)) = m_file(r, w, req, machine) else {
+                return;
+            };
+            let data = match r.read_content_file(&n, &p) {
+                Err(e) => return content_write_err(w, &e),
+                Ok(d) => d,
+            };
+            match r.attest_content(machine, &data) {
+                Err(e) => write_json(
+                    w,
+                    503,
+                    &json!({"error": format!("the core's attestation: {e:#}")}),
+                ),
+                Ok(a) => {
+                    w.set_header("Content-Type", "application/octet-stream");
+                    w.set_header("X-Jarvis2-Attest", &jarvis_go::marshal(&a));
+                    w.write(&data);
+                }
             }
-        }
-    });
-    own(reg, "PUT /m/api/sessions/{id}/content/{name}/file", |r, w, req, machine, body| {
-        let Some((n, p)) = m_file(r, w, req, machine) else { return };
-        match r.write_content_file(&n, &p, body) {
-            Err(e) => content_write_err(w, &e),
-            Ok(f) => write_json(w, 200, &f),
-        }
-    });
-    own(reg, "DELETE /m/api/sessions/{id}/content/{name}/file", |r, w, req, machine, _| {
-        let Some((n, p)) = m_file(r, w, req, machine) else { return };
-        match r.delete_content_file(&n, &p) {
-            Err(e) => content_write_err(w, &e),
-            Ok(()) => write_json(w, 200, &json!({"ok": true})),
-        }
-    });
+        },
+    );
+    own(
+        reg,
+        "PUT /m/api/sessions/{id}/content/{name}/file",
+        |r, w, req, machine, body| {
+            let Some((n, p)) = m_file(r, w, req, machine) else {
+                return;
+            };
+            match r.write_content_file(&n, &p, body) {
+                Err(e) => content_write_err(w, &e),
+                Ok(f) => write_json(w, 200, &f),
+            }
+        },
+    );
+    own(
+        reg,
+        "DELETE /m/api/sessions/{id}/content/{name}/file",
+        |r, w, req, machine, _| {
+            let Some((n, p)) = m_file(r, w, req, machine) else {
+                return;
+            };
+            match r.delete_content_file(&n, &p) {
+                Err(e) => content_write_err(w, &e),
+                Ok(()) => write_json(w, 200, &json!({"ok": true})),
+            }
+        },
+    );
 }

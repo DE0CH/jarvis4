@@ -62,8 +62,14 @@ pub fn sum_reader<R: Read + ?Sized>(rd: &mut R) -> Result<FileSum> {
         h.update(&buf[..k]);
         n += k as i64;
     }
-    Ok(FileSum { size: n, sha: hex::encode(h.finalize()) })
+    Ok(FileSum {
+        size: n,
+        sha: hex::encode(h.finalize()),
+    })
 }
+
+/// the live copies to put in the archive: (name in the archive, local file)
+pub type LiveFiles = Vec<(String, PathBuf)>;
 
 impl Router {
     /// every .live transcript of the session downloaded into tmp, unless held (snapshot transcript name → sum) has it
@@ -77,14 +83,20 @@ impl Router {
         tmp: &Path,
         held: &BTreeMap<String, FileSum>,
         taken: &BTreeSet<String>,
-    ) -> Result<(Vec<LiveCopy>, Vec<(String, PathBuf)>)> {
-        let listed = b.list(&live_dir(sid)).map_err(|e| anyhow!("listing the live copies: {e:#}"))?.unwrap_or_default();
+    ) -> Result<(Vec<LiveCopy>, LiveFiles)> {
+        let listed = b
+            .list(&live_dir(sid))
+            .map_err(|e| anyhow!("listing the live copies: {e:#}"))?
+            .unwrap_or_default();
         let mut taken = taken.clone();
         let mut out = vec![];
         let mut files = vec![];
         for (name, &size) in &listed {
             if !crate::livesync::is_live_name(name) {
-                crate::logf!("[livesync] {sid}: {} in the live dir isn't a transcript: left there", jarvis_go::fmt::go_quote(name));
+                crate::logf!(
+                    "[livesync] {sid}: {} in the live dir isn't a transcript: left there",
+                    jarvis_go::fmt::go_quote(name)
+                );
                 continue;
             }
             let local = tmp.join(format!("live-{name}"));
@@ -101,7 +113,12 @@ impl Router {
                     sum.size
                 ));
             }
-            let mut c = LiveCopy { name: name.clone(), size: sum.size, sha256: sum.sha.clone(), ..Default::default() };
+            let mut c = LiveCopy {
+                name: name.clone(),
+                size: sum.size,
+                sha256: sum.sha.clone(),
+                ..Default::default()
+            };
             if held.get(name) == Some(&sum) {
                 c.in_ = "snapshot".into();
                 out.push(c);
@@ -127,16 +144,24 @@ impl Router {
 
     /// the .live files the archive accounted for go (each only while it is still the size it had); "" when the dir is
     /// gone, else what was kept and why (for the record and the log)
-    pub fn clear_archived_live(&self, sid: &str, archived: Option<&ArchiveInfo>, aerr: Option<&anyhow::Error>) -> String {
+    pub fn clear_archived_live(
+        &self,
+        sid: &str,
+        archived: Option<&ArchiveInfo>,
+        aerr: Option<&anyhow::Error>,
+    ) -> String {
         crate::livesync::forget_live_dir(sid);
-        let Some(b) = self.box_() else { return String::new() };
+        let Some(b) = self.box_() else {
+            return String::new();
+        };
         if records_off() {
             return String::new();
         }
         let dir = live_dir(sid);
         let listed = match b.list(&dir) {
             Err(e) => {
-                let msg = format!("the live copies in {dir}/ were kept (listing them failed: {e:#})");
+                let msg =
+                    format!("the live copies in {dir}/ were kept (listing them failed: {e:#})");
                 crate::logf!("[livesync] {sid}: {msg}");
                 return msg;
             }
@@ -159,7 +184,9 @@ impl Router {
             match done.get(name.as_str()) {
                 Some(c) if c.size == size => {
                     if let Err(e) = b.delete(&format!("{dir}/{name}")) {
-                        crate::logf!("[livesync] {sid}: removing the archived live copy {name}: {e:#}");
+                        crate::logf!(
+                            "[livesync] {sid}: removing the archived live copy {name}: {e:#}"
+                        );
                         kept.push(name.clone());
                     }
                 }
@@ -178,9 +205,12 @@ impl Router {
             (None, None) => "there is no archive".into(),
             _ => "not in the archive".into(),
         };
-        let msg = format!("kept {} live transcript(s) in {dir}/ ({why}): {}", kept.len(), kept.join(", "));
+        let msg = format!(
+            "kept {} live transcript(s) in {dir}/ ({why}): {}",
+            kept.len(),
+            kept.join(", ")
+        );
         crate::logf!("[livesync] {sid}: {msg}");
         msg
     }
 }
-

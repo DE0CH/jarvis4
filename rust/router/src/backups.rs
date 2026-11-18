@@ -39,7 +39,9 @@ pub fn backup_bucket_from_env() -> Option<BackupBucket> {
         return None;
     }
     Some(BackupBucket {
-        endpoint: env("BACKUP_ENDPOINT", "https://fsn1.your-objectstorage.com").trim_end_matches('/').to_string(),
+        endpoint: env("BACKUP_ENDPOINT", "https://fsn1.your-objectstorage.com")
+            .trim_end_matches('/')
+            .to_string(),
         region: env("BACKUP_REGION", "fsn1"),
         bucket: env("BACKUP_BUCKET", "jarvis2-backup-de0ch"),
         write: std::env::var("BACKUP_WRITE_BUCKET").unwrap_or_default(),
@@ -52,7 +54,10 @@ pub fn backup_bucket_from_env() -> Option<BackupBucket> {
 pub fn s3enc(s: &str, slash: bool) -> String {
     let mut b = String::new();
     for c in s.bytes() {
-        if c.is_ascii_alphanumeric() || matches!(c, b'-' | b'.' | b'_' | b'~') || (slash && c == b'/') {
+        if c.is_ascii_alphanumeric()
+            || matches!(c, b'-' | b'.' | b'_' | b'~')
+            || (slash && c == b'/')
+        {
             b.push(c as char);
         } else {
             b.push_str(&format!("%{c:02X}"));
@@ -82,7 +87,9 @@ impl BackupBucket {
 
     /// a new version of one object in the bucket the router writes (versioned: every earlier version stays)
     pub fn put(&self, key: &str, body: &[u8]) -> Result<()> {
-        self.writer().do_("PUT", key, &BTreeMap::new(), body).map(|_| ())
+        self.writer()
+            .do_("PUT", key, &BTreeMap::new(), body)
+            .map(|_| ())
     }
 
     /// the bucket the router writes, as a client
@@ -100,7 +107,13 @@ impl BackupBucket {
         self.write.is_empty() || self.write == self.bucket
     }
 
-    fn do_(&self, method: &str, key: &str, query: &BTreeMap<&str, &str>, body: &[u8]) -> Result<Vec<u8>> {
+    fn do_(
+        &self,
+        method: &str,
+        key: &str,
+        query: &BTreeMap<&str, &str>,
+        body: &[u8],
+    ) -> Result<Vec<u8>> {
         let mut path = format!("/{}", s3enc(&self.bucket, false));
         if !key.is_empty() {
             path.push('/');
@@ -118,7 +131,10 @@ impl BackupBucket {
                 None => u.host_str().unwrap_or("").to_string(),
             })
             .unwrap_or_default();
-        let t = GoTime::now().utc().0.unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
+        let t = GoTime::now()
+            .utc()
+            .0
+            .unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
         let day = format!("{:04}{:02}{:02}", t.year(), u8::from(t.month()), t.day());
         let amz = format!("{day}T{:02}{:02}{:02}Z", t.hour(), t.minute(), t.second());
         let payload = hex::encode(Sha256::digest(body));
@@ -133,7 +149,10 @@ impl BackupBucket {
         ]
         .join("\n");
         let scope = format!("{day}/{}/s3/aws4_request", self.region);
-        let to_sign = format!("AWS4-HMAC-SHA256\n{amz}\n{scope}\n{}", hex::encode(Sha256::digest(canonical.as_bytes())));
+        let to_sign = format!(
+            "AWS4-HMAC-SHA256\n{amz}\n{scope}\n{}",
+            hex::encode(Sha256::digest(canonical.as_bytes()))
+        );
         let mut k = hmac_sha(format!("AWS4{}", self.secret_key).as_bytes(), &day);
         for p in [self.region.as_str(), "s3", "aws4_request"] {
             k = hmac_sha(&k, p);
@@ -172,7 +191,10 @@ impl BackupBucket {
             if e.code.is_empty() {
                 e.code = format!("HTTP {status}");
             }
-            return Err(anyhow!("the backup bucket refused {method} {path}: {}", e.code));
+            return Err(anyhow!(
+                "the backup bucket refused {method} {path}: {}",
+                e.code
+            ));
         }
         Ok(out)
     }
@@ -198,7 +220,9 @@ impl BackupBucket {
         let mut keys = vec![];
         let mut token = String::new();
         loop {
-            let mut q: BTreeMap<&str, &str> = [("list-type", "2"), ("prefix", prefix)].into_iter().collect();
+            let mut q: BTreeMap<&str, &str> = [("list-type", "2"), ("prefix", prefix)]
+                .into_iter()
+                .collect();
             if !token.is_empty() {
                 q.insert("continuation-token", &token);
             }
@@ -221,7 +245,11 @@ impl BackupBucket {
             return Ok(out);
         }
         let mine = self.writer().objects()?;
-        let at: BTreeMap<String, usize> = out.iter().enumerate().map(|(i, o)| (o.key.clone(), i)).collect();
+        let at: BTreeMap<String, usize> = out
+            .iter()
+            .enumerate()
+            .map(|(i, o)| (o.key.clone(), i))
+            .collect();
         for o in mine {
             match at.get(&o.key) {
                 Some(i) => out[*i] = o,
@@ -240,7 +268,10 @@ impl BackupBucket {
                     continue; // linestate.rs: the router's own object, no backup
                 }
                 let body = self.get(&k, &BTreeMap::new())?;
-                out.push(BackupObject { key: k, body: String::from_utf8_lossy(&body).into_owned() });
+                out.push(BackupObject {
+                    key: k,
+                    body: String::from_utf8_lossy(&body).into_owned(),
+                });
             }
         }
         Ok(out)
@@ -270,7 +301,9 @@ impl BackupExport {
             return Err(anyhow!("the export holds no objects"));
         }
         for o in &self.objects {
-            let ok = ["stores/", "keys/", "sensitive/"].iter().any(|p| o.key.starts_with(p));
+            let ok = ["stores/", "keys/", "sensitive/"]
+                .iter()
+                .any(|p| o.key.starts_with(p));
             if !ok || !o.key.ends_with(".json") || o.body.is_empty() {
                 return Err(anyhow!("not a backup object: {:?}", o.key));
             }
@@ -283,7 +316,9 @@ impl Router {
     /// the kept export, or None
     pub fn backup_fallback(&self) -> Option<BackupExport> {
         let b = self.st.read_doc(BACKUP_FALLBACK_FILE)?;
-        jarvis_go::unmarshal::<BackupExport>(&b).ok().filter(|f| f.check().is_ok())
+        jarvis_go::unmarshal::<BackupExport>(&b)
+            .ok()
+            .filter(|f| f.check().is_ok())
     }
 }
 
@@ -329,7 +364,12 @@ pub fn register_backups(reg: &mut Registrar) {
             && old.bucket == f.bucket
             && old.fetched_at == f.fetched_at
         {
-            let by: BTreeMap<String, usize> = old.objects.iter().enumerate().map(|(i, o)| (o.key.clone(), i)).collect();
+            let by: BTreeMap<String, usize> = old
+                .objects
+                .iter()
+                .enumerate()
+                .map(|(i, o)| (o.key.clone(), i))
+                .collect();
             for o in f.objects {
                 match by.get(&o.key) {
                     Some(i) => old.objects[*i] = o,
@@ -338,12 +378,22 @@ pub fn register_backups(reg: &mut Registrar) {
             }
             f.objects = old.objects;
         }
-        if let Err(e) = r.st.write_doc(BACKUP_FALLBACK_FILE, jarvis_go::marshal(&f).as_bytes()) {
+        if let Err(e) =
+            r.st.write_doc(BACKUP_FALLBACK_FILE, jarvis_go::marshal(&f).as_bytes())
+        {
             crate::nethttp::write_error(w, 500, &format!("{e:#}"));
             return;
         }
-        crate::logf!("backups: a fallback export of {} is kept ({} objects)", f.fetched_at, f.objects.len());
-        write_json(w, 200, &json!({"ok": true, "fetchedAt": f.fetched_at, "objects": f.objects.len()}));
+        crate::logf!(
+            "backups: a fallback export of {} is kept ({} objects)",
+            f.fetched_at,
+            f.objects.len()
+        );
+        write_json(
+            w,
+            200,
+            &json!({"ok": true, "fetchedAt": f.fetched_at, "objects": f.objects.len()}),
+        );
     });
     reg.app("DELETE /api/backups/fallback", |r, w, _| {
         r.st.delete_doc(BACKUP_FALLBACK_FILE);

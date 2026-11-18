@@ -125,8 +125,12 @@ struct OutcomeRecordItem {
 }
 
 pub fn proof_hash(p: Option<&Doc>) -> String {
-    p.map(|p| hex::encode(Sha256::digest(format!("{}\n{}", p.payload, p.sig).as_bytes())))
-        .unwrap_or_default()
+    p.map(|p| {
+        hex::encode(Sha256::digest(
+            format!("{}\n{}", p.payload, p.sig).as_bytes(),
+        ))
+    })
+    .unwrap_or_default()
 }
 
 pub fn outcome_attested(d: &Delivery) -> Result<Vec<u8>> {
@@ -135,7 +139,10 @@ pub fn outcome_attested(d: &Delivery) -> Result<Vec<u8>> {
         .as_ref()
         .filter(|_| !d.outcomes.is_empty())
         .ok_or_else(|| anyhow!("request-outcome: no signed request or no items"))?;
-    let mut rec = OutcomeRecord { request: r.sig.clone(), items: vec![] };
+    let mut rec = OutcomeRecord {
+        request: r.sig.clone(),
+        items: vec![],
+    };
     for it in &d.outcomes {
         if !OUTCOME_REF_RE.is_match(&it.r#ref)
             || !(0..=999).contains(&it.status)
@@ -144,7 +151,10 @@ pub fn outcome_attested(d: &Delivery) -> Result<Vec<u8>> {
         {
             return Err(anyhow!("request-outcome: not an id, status or item index"));
         }
-        if !matches!(it.outcome.as_str(), OUTCOME_APPROVED | OUTCOME_DENIED | OUTCOME_LAPSED | OUTCOME_DROPPED | OUTCOME_FAILED) {
+        if !matches!(
+            it.outcome.as_str(),
+            OUTCOME_APPROVED | OUTCOME_DENIED | OUTCOME_LAPSED | OUTCOME_DROPPED | OUTCOME_FAILED
+        ) {
             return Err(anyhow!("request-outcome: not an outcome"));
         }
         rec.items.push(OutcomeRecordItem {
@@ -163,24 +173,44 @@ static OUTCOME_KICK: AtomicBool = AtomicBool::new(false);
 
 /// (under the state lock) the item an Origin filed was decided. Only a session's own signed filing gets one; the first
 /// decision of an item stands.
-pub fn note_outcome(d: &mut Persisted, o: Option<&Origin>, kind: &str, r#ref: &str, outcome: &str, status: i64, proof: Option<&Doc>) {
+pub fn note_outcome(
+    d: &mut Persisted,
+    o: Option<&Origin>,
+    kind: &str,
+    r#ref: &str,
+    outcome: &str,
+    status: i64,
+    proof: Option<&Doc>,
+) {
     let Some(o) = o else { return };
-    let Some(signed) = o.signed.as_ref() else { return };
+    let Some(signed) = o.signed.as_ref() else {
+        return;
+    };
     if (o.caller.kind != "session" && o.caller.kind != "actions") || o.caller.session.is_empty() {
         return;
     }
     let sid = o.caller.session.clone();
-    if d.sessions.get(&sid).is_none_or(|s| s.state == "destroyed" || s.state == "destroying") {
+    if d.sessions
+        .get(&sid)
+        .is_none_or(|s| s.state == "destroyed" || s.state == "destroying")
+    {
         return;
     }
     if !OUTCOME_REF_RE.is_match(r#ref) {
         return;
     }
     let list = d.outcomes.entry(sid.clone()).or_default();
-    if list.iter().any(|x| x.request.as_ref().is_some_and(|r| r.sig == signed.sig) && x.item == o.item) {
+    if list
+        .iter()
+        .any(|x| x.request.as_ref().is_some_and(|r| r.sig == signed.sig) && x.item == o.item)
+    {
         return;
     }
-    let batch = if is_batch_path(&signed.path) { o.batch.clone() } else { String::new() };
+    let batch = if is_batch_path(&signed.path) {
+        o.batch.clone()
+    } else {
+        String::new()
+    };
     list.push(Outcome {
         id: crate::util::rand_id(),
         session: sid.clone(),
@@ -197,7 +227,10 @@ pub fn note_outcome(d: &mut Persisted, o: Option<&Origin>, kind: &str, r#ref: &s
     });
     if list.len() > OUTCOME_MAX_PER_SESSION {
         // the oldest delivered one goes, else the oldest
-        let drop = list.iter().position(|x| x.delivered_at.is_some()).unwrap_or(0);
+        let drop = list
+            .iter()
+            .position(|x| x.delivered_at.is_some())
+            .unwrap_or(0);
         list.remove(drop);
     }
     crate::logf!("[outcome] {sid}: {kind} {} {outcome}", r#ref);
@@ -210,8 +243,12 @@ pub fn is_batch_path(p: &str) -> bool {
 
 /// the number of items in a signed batch filing (0 when it isn't one)
 pub fn batch_size(sr: Option<&SignedRequest>) -> usize {
-    let Some(sr) = sr.filter(|s| is_batch_path(&s.path)) else { return 0 };
-    let Ok(b) = base64::engine::general_purpose::STANDARD.decode(&sr.body) else { return 0 };
+    let Some(sr) = sr.filter(|s| is_batch_path(&s.path)) else {
+        return 0;
+    };
+    let Ok(b) = base64::engine::general_purpose::STANDARD.decode(&sr.body) else {
+        return 0;
+    };
     serde_json::from_slice::<Value>(&b)
         .ok()
         .and_then(|v| v.get("items").and_then(Value::as_array).map(Vec::len))
@@ -246,14 +283,20 @@ pub fn ready_outcomes(d: &mut Persisted, now: GoTime) -> Vec<OutcomeGroup> {
         let mut newest: BTreeMap<String, GoTime> = BTreeMap::new();
         let mut order = vec![];
         for x in &list {
-            let Some(req) = x.request.as_ref().filter(|_| x.delivered_at.is_none()) else { continue };
+            let Some(req) = x.request.as_ref().filter(|_| x.delivered_at.is_none()) else {
+                continue;
+            };
             let g = groups.entry(req.sig.clone()).or_insert_with(|| {
                 order.push(req.sig.clone());
                 OutcomeGroup {
                     sid: sid.clone(),
                     sig: req.sig.clone(),
                     ids: vec![],
-                    deliv: Delivery { kind: "request-outcome".into(), request: Some(req.clone()), ..Default::default() },
+                    deliv: Delivery {
+                        kind: "request-outcome".into(),
+                        request: Some(req.clone()),
+                        ..Default::default()
+                    },
                 }
             });
             g.ids.push(x.id.clone());
@@ -270,7 +313,9 @@ pub fn ready_outcomes(d: &mut Persisted, now: GoTime) -> Vec<OutcomeGroup> {
             }
         }
         for sig in order {
-            let Some(mut g) = groups.remove(&sig) else { continue };
+            let Some(mut g) = groups.remove(&sig) else {
+                continue;
+            };
             let n = batch_size(g.deliv.request.as_ref());
             if n > 0 {
                 let decided: BTreeSet<i64> = list
@@ -278,7 +323,9 @@ pub fn ready_outcomes(d: &mut Persisted, now: GoTime) -> Vec<OutcomeGroup> {
                     .filter(|x| x.request.as_ref().is_some_and(|r| r.sig == sig))
                     .map(|x| x.item)
                     .collect();
-                if decided.len() < n && now.sub(newest.get(&sig).unwrap_or(&GoTime::default())) < OUTCOME_SETTLE {
+                if decided.len() < n
+                    && now.sub(newest.get(&sig).unwrap_or(&GoTime::default())) < OUTCOME_SETTLE
+                {
                     continue;
                 }
             }
@@ -293,7 +340,8 @@ pub type OutcomeHook = Arc<dyn Fn(&Arc<Router>, &str, Delivery) -> Result<()> + 
 /// the outcomes' delivery (tests)
 pub static DELIVER_OUTCOME_HOOK: RwLock<Option<OutcomeHook>> = RwLock::new(None);
 
-static OUTCOME_BUSY: LazyLock<Mutex<BTreeSet<String>>> = LazyLock::new(|| Mutex::new(BTreeSet::new()));
+static OUTCOME_BUSY: LazyLock<Mutex<BTreeSet<String>>> =
+    LazyLock::new(|| Mutex::new(BTreeSet::new()));
 static OUTCOME_TICKING: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Serialize)]
@@ -331,20 +379,33 @@ impl Router {
 
     /// deliver every ready group, each outside the lock and once at a time
     pub fn outcome_tick(self: &Arc<Self>) {
-        let Ok(_t) = OUTCOME_TICKING.try_lock() else { return };
+        let Ok(_t) = OUTCOME_TICKING.try_lock() else {
+            return;
+        };
         let ready = self.st.do_(|d| ready_outcomes(d, GoTime::now()));
         for g in ready {
             let key = format!("{} {}", g.sid, g.sig);
-            if !OUTCOME_BUSY.lock().unwrap_or_else(|e| e.into_inner()).insert(key.clone()) {
+            if !OUTCOME_BUSY
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(key.clone())
+            {
                 continue;
             }
             let r = self.clone();
             std::thread::spawn(move || {
                 let k2 = key.clone();
                 let _b = crate::flows::scopeguard(move || {
-                    OUTCOME_BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(&k2);
+                    OUTCOME_BUSY
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .remove(&k2);
                 });
-                let res = match DELIVER_OUTCOME_HOOK.read().unwrap_or_else(|e| e.into_inner()).clone() {
+                let res = match DELIVER_OUTCOME_HOOK
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone()
+                {
                     Some(h) => h(&r, &g.sid, g.deliv.clone()),
                     None => r.deliver_vouched_running(&g.sid, g.deliv.clone()),
                 };
@@ -368,14 +429,21 @@ impl Router {
                         x.attempts += 1;
                         x.error = crate::util::trim_to(e, 300);
                         // an image from before outcomes refuses the kind: it never will take it
-                        if x.attempts >= OUTCOME_MAX_ATTEMPTS || no_session || e.contains("unknown delivery kind") {
+                        if x.attempts >= OUTCOME_MAX_ATTEMPTS
+                            || no_session
+                            || e.contains("unknown delivery kind")
+                        {
                             x.delivered_at = Some(now); // given up; the session can still read it (GET /m/api/requests/outcomes)
                             x.error = format!("not delivered: {}", x.error);
                         }
                     }
                 });
                 match err {
-                    Some(e) => crate::logf!("[outcome] {}: delivering {} item(s) failed: {e}", g.sid, g.ids.len()),
+                    Some(e) => crate::logf!(
+                        "[outcome] {}: delivering {} item(s) failed: {e}",
+                        g.sid,
+                        g.ids.len()
+                    ),
                     None => crate::logf!("[outcome] {}: {} item(s) delivered", g.sid, g.ids.len()),
                 }
             });
@@ -407,7 +475,7 @@ pub fn register_outcomes(reg: &mut Registrar) {
                 })
                 .collect()
         });
-        out.sort_by(|a, b| b.at.cmp(&a.at));
+        out.sort_by_key(|a| std::cmp::Reverse(a.at));
         write_json(w, 200, &json!({"outcomes": out}));
     });
 }

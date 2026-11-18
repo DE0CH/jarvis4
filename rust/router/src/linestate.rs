@@ -76,13 +76,22 @@ impl LineKeeper {
         self.mu.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn with(docs: Arc<State>, name: &str, object: &str, fetch: FetchFn, core_key: KeyFn) -> Arc<LineKeeper> {
+    fn with(
+        docs: Arc<State>,
+        name: &str,
+        object: &str,
+        fetch: FetchFn,
+        core_key: KeyFn,
+    ) -> Arc<LineKeeper> {
         let kept = docs
             .read_doc(name)
             .and_then(|b| jarvis_go::unmarshal::<KeptLineState>(&b).ok())
             .filter(|x| !x.core.is_empty());
         Arc::new(LineKeeper {
-            mu: Mutex::new(Kept { kept, ..Default::default() }),
+            mu: Mutex::new(Kept {
+                kept,
+                ..Default::default()
+            }),
             docs,
             name: name.into(),
             object: object.into(),
@@ -103,7 +112,11 @@ impl LineKeeper {
             Box::new(move || match c2.raw_no_hook("GET", "/identity", None) {
                 Ok((200, b)) => serde_json::from_slice::<serde_json::Value>(&b)
                     .ok()
-                    .and_then(|v| v.get("signingKey").and_then(|s| s.as_str()).map(String::from))
+                    .and_then(|v| {
+                        v.get("signingKey")
+                            .and_then(|s| s.as_str())
+                            .map(String::from)
+                    })
                     .unwrap_or_default(),
                 _ => String::new(),
             }),
@@ -118,16 +131,20 @@ impl LineKeeper {
             docs,
             "kernel-line-state.json",
             "keys/_jarvis2/kernel-line-state.json",
-            Box::new(move || match k.call_no_hook("secrets", "GET", "/line-state", None) {
-                Ok(b) => Ok((200, b)),
-                Err(e) => match e.downcast_ref::<KernelError>() {
-                    Some(ke) => Ok((ke.status, vec![])),
-                    None => Err(e),
+            Box::new(
+                move || match k.call_no_hook("secrets", "GET", "/line-state", None) {
+                    Ok(b) => Ok((200, b)),
+                    Err(e) => match e.downcast_ref::<KernelError>() {
+                        Some(ke) => Ok((ke.status, vec![])),
+                        None => Err(e),
+                    },
                 },
-            }),
+            ),
             Box::new(move || {
                 k2.forget("secrets"); // a restarted secrets has other keys
-                k2.identity("secrets").map(|id| id.signing_key).unwrap_or_default()
+                k2.identity("secrets")
+                    .map(|id| id.signing_key)
+                    .unwrap_or_default()
             }),
         )
     }
@@ -167,20 +184,38 @@ impl LineKeeper {
             return;
         };
         let key = (self.core_key)();
-        if key.is_empty() || !crate::http::verify_p256(&key, d.head.payload.as_bytes(), &d.head.sig) {
-            crate::logf!("line state {}: its head isn't signed by the running core", h.seq);
+        if key.is_empty() || !crate::http::verify_p256(&key, d.head.payload.as_bytes(), &d.head.sig)
+        {
+            crate::logf!(
+                "line state {}: its head isn't signed by the running core",
+                h.seq
+            );
             return;
         }
-        if g.kept.as_ref().is_some_and(|k| k.core == key && k.seq == h.seq) {
+        if g.kept
+            .as_ref()
+            .is_some_and(|k| k.core == key && k.seq == h.seq)
+        {
             return;
         }
-        let x = KeptLineState { core: key, seq: h.seq, doc: d, at: GoTime::now() };
-        if let Err(e) = self.docs.write_doc(&self.name, jarvis_go::marshal(&x).as_bytes()) {
+        let x = KeptLineState {
+            core: key,
+            seq: h.seq,
+            doc: d,
+            at: GoTime::now(),
+        };
+        if let Err(e) = self
+            .docs
+            .write_doc(&self.name, jarvis_go::marshal(&x).as_bytes())
+        {
             crate::logf!("line state {}: can't write {}: {e:#}", h.seq, self.name);
             return;
         }
         g.kept = Some(x);
-        if g.bucket_at.is_none_or(|t| t.elapsed() >= LINE_BUCKET_PERIOD) && !g.bucket_busy {
+        if g.bucket_at
+            .is_none_or(|t| t.elapsed() >= LINE_BUCKET_PERIOD)
+            && !g.bucket_busy
+        {
             g.bucket_busy = true;
             let k = self.clone();
             std::thread::spawn(move || k.to_bucket());
@@ -193,8 +228,10 @@ impl LineKeeper {
             let g = self.lock();
             (g.kept.clone(), g.bucket_seq)
         };
-        let res = (|| {
-            let Some(x) = x.filter(|x| x.seq != bseq) else { return };
+        (|| {
+            let Some(x) = x.filter(|x| x.seq != bseq) else {
+                return;
+            };
             let Some(b) = (self.bucket)() else { return };
             if let Err(e) = b.put(&self.object, jarvis_go::marshal(&x).as_bytes()) {
                 crate::logf!("line state {}: bucket: {e:#}", x.seq);
@@ -205,7 +242,6 @@ impl LineKeeper {
             g.bucket_at = Some(Instant::now());
         })();
         self.lock().bucket_busy = false;
-        res
     }
 
     /// the newest into the bucket now (the router's drain)
@@ -228,7 +264,9 @@ impl LineKeeper {
         }
         let b = (self.bucket)()?;
         let raw = b.get(&self.object, &BTreeMap::new()).ok()?;
-        jarvis_go::unmarshal::<KeptLineState>(&raw).ok().filter(|y| !y.core.is_empty())
+        jarvis_go::unmarshal::<KeptLineState>(&raw)
+            .ok()
+            .filter(|y| !y.core.is_empty())
     }
 }
 
@@ -236,7 +274,11 @@ pub fn register_line_state(reg: &mut Registrar) {
     // the kernel's secrets, the same way (KernelSetupView's Recover)
     reg.app("GET /api/kernel/line-state", |r, w, _| {
         match r.kernel_lines.get().and_then(|k| k.current()) {
-            None => write_json(w, 404, &json!({"error": "the router keeps no line state of the kernel's secrets"})),
+            None => write_json(
+                w,
+                404,
+                &json!({"error": "the router keeps no line state of the kernel's secrets"}),
+            ),
             Some(x) => {
                 w.set_header(LINE_SEQ_HEADER, &x.seq.to_string());
                 write_json(w, 200, &x.doc);
@@ -245,11 +287,13 @@ pub fn register_line_state(reg: &mut Registrar) {
     });
     // the app's Recover: the newest line state the router holds (the app checks the head against the derived key and
     // against the newest number it has seen; the router's word decides nothing)
-    reg.app("GET /api/core/line-state", |r, w, _| match r.lines().and_then(|k| k.current()) {
-        None => write_json(w, 404, &json!({"error": "the router keeps no line state"})),
-        Some(x) => {
-            w.set_header(LINE_SEQ_HEADER, &x.seq.to_string());
-            write_json(w, 200, &x.doc);
+    reg.app("GET /api/core/line-state", |r, w, _| {
+        match r.lines().and_then(|k| k.current()) {
+            None => write_json(w, 404, &json!({"error": "the router keeps no line state"})),
+            Some(x) => {
+                w.set_header(LINE_SEQ_HEADER, &x.seq.to_string());
+                write_json(w, 200, &x.doc);
+            }
         }
     });
 }

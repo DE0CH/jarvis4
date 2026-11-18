@@ -15,8 +15,18 @@ impl Router {
     }
 
     pub fn deliver_continue(&self, a: &PilotAction) {
-        if let Err(e) = self.deliver_canned(&a.session, Delivery { kind: "continue".into(), ..Default::default() }, "continue") {
-            crate::logf!("[login] {}: delivering \"continue\" failed: {e:#}", a.session);
+        if let Err(e) = self.deliver_canned(
+            &a.session,
+            Delivery {
+                kind: "continue".into(),
+                ..Default::default()
+            },
+            "continue",
+        ) {
+            crate::logf!(
+                "[login] {}: delivering \"continue\" failed: {e:#}",
+                a.session
+            );
             return;
         }
         crate::logf!(

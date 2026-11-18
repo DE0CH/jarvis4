@@ -34,7 +34,8 @@ pub struct SnapProgress {
 const PROGRESS_NOTE_EVERY: Duration = Duration::from_secs(20);
 
 /// machine → the last lifecycle note
-static PROGRESS_NOTES: LazyLock<Mutex<BTreeMap<String, Instant>>> = LazyLock::new(|| Mutex::new(BTreeMap::new()));
+static PROGRESS_NOTES: LazyLock<Mutex<BTreeMap<String, Instant>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 /// "uploading snapshot 1.2/3.4 GB, 40 MB/s, 55 s left" ("" for a report that makes no sense)
 pub fn snap_progress_text(p: &SnapProgress) -> String {
@@ -42,12 +43,21 @@ pub fn snap_progress_text(p: &SnapProgress) -> String {
         return String::new();
     }
     match p.phase.as_str() {
-        "measuring" => return format!("measuring the snapshot ({} so far)", byte_text(p.total, p.total)),
+        "measuring" => {
+            return format!(
+                "measuring the snapshot ({} so far)",
+                byte_text(p.total, p.total)
+            );
+        }
         "uploading" | "writing" => {}
         _ => return String::new(),
     }
     let total = p.total.max(p.done);
-    let what = if p.phase == "writing" { "writing snapshot" } else { "uploading snapshot" };
+    let what = if p.phase == "writing" {
+        "writing snapshot"
+    } else {
+        "uploading snapshot"
+    };
     let mut s = format!("{what} {}", byte_ratio(p.done, total));
     if total > 0 {
         s += &format!(" ({}%)", p.done * 100 / total);
@@ -57,7 +67,10 @@ pub fn snap_progress_text(p: &SnapProgress) -> String {
         s += &format!(", {}/s", byte_text(rate as i64, rate as i64));
         if total > p.done {
             let left = (total - p.done) as f64 / rate;
-            s += &format!(", {} left", left_text(Duration::from_secs_f64(left.max(0.0))));
+            s += &format!(
+                ", {} left",
+                left_text(Duration::from_secs_f64(left.max(0.0)))
+            );
         }
     }
     s
@@ -92,7 +105,7 @@ pub fn left_text(d: Duration) -> String {
     if sec < 60 {
         return format!("{sec} s");
     }
-    if sec % 60 == 0 {
+    if sec.is_multiple_of(60) {
         return format!("{} min", sec / 60);
     }
     format!("{} min {} s", sec / 60, sec % 60)
@@ -101,11 +114,19 @@ pub fn left_text(d: Duration) -> String {
 pub fn register_snap_progress(reg: &mut Registrar) {
     reg.m("POST /m/snapshot-progress", |r, w, _, machine, body| {
         let Ok(p) = jarvis_go::unmarshal::<SnapProgress>(body) else {
-            return write_json(w, 400, &json!({"error": "{phase, done, total, sent, elapsedMs}"}));
+            return write_json(
+                w,
+                400,
+                &json!({"error": "{phase, done, total, sent, elapsedMs}"}),
+            );
         };
         let text = snap_progress_text(&p);
         if text.is_empty() {
-            return write_json(w, 400, &json!({"error": "phase: measuring | uploading | writing; numbers ≥ 0"}));
+            return write_json(
+                w,
+                400,
+                &json!({"error": "phase: measuring | uploading | writing; numbers ≥ 0"}),
+            );
         }
         let sid = r.st.do_(|d| {
             d.machines
@@ -122,7 +143,9 @@ pub fn register_snap_progress(reg: &mut Registrar) {
         r.set_waiting(&sid, &text);
         let note = {
             let mut g = PROGRESS_NOTES.lock().unwrap_or_else(|e| e.into_inner());
-            let due = g.get(machine).is_none_or(|t| t.elapsed() >= PROGRESS_NOTE_EVERY);
+            let due = g
+                .get(machine)
+                .is_none_or(|t| t.elapsed() >= PROGRESS_NOTE_EVERY);
             if due {
                 g.insert(machine.to_string(), Instant::now());
             }
@@ -141,9 +164,24 @@ mod tests {
 
     #[test]
     fn texts() {
-        let p = SnapProgress { phase: "uploading".into(), done: 1_200_000_000, total: 3_400_000_000, sent: 0, elapsed_ms: 30_000 };
-        assert_eq!(snap_progress_text(&p), "uploading snapshot 1.2/3.4 GB (35%), 40 MB/s, 55 s left");
+        let p = SnapProgress {
+            phase: "uploading".into(),
+            done: 1_200_000_000,
+            total: 3_400_000_000,
+            sent: 0,
+            elapsed_ms: 30_000,
+        };
+        assert_eq!(
+            snap_progress_text(&p),
+            "uploading snapshot 1.2/3.4 GB (35%), 40 MB/s, 55 s left"
+        );
         assert_eq!(left_text(Duration::from_secs(200)), "3 min 20 s");
-        assert_eq!(snap_progress_text(&SnapProgress { phase: "x".into(), ..Default::default() }), "");
+        assert_eq!(
+            snap_progress_text(&SnapProgress {
+                phase: "x".into(),
+                ..Default::default()
+            }),
+            ""
+        );
     }
 }

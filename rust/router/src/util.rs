@@ -19,7 +19,10 @@ macro_rules! logf {
 static LOG_MU: Mutex<()> = Mutex::new(());
 
 pub fn log_line(s: &str) {
-    let t = GoTime::now().utc().0.unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
+    let t = GoTime::now()
+        .utc()
+        .0
+        .unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
     let _g = LOG_MU.lock().unwrap_or_else(|e| e.into_inner());
     let mut e = std::io::stderr().lock();
     let _ = writeln!(
@@ -100,7 +103,14 @@ pub fn path_clean(p: &str) -> String {
 /// "2006-01-02 15:04 UTC"
 pub fn fmt_utc_minute(t: &GoTime) -> String {
     match t.utc().0 {
-        Some(t) => format!("{:04}-{:02}-{:02} {:02}:{:02} UTC", t.year(), t.month() as u8, t.day(), t.hour(), t.minute()),
+        Some(t) => format!(
+            "{:04}-{:02}-{:02} {:02}:{:02} UTC",
+            t.year(),
+            t.month() as u8,
+            t.day(),
+            t.hour(),
+            t.minute()
+        ),
         None => "0001-01-01 00:00 UTC".into(),
     }
 }
@@ -135,7 +145,10 @@ pub fn mkdir_all_0700(p: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
-        std::fs::DirBuilder::new().recursive(true).mode(0o700).create(p)?;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(p)?;
     }
     Ok(())
 }
@@ -145,7 +158,12 @@ pub fn create_0600(p: &Path) -> Result<std::fs::File> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        return Ok(std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(p)?);
+        return Ok(std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(p)?);
     }
     #[allow(unreachable_code)]
     Ok(std::fs::File::create(p)?)
@@ -174,8 +192,9 @@ pub fn walk_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-const HTTP_TIME: &[time::format_description::BorrowedFormatItem<'static>] =
-    time::macros::format_description!("[weekday repr:short], [day] [month repr:short] [year] [hour]:[minute]:[second] GMT");
+const HTTP_TIME: &[time::format_description::BorrowedFormatItem<'static>] = time::macros::format_description!(
+    "[weekday repr:short], [day] [month repr:short] [year] [hour]:[minute]:[second] GMT"
+);
 
 /// an HTTP date (RFC 1123, as WebDAV's getlastmodified and Last-Modified write it)
 pub fn parse_http_time(s: &str) -> Option<GoTime> {
@@ -184,7 +203,10 @@ pub fn parse_http_time(s: &str) -> Option<GoTime> {
 }
 
 fn http_time(t: &GoTime) -> String {
-    t.utc().0.and_then(|t| t.format(HTTP_TIME).ok()).unwrap_or_default()
+    t.utc()
+        .0
+        .and_then(|t| t.format(HTTP_TIME).ok())
+        .unwrap_or_default()
 }
 
 /// Go's http.Redirect
@@ -202,7 +224,12 @@ pub fn redirect(w: &mut W, req: &Req, loc: &str, code: u16) {
             308 => "Permanent Redirect",
             _ => "Found",
         };
-        let esc = loc.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&#34;").replace('\'', "&#39;");
+        let esc = loc
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&#34;")
+            .replace('\'', "&#39;");
         w.write(format!("<a href=\"{esc}\">{text}</a>.\n\n").as_bytes());
     }
 }
@@ -219,7 +246,11 @@ fn one_range(h: &str, n: i64) -> Option<(i64, i64)> {
         ((n - k).max(0), n - 1)
     } else {
         let s: i64 = a.parse().ok()?;
-        let e: i64 = if b.is_empty() { n - 1 } else { b.parse::<i64>().ok()?.min(n - 1) };
+        let e: i64 = if b.is_empty() {
+            n - 1
+        } else {
+            b.parse::<i64>().ok()?.min(n - 1)
+        };
         (s, e)
     };
     (start <= end && start < n).then_some((start, end - start + 1))
@@ -245,7 +276,10 @@ pub fn serve_content(w: &mut W, req: &Req, modtime: GoTime, mut rd: impl Read, s
         (false, Some((s, l))) => (s, l, 206),
     };
     if status == 206 {
-        w.set_header("Content-Range", &format!("bytes {start}-{}/{size}", start + len - 1));
+        w.set_header(
+            "Content-Range",
+            &format!("bytes {start}-{}/{size}", start + len - 1),
+        );
         if std::io::copy(&mut (&mut rd).take(start as u64), &mut std::io::sink()).is_err() {
             return crate::nethttp::write_error(w, 500, "reading the body");
         }
@@ -263,7 +297,13 @@ pub fn serve_content(w: &mut W, req: &Req, modtime: GoTime, mut rd: impl Read, s
 
 /// a content type by the file's extension (Go's mime.TypeByExtension, the web page's kinds)
 fn content_type(p: &Path) -> &'static str {
-    match p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase().as_str() {
+    match p
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "html" | "htm" => "text/html; charset=utf-8",
         "js" | "mjs" => "text/javascript; charset=utf-8",
         "css" => "text/css; charset=utf-8",
@@ -309,7 +349,9 @@ pub fn serve_web(w: &mut W, req: &mut Req, dir: &str) {
     if f.is_dir() {
         f = f.join("index.html");
     }
-    let Ok(file) = std::fs::File::open(&f) else { return crate::nethttp::not_found(w) };
+    let Ok(file) = std::fs::File::open(&f) else {
+        return crate::nethttp::not_found(w);
+    };
     let meta = file.metadata().ok();
     let size = meta.as_ref().map_or(-1, |m| m.len() as i64);
     let modtime = meta
@@ -349,7 +391,14 @@ mod tests {
 
     #[test]
     fn path_clean_as_go() {
-        for (i, o) in [("", "."), ("/a/../b", "/b"), ("a/./b/", "a/b"), ("../x", "../x"), ("/..", "/"), ("a/..", ".")] {
+        for (i, o) in [
+            ("", "."),
+            ("/a/../b", "/b"),
+            ("a/./b/", "a/b"),
+            ("../x", "../x"),
+            ("/..", "/"),
+            ("a/..", "."),
+        ] {
             assert_eq!(path_clean(i), o, "{i}");
         }
     }

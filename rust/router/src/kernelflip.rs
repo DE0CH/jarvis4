@@ -71,7 +71,11 @@ pub fn identity_answer(dep: &str, b: &[u8]) -> Result<Identity> {
             agreement_key: String,
         }
         let m: M = jarvis_go::unmarshal(b).map_err(|_| anyhow!("{dep}: bad identity"))?;
-        return Ok(Identity { role: "secrets".into(), signing_key: m.signing_key, agreement_key: m.agreement_key });
+        return Ok(Identity {
+            role: "secrets".into(),
+            signing_key: m.signing_key,
+            agreement_key: m.agreement_key,
+        });
     }
     let d: SDoc = jarvis_go::unmarshal(b).map_err(|_| anyhow!("{dep}: bad identity"))?;
     serde_json::from_str::<Identity>(&d.payload).map_err(|_| anyhow!("{dep}: bad identity"))
@@ -82,7 +86,12 @@ impl Router {
     /// its components restarted before taking over) starts the handoffs again for it; the takeovers done stay done
     pub fn start_flip(self: &Arc<Self>, to: &str, roster: &str) {
         self.st.do_(|p| {
-            let taken = p.kernel_flip.as_ref().filter(|f| f.to == to).map(|f| f.taken.clone()).unwrap_or_default();
+            let taken = p
+                .kernel_flip
+                .as_ref()
+                .filter(|f| f.to == to)
+                .map(|f| f.taken.clone())
+                .unwrap_or_default();
             p.kernel_flip = Some(KernelFlip {
                 to: to.into(),
                 roster: roster.into(),
@@ -134,14 +143,18 @@ impl Router {
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_ok()
         {
-            self.dm(&format!("🔴 Jarvis 4's kernel flip is waiting — {why}. The router tries again every 30 s."));
+            self.dm(&format!(
+                "🔴 Jarvis 4's kernel flip is waiting — {why}. The router tries again every 30 s."
+            ));
         }
     }
 
     /// one try at the flip; Ok once it finished (or there is none)
     pub fn kernel_flip_run(&self) -> Result<()> {
         let _g = KERNEL_FLIP_MU.lock().unwrap_or_else(|e| e.into_inner());
-        let (f, next) = self.st.do_(|p| (p.kernel_flip.clone(), p.kernel_roster_next.clone()));
+        let (f, next) = self
+            .st
+            .do_(|p| (p.kernel_flip.clone(), p.kernel_roster_next.clone()));
         let Some(mut f) = f else { return Ok(()) };
         let Some(next) = next.filter(|n| n.copy == f.to && n.doc().id() == f.roster) else {
             let why = "the roster it was started with is gone";
@@ -176,7 +189,9 @@ impl Router {
             self.flip_waiting(&format!("{e:#}"));
             return Err(e);
         }
-        let took = Duration::from_secs((f.started.since().whole_milliseconds().max(0) as u64 + 500) / 1000);
+        let took = Duration::from_secs(
+            (f.started.since().whole_milliseconds().max(0) as u64 + 500) / 1000,
+        );
         crate::logf!(
             "kernel: the {} copy serves from now on (the flip took {}); a setup session commits active-kernel.txt (infra/setup.py kernel-flipped)",
             f.to,
@@ -189,7 +204,9 @@ impl Router {
     /// "" when the flip can begin: every component of the other copy holds its roster (posted again if one lost it),
     /// and every serving component is one that roster retires (the serving secrets: the one it names)
     fn flip_ready(&self, from: &str, next: &RosterCurrent) -> String {
-        let Some(k) = &self.kernel else { return "no kernel".into() };
+        let Some(k) = &self.kernel else {
+            return "no kernel".into();
+        };
         let d = next.doc();
         let ro: Roster = next.roster();
         for dep in roster_targets(&next.copy) {
@@ -233,14 +250,22 @@ impl Router {
 
     /// the handoffs, then the takeovers, each kept before the next (callers hold the gate)
     fn flip_steps(&self, f: &mut KernelFlip, roster: &SDoc, from: &str) -> Result<()> {
-        let Some(k) = &self.kernel else { return Err(anyhow!("no kernel")) };
+        let Some(k) = &self.kernel else {
+            return Err(anyhow!("no kernel"));
+        };
         for role in KERNEL_ROLES {
             if f.handoffs.contains_key(*role) {
                 continue;
             }
             let dep = format!("{role}-{from}");
             let (b, _) = k
-                .do_(&dep, &dep, "POST", "/handoff", Some(&json!({"roster": roster})))
+                .do_(
+                    &dep,
+                    &dep,
+                    "POST",
+                    "/handoff",
+                    Some(&json!({"roster": roster})),
+                )
                 .map_err(|e| anyhow!("{dep}'s handoff: {e:#}"))?;
             let d = match jarvis_go::unmarshal::<SDoc>(&b) {
                 Ok(d) if !d.payload.is_empty() => d,
@@ -260,13 +285,21 @@ impl Router {
             }
             let dep = format!("{role}-{}", f.to);
             let h = f.handoffs.get(*role).cloned().unwrap_or_default();
-            if let Err(e) = k.do_(&dep, &dep, "POST", "/takeover", Some(&json!({"handoff": h}))) {
+            if let Err(e) = k.do_(
+                &dep,
+                &dep,
+                "POST",
+                "/takeover",
+                Some(&json!({"handoff": h})),
+            ) {
                 // secrets keeps nothing on disk: one that restarted before its takeover is Recovered with the kit (the
                 // crash path), and then already serves with the keys the roster names
                 if *role != "secrets" || !self.secrets_serves_as(&dep, roster) {
                     return Err(anyhow!("{dep}'s takeover: {e:#}"));
                 }
-                crate::logf!("kernel: {dep} was Recovered with the kit instead of taking the handoff");
+                crate::logf!(
+                    "kernel: {dep} was Recovered with the kit instead of taking the handoff"
+                );
             }
             f.taken.insert(role.to_string(), true);
             self.st.do_(|p| {
@@ -282,7 +315,9 @@ impl Router {
     /// the secrets Deployment serves (set up, not handed off) with the keys the roster names for secrets
     fn secrets_serves_as(&self, dep: &str, roster: &SDoc) -> bool {
         let Some(k) = &self.kernel else { return false };
-        let Ok((b, _)) = k.do_(dep, dep, "GET", "/identity", None) else { return false };
+        let Ok((b, _)) = k.do_(dep, dep, "GET", "/identity", None) else {
+            return false;
+        };
         #[derive(Deserialize, Default)]
         #[serde(default)]
         struct Id {
@@ -296,12 +331,18 @@ impl Router {
             master: String,
             serving: String,
         }
-        let (Ok(id), Ok(ro)) = (jarvis_go::unmarshal::<Id>(&b), serde_json::from_str::<Roster>(&roster.payload)) else {
+        let (Ok(id), Ok(ro)) = (
+            jarvis_go::unmarshal::<Id>(&b),
+            serde_json::from_str::<Roster>(&roster.payload),
+        ) else {
             return false;
         };
-        let Some(m) = ro.member("secrets") else { return false };
+        let Some(m) = ro.member("secrets") else {
+            return false;
+        };
         m.signing_key == id.signing_key
             && jarvis_sig::verify(&id.signing_key, id.state.payload.as_bytes(), &id.state.sig)
-            && jarvis_go::unmarshal::<St>(id.state.payload.as_bytes()).is_ok_and(|st| !st.master.is_empty() && st.serving == "serving")
+            && jarvis_go::unmarshal::<St>(id.state.payload.as_bytes())
+                .is_ok_and(|st| !st.master.is_empty() && st.serving == "serving")
     }
 }

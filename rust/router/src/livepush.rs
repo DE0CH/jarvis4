@@ -50,10 +50,12 @@ pub struct LiveDocument {
 }
 
 /// Claude Code's working line ("✻ Thinking… (12s · esc to interrupt)"), as rust/machine/src/stall.rs reads it
-static LIVE_SPINNER: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"(?m)^\s*\S\s+[A-Z][\p{L}-]*…\s*\(\d").unwrap_or_else(|_| unreachable!()));
-static LIVE_ANSI: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"\x1b\[[0-9;?]*[A-Za-z]").unwrap_or_else(|_| unreachable!()));
+static LIVE_SPINNER: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?m)^\s*\S\s+[A-Z][\p{L}-]*…\s*\(\d").unwrap_or_else(|_| unreachable!())
+});
+static LIVE_ANSI: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\x1b\[[0-9;?]*[A-Za-z]").unwrap_or_else(|_| unreachable!())
+});
 
 fn spinning(screen: &str) -> bool {
     LIVE_SPINNER.is_match(&LIVE_ANSI.replace_all(screen, ""))
@@ -94,7 +96,9 @@ pub fn next_wake(d: &Persisted, sid: &str) -> i64 {
 /// (rust/machine/src/stall.rs), so a busy host with jobs or subagents and no working line on its pane is "background".
 /// screen: its pushed pane ("" when none is fresh). → (state, jobs, subagents)
 pub fn live_state_of(g: Option<&Registry>, fresh: bool, screen: &str) -> (&'static str, i64, i64) {
-    let Some(g) = g.filter(|g| fresh && !g.status.is_empty()) else { return ("booting", 0, 0) };
+    let Some(g) = g.filter(|g| fresh && !g.status.is_empty()) else {
+        return ("booting", 0, 0);
+    };
     let mut jobs = g.bg_tasks;
     let mut subagents = 0;
     if let Some(w) = &g.workers {
@@ -106,7 +110,9 @@ pub fn live_state_of(g: Option<&Registry>, fresh: bool, screen: &str) -> (&'stat
         "waiting" => "waiting",
         "idle" if jobs > 0 || subagents > 0 => "background",
         "idle" => "idle",
-        "busy" if (jobs > 0 || subagents > 0) && !screen.is_empty() && !spinning(screen) => "background",
+        "busy" if (jobs > 0 || subagents > 0) && !screen.is_empty() && !spinning(screen) => {
+            "background"
+        }
         _ => "working",
     };
     (state, jobs, subagents)
@@ -141,8 +147,12 @@ impl Router {
                 if s.state != "started" || s.machine_id.is_empty() {
                     continue;
                 }
-                let (g, fresh) = match s.live.as_ref().and_then(|l| l.reg.as_ref().map(|g| (g, l))) {
-                    Some((g, l)) => (Some(g), now.sub(&l.last_report) <= DEFAULT_PILOT.stale_report),
+                let (g, fresh) = match s.live.as_ref().and_then(|l| l.reg.as_ref().map(|g| (g, l)))
+                {
+                    Some((g, l)) => (
+                        Some(g),
+                        now.sub(&l.last_report) <= DEFAULT_PILOT.stale_report,
+                    ),
                     None => (None, false),
                 };
                 let (st, jobs, sub) = live_state_of(g, fresh, "");
@@ -164,7 +174,11 @@ impl Router {
                     x.since = g.status_updated_at;
                 }
                 let busy = g.is_some_and(|g| fresh && g.status == "busy" && (jobs > 0 || sub > 0));
-                rows.push(Row { s: x, id: s.id.clone(), busy });
+                rows.push(Row {
+                    s: x,
+                    id: s.id.clone(),
+                    busy,
+                });
             }
             rows
         });
@@ -205,7 +219,10 @@ impl Router {
         if url.is_empty() || secret.is_empty() {
             return;
         }
-        let c = reqwest::blocking::Client::builder().timeout(Duration::from_secs(10)).build().unwrap_or_default();
+        let c = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap_or_default();
         let r = self.clone();
         std::thread::spawn(move || {
             let mut failing = false;
@@ -227,7 +244,12 @@ impl Router {
     }
 }
 
-pub fn live_post(c: &reqwest::blocking::Client, url: &str, secret: &str, doc: &LiveDocument) -> Result<()> {
+pub fn live_post(
+    c: &reqwest::blocking::Client,
+    url: &str,
+    secret: &str,
+    doc: &LiveDocument,
+) -> Result<()> {
     let res = c
         .post(url)
         .header("Content-Type", "application/json")

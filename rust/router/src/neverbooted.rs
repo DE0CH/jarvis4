@@ -48,7 +48,12 @@ impl Router {
         let cands: Vec<(String, String)> = self.st.do_(|d| {
             d.sessions
                 .values()
-                .filter(|s| s.state == "initialising" && !s.machine_id.is_empty() && s.booted != s.machine_id && s.locked_store.is_empty())
+                .filter(|s| {
+                    s.state == "initialising"
+                        && !s.machine_id.is_empty()
+                        && s.booted != s.machine_id
+                        && s.locked_store.is_empty()
+                })
                 .map(|s| (s.id.clone(), s.machine_id.clone()))
                 .collect()
         });
@@ -73,7 +78,13 @@ impl Router {
             if now.sub(&since) < LC_BOOT_MAX {
                 continue;
             }
-            self.boot_failed(&machine, &format!("it never booted and has logged nothing for {}", wait_text(LC_BOOT_MAX)));
+            self.boot_failed(
+                &machine,
+                &format!(
+                    "it never booted and has logged nothing for {}",
+                    wait_text(LC_BOOT_MAX)
+                ),
+            );
             first.remove(&machine);
         }
         first.retain(|m, _| keep.contains(m));
@@ -84,7 +95,10 @@ impl Router {
 mod tests {
     #[test]
     fn refused_in_log_takes_the_reason() {
-        assert_eq!(super::refused_in_log("x REFUSING TO START: snapshot: broke "), "snapshot: broke");
+        assert_eq!(
+            super::refused_in_log("x REFUSING TO START: snapshot: broke "),
+            "snapshot: broke"
+        );
         assert_eq!(super::refused_in_log("booting"), "");
     }
 }

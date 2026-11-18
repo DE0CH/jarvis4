@@ -125,7 +125,11 @@ pub fn cert_options(c: Option<&Doc>) -> (String, String) {
 }
 
 pub fn split_repos(s: &str) -> Vec<String> {
-    s.split(',').map(str::trim).filter(|u| !u.is_empty()).map(String::from).collect()
+    s.split(',')
+        .map(str::trim)
+        .filter(|u| !u.is_empty())
+        .map(String::from)
+        .collect()
 }
 
 /// what a successor's challenge carries: the cert's own config (an unattended resume keeps it exactly), or, for a line
@@ -157,13 +161,20 @@ pub fn restore_machine_id(cert: &Doc) -> Result<String> {
         succ: String,
         machine: Option<M>,
     }
-    let c = cert.decode::<C>().ok().filter(|c| c.machine.is_some()).ok_or_else(|| anyhow!("the cert names no machine"))?;
+    let c = cert
+        .decode::<C>()
+        .ok()
+        .filter(|c| c.machine.is_some())
+        .ok_or_else(|| anyhow!("the cert names no machine"))?;
     let mut id = c.machine.map(|m| m.id).unwrap_or_default();
     if id.is_empty() {
         id = c.succ.strip_prefix("fly-").unwrap_or(&c.succ).to_string();
     }
     if !RESTORE_MACHINE_RE.is_match(&id) {
-        return Err(anyhow!("the cert's machine {} isn't a machine id", jarvis_go::fmt::go_quote(&id)));
+        return Err(anyhow!(
+            "the cert's machine {} isn't a machine id",
+            jarvis_go::fmt::go_quote(&id)
+        ));
     }
     Ok(id)
 }
@@ -256,7 +267,10 @@ pub fn attested(d: &Delivery) -> Result<(Vec<u8>, String)> {
     let signed_by = |r: &SignedRequest| format!("session-signed:{}", r.machine);
     match d.kind.as_str() {
         "wakeup" | "cron" | "watch" | "watch-fail" => {
-            let r = d.request.as_ref().ok_or_else(|| anyhow!("no signed request"))?;
+            let r = d
+                .request
+                .as_ref()
+                .ok_or_else(|| anyhow!("no signed request"))?;
             let b = base64::engine::general_purpose::STANDARD.decode(&r.body)?;
             Ok((b, signed_by(r)))
         }
@@ -267,18 +281,32 @@ pub fn attested(d: &Delivery) -> Result<(Vec<u8>, String)> {
         },
         "request-outcome" => {
             let b = crate::outcomes::outcome_attested(d)?;
-            let r = d.request.as_ref().ok_or_else(|| anyhow!("no signed request"))?;
+            let r = d
+                .request
+                .as_ref()
+                .ok_or_else(|| anyhow!("no signed request"))?;
             Ok((b, signed_by(r)))
         }
         "lease-granted" | "lease-taken" | "lease-back" => {
-            if !regex::Regex::new(r"^[a-z0-9][a-z0-9-]{0,40}$").is_ok_and(|re| re.is_match(&d.device)) {
+            if !regex::Regex::new(r"^[a-z0-9][a-z0-9-]{0,40}$")
+                .is_ok_and(|re| re.is_match(&d.device))
+            {
                 return Err(anyhow!("lease: not a device name"));
             }
             match d.kind.as_str() {
-                "lease-taken" => Ok((crate::leases::lease_taken_text(&d.device).into_bytes(), "image-text".into())),
-                "lease-back" => Ok((crate::leases::lease_back_text(&d.device).into_bytes(), "image-text".into())),
+                "lease-taken" => Ok((
+                    crate::leases::lease_taken_text(&d.device).into_bytes(),
+                    "image-text".into(),
+                )),
+                "lease-back" => Ok((
+                    crate::leases::lease_back_text(&d.device).into_bytes(),
+                    "image-text".into(),
+                )),
                 _ => {
-                    let origin = d.request.as_ref().map_or("image-text".to_string(), signed_by);
+                    let origin = d
+                        .request
+                        .as_ref()
+                        .map_or("image-text".to_string(), signed_by);
                     let t = crate::leases::lease_granted_text(
                         &d.device,
                         d.minutes,
@@ -295,15 +323,17 @@ pub fn attested(d: &Delivery) -> Result<(Vec<u8>, String)> {
             if crate::sizes::size_mem_gb(&d.from) == 0 || crate::sizes::size_mem_gb(&d.to) == 0 {
                 return Err(anyhow!("upgraded: not a machine size"));
             }
-            Ok((crate::memory::upgraded_text(&d.from, &d.to).into_bytes(), "image-text".into()))
+            Ok((
+                crate::memory::upgraded_text(&d.from, &d.to).into_bytes(),
+                "image-text".into(),
+            ))
         }
         k => Err(anyhow!("unknown delivery {k}")),
     }
 }
 
 /// this wasn't asked for by the session itself (no session-signed request), and nothing else vouches for it
-pub const NOT_VOUCHED: &str =
-    "this wasn't asked for by the session itself (no session-signed request), and nothing else vouches for it: not delivered";
+pub const NOT_VOUCHED: &str = "this wasn't asked for by the session itself (no session-signed request), and nothing else vouches for it: not delivered";
 
 /// a held message counts as handed over: the approval queue delivers it, or tells whoever asked
 pub fn handed_over(r: Result<()>) -> Result<()> {
@@ -318,14 +348,21 @@ pub fn handed_over(r: Result<()>) -> Result<()> {
 pub const BOOT_GRACE: Duration = Duration::from_secs(90);
 
 /// machine → its secrets pull went through (it is about to finish booting)
-static PULLED_MACHINES: LazyLock<Mutex<BTreeSet<String>>> = LazyLock::new(|| Mutex::new(BTreeSet::new()));
+static PULLED_MACHINES: LazyLock<Mutex<BTreeSet<String>>> =
+    LazyLock::new(|| Mutex::new(BTreeSet::new()));
 
 pub fn mark_pulled(machine: &str) {
-    PULLED_MACHINES.lock().unwrap_or_else(|e| e.into_inner()).insert(machine.to_string());
+    PULLED_MACHINES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(machine.to_string());
 }
 
 pub fn has_pulled(machine: &str) -> bool {
-    PULLED_MACHINES.lock().unwrap_or_else(|e| e.into_inner()).contains(machine)
+    PULLED_MACHINES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains(machine)
 }
 
 // ---- the input log, persisted ---------------------------------------------------------------------------------
@@ -382,20 +419,33 @@ impl Router {
                     let (sum, size) = self
                         .obj_sha256(&crate::uploads::upload_key(&ops.upload, &f.name))
                         .map_err(|e| anyhow!("attachment {}: {e:#}", f.name))?;
-                    c.attachments.push(AttachmentRef { name: f.name.clone(), sha256: sum, size });
+                    c.attachments.push(AttachmentRef {
+                        name: f.name.clone(),
+                        sha256: sum,
+                        size,
+                    });
                 }
             }
         }
         if let Some(rc) = &s.restore_cert {
             let rs = self
                 .snap(&crate::restore::restore_snap(&s.id))
-                .ok_or_else(|| anyhow!("the restore's snapshot or cert: its snapshot isn't here"))?;
-            let m = restore_machine_id(rc).map_err(|e| anyhow!("the restore's snapshot or cert: {e:#}"))?;
-            c.restore = Some(RestoreRef { machine: m, sha256: rs.sha256 });
+                .ok_or_else(|| {
+                    anyhow!("the restore's snapshot or cert: its snapshot isn't here")
+                })?;
+            let m = restore_machine_id(rc)
+                .map_err(|e| anyhow!("the restore's snapshot or cert: {e:#}"))?;
+            c.restore = Some(RestoreRef {
+                machine: m,
+                sha256: rs.sha256,
+            });
         }
         if !s.import_from.is_empty() {
             // jarvis1import.rs: the Jarvis 1 session id (its first machine's) and the import manifest's hash
-            c.restore = Some(RestoreRef { machine: s.import_from.clone(), sha256: s.import_sha.clone() });
+            c.restore = Some(RestoreRef {
+                machine: s.import_from.clone(),
+                sha256: s.import_sha.clone(),
+            });
         }
         if let Some(t) = &s.task_config {
             c.task = Some(t.clone());
@@ -415,7 +465,12 @@ impl Router {
     /// core vouches (they then need the phone; the old paths deliver neither); "" = none
     pub fn resume_once(&self, s: &Session) -> String {
         let mut o = OnceInputs {
-            prompt: self.st.do_(|d| d.schedules.get(&s.id).map(|sc| sc.resume_prompt.clone()).unwrap_or_default()),
+            prompt: self.st.do_(|d| {
+                d.schedules
+                    .get(&s.id)
+                    .map(|sc| sc.resume_prompt.clone())
+                    .unwrap_or_default()
+            }),
             ..Default::default()
         };
         if let Some(rb) = s.ops.as_ref().and_then(|ops| ops.rollback.as_ref())
@@ -449,10 +504,14 @@ impl Router {
     pub fn kill_machine(&self, machine: &str, require_snapshot: bool) -> Result<Option<Doc>> {
         let mut input = json!({"machine": machine});
         if let Some(s) = self.snap(machine).filter(|s| s.state == "committed") {
-            input["snapshot"] = json!({"sha256": s.sha256, "sig": s.sig, "required": require_snapshot});
+            input["snapshot"] =
+                json!({"sha256": s.sha256, "sig": s.sig, "required": require_snapshot});
         }
         if let Ok(key) = self.core.key()
-            && let Some(l) = self.legacy_for(machine, key.get("signingKey").map(String::as_str).unwrap_or(""))
+            && let Some(l) = self.legacy_for(
+                machine,
+                key.get("signingKey").map(String::as_str).unwrap_or(""),
+            )
         {
             input["legacy"] = l; // legacy.rs: an earlier core's machine, its line taken over at this kill
         }
@@ -464,7 +523,10 @@ impl Router {
     /// the values the machine takes from the router alone (each a strict format)
     pub fn machine_config(self: &Arc<Self>, machine: &str) -> Result<Value> {
         let sid = self.machine_session(machine)?;
-        let s = self.st.do_(|d| d.sessions.get(&sid).cloned()).unwrap_or_default();
+        let s = self
+            .st
+            .do_(|d| d.sessions.get(&sid).cloned())
+            .unwrap_or_default();
         let e = self.machine_env(&s); // the same hooks as the env (Discord channel, task run, live sync)
         let get = |k: &str| e.get(k).cloned().unwrap_or_default();
         let mut out = json!({"sessionId": s.id, "discordChannel": get("LOBSTER_CHANNEL"), "taskRun": get("JARVIS2_TASK_RUN"),
@@ -472,7 +534,10 @@ impl Router {
         if let Ok(n) = get("JARVIS2_LIVE_SYNC_SECONDS").parse::<i64>() {
             out["liveSyncSeconds"] = json!(n);
         }
-        let p = crate::remote::tunnel_proof(&std::env::var("JARVIS2_TUNNEL_KEY").unwrap_or_default(), &sid);
+        let p = crate::remote::tunnel_proof(
+            &std::env::var("JARVIS2_TUNNEL_KEY").unwrap_or_default(),
+            &sid,
+        );
         if !p.is_empty() {
             out["tunnelProof"] = json!(p);
         }
@@ -480,7 +545,12 @@ impl Router {
     }
 
     /// d into the machine's queue (mq.rs), and its answer within wait (None: none came)
-    pub fn deliver_await(&self, machine: &str, d: &Delivery, wait: Duration) -> Result<Option<DeliveryResult>> {
+    pub fn deliver_await(
+        &self,
+        machine: &str,
+        d: &Delivery,
+        wait: Duration,
+    ) -> Result<Option<DeliveryResult>> {
         self.mq_put(machine, "delivery", &d.id, &serde_json::to_value(d)?, 0)?;
         match self.mq_await(&d.id, wait, None) {
             Ok(Some(ans)) => Ok(Some(jarvis_go::unmarshal(&ans).unwrap_or_default())),
@@ -505,7 +575,13 @@ impl Router {
 
     /// o is who is told when a held message is denied, lapses or fails (messages.rs message_origin covers the session's
     /// own wakeups, crons and watches); AwaitingApproval = held for Deyao
-    pub fn deliver_vouched_opts(self: &Arc<Self>, sid: &str, mut d: Delivery, boot: bool, o: Option<&Origin>) -> Result<()> {
+    pub fn deliver_vouched_opts(
+        self: &Arc<Self>,
+        sid: &str,
+        mut d: Delivery,
+        boot: bool,
+        o: Option<&Origin>,
+    ) -> Result<()> {
         use crate::messages as msg;
         use crate::schedule::skip;
         // messages.rs: into a session holding a sensitive store (and any resume prompt) only as the phone approved it
@@ -518,7 +594,10 @@ impl Router {
         if gated && state != "started" && !msg::preview_only(&d.kind) {
             // held without starting anything: the router renders this kind itself
             let Some((text, from, note)) = msg::message_text(&d) else {
-                return Err(anyhow!("a {} delivery the router can't render: not delivered", d.kind));
+                return Err(anyhow!(
+                    "a {} delivery the router can't render: not delivered",
+                    d.kind
+                ));
             };
             self.hold_message(sid, &d, &text, &from, &note, o)?;
             return Err(msg::awaiting_approval());
@@ -539,8 +618,14 @@ impl Router {
                     return Err(e);
                 }
             }
-            "pausing" | "destroying" | "approval" => return Err(skip(&format!("the session is {state}"))),
-            "failed" => return Err(anyhow!("the session has failed: Restart it (or Resume) and it gets this")),
+            "pausing" | "destroying" | "approval" => {
+                return Err(skip(&format!("the session is {state}")));
+            }
+            "failed" => {
+                return Err(anyhow!(
+                    "the session has failed: Restart it (or Resume) and it gets this"
+                ));
+            }
             _ => {}
         }
         self.wait_started(sid)?;
@@ -555,7 +640,12 @@ impl Router {
                             d.kind
                         ));
                     };
-                    (t, format!("{} {}", msg::message_note(&d), msg::NO_PREVIEW_NOTE).trim().to_string())
+                    (
+                        t,
+                        format!("{} {}", msg::message_note(&d), msg::NO_PREVIEW_NOTE)
+                            .trim()
+                            .to_string(),
+                    )
                 }
                 Err(e) => return Err(e),
                 Ok(t) => (t, msg::message_note(&d)),
@@ -567,7 +657,12 @@ impl Router {
         let sum = hex::encode(Sha256::digest(&input));
         let deadline = Instant::now() + crate::schedule::HARNESS_UP_MAX;
         loop {
-            let machine = self.st.do_(|p| p.sessions.get(sid).map(|s| s.machine_id.clone()).unwrap_or_default());
+            let machine = self.st.do_(|p| {
+                p.sessions
+                    .get(sid)
+                    .map(|s| s.machine_id.clone())
+                    .unwrap_or_default()
+            });
             if machine.is_empty() {
                 return Err(anyhow!("the session has no running machine"));
             }
@@ -575,11 +670,13 @@ impl Router {
             let a = self.attest_input(&machine, &d.kind, &origin, &sum)?;
             d.id = crate::util::rand_id();
             d.attest = Some(a);
-            let out = self.deliver_await(&machine, &d, Duration::from_secs(60))?.unwrap_or_else(|| DeliveryResult {
-                id: d.id.clone(),
-                error: "the machine didn't answer within 60 s".into(),
-                ..Default::default()
-            });
+            let out = self
+                .deliver_await(&machine, &d, Duration::from_secs(60))?
+                .unwrap_or_else(|| DeliveryResult {
+                    id: d.id.clone(),
+                    error: "the machine didn't answer within 60 s".into(),
+                    ..Default::default()
+                });
             if out.ok {
                 if scheduled_kind(&d.kind) {
                     // autopilot.rs: idle after this turn pauses in minutes, not the hour
@@ -607,7 +704,14 @@ impl Router {
             if out.needs_approval && !out.text.is_empty() {
                 // the machine renders another text than the phone signed: Deyao sees it
                 d.approval = None;
-                self.hold_message(sid, &d, &out.text, &msg::message_from(&d), &msg::message_note(&d), o)?;
+                self.hold_message(
+                    sid,
+                    &d,
+                    &out.text,
+                    &msg::message_from(&d),
+                    &msg::message_note(&d),
+                    o,
+                )?;
                 return Err(msg::awaiting_approval());
             }
             return Err(anyhow!("the machine refused or failed: {}", out.error));
@@ -621,7 +725,10 @@ impl Router {
         if g.0.is_some_and(|t| t.elapsed() < Duration::from_secs(60)) {
             return g.1;
         }
-        match self.core.raw("POST", "/input-log", Some(br#"{"from":1099511627776}"#)) {
+        match self
+            .core
+            .raw("POST", "/input-log", Some(br#"{"from":1099511627776}"#))
+        {
             Err(_) => g.1, // unreachable: keep the last answer
             Ok((st, _)) => {
                 *g = (Some(Instant::now()), st == 200);
@@ -644,7 +751,11 @@ impl Router {
             return;
         }
         let _g = INPUT_LOG.lock().unwrap_or_else(|e| e.into_inner());
-        let rows: Vec<String> = entries.iter().filter(|e| !e.payload.is_empty()).map(|e| jarvis_go::marshal(*e)).collect();
+        let rows: Vec<String> = entries
+            .iter()
+            .filter(|e| !e.payload.is_empty())
+            .map(|e| jarvis_go::marshal(*e))
+            .collect();
         let refs: Vec<&[u8]> = rows.iter().map(|r| r.as_bytes()).collect();
         if let Err(e) = self.st.append_log("", LOG_INPUT, &refs) {
             crate::logf!("[input-log] {e:#}");
@@ -661,10 +772,16 @@ impl Router {
             entries: Vec<Doc>,
             head: Doc,
         }
-        let Ok((200, b)) = self.core.raw("POST", "/input-log", Some(format!(r#"{{"from":{}}}"#, g.next).as_bytes())) else {
+        let Ok((200, b)) = self.core.raw(
+            "POST",
+            "/input-log",
+            Some(format!(r#"{{"from":{}}}"#, g.next).as_bytes()),
+        ) else {
             return;
         };
-        let Ok(out) = jarvis_go::unmarshal::<Out>(&b) else { return };
+        let Ok(out) = jarvis_go::unmarshal::<Out>(&b) else {
+            return;
+        };
         let head = out.head.decode::<Seq>().unwrap_or_default();
         if head.seq < g.next {
             // a new core: its log starts again at 0
@@ -684,7 +801,10 @@ impl Router {
                 && !d.payload.is_empty()
             {
                 let head = hex::encode(Sha256::digest(d.payload.as_bytes()));
-                if let Err(e) = self.core.call("/input-log/chain-from", &json!({"head": head})) {
+                if let Err(e) = self
+                    .core
+                    .call("/input-log/chain-from", &json!({"head": head}))
+                {
                     crate::logf!("[input-log] chain_from: {e:#}");
                 }
             }
@@ -694,8 +814,11 @@ impl Router {
         struct Out {
             entries: Vec<Doc>,
         }
-        if let Ok((200, b)) = self.core.raw("POST", "/input-log", Some(format!(r#"{{"from":{from}}}"#).as_bytes()))
-            && let Ok(out) = jarvis_go::unmarshal::<Out>(&b)
+        if let Ok((200, b)) = self.core.raw(
+            "POST",
+            "/input-log",
+            Some(format!(r#"{{"from":{from}}}"#).as_bytes()),
+        ) && let Ok(out) = jarvis_go::unmarshal::<Out>(&b)
         {
             self.append_input_log(g, &out.entries);
         }
@@ -757,9 +880,11 @@ impl Router {
 }
 
 pub fn register_vouch(reg: &mut Registrar) {
-    reg.m("GET /m/config", |r, w, _, machine, _| match r.machine_config(machine) {
-        Err(e) => write_json(w, 403, &json!({"error": format!("{e:#}")})),
-        Ok(out) => write_json(w, 200, &out),
+    reg.m("GET /m/config", |r, w, _, machine, _| {
+        match r.machine_config(machine) {
+            Err(e) => write_json(w, 403, &json!({"error": format!("{e:#}")})),
+            Ok(out) => write_json(w, 200, &out),
+        }
     });
     reg.m("GET /m/restore-cert", |r, w, _, machine, _| {
         let (cert, cc) = r.st.do_(|d| {
@@ -797,10 +922,12 @@ pub fn register_vouch(reg: &mut Registrar) {
         match r.st.tail_log("", LOG_INPUT, n) {
             Err(e) => write_err(w, &e),
             Ok(lines) => {
-                let out: Vec<Value> = lines.iter().filter_map(|l| serde_json::from_slice(l).ok()).collect();
+                let out: Vec<Value> = lines
+                    .iter()
+                    .filter_map(|l| serde_json::from_slice(l).ok())
+                    .collect();
                 write_json(w, 200, &json!({"entries": out}));
             }
         }
     });
 }
-

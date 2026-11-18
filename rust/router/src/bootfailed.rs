@@ -22,7 +22,9 @@ pub fn boot_failed_text(machine: &str, reason: &str) -> String {
     if reason.is_empty() {
         reason = "no reason given".into();
     }
-    format!("machine {machine} refused to start: {reason}. Its machine is kept; Resume starts the session again on a new machine.")
+    format!(
+        "machine {machine} refused to start: {reason}. Its machine is kept; Resume starts the session again on a new machine."
+    )
 }
 
 impl Router {
@@ -32,14 +34,19 @@ impl Router {
         let found = self.st.do_(|d| {
             let sid = d.machines.get(machine).cloned()?;
             let s = d.sessions.get_mut(&sid)?;
-            if s.machine_id != machine || s.booted == machine || !(s.state == "initialising" || s.state == "started") {
+            if s.machine_id != machine
+                || s.booted == machine
+                || !(s.state == "initialising" || s.state == "started")
+            {
                 return None;
             }
             s.state = "failed".into();
             s.error = text.clone();
             Some((s.id.clone(), crate::autopilot::session_name(s, None)))
         });
-        let Some((sid, name)) = found else { return false };
+        let Some((sid, name)) = found else {
+            return false;
+        };
         crate::logf!("session {sid}: failed: {text}");
         self.dm(&format!("🔴 Session “{name}” didn't come up: {text}"));
         true

@@ -73,12 +73,25 @@ impl Router {
     }
 
     pub fn machine_key(&self, machine: &str) -> String {
-        self.st.do_(|d| d.started.get(machine).map(|s| s.signing_key.clone()).unwrap_or_default())
+        self.st.do_(|d| {
+            d.started
+                .get(machine)
+                .map(|s| s.signing_key.clone())
+                .unwrap_or_default()
+        })
     }
 
     /// POST /m/snapshot-stream: checked before a byte is taken, then straight into the bucket
-    fn snapshot_stream(self: &Arc<Self>, w: &mut crate::nethttp::W, req: &mut crate::nethttp::Req) -> Result<()> {
-        let (machine, t, sig) = (req.header("X-Machine"), req.header("X-Time"), req.header("X-Sig"));
+    fn snapshot_stream(
+        self: &Arc<Self>,
+        w: &mut crate::nethttp::W,
+        req: &mut crate::nethttp::Req,
+    ) -> Result<()> {
+        let (machine, t, sig) = (
+            req.header("X-Machine"),
+            req.header("X-Time"),
+            req.header("X-Sig"),
+        );
         let ts: i64 = t.parse().unwrap_or(0);
         let skew = crate::http::MACHINE_TIME_SKEW.load(std::sync::atomic::Ordering::Relaxed);
         let d = crate::util::unix_now() - ts;
@@ -89,7 +102,11 @@ impl Router {
         let key = self.machine_key(&machine);
         let payload = format!("{} {} {t} {STREAM_MARKER}", req.method, req.path);
         if key.is_empty() || !verify_p256(&key, payload.as_bytes(), &sig) {
-            write_json(w, 401, &json!({"error": "not signed by a machine the core started"}));
+            write_json(
+                w,
+                401,
+                &json!({"error": "not signed by a machine the core started"}),
+            );
             return Ok(());
         }
         // snapstore.rs: straight into the bucket, hashed on the way (snapwait.rs: every read is progress)
@@ -118,15 +135,26 @@ pub fn register_snap_stream(reg: &mut Registrar) {
             return write_json(w, 400, &json!({"error": "{sha256, sig}"}));
         };
         if r.snap(machine).is_none_or(|s| s.sha256 != i.sha256) {
-            return write_json(w, 409, &json!({"error": "no streamed snapshot with that sha256"}));
+            return write_json(
+                w,
+                409,
+                &json!({"error": "no streamed snapshot with that sha256"}),
+            );
         }
         if !verify_p256(&r.machine_key(machine), i.sha256.as_bytes(), &i.sig) {
-            return write_json(w, 403, &json!({"error": "the snapshot isn't signed by the machine's current key"}));
+            return write_json(
+                w,
+                403,
+                &json!({"error": "the snapshot isn't signed by the machine's current key"}),
+            );
         }
         if let Err(e) = r.snap_commit(machine, &i.sha256, &i.sig) {
             return write_err(w, &e);
         }
-        crate::logf!("machine {machine}: snapshot committed ({})", &i.sha256[..12]);
+        crate::logf!(
+            "machine {machine}: snapshot committed ({})",
+            &i.sha256[..12]
+        );
         r.snapshot_arrived(machine);
         write_json(w, 200, &json!({"ok": true}));
     });
@@ -185,15 +213,29 @@ pub fn register_snap_stream(reg: &mut Registrar) {
             }
         });
         if pred.is_empty() || named.is_empty() || named != i.sha256 {
-            return write_json(w, 409, &json!({"error": "the cert names no predecessor snapshot with that sha256"}));
+            return write_json(
+                w,
+                409,
+                &json!({"error": "the cert names no predecessor snapshot with that sha256"}),
+            );
         }
         if !verify_p256(&r.machine_key(machine), i.sha256.as_bytes(), &i.sig) {
-            return write_json(w, 403, &json!({"error": "the snapshot isn't signed by the machine's current key"}));
+            return write_json(
+                w,
+                403,
+                &json!({"error": "the snapshot isn't signed by the machine's current key"}),
+            );
         }
         if let Err(e) = r.snap_carry(machine, &pred, &i.sha256, &i.sig) {
-            return write_json(w, 409, &json!({"error": format!("the predecessor's snapshot: {e:#}")}));
+            return write_json(
+                w,
+                409,
+                &json!({"error": format!("the predecessor's snapshot: {e:#}")}),
+            );
         }
-        crate::logf!("machine {machine}: still booting; its predecessor {pred}'s snapshot carried over");
+        crate::logf!(
+            "machine {machine}: still booting; its predecessor {pred}'s snapshot carried over"
+        );
         r.snapshot_arrived(machine);
         write_json(w, 200, &json!({"ok": true}));
     });

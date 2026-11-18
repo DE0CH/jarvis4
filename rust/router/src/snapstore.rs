@@ -82,7 +82,12 @@ pub fn snap_ingest(
         let _ = std::io::copy(&mut pr, &mut std::io::sink()); // whatever the reader left: the upload must not stall
         f
     });
-    let mut tee = Tee { r: body.take(SNAPSHOT_MAX + 1), h: Sha256::new(), n: 0, pipe: Some(pw) };
+    let mut tee = Tee {
+        r: body.take(SNAPSHOT_MAX + 1),
+        h: Sha256::new(),
+        n: 0,
+        pipe: Some(pw),
+    };
     let res = sink(&mut tee);
     tee.pipe = None;
     let facts = facts.join().unwrap_or(None);
@@ -98,7 +103,9 @@ pub fn snap_ingest(
 
 impl Router {
     fn snap_db(&self) -> Result<&crate::db::DB> {
-        self.st.db().ok_or_else(|| anyhow!("snapshots: no database"))
+        self.st
+            .db()
+            .ok_or_else(|| anyhow!("snapshots: no database"))
     }
 
     /// the machine's snapshot row (None: none)
@@ -118,7 +125,9 @@ impl Router {
                     sig: r.get(3),
                     state: r.get(4),
                     bytes: r.get(5),
-                    facts: facts.filter(|f| f != "null").and_then(|f| jarvis_go::unmarshal(f.as_bytes()).ok()),
+                    facts: facts
+                        .filter(|f| f != "null")
+                        .and_then(|f| jarvis_go::unmarshal(f.as_bytes()).ok()),
                     committed_at: GoTime(at),
                 }
             }))
@@ -140,7 +149,10 @@ impl Router {
         });
         machines
             .into_iter()
-            .find(|m| self.snap(m).is_some_and(|s| s.state == "committed" && s.sha256 == sum))
+            .find(|m| {
+                self.snap(m)
+                    .is_some_and(|s| s.state == "committed" && s.sha256 == sum)
+            })
             .unwrap_or_default()
     }
 
@@ -150,9 +162,16 @@ impl Router {
         if m.is_empty() || cert.is_none() {
             return String::new();
         }
-        let key = self.st.do_(|d| d.started.get(&m).map(|st| st.signing_key.clone()).unwrap_or_default());
+        let key = self.st.do_(|d| {
+            d.started
+                .get(&m)
+                .map(|st| st.signing_key.clone())
+                .unwrap_or_default()
+        });
         match self.snap(&m) {
-            Some(s) if !key.is_empty() && jarvis_sig::verify(&key, s.sha256.as_bytes(), &s.sig) => s.sha256,
+            Some(s) if !key.is_empty() && jarvis_sig::verify(&key, s.sha256.as_bytes(), &s.sig) => {
+                s.sha256
+            }
             _ => String::new(),
         }
     }
@@ -163,15 +182,27 @@ impl Router {
     }
 
     /// body into the machine's snapshot object, hashed and read for its facts on the way → pending; (sha256, size)
-    pub fn snap_stream(&self, machine: &str, body: &mut dyn Read) -> std::result::Result<(String, i64), (anyhow::Error, i64)> {
+    pub fn snap_stream(
+        &self,
+        machine: &str,
+        body: &mut dyn Read,
+    ) -> std::result::Result<(String, i64), (anyhow::Error, i64)> {
         let key = snap_key(machine);
         let (sum, n, facts) = snap_ingest(body, |b| self.objects.put(&key, b, -1))?;
-        self.snap_pending(machine, &key, &sum, n, facts.as_ref()).map_err(|e| (e, n))?;
+        self.snap_pending(machine, &key, &sum, n, facts.as_ref())
+            .map_err(|e| (e, n))?;
         Ok((sum, n))
     }
 
     /// the machine's row names key, with that hash, size and facts, waiting for its signature
-    pub fn snap_pending(&self, machine: &str, key: &str, sum: &str, n: i64, facts: Option<&SnapshotFacts>) -> Result<()> {
+    pub fn snap_pending(
+        &self,
+        machine: &str,
+        key: &str,
+        sum: &str,
+        n: i64,
+        facts: Option<&SnapshotFacts>,
+    ) -> Result<()> {
         let fb: Option<String> = facts.map(jarvis_go::marshal);
         self.snap_db()?.conn()?.execute(
             "INSERT INTO snapshots (machine_id, object_key, sha256, sig, bytes, state, facts) VALUES ($1, $2, $3, '', $4, 'pending', $5::text::jsonb)
@@ -196,8 +227,13 @@ impl Router {
 
     /// the machine's snapshot is its predecessor's object (a booting machine's state), signed by the machine
     pub fn snap_carry(&self, machine: &str, pred: &str, sum: &str, sig: &str) -> Result<()> {
-        if !self.snap(pred).is_some_and(|p| p.state == "committed" && p.sha256 == sum) {
-            return Err(anyhow!("the predecessor {pred} has no committed snapshot with that sha256"));
+        if !self
+            .snap(pred)
+            .is_some_and(|p| p.state == "committed" && p.sha256 == sum)
+        {
+            return Err(anyhow!(
+                "the predecessor {pred} has no committed snapshot with that sha256"
+            ));
         }
         self.snap_db()?.conn()?.execute(
             "INSERT INTO snapshots (machine_id, object_key, sha256, sig, bytes, state, facts, committed_at)
@@ -231,7 +267,10 @@ impl Router {
         if let Ok(db) = self.snap_db()
             && let Ok(mut c) = db.conn()
         {
-            let _ = c.execute("UPDATE snapshots SET facts = $2::text::jsonb WHERE object_key = $1", &[&s.key, &fb]);
+            let _ = c.execute(
+                "UPDATE snapshots SET facts = $2::text::jsonb WHERE object_key = $1",
+                &[&s.key, &fb],
+            );
         }
         Ok(f)
     }
@@ -247,7 +286,10 @@ impl Router {
             std::io::copy(&mut rd, &mut f)?;
             f.sync_all().ok();
             // the archive copies it beside (jarvis2/snapshot.sig)
-            crate::util::write_file_0600(&PathBuf::from(format!("{}.sig", p.display())), s.sig.as_bytes())
+            crate::util::write_file_0600(
+                &PathBuf::from(format!("{}.sig", p.display())),
+                s.sig.as_bytes(),
+            )
         })();
         if let Err(e) = res {
             let _ = std::fs::remove_file(&p);
@@ -260,12 +302,19 @@ impl Router {
     pub fn snap_drop(&self, machine: &str) {
         let res = (|| -> Result<()> {
             let mut c = self.snap_db()?.conn()?;
-            let Some(row) = c.query_opt("DELETE FROM snapshots WHERE machine_id = $1 RETURNING object_key", &[&machine])? else {
+            let Some(row) = c.query_opt(
+                "DELETE FROM snapshots WHERE machine_id = $1 RETURNING object_key",
+                &[&machine],
+            )?
+            else {
                 return Ok(());
             };
             let key: String = row.get(0);
             let others: bool = c
-                .query_one("SELECT EXISTS (SELECT 1 FROM snapshots WHERE object_key = $1)", &[&key])?
+                .query_one(
+                    "SELECT EXISTS (SELECT 1 FROM snapshots WHERE object_key = $1)",
+                    &[&key],
+                )?
                 .get(0);
             if !others && let Err(e) = self.objects.delete(&key) {
                 crate::logf!("snapshots: deleting {key}: {e:#}");
@@ -279,16 +328,23 @@ impl Router {
 
     /// the facts of the machine's snapshot
     pub fn snap_facts_of(&self, machine: &str) -> Result<SnapshotFacts> {
-        let s = self.snap(machine).ok_or_else(|| anyhow!("no snapshot of {machine}"))?;
+        let s = self
+            .snap(machine)
+            .ok_or_else(|| anyhow!("no snapshot of {machine}"))?;
         self.snap_facts(&s)
     }
 
     /// the machine ids of rows that start with prefix (the restores' rows)
     pub fn snaps_like(&self, prefix: &str) -> Vec<String> {
-        let Ok(db) = self.snap_db() else { return vec![] };
+        let Ok(db) = self.snap_db() else {
+            return vec![];
+        };
         let Ok(mut c) = db.conn() else { return vec![] };
-        c.query("SELECT machine_id FROM snapshots WHERE starts_with(machine_id, $1)", &[&prefix])
-            .map(|rows| rows.into_iter().map(|r| r.get::<_, String>(0)).collect())
-            .unwrap_or_default()
+        c.query(
+            "SELECT machine_id FROM snapshots WHERE starts_with(machine_id, $1)",
+            &[&prefix],
+        )
+        .map(|rows| rows.into_iter().map(|r| r.get::<_, String>(0)).collect())
+        .unwrap_or_default()
     }
 }

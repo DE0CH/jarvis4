@@ -5,10 +5,10 @@
 //! m:<machine> for a new row, a:<ref> for an answer, w:<machine> for a snapshot wait, l:<name> for a login document),
 //! with a short poll beside it so a lost notification only delays.
 
-use fallible_iterator::FallibleIterator as _;
 use crate::ctx::Ctx;
 use crate::router::Router;
 use anyhow::{Result, anyhow};
+use fallible_iterator::FallibleIterator as _;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -36,10 +36,13 @@ impl Slot {
     }
 }
 
+/// a subscriber: its id and where it is woken
+type SubSlot = (u64, Arc<Slot>);
+
 /// this replica's waiters, woken by the database's notifications
 #[derive(Default)]
 pub struct Broker {
-    subs: Mutex<BTreeMap<String, Vec<(u64, Arc<Slot>)>>>,
+    subs: Mutex<BTreeMap<String, Vec<SubSlot>>>,
     next: AtomicU64,
 }
 
@@ -97,7 +100,12 @@ impl Broker {
             .entry(key.to_string())
             .or_default()
             .push((id, slot.clone()));
-        Sub { broker: self.clone(), key: key.to_string(), id, slot }
+        Sub {
+            broker: self.clone(),
+            key: key.to_string(),
+            id,
+            slot,
+        }
     }
 
     pub fn fire(&self, key: &str) {
@@ -158,11 +166,20 @@ pub struct MqItem {
 
 impl Router {
     fn mq_db(&self) -> Result<&crate::db::DB> {
-        self.st.db().ok_or_else(|| anyhow!("the machines' queue needs the database"))
+        self.st
+            .db()
+            .ok_or_else(|| anyhow!("the machines' queue needs the database"))
     }
 
     /// a row for the machine (bounded: at most max untaken of its kind; 0 = no bound) → false when full
-    pub fn mq_put(&self, machine: &str, kind: &str, r#ref: &str, body: &Value, max: i64) -> Result<bool> {
+    pub fn mq_put(
+        &self,
+        machine: &str,
+        kind: &str,
+        r#ref: &str,
+        body: &Value,
+        max: i64,
+    ) -> Result<bool> {
         let b = jarvis_go::marshal(body);
         let mut c = self.mq_db()?.conn()?;
         let mut tx = c.transaction()?;
@@ -194,7 +211,10 @@ impl Router {
              WHERE machine_id = $1 AND taken_at IS NULL ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING kind, body::text",
             &[&machine],
         )?;
-        Ok(row.map(|r| MqItem { kind: r.get(0), body: r.get::<_, String>(1).into_bytes() }))
+        Ok(row.map(|r| MqItem {
+            kind: r.get(0),
+            body: r.get::<_, String>(1).into_bytes(),
+        }))
     }
 
     /// the machine's next row, waiting up to wait (None: none came)
@@ -234,7 +254,12 @@ impl Router {
     }
 
     /// the answer to the row ref, waiting up to wait (None: none came); done: stop early
-    pub fn mq_await(&self, r#ref: &str, wait: Duration, done: Option<&Ctx>) -> Result<Option<Vec<u8>>> {
+    pub fn mq_await(
+        &self,
+        r#ref: &str,
+        wait: Duration,
+        done: Option<&Ctx>,
+    ) -> Result<Option<Vec<u8>>> {
         let sub = self.notes.sub(&format!("a:{}", r#ref));
         let end = Instant::now() + wait;
         loop {
@@ -243,7 +268,11 @@ impl Router {
                 &[&r#ref],
             )?;
             if let Some(row) = row {
-                return Ok(Some(row.get::<_, Option<String>>(0).unwrap_or_else(|| "null".into()).into_bytes()));
+                return Ok(Some(
+                    row.get::<_, Option<String>>(0)
+                        .unwrap_or_else(|| "null".into())
+                        .into_bytes(),
+                ));
             }
             let now = Instant::now();
             if now >= end || done.is_some_and(Ctx::cancelled) {
@@ -270,7 +299,10 @@ impl Router {
             if let Ok(db) = self.mq_db()
                 && let Ok(mut c) = db.conn()
             {
-                let _ = c.execute("DELETE FROM machine_queue WHERE created_at < now() - interval '1 day'", &[]);
+                let _ = c.execute(
+                    "DELETE FROM machine_queue WHERE created_at < now() - interval '1 day'",
+                    &[],
+                );
             }
         }
     }

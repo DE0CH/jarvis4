@@ -84,7 +84,7 @@ impl Sealer {
             .cur
             .key
             .encrypt(
-                Nonce::from_slice(&nonce),
+                &Nonce::from(nonce),
                 Payload {
                     msg: plain,
                     aad: name.as_bytes(),
@@ -97,13 +97,13 @@ impl Sealer {
     pub fn open(&self, name: &str, key_id: &str, nonce: &[u8], body: &[u8]) -> Result<Vec<u8>> {
         for k in std::iter::once(&self.cur).chain(self.old.iter()) {
             if k.id == key_id {
-                if nonce.len() != 12 {
+                let Ok(nonce) = <[u8; 12]>::try_from(nonce) else {
                     bail!("cipher: message authentication failed");
-                }
+                };
                 return k
                     .key
                     .decrypt(
-                        Nonce::from_slice(nonce),
+                        &Nonce::from(nonce),
                         Payload {
                             msg: body,
                             aad: name.as_bytes(),
@@ -186,7 +186,9 @@ impl State {
 
     /// rows under the previous key, resealed under the current one (a rotation's second half)
     pub(crate) fn reseal_old(&self) -> Result<()> {
-        let Some(seal) = &self.seal else { return Ok(()) };
+        let Some(seal) = &self.seal else {
+            return Ok(());
+        };
         if seal.old.is_none() {
             return Ok(());
         }

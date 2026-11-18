@@ -77,7 +77,6 @@ impl std::fmt::Display for Busy {
 
 impl std::error::Error for Busy {}
 
-
 /// a caller asked for something wrong (400): Go's badRequest, one type with inbox.rs's
 pub use crate::inbox::BadRequest as BadReq;
 
@@ -94,7 +93,11 @@ pub fn router_id() -> String {
             let host = std::env::var("POD_NAME")
                 .ok()
                 .filter(|s| !s.is_empty())
-                .or_else(|| nix::unistd::gethostname().ok().map(|h| h.to_string_lossy().into_owned()))
+                .or_else(|| {
+                    nix::unistd::gethostname()
+                        .ok()
+                        .map(|h| h.to_string_lossy().into_owned())
+                })
                 .unwrap_or_else(|| "router".into());
             format!("{host}-{}", crate::util::rand_id())
         })
@@ -147,8 +150,14 @@ pub struct Router {
 }
 
 impl Router {
-    pub fn new(cfg: Config, st: Arc<State>, core: Arc<CoreClient>, policy: crate::policy::Policy) -> Arc<Router> {
-        let objects: Arc<dyn crate::objstore::ObjStore> = match crate::objstore::objects_from_env() {
+    pub fn new(
+        cfg: Config,
+        st: Arc<State>,
+        core: Arc<CoreClient>,
+        policy: crate::policy::Policy,
+    ) -> Arc<Router> {
+        let objects: Arc<dyn crate::objstore::ObjStore> = match crate::objstore::objects_from_env()
+        {
             Err(e) => {
                 crate::logf!("objects: {e:#}");
                 std::process::exit(1);
@@ -205,14 +214,20 @@ impl Router {
         // linestate.rs: the core's line state, kept as its answers name a new one
         let lk = LineKeeper::new_core(r.st.clone(), r.core.clone());
         let lk2 = lk.clone();
-        *r.core.on_line_seq.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(move |s| lk2.seen(s)));
+        *r.core
+            .on_line_seq
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(move |s| lk2.seen(s)));
         let _ = r.lines.set(lk);
         r
     }
 
     /// this router as an Arc (every Router is made by Router::new, which keeps its own weak reference)
     pub fn arc(&self) -> Arc<Router> {
-        self.me.get().and_then(std::sync::Weak::upgrade).unwrap_or_else(|| unreachable!("a Router made outside Router::new"))
+        self.me
+            .get()
+            .and_then(std::sync::Weak::upgrade)
+            .unwrap_or_else(|| unreachable!("a Router made outside Router::new"))
     }
 
     pub fn lines(&self) -> Option<&Arc<LineKeeper>> {

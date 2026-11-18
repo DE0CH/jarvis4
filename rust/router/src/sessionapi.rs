@@ -70,7 +70,10 @@ pub fn session_api_env(e: &mut BTreeMap<String, String>, harness: &str) {
     e.insert("SESSION_API_TOKEN".into(), "jarvis2-local-proxy".into());
     if !crate::peer::harness_send(harness) {
         e.insert("CF_ACCESS_CLIENT_ID".into(), "jarvis2-local-proxy".into());
-        e.insert("CF_ACCESS_CLIENT_SECRET".into(), "jarvis2-local-proxy".into());
+        e.insert(
+            "CF_ACCESS_CLIENT_SECRET".into(),
+            "jarvis2-local-proxy".into(),
+        );
     }
 }
 
@@ -154,7 +157,11 @@ impl Router {
             });
         match res {
             Err(e) => schedule_err(w, &e),
-            Ok(wu) => write_json(w, 200, &json!({"ok": true, "wakeup": crate::schedule::wakeup_view(&wu)})),
+            Ok(wu) => write_json(
+                w,
+                200,
+                &json!({"ok": true, "wakeup": crate::schedule::wakeup_view(&wu)}),
+            ),
         }
     }
 
@@ -176,15 +183,27 @@ impl Router {
     pub fn put_chat_schedule(&self, w: &mut W, req: &mut Req) {
         let b = req.read_body(4096);
         let Ok(v) = serde_json::from_slice::<Map<String, Value>>(&b) else {
-            return write_json(w, 400, &json!({"error": "body: {\"nextAt\": RFC 3339 or null}"}));
+            return write_json(
+                w,
+                400,
+                &json!({"error": "body: {\"nextAt\": RFC 3339 or null}"}),
+            );
         };
         let at = match v.get("nextAt") {
             None | Some(Value::Null) => None,
             Some(Value::String(s)) => match GoTime::parse(s) {
                 Some(t) => Some(t),
-                None => return write_json(w, 400, &json!({"error": "nextAt is not an RFC 3339 time"})),
+                None => {
+                    return write_json(w, 400, &json!({"error": "nextAt is not an RFC 3339 time"}));
+                }
             },
-            Some(_) => return write_json(w, 400, &json!({"error": "body: {\"nextAt\": RFC 3339 or null}"})),
+            Some(_) => {
+                return write_json(
+                    w,
+                    400,
+                    &json!({"error": "body: {\"nextAt\": RFC 3339 or null}"}),
+                );
+            }
         };
         match self.set_chat_schedule(&req.path_value("id"), at, GoTime::now()) {
             Err(e) => schedule_err(w, &e),
@@ -211,7 +230,11 @@ impl Router {
             });
         match res {
             Err(e) => schedule_err(w, &e),
-            Ok(c) => write_json(w, 200, &json!({"ok": true, "cron": crate::schedule::cron_view(&c)})),
+            Ok(c) => write_json(
+                w,
+                200,
+                &json!({"ok": true, "cron": crate::schedule::cron_view(&c)}),
+            ),
         }
     }
 
@@ -243,23 +266,39 @@ impl Router {
         struct In {
             enabled: Option<bool>,
         }
-        let on = jarvis_go::unmarshal::<In>(body).unwrap_or_default().enabled.unwrap_or(true);
+        let on = jarvis_go::unmarshal::<In>(body)
+            .unwrap_or_default()
+            .enabled
+            .unwrap_or(true);
         let found = self.st.do_(|d| {
-            let Some(s) = d.sessions.get_mut(sid) else { return false };
+            let Some(s) = d.sessions.get_mut(sid) else {
+                return false;
+            };
             s.live.get_or_insert_with(Default::default).notify_idle_off = !on;
             true
         });
         if !found {
             return schedule_err(w, &no_session());
         }
-        write_json(w, 200, &json!({"ok": true, "notifyIdle": crate::autopilot::on_off(!on)}));
+        write_json(
+            w,
+            200,
+            &json!({"ok": true, "notifyIdle": crate::autopilot::on_off(!on)}),
+        );
     }
 
     /// a caller that isn't Deyao (a session, the actions key) proposes a new session — the same line as the app's New
     /// session, so nothing starts until Deyao approves the core's succession from null with Face ID; the approval names
     /// the caller and carries its reason. Attachments only from a session, its own uploads (uploads.rs). prefix keeps
     /// the caller's request ids apart from the app's and every other caller's.
-    pub fn propose_session(self: &Arc<Self>, w: &mut W, c: Caller, prefix: &str, b: &[u8], signed: Option<SignedRequest>) {
+    pub fn propose_session(
+        self: &Arc<Self>,
+        w: &mut W,
+        c: Caller,
+        prefix: &str,
+        b: &[u8],
+        signed: Option<SignedRequest>,
+    ) {
         let pin = match jarvis_go::unmarshal::<ProposalIn>(b) {
             Err(e) => return write_json(w, 400, &json!({"error": format!("bad JSON: {e}")})),
             Ok(p) => p,
@@ -292,8 +331,15 @@ impl Router {
 
     /// the proposal checked and made into the NewSession create_session takes (the caller and its call recorded);
     /// explanation required unless the batch's summary stands for it
-    pub fn check_proposal(&self, c: &Caller, prefix: &str, pin: ProposalIn, expl_required: bool) -> Result<NewSession> {
-        let expl = crate::inbox::clean_explanation(&pin.explanation, expl_required).map_err(|e| BadReq(format!("{e:#}")))?;
+    pub fn check_proposal(
+        &self,
+        c: &Caller,
+        prefix: &str,
+        pin: ProposalIn,
+        expl_required: bool,
+    ) -> Result<NewSession> {
+        let expl = crate::inbox::clean_explanation(&pin.explanation, expl_required)
+            .map_err(|e| BadReq(format!("{e:#}")))?;
         let mut ns = pin.ns;
         if ns.prompt.trim().is_empty() {
             return Err(BadReq("prompt is required".into()).into());
@@ -351,7 +397,11 @@ impl Router {
         }
         ns.origin = Some(Origin {
             caller: c.clone(),
-            call: ApiCall { method: "POST".into(), path: "/api/sessions".into(), args, ..Default::default() },
+            call: ApiCall {
+                method: "POST".into(),
+                path: "/api/sessions".into(),
+                args,
+            },
             ..Default::default()
         });
         ns.explanation = expl;
@@ -360,7 +410,11 @@ impl Router {
 }
 
 /// a machine route on its own session (the path's id, when there is one, must be its session)
-fn own(reg: &mut Registrar, pattern: &str, f: impl Fn(&Arc<Router>, &mut W, &mut Req, &str, &[u8]) + Send + Sync + 'static) {
+fn own(
+    reg: &mut Registrar,
+    pattern: &str,
+    f: impl Fn(&Arc<Router>, &mut W, &mut Req, &str, &[u8]) + Send + Sync + 'static,
+) {
     reg.m(pattern, move |r, w, req, machine, body| {
         let sid = match r.machine_session(machine) {
             Err(e) => return write_json(w, 403, &json!({"error": format!("{e:#}")})),
@@ -384,13 +438,25 @@ fn signed_of(req: &Req, b: &[u8]) -> SignedRequest {
 
 pub fn register_session_api(reg: &mut Registrar) {
     // ---- the app (Deyao) -----------------------------------------------------------------------------------
-    reg.app("GET /api/sessions/{id}/wakeup", |r, w, req| r.get_wakeups(w, &req.path_value("id"), true));
-    reg.app("GET /api/sessions/{id}/wakeups", |r, w, req| r.get_wakeups(w, &req.path_value("id"), false));
-    for p in ["POST /api/sessions/{id}/wakeup", "POST /api/sessions/{id}/wakeups"] {
+    reg.app("GET /api/sessions/{id}/wakeup", |r, w, req| {
+        r.get_wakeups(w, &req.path_value("id"), true)
+    });
+    reg.app("GET /api/sessions/{id}/wakeups", |r, w, req| {
+        r.get_wakeups(w, &req.path_value("id"), false)
+    });
+    for p in [
+        "POST /api/sessions/{id}/wakeup",
+        "POST /api/sessions/{id}/wakeups",
+    ] {
         reg.app(p, |_, w, _| app_arm_refused(w, "wakeup", "schedule-wakeup"));
     }
     reg.app("DELETE /api/sessions/{id}/wakeup", |r, w, req| {
-        r.delete_wakeups(w, &req.path_value("id"), &req.query("name"), req.query("all") == "1")
+        r.delete_wakeups(
+            w,
+            &req.path_value("id"),
+            &req.query("name"),
+            req.query("all") == "1",
+        )
     });
     reg.app("DELETE /api/sessions/{id}/wakeups/{name}", |r, w, req| {
         r.delete_wakeups(w, &req.path_value("id"), &req.path_value("name"), false)
@@ -402,8 +468,12 @@ pub fn register_session_api(reg: &mut Registrar) {
     reg.app("POST /api/sessions/{id}/crons/{name}/run", |r, w, req| {
         r.post_run_now(w, &req.path_value("id"), "c", &req.path_value("name"))
     });
-    reg.app("GET /api/sessions/{id}/crons", |r, w, req| r.get_crons(w, &req.path_value("id")));
-    reg.app("POST /api/sessions/{id}/crons", |_, w, _| app_arm_refused(w, "cron", "schedule-cron"));
+    reg.app("GET /api/sessions/{id}/crons", |r, w, req| {
+        r.get_crons(w, &req.path_value("id"))
+    });
+    reg.app("POST /api/sessions/{id}/crons", |_, w, _| {
+        app_arm_refused(w, "cron", "schedule-cron")
+    });
     reg.app("DELETE /api/sessions/{id}/crons/{name}", |r, w, req| {
         r.delete_cron(w, &req.path_value("id"), &req.path_value("name"))
     });
@@ -411,23 +481,53 @@ pub fn register_session_api(reg: &mut Registrar) {
     crate::searchsvc::register_search_services(reg); // the iCloud index (searchsvc.rs)
 
     // ---- the session itself (through its machine's local proxy) ---------------------------------------------
-    own(reg, "GET /m/api/sessions/{id}/wakeup", |r, w, _, sid, _| r.get_wakeups(w, sid, true));
-    own(reg, "GET /m/api/sessions/{id}/wakeups", |r, w, _, sid, _| r.get_wakeups(w, sid, false));
+    own(reg, "GET /m/api/sessions/{id}/wakeup", |r, w, _, sid, _| {
+        r.get_wakeups(w, sid, true)
+    });
+    own(
+        reg,
+        "GET /m/api/sessions/{id}/wakeups",
+        |r, w, _, sid, _| r.get_wakeups(w, sid, false),
+    );
     // the session's own request, kept exactly as its machine signed it: what vouches for the delivery (vouch.rs)
-    own(reg, "POST /m/api/sessions/{id}/wakeup", |r, w, req, sid, b| r.post_wakeup(w, sid, b, signed_of(req, b)));
-    own(reg, "POST /m/api/sessions/{id}/wakeups", |r, w, req, sid, b| r.post_wakeup(w, sid, b, signed_of(req, b)));
-    own(reg, "DELETE /m/api/sessions/{id}/wakeup", |r, w, req, sid, _| {
-        r.delete_wakeups(w, sid, &req.query("name"), req.query("all") == "1")
+    own(
+        reg,
+        "POST /m/api/sessions/{id}/wakeup",
+        |r, w, req, sid, b| r.post_wakeup(w, sid, b, signed_of(req, b)),
+    );
+    own(
+        reg,
+        "POST /m/api/sessions/{id}/wakeups",
+        |r, w, req, sid, b| r.post_wakeup(w, sid, b, signed_of(req, b)),
+    );
+    own(
+        reg,
+        "DELETE /m/api/sessions/{id}/wakeup",
+        |r, w, req, sid, _| r.delete_wakeups(w, sid, &req.query("name"), req.query("all") == "1"),
+    );
+    own(
+        reg,
+        "DELETE /m/api/sessions/{id}/wakeups/{name}",
+        |r, w, req, sid, _| r.delete_wakeups(w, sid, &req.path_value("name"), false),
+    );
+    own(reg, "GET /m/api/sessions/{id}/crons", |r, w, _, sid, _| {
+        r.get_crons(w, sid)
     });
-    own(reg, "DELETE /m/api/sessions/{id}/wakeups/{name}", |r, w, req, sid, _| {
-        r.delete_wakeups(w, sid, &req.path_value("name"), false)
-    });
-    own(reg, "GET /m/api/sessions/{id}/crons", |r, w, _, sid, _| r.get_crons(w, sid));
-    own(reg, "POST /m/api/sessions/{id}/crons", |r, w, req, sid, b| r.post_cron(w, sid, b, signed_of(req, b)));
-    own(reg, "DELETE /m/api/sessions/{id}/crons/{name}", |r, w, req, sid, _| {
-        r.delete_cron(w, sid, &req.path_value("name"))
-    });
-    own(reg, "POST /m/api/sessions/{id}/notify-idle", |r, w, _, sid, b| r.post_notify_idle(w, sid, b));
+    own(
+        reg,
+        "POST /m/api/sessions/{id}/crons",
+        |r, w, req, sid, b| r.post_cron(w, sid, b, signed_of(req, b)),
+    );
+    own(
+        reg,
+        "DELETE /m/api/sessions/{id}/crons/{name}",
+        |r, w, req, sid, _| r.delete_cron(w, sid, &req.path_value("name")),
+    );
+    own(
+        reg,
+        "POST /m/api/sessions/{id}/notify-idle",
+        |r, w, _, sid, b| r.post_notify_idle(w, sid, b),
+    );
     // retire-session: the session destroys itself, unless it still has a wakeup or cron to wait for
     own(reg, "DELETE /m/api/sessions/{id}", |r, w, _, sid, _| {
         let p = r.pending_schedule(sid);
@@ -449,7 +549,16 @@ pub fn register_session_api(reg: &mut Registrar) {
     // (PUT /m/api/sessions/{id}/uploads/…, uploads.rs), signed by hash with the line as the app's are.
     own(reg, "POST /m/api/sessions", |r, w, req, sid, b| {
         let signed = signed_of(req, b);
-        r.propose_session(w, Caller { kind: "session".into(), session: sid.into(), ..Default::default() }, sid, b, Some(signed))
+        r.propose_session(
+            w,
+            Caller {
+                kind: "session".into(),
+                session: sid.into(),
+            },
+            sid,
+            b,
+            Some(signed),
+        )
     });
     own(reg, "/m/api/", |_, w, req, _, _| {
         write_json(
@@ -462,9 +571,16 @@ pub fn register_session_api(reg: &mut Registrar) {
 
 /// CRLF → LF, trimmed, at most RESUME_PROMPT_MAX characters (multi-line kept)
 pub fn clean_resume_prompt(p: &str) -> Result<String> {
-    let p = p.replace("\r\n", "\n").replace('\r', "\n").trim().to_string();
+    let p = p
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .trim()
+        .to_string();
     if p.chars().count() > crate::schedule::RESUME_PROMPT_MAX {
-        return Err(anyhow!("prompt longer than {} characters", crate::schedule::RESUME_PROMPT_MAX));
+        return Err(anyhow!(
+            "prompt longer than {} characters",
+            crate::schedule::RESUME_PROMPT_MAX
+        ));
     }
     Ok(p)
 }

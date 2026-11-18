@@ -71,7 +71,11 @@ impl Ctx {
     pub fn sleep(&self, d: Duration) -> bool {
         let end = Instant::now() + d;
         let end = self.deadline.map_or(end, |x| x.min(end));
-        let mut g = self.inner.cancelled.lock().unwrap_or_else(|e| e.into_inner());
+        let mut g = self
+            .inner
+            .cancelled
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         loop {
             if *g {
                 return false;

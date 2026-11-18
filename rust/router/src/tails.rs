@@ -36,10 +36,17 @@ pub struct Tail {
 
 /// one pattern per tag
 static INJECTED: LazyLock<Vec<regex::Regex>> = LazyLock::new(|| {
-    ["system-reminder", "task-notification", "local-command-stdout", "command-name", "command-message", "command-args"]
-        .iter()
-        .map(|t| regex::Regex::new(&format!(r"(?s)<{t}>.*?</{t}>")).unwrap_or_else(|_| unreachable!()))
-        .collect()
+    [
+        "system-reminder",
+        "task-notification",
+        "local-command-stdout",
+        "command-name",
+        "command-message",
+        "command-args",
+    ]
+    .iter()
+    .map(|t| regex::Regex::new(&format!(r"(?s)<{t}>.*?</{t}>")).unwrap_or_else(|_| unreachable!()))
+    .collect()
 });
 
 pub fn clip_text(t: &str, n: usize) -> String {
@@ -73,12 +80,19 @@ pub fn parse_transcript(text: &str, partial_first_line: bool, max: usize, clip: 
     let (mut ai_title, mut custom_title, mut sid) = (String::new(), String::new(), String::new());
     // (message, queued)
     let mut msgs: Vec<(TailMessage, bool)> = vec![];
-    let s = |j: &serde_json::Map<String, Value>, k: &str| j.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+    let s = |j: &serde_json::Map<String, Value>, k: &str| {
+        j.get(k)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
     for l in lines {
         if l.trim().is_empty() {
             continue;
         }
-        let Ok(Value::Object(j)) = serde_json::from_str::<Value>(l) else { continue };
+        let Ok(Value::Object(j)) = serde_json::from_str::<Value>(l) else {
+            continue;
+        };
         let typ = s(&j, "type");
         if sid.is_empty() && !s(&j, "sessionId").is_empty() {
             sid = s(&j, "sessionId");
@@ -94,15 +108,28 @@ pub fn parse_transcript(text: &str, partial_first_line: bool, max: usize, clip: 
         }
         if typ == "queue-operation" && s(&j, "operation") == "enqueue" {
             if let Some(Value::String(c)) = j.get("content")
-                && !c.trim_start_matches([' ', '\t', '\r', '\n']).starts_with('<')
+                && !c
+                    .trim_start_matches([' ', '\t', '\r', '\n'])
+                    .starts_with('<')
             {
-                msgs.push((TailMessage { role: "user".into(), text: clip_text(c.trim(), clip), at }, true));
+                msgs.push((
+                    TailMessage {
+                        role: "user".into(),
+                        text: clip_text(c.trim(), clip),
+                        at,
+                    },
+                    true,
+                ));
             }
             continue;
         }
         let flag = |k: &str| j.get(k).and_then(Value::as_bool).unwrap_or(false);
         let msg = j.get("message").filter(|m| m.is_object());
-        if (typ != "user" && typ != "assistant") || flag("isSidechain") || flag("isMeta") || msg.is_none() {
+        if (typ != "user" && typ != "assistant")
+            || flag("isSidechain")
+            || flag("isMeta")
+            || msg.is_none()
+        {
             continue;
         }
         let mut t = content_text(msg.and_then(|m| m.get("content")));
@@ -114,20 +141,33 @@ pub fn parse_transcript(text: &str, partial_first_line: bool, max: usize, clip: 
             continue;
         }
         if typ == "user"
-            && let Some(i) = msgs.iter().position(|(m, q)| *q && m.text == clip_text(&t, clip))
+            && let Some(i) = msgs
+                .iter()
+                .position(|(m, q)| *q && m.text == clip_text(&t, clip))
         {
             msgs.remove(i);
         }
         if t.chars().count() > clip {
             t = format!("{} …", clip_text(&t, clip));
         }
-        msgs.push((TailMessage { role: typ, text: t, at }, false));
+        msgs.push((
+            TailMessage {
+                role: typ,
+                text: t,
+                at,
+            },
+            false,
+        ));
     }
     if msgs.len() > max {
         msgs.drain(..msgs.len() - max);
     }
     Tail {
-        title: if custom_title.is_empty() { ai_title } else { custom_title },
+        title: if custom_title.is_empty() {
+            ai_title
+        } else {
+            custom_title
+        },
         session_id: sid,
         messages: msgs.into_iter().map(|(m, _)| m).collect(),
         stale: false,
@@ -136,13 +176,21 @@ pub fn parse_transcript(text: &str, partial_first_line: bool, max: usize, clip: 
 
 /// the tail of a transcript's text (the whole file or its last bytes)
 pub fn tail_of(text: &[u8]) -> Tail {
-    parse_transcript(&String::from_utf8_lossy(text), text.len() >= TAIL_BYTES, 40, 4000)
+    parse_transcript(
+        &String::from_utf8_lossy(text),
+        text.len() >= TAIL_BYTES,
+        40,
+        4000,
+    )
 }
 
 /// what a conversation ended on, for a card
 pub fn snippet(t: &Tail) -> Option<TailMessage> {
     let mut m = t.messages.last()?.clone();
-    m.text = clip_text(&m.text.split_whitespace().collect::<Vec<_>>().join(" "), 280);
+    m.text = clip_text(
+        &m.text.split_whitespace().collect::<Vec<_>>().join(" "),
+        280,
+    );
     Some(m)
 }
 
@@ -152,7 +200,10 @@ pub fn snippet(t: &Tail) -> Option<TailMessage> {
 pub fn is_transcript(name: &str) -> bool {
     let name = crate::util::path_clean(name);
     let parts: Vec<&str> = name.split('/').collect();
-    parts.len() == 4 && parts[0] == ".claude" && parts[1] == "projects" && parts[3].ends_with(".jsonl")
+    parts.len() == 4
+        && parts[0] == ".claude"
+        && parts[1] == "projects"
+        && parts[3].ends_with(".jsonl")
 }
 
 /// the last n bytes of what is written into it
@@ -167,7 +218,11 @@ impl TailBuf {
     }
 
     pub fn bytes(&self) -> Vec<u8> {
-        if self.b.len() > self.n { self.b[self.b.len() - self.n..].to_vec() } else { self.b.clone() }
+        if self.b.len() > self.n {
+            self.b[self.b.len() - self.n..].to_vec()
+        } else {
+            self.b.clone()
+        }
     }
 }
 

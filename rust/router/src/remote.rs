@@ -39,7 +39,10 @@ use std::time::{Duration, Instant};
 pub const REMOTE_HOLDER: &str = "remote";
 
 pub fn remote_harness(h: &str) -> bool {
-    matches!(h, "opencode" | "openclaw" | "paseo-claude" | "aviary" | "dsh")
+    matches!(
+        h,
+        "opencode" | "openclaw" | "paseo-claude" | "aviary" | "dsh"
+    )
 }
 
 /// A dsh session's link is the persistent dsh web UI (DE0CH/deyao-ai dsh-web), which reaches the session's origin
@@ -62,14 +65,16 @@ pub const CHAT_URL: &str = "https://chat.deyaochen.com/";
 /// the machine names a conversation (the gateway's placeholder "aviary"), the chat's front page.
 pub fn aviary_conv_url(reg: Option<&Registry>) -> String {
     match reg.and_then(|g| uuid::Uuid::parse_str(&g.session_id).ok()) {
-        Some(id) => format!("{CHAT_URL}h/srv_conversations/workspace/wks_{}", id.hyphenated()),
+        Some(id) => format!(
+            "{CHAT_URL}h/srv_conversations/workspace/wks_{}",
+            id.hyphenated()
+        ),
         None => CHAT_URL.into(),
     }
 }
 
 /// the commands the remote holder runs (bash -lc as the session user)
-const PASEO_PAIR_CMD: &str =
-    r#"export PATH="$HOME/.local/bin:/usr/local/bin:$PATH" PASEO_HOME="$HOME/.paseo"; paseo daemon pair --json"#;
+const PASEO_PAIR_CMD: &str = r#"export PATH="$HOME/.local/bin:/usr/local/bin:$PATH" PASEO_HOME="$HOME/.paseo"; paseo daemon pair --json"#;
 const OPENCLAW_REMOTE: &str = r#"cat "$HOME/.openclaw/jarvis-remote.json""#;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -98,16 +103,24 @@ pub struct RemoteInfo {
 }
 
 pub fn tunnel_host(id: &str) -> String {
-    format!("{id}{}", crate::router::env("SESSION_TUNNEL_SUFFIX", "-s.deyaochen.com"))
+    format!(
+        "{id}{}",
+        crate::router::env("SESSION_TUNNEL_SUFFIX", "-s.deyaochen.com")
+    )
 }
 
 /// a paseo offer costs a ~200 MB node run on the machine: one per machine per minute
-static REMOTE_CACHE: LazyLock<Mutex<BTreeMap<String, (Instant, RemoteInfo)>>> = LazyLock::new(Default::default);
+static REMOTE_CACHE: LazyLock<Mutex<BTreeMap<String, (Instant, RemoteInfo)>>> =
+    LazyLock::new(Default::default);
 
 /// what the holder's command printed → the remote of that harness
 pub fn parse_remote(harness: &str, id: &str, stdout: &str) -> RemoteInfo {
     let web = format!("https://{}/", tunnel_host(id));
-    let mut info = RemoteInfo { web_url: web.clone(), harness: harness.into(), ..Default::default() };
+    let mut info = RemoteInfo {
+        web_url: web.clone(),
+        harness: harness.into(),
+        ..Default::default()
+    };
     if paseo_harness(harness) {
         #[derive(Deserialize, Default)]
         #[serde(default)]
@@ -116,7 +129,9 @@ pub fn parse_remote(harness: &str, id: &str, stdout: &str) -> RemoteInfo {
             #[serde(rename = "relayEnabled")]
             relay_enabled: bool,
         }
-        let pair = stdout.find('{').and_then(|i| jarvis_go::unmarshal::<Pair>(stdout[i..].as_bytes()).ok());
+        let pair = stdout
+            .find('{')
+            .and_then(|i| jarvis_go::unmarshal::<Pair>(&stdout.as_bytes()[i..]).ok());
         match pair.filter(|p| !p.url.is_empty()) {
             None => info.error = "the Paseo daemon is not up yet — try again in a moment".into(),
             Some(p) => {
@@ -131,7 +146,10 @@ pub fn parse_remote(harness: &str, id: &str, stdout: &str) -> RemoteInfo {
     struct Rec {
         token: String,
     }
-    match jarvis_go::unmarshal::<Rec>(stdout.trim().as_bytes()).ok().filter(|r| !r.token.is_empty()) {
+    match jarvis_go::unmarshal::<Rec>(stdout.trim().as_bytes())
+        .ok()
+        .filter(|r| !r.token.is_empty())
+    {
         None => info.error = "the OpenClaw gateway is not up yet — try again in a moment".into(),
         Some(rec) => {
             info.web_url = format!("{web}#token={}", jarvis_go::fmt::query_escape(&rec.token));
@@ -146,7 +164,9 @@ pub fn tunnel_proof(key: &str, id: &str) -> String {
     if key.is_empty() {
         return String::new();
     }
-    let Ok(mut h) = Hmac::<Sha256>::new_from_slice(key.as_bytes()) else { return String::new() };
+    let Ok(mut h) = Hmac::<Sha256>::new_from_slice(key.as_bytes()) else {
+        return String::new();
+    };
     h.update(format!("jarvis2-tunnel:{id}").as_bytes());
     hex::encode(h.finalize().into_bytes())
 }
@@ -156,16 +176,36 @@ impl Router {
     /// address: nothing to read)
     pub fn remote_info(&self, s: &Session) -> RemoteInfo {
         if s.harness == "aviary" {
-            let reg = self.st.do_(|d| d.sessions.get(&s.id).and_then(|x| x.live.as_ref()).and_then(|l| l.reg.clone()));
-            return RemoteInfo { web_url: aviary_conv_url(reg.as_ref()), harness: s.harness.clone(), ..Default::default() };
+            let reg = self.st.do_(|d| {
+                d.sessions
+                    .get(&s.id)
+                    .and_then(|x| x.live.as_ref())
+                    .and_then(|l| l.reg.clone())
+            });
+            return RemoteInfo {
+                web_url: aviary_conv_url(reg.as_ref()),
+                harness: s.harness.clone(),
+                ..Default::default()
+            };
         }
         if s.harness == "dsh" {
-            return RemoteInfo { web_url: dsh_web_url(&s.id), harness: s.harness.clone(), ..Default::default() };
+            return RemoteInfo {
+                web_url: dsh_web_url(&s.id),
+                harness: s.harness.clone(),
+                ..Default::default()
+            };
         }
         if web_origin_harness(&s.harness) {
-            return RemoteInfo { web_url: format!("https://{}/", tunnel_host(&s.id)), harness: s.harness.clone(), ..Default::default() };
+            return RemoteInfo {
+                web_url: format!("https://{}/", tunnel_host(&s.id)),
+                harness: s.harness.clone(),
+                ..Default::default()
+            };
         }
-        if let Some((at, info)) = REMOTE_CACHE.lock().unwrap_or_else(|e| e.into_inner()).get(&s.machine_id)
+        if let Some((at, info)) = REMOTE_CACHE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&s.machine_id)
             && at.elapsed() < Duration::from_secs(60)
         {
             return info.clone();
@@ -177,7 +217,11 @@ impl Router {
         };
         let res = match self.exec(&s.id, REMOTE_HOLDER, cmd, wait) {
             Err(e) => {
-                let needs = if crate::peer::is_grant_refusal(Some(&e)) { REMOTE_HOLDER.to_string() } else { String::new() };
+                let needs = if crate::peer::is_grant_refusal(Some(&e)) {
+                    REMOTE_HOLDER.to_string()
+                } else {
+                    String::new()
+                };
                 return RemoteInfo {
                     web_url: format!("https://{}/", tunnel_host(&s.id)),
                     harness: s.harness.clone(),
@@ -190,7 +234,10 @@ impl Router {
         };
         let info = parse_remote(&s.harness, &s.id, &res.stdout);
         if info.error.is_empty() {
-            REMOTE_CACHE.lock().unwrap_or_else(|e| e.into_inner()).insert(s.machine_id.clone(), (Instant::now(), info.clone()));
+            REMOTE_CACHE
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(s.machine_id.clone(), (Instant::now(), info.clone()));
         }
         info
     }
@@ -203,7 +250,11 @@ impl Router {
     pub fn remotes(self: &Arc<Self>, w: &mut W, req: &mut Req) {
         let harness = req.query("harness");
         if !remote_harness(&harness) && harness != "paseo" {
-            return write_error(w, 400, "harness must be openclaw, opencode, paseo-claude, paseo, aviary or dsh");
+            return write_error(
+                w,
+                400,
+                "harness must be openclaw, opencode, paseo-claude, paseo, aviary or dsh",
+            );
         }
         let matches = |h: &str| h == harness || (harness == "paseo" && paseo_harness(h));
         let mut all: Vec<Session> = self.st.do_(|d| {
@@ -212,7 +263,11 @@ impl Router {
                 // "approval" with no pause behind it: a new session Deyao has not approved yet, not a session. One that
                 // was paused and waits for its resume's approval (a restart onto a newer image) is listed, as paused: a
                 // session missing here is a destroyed one to hermit-jarvis, which then ends its conversation
-                .filter(|s| matches(&s.harness) && s.state != "destroying" && (s.state != "approval" || s.paused_at.is_some()))
+                .filter(|s| {
+                    matches(&s.harness)
+                        && s.state != "destroying"
+                        && (s.state != "approval" || s.paused_at.is_some())
+                })
                 .map(|s| {
                     let mut x = s.clone();
                     if x.state == "approval" {
@@ -222,7 +277,7 @@ impl Router {
                 })
                 .collect()
         });
-        all.sort_by(|a, b| b.created.cmp(&a.created));
+        all.sort_by_key(|a| std::cmp::Reverse(a.created));
         let out: Vec<Value> = std::thread::scope(|sc| {
             let hs: Vec<_> = all
                 .iter()
@@ -275,7 +330,9 @@ impl Router {
                     })
                 })
                 .collect();
-            hs.into_iter().map(|h| h.join().unwrap_or(Value::Null)).collect()
+            hs.into_iter()
+                .map(|h| h.join().unwrap_or(Value::Null))
+                .collect()
         });
         w.set_header("Cache-Control", "no-store");
         write_json(w, 200, &json!({"sessions": out}));
@@ -316,7 +373,10 @@ pub fn register_remote(reg: &mut Registrar) {
             Ok(s) => s,
             Err(e) => return write_error(w, 403, &format!("{e:#}")),
         };
-        let p = tunnel_proof(&std::env::var("JARVIS2_TUNNEL_KEY").unwrap_or_default(), &sid);
+        let p = tunnel_proof(
+            &std::env::var("JARVIS2_TUNNEL_KEY").unwrap_or_default(),
+            &sid,
+        );
         if p.is_empty() {
             return write_error(w, 404, "the router has no JARVIS2_TUNNEL_KEY");
         }

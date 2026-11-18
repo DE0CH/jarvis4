@@ -187,10 +187,14 @@ pub fn clean_explanation(s: &str, required: bool) -> Result<String> {
     let s = plain_lines(s)?;
     let n = s.chars().count();
     if n > EXPLANATION_MAX {
-        return Err(anyhow!("explanation longer than {EXPLANATION_MAX} characters ({n})"));
+        return Err(anyhow!(
+            "explanation longer than {EXPLANATION_MAX} characters ({n})"
+        ));
     }
     if required && s.is_empty() {
-        return Err(anyhow!("an explanation is required: say why this is needed"));
+        return Err(anyhow!(
+            "an explanation is required: say why this is needed"
+        ));
     }
     Ok(s)
 }
@@ -245,11 +249,20 @@ pub fn prune_requests(d: &mut Persisted, now: GoTime) {
             gone = !crate::apicalls::caller_exists(d, &q.origin.caller);
         }
         if !q.params.session.is_empty() {
-            gone = gone || d.sessions.get(&q.params.session).is_none_or(|s| s.state == "destroyed");
+            gone = gone
+                || d.sessions
+                    .get(&q.params.session)
+                    .is_none_or(|s| s.state == "destroyed");
         }
         if lapsed || gone {
-            let Some(q) = d.inbox.remove(&id) else { continue };
-            let oc = if lapsed { crate::outcomes::OUTCOME_LAPSED } else { crate::outcomes::OUTCOME_DROPPED };
+            let Some(q) = d.inbox.remove(&id) else {
+                continue;
+            };
+            let oc = if lapsed {
+                crate::outcomes::OUTCOME_LAPSED
+            } else {
+                crate::outcomes::OUTCOME_DROPPED
+            };
             crate::outcomes::note_outcome(d, Some(&q.origin), &q.kind, &q.id, oc, 0, None);
         }
     }
@@ -266,9 +279,15 @@ pub fn app_caller(req: &Req) -> Caller {
         return c;
     }
     if !req.header("cf-access-token").is_empty() {
-        return Caller { kind: "app".into(), ..Default::default() };
+        return Caller {
+            kind: "app".into(),
+            ..Default::default()
+        };
     }
-    Caller { kind: "web".into(), ..Default::default() }
+    Caller {
+        kind: "web".into(),
+        ..Default::default()
+    }
 }
 
 pub fn caller_text(d: &Persisted, c: &Caller) -> String {
@@ -280,7 +299,13 @@ pub fn caller_text(d: &Persisted, c: &Caller) -> String {
         "setup" => "Claude (setup session)".into(),
         "actions" => format!(
             "the actions of {}",
-            caller_text(d, &Caller { kind: "session".into(), session: c.session.clone() })
+            caller_text(
+                d,
+                &Caller {
+                    kind: "session".into(),
+                    session: c.session.clone()
+                }
+            )
         ),
         "session" => {
             let mut title = c.session.clone();
@@ -304,7 +329,8 @@ pub fn caller_text(d: &Persisted, c: &Caller) -> String {
 }
 
 /// the caller of an action whose approval the router makes later, on a thread (resume, restore)
-static ORIGINS: LazyLock<Mutex<BTreeMap<String, (Origin, GoTime)>>> = LazyLock::new(|| Mutex::new(BTreeMap::new()));
+static ORIGINS: LazyLock<Mutex<BTreeMap<String, (Origin, GoTime)>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 pub fn take_origin(sid: &str) -> Option<Origin> {
     let mut g = ORIGINS.lock().ok()?;
@@ -400,7 +426,10 @@ pub fn request_item(d: &Persisted, q: &InboxRequest, now: GoTime) -> InboxItem {
             opts.insert("holder".into(), json!(p.holder));
             if p.days > 0 {
                 opts.insert("grantKind".into(), json!("rule"));
-                opts.insert("until".into(), json!(now.add(time::Duration::days(p.days)).rfc3339()));
+                opts.insert(
+                    "until".into(),
+                    json!(now.add(time::Duration::days(p.days)).rfc3339()),
+                );
             } else {
                 opts.insert("grantKind".into(), json!("grant"));
                 opts.insert("minutes".into(), json!(p.minutes));
@@ -421,7 +450,10 @@ pub fn request_item(d: &Persisted, q: &InboxRequest, now: GoTime) -> InboxItem {
             opts.insert("session".into(), json!(p.session));
             opts.insert("sessionName".into(), json!(it.session_name));
             opts.insert("from".into(), json!(q.origin.caller.session));
-            opts.insert("fromName".into(), json!(inbox_session_name(d, &q.origin.caller.session)));
+            opts.insert(
+                "fromName".into(),
+                json!(inbox_session_name(d, &q.origin.caller.session)),
+            );
         }
         crate::apicalls::REQUEST_KIND_CALL => {
             it.session = q.origin.caller.session.clone();
@@ -436,7 +468,10 @@ pub fn request_item(d: &Persisted, q: &InboxRequest, now: GoTime) -> InboxItem {
 
 pub fn approval_item(d: &Persisted, a: &Approval) -> InboxItem {
     let o = a.origin.clone().unwrap_or_else(|| Origin {
-        caller: Caller { kind: "router".into(), ..Default::default() },
+        caller: Caller {
+            kind: "router".into(),
+            ..Default::default()
+        },
         ..Default::default()
     });
     let mut it = InboxItem {
@@ -468,7 +503,9 @@ pub fn approval_item(d: &Persisted, a: &Approval) -> InboxItem {
 /// a deny's answer
 pub fn write_denied(w: &mut W, err: Result<()>) {
     match err {
-        Err(e) if e.downcast_ref::<AlreadyGone>().is_some() => write_json(w, 200, &json!({"ok": true, "gone": true})),
+        Err(e) if e.downcast_ref::<AlreadyGone>().is_some() => {
+            write_json(w, 200, &json!({"ok": true, "gone": true}))
+        }
         Err(e) => write_err(w, &e),
         Ok(()) => write_json(w, 200, &json!({"ok": true})),
     }
@@ -509,16 +546,47 @@ pub const INTENTS: [&str; 5] = ["repo/add", "repo/remove", "grant", "unlock", "r
 
 pub fn intent(name: &str, i: &RequestIn) -> Option<(&'static str, RequestParams)> {
     let p = match name {
-        "repo/add" => (REQUEST_KIND_REPO, RequestParams { action: "add".into(), repo: i.repo.clone(), sensitive: i.sensitive, ..Default::default() }),
-        "repo/remove" => (REQUEST_KIND_REPO, RequestParams { action: "remove".into(), repo: i.repo.clone(), ..Default::default() }),
+        "repo/add" => (
+            REQUEST_KIND_REPO,
+            RequestParams {
+                action: "add".into(),
+                repo: i.repo.clone(),
+                sensitive: i.sensitive,
+                ..Default::default()
+            },
+        ),
+        "repo/remove" => (
+            REQUEST_KIND_REPO,
+            RequestParams {
+                action: "remove".into(),
+                repo: i.repo.clone(),
+                ..Default::default()
+            },
+        ),
         "grant" => (
             REQUEST_KIND_GRANT,
-            RequestParams { session: i.session.clone(), holder: i.holder.clone(), minutes: i.minutes, days: i.days, ..Default::default() },
+            RequestParams {
+                session: i.session.clone(),
+                holder: i.holder.clone(),
+                minutes: i.minutes,
+                days: i.days,
+                ..Default::default()
+            },
         ),
-        "unlock" => (REQUEST_KIND_UNLOCK, RequestParams { session: i.session.clone(), ..Default::default() }),
+        "unlock" => (
+            REQUEST_KIND_UNLOCK,
+            RequestParams {
+                session: i.session.clone(),
+                ..Default::default()
+            },
+        ),
         "restore" => (
             crate::storerestore::REQUEST_KIND_RESTORE,
-            RequestParams { store: i.store.clone(), seq: i.seq, ..Default::default() },
+            RequestParams {
+                store: i.store.clone(),
+                seq: i.seq,
+                ..Default::default()
+            },
         ),
         _ => return None,
     };
@@ -528,9 +596,12 @@ pub fn intent(name: &str, i: &RequestIn) -> Option<(&'static str, RequestParams)
 /// what a session leaves out is its own — the session of a grant or an unlock, and, for a repo it asks to be added,
 /// the session that gets the repo's store in the same approval (unless noStore)
 pub fn own_session(c: &Caller, kind: &str, mut p: RequestParams, i: &RequestIn) -> RequestParams {
-    if c.kind == "session" && p.session.is_empty() && kind != REQUEST_KIND_REPO {
-        p.session = c.session.clone();
-    } else if (c.kind == "session" || c.kind == "actions") && kind == REQUEST_KIND_REPO && p.action == "add" && !i.no_store {
+    let own = c.kind == "session" && p.session.is_empty() && kind != REQUEST_KIND_REPO;
+    let repo_store = (c.kind == "session" || c.kind == "actions")
+        && kind == REQUEST_KIND_REPO
+        && p.action == "add"
+        && !i.no_store;
+    if own || repo_store {
         p.session = c.session.clone();
     }
     p
@@ -565,7 +636,11 @@ pub fn call_args(kind: &str, p: &RequestParams) -> Map<String, Value> {
 
 impl Router {
     fn session_ok(&self, sid: &str) -> bool {
-        self.st.do_(|d| d.sessions.get(sid).is_some_and(|s| s.state != "destroyed" && s.state != "destroying"))
+        self.st.do_(|d| {
+            d.sessions
+                .get(sid)
+                .is_some_and(|s| s.state != "destroyed" && s.state != "destroying")
+        })
     }
 
     /// the request's params checked and in one form (the dedup key depends on it)
@@ -579,7 +654,11 @@ impl Router {
                 if p.action != "add" && p.action != "remove" {
                     return Err(anyhow!("action add or remove"));
                 }
-                let mut out = RequestParams { action: p.action.clone(), repo, ..Default::default() };
+                let mut out = RequestParams {
+                    action: p.action.clone(),
+                    repo,
+                    ..Default::default()
+                };
                 if p.action == "add" {
                     out.sensitive = p.sensitive;
                     if !p.session.is_empty() {
@@ -596,14 +675,26 @@ impl Router {
                     return Err(anyhow!("no session {:?}", p.session));
                 }
                 if kind == REQUEST_KIND_UNLOCK {
-                    return Ok(RequestParams { session: p.session.clone(), ..Default::default() });
+                    return Ok(RequestParams {
+                        session: p.session.clone(),
+                        ..Default::default()
+                    });
                 }
                 if !crate::grants::HOLDER_NAMES.contains(&p.holder.as_str()) {
-                    return Err(anyhow!("holder is one of {}", crate::grants::HOLDER_NAMES.join(", ")));
+                    return Err(anyhow!(
+                        "holder is one of {}",
+                        crate::grants::HOLDER_NAMES.join(", ")
+                    ));
                 }
-                let mut out = RequestParams { session: p.session.clone(), holder: p.holder.clone(), ..Default::default() };
+                let mut out = RequestParams {
+                    session: p.session.clone(),
+                    holder: p.holder.clone(),
+                    ..Default::default()
+                };
                 if p.days != 0 && p.minutes != 0 {
-                    return Err(anyhow!("minutes (a grant) or days (a standing rule), not both"));
+                    return Err(anyhow!(
+                        "minutes (a grant) or days (a standing rule), not both"
+                    ));
                 }
                 if p.days != 0 {
                     if !(1..=365).contains(&p.days) {
@@ -630,9 +721,15 @@ impl Router {
                     return Err(anyhow!("no store {:?}", p.store));
                 }
                 if p.seq < 1 {
-                    return Err(anyhow!("seq: the version to put back (infra/setup.py versions STORE, or the Stores page)"));
+                    return Err(anyhow!(
+                        "seq: the version to put back (infra/setup.py versions STORE, or the Stores page)"
+                    ));
                 }
-                Ok(RequestParams { store: p.store.clone(), seq: p.seq, ..Default::default() })
+                Ok(RequestParams {
+                    store: p.store.clone(),
+                    seq: p.seq,
+                    ..Default::default()
+                })
             }
             crate::peermsg::REQUEST_KIND_PEER => {
                 if !self.session_ok(&p.session) {
@@ -640,9 +737,16 @@ impl Router {
                 }
                 let t = crate::peermsg::clean_peer_text(&p.text);
                 if t.is_empty() || t.chars().count() > crate::peermsg::PEER_NOTE_MAX {
-                    return Err(anyhow!("a message of 1 to {} characters", crate::peermsg::PEER_NOTE_MAX));
+                    return Err(anyhow!(
+                        "a message of 1 to {} characters",
+                        crate::peermsg::PEER_NOTE_MAX
+                    ));
                 }
-                Ok(RequestParams { session: p.session.clone(), text: t, ..Default::default() })
+                Ok(RequestParams {
+                    session: p.session.clone(),
+                    text: t,
+                    ..Default::default()
+                })
             }
             crate::apicalls::REQUEST_KIND_CALL => Ok(RequestParams {
                 method: p.method.clone(),
@@ -656,11 +760,20 @@ impl Router {
     }
 
     /// a request into the Inbox → it (or the same one already pending, dup true)
-    pub fn file_request(&self, kind: &str, p: RequestParams, explanation: &str, o: Origin) -> Result<(InboxRequest, bool)> {
-        let p = self.normalize_request(kind, &p).map_err(|e| BadRequest(format!("{e:#}")))?;
+    pub fn file_request(
+        &self,
+        kind: &str,
+        p: RequestParams,
+        explanation: &str,
+        o: Origin,
+    ) -> Result<(InboxRequest, bool)> {
+        let p = self
+            .normalize_request(kind, &p)
+            .map_err(|e| BadRequest(format!("{e:#}")))?;
         caller_may(&o.caller, kind, &p).map_err(|e| Forbidden(format!("{e:#}")))?;
         let required = matches!(o.caller.kind.as_str(), "session" | "setup" | "actions");
-        let explanation = clean_explanation(explanation, required).map_err(|e| BadRequest(format!("{e:#}")))?;
+        let explanation =
+            clean_explanation(explanation, required).map_err(|e| BadRequest(format!("{e:#}")))?;
         let now = GoTime::now();
         let q = InboxRequest {
             id: format!("q{}", crate::util::rand_id()),
@@ -688,14 +801,32 @@ impl Router {
     }
 
     /// requests that were done (by any path), with what the requesting session is told ("" = nothing)
-    pub fn drop_requests(&self, matches: impl Fn(&InboxRequest) -> bool, outcome: &str, proof: Option<&crate::core::Doc>) {
+    pub fn drop_requests(
+        &self,
+        matches: impl Fn(&InboxRequest) -> bool,
+        outcome: &str,
+        proof: Option<&crate::core::Doc>,
+    ) {
         self.st.do_(|d| {
-            let ids: Vec<String> = d.inbox.iter().filter(|(_, q)| matches(q)).map(|(id, _)| id.clone()).collect();
+            let ids: Vec<String> = d
+                .inbox
+                .iter()
+                .filter(|(_, q)| matches(q))
+                .map(|(id, _)| id.clone())
+                .collect();
             for id in ids {
                 if let Some(q) = d.inbox.remove(&id)
                     && !outcome.is_empty()
                 {
-                    crate::outcomes::note_outcome(d, Some(&q.origin), &q.kind, &q.id, outcome, 0, proof);
+                    crate::outcomes::note_outcome(
+                        d,
+                        Some(&q.origin),
+                        &q.kind,
+                        &q.id,
+                        outcome,
+                        0,
+                        proof,
+                    );
                 }
             }
         });
@@ -731,12 +862,13 @@ impl Router {
         let mut out = self.st.do_(|d| {
             prune_requests(d, now);
             crate::batches::prune_batches(d, now);
-            let mut out: Vec<InboxItem> = d.inbox.values().map(|q| request_item(d, q, now)).collect();
+            let mut out: Vec<InboxItem> =
+                d.inbox.values().map(|q| request_item(d, q, now)).collect();
             out.extend(d.approvals.values().map(|a| approval_item(d, a)));
             out.extend(crate::messages::message_inbox_items(d)); // messages.rs
             out
         });
-        out.sort_by(|a, b| b.created.cmp(&a.created));
+        out.sort_by_key(|a| std::cmp::Reverse(a.created));
         out
     }
 
@@ -778,10 +910,15 @@ impl Router {
     /// paused, a new one is failed, so Start again asks again (past INBOX_TTL and with no lifecycle action holding it)
     pub fn settle_stranded_approvals(&self, now: GoTime) {
         let ids: Vec<String> = self.st.do_(|d| {
-            let named: std::collections::BTreeSet<&String> = d.approvals.values().map(|a| &a.session).collect();
+            let named: std::collections::BTreeSet<&String> =
+                d.approvals.values().map(|a| &a.session).collect();
             d.sessions
                 .iter()
-                .filter(|(id, s)| s.state == "approval" && !named.contains(id) && !now.before(&s.created.add(INBOX_TTL)))
+                .filter(|(id, s)| {
+                    s.state == "approval"
+                        && !named.contains(id)
+                        && !now.before(&s.created.add(INBOX_TTL))
+                })
                 .map(|(id, _)| id.clone())
                 .collect()
         });
@@ -793,7 +930,9 @@ impl Router {
                 if d.approvals.values().any(|a| a.session == id) {
                     return;
                 }
-                let Some(s) = d.sessions.get_mut(&id) else { return };
+                let Some(s) = d.sessions.get_mut(&id) else {
+                    return;
+                };
                 if s.state != "approval" {
                     return;
                 }
@@ -804,7 +943,10 @@ impl Router {
                     s.state = "failed".into();
                     s.error = "its approval was gone from the Inbox: Start again asks again".into();
                 }
-                crate::logf!("inbox: session {id} waited in approval with no approval: now {}", s.state);
+                crate::logf!(
+                    "inbox: session {id} waited in approval with no approval: now {}",
+                    s.state
+                );
             });
         }
     }
@@ -819,8 +961,18 @@ impl Router {
             return Ok(());
         }
         let found = self.st.do_(|d| {
-            let Some(q) = d.inbox.remove(id) else { return false };
-            crate::outcomes::note_outcome(d, Some(&q.origin), &q.kind, &q.id, crate::outcomes::OUTCOME_DENIED, 0, None);
+            let Some(q) = d.inbox.remove(id) else {
+                return false;
+            };
+            crate::outcomes::note_outcome(
+                d,
+                Some(&q.origin),
+                &q.kind,
+                &q.id,
+                crate::outcomes::OUTCOME_DENIED,
+                0,
+                None,
+            );
             if q.kind == crate::apicalls::REQUEST_KIND_CALL {
                 // the caller reads that it was denied
                 crate::apicalls::prune_call_results(d, GoTime::now());
@@ -847,7 +999,16 @@ impl Router {
 
     /// one intent endpoint call → 200 {id, duplicate, expires} or the add-store approval
     #[allow(clippy::too_many_arguments)]
-    pub fn file_intent(self: &Arc<Self>, w: &mut W, method: &str, path: &str, intent_name: &str, c: Caller, body: &[u8], signed: Option<SignedRequest>) {
+    pub fn file_intent(
+        self: &Arc<Self>,
+        w: &mut W,
+        method: &str,
+        path: &str,
+        intent_name: &str,
+        c: Caller,
+        body: &[u8],
+        signed: Option<SignedRequest>,
+    ) {
         let i: RequestIn = if body.is_empty() {
             Default::default()
         } else {
@@ -873,7 +1034,11 @@ impl Router {
         };
         let mut o = Origin {
             caller: c.clone(),
-            call: ApiCall { method: method.into(), path: path.into(), args: call_args(kind, &np) },
+            call: ApiCall {
+                method: method.into(),
+                path: path.into(),
+                args: call_args(kind, &np),
+            },
             signed,
             ..Default::default()
         };
@@ -890,28 +1055,50 @@ impl Router {
             o.call.args.insert("store".into(), json!(store));
             match self.add_store_approval(&machine, &store, o.clone(), &expl, "") {
                 Ok(id) => {
-                    write_json(w, 200, &json!({"ok": true, "approval": id, "store": store, "existing": true,
-                        "note": format!("{} has its deploy key already (store {store}): asked for that store, not for a new key", np.repo)}));
+                    write_json(
+                        w,
+                        200,
+                        &json!({"ok": true, "approval": id, "store": store, "existing": true,
+                        "note": format!("{} has its deploy key already (store {store}): asked for that store, not for a new key", np.repo)}),
+                    );
                     return;
                 }
                 Err(e) => {
                     // the list names a key whose store is gone (a Recover keeps no repo stores): a new key after all
-                    crate::logf!("repos: {} asked for {}, which has a key, but the add-store of {store} failed ({e:#}): asking for a new key", np.session, np.repo);
+                    crate::logf!(
+                        "repos: {} asked for {}, which has a key, but the add-store of {store} failed ({e:#}): asking for a new key",
+                        np.session,
+                        np.repo
+                    );
                     o.call.args.remove("store");
                 }
             }
         }
         match self.file_request(kind, np, &i.explanation, o) {
             Err(e) => write_request_err(w, &e),
-            Ok((q, dup)) => write_json(w, 200, &json!({"id": q.id, "duplicate": dup, "expires": q.expires})),
+            Ok((q, dup)) => write_json(
+                w,
+                200,
+                &json!({"id": q.id, "duplicate": dup, "expires": q.expires}),
+            ),
         }
     }
 }
 
-fn setup_only(reg: &mut Registrar, pattern: &str, f: impl Fn(&Arc<Router>, &mut W, &mut Req, &[u8]) + Send + Sync + 'static) {
+fn setup_only(
+    reg: &mut Registrar,
+    pattern: &str,
+    f: impl Fn(&Arc<Router>, &mut W, &mut Req, &[u8]) + Send + Sync + 'static,
+) {
     reg.setup_route(pattern, move |r, w, req| {
         let b = req.read_body(1 << 20);
-        if let Err(e) = r.check_setup_sig(&req.method, &req.path, &req.header("X-Setup-Time"), &req.header("X-Setup-Sig"), &b) {
+        if let Err(e) = r.check_setup_sig(
+            &req.method,
+            &req.path,
+            &req.header("X-Setup-Time"),
+            &req.header("X-Setup-Sig"),
+            &b,
+        ) {
             crate::nethttp::write_error(w, 401, &format!("{e:#}"));
             return;
         }
@@ -924,9 +1111,11 @@ fn own(
     pattern: &str,
     f: impl Fn(&Arc<Router>, &mut W, &mut Req, &str, &[u8]) + Send + Sync + 'static,
 ) {
-    reg.m(pattern, move |r, w, req, machine, body| match r.machine_session(machine) {
-        Err(e) => crate::nethttp::write_error(w, 403, &format!("{e:#}")),
-        Ok(sid) => f(r, w, req, &sid, body),
+    reg.m(pattern, move |r, w, req, machine, body| {
+        match r.machine_session(machine) {
+            Err(e) => crate::nethttp::write_error(w, 403, &format!("{e:#}")),
+            Ok(sid) => f(r, w, req, &sid, body),
+        }
     });
 }
 
@@ -935,13 +1124,25 @@ pub fn register_inbox(reg: &mut Registrar) {
     let read_body = |req: &mut Req| req.read_body(1 << 20);
     // ---- the app and the web page (Deyao's Access login) ----
     reg.app("GET /api/requests", |r, w, _| {
-        write_json(w, 200, &json!({"requests": r.inbox(), "batches": r.inbox_batches(None)}));
+        write_json(
+            w,
+            200,
+            &json!({"requests": r.inbox(), "batches": r.inbox_batches(None)}),
+        );
     });
-    reg.app("GET /api/requests/{id}", |r, w, req| match r.inbox_item(&req.path_value("id")) {
-        None => crate::nethttp::write_error(w, 404, "this request is gone (answered, denied or expired)"),
-        Some(it) => write_json(w, 200, &it),
+    reg.app("GET /api/requests/{id}", |r, w, req| {
+        match r.inbox_item(&req.path_value("id")) {
+            None => crate::nethttp::write_error(
+                w,
+                404,
+                "this request is gone (answered, denied or expired)",
+            ),
+            Some(it) => write_json(w, 200, &it),
+        }
     });
-    reg.app("DELETE /api/requests/{id}", |r, w, req| write_denied(w, r.deny_request(&req.path_value("id"))));
+    reg.app("DELETE /api/requests/{id}", |r, w, req| {
+        write_denied(w, r.deny_request(&req.path_value("id")))
+    });
     // done: the shell's page went through (the phone signed it); the request leaves the Inbox
     reg.app("POST /api/requests/{id}/done", |r, w, req| {
         let id = req.path_value("id");
@@ -978,7 +1179,11 @@ pub fn register_inbox(reg: &mut Registrar) {
     reg.app("GET /api/requests/calls/{id}", |r, w, req| {
         let id = req.path_value("id");
         match r.call_followups_of(&id) {
-            None => crate::nethttp::write_error(w, 404, &format!("no approved call {id} (or its result is over 10m0s old)")),
+            None => crate::nethttp::write_error(
+                w,
+                404,
+                &format!("no approved call {id} (or its result is over 10m0s old)"),
+            ),
             Some(f) => write_json(w, 200, &f),
         }
     });
@@ -987,31 +1192,49 @@ pub fn register_inbox(reg: &mut Registrar) {
         let b = read_body(req);
         r.serve_file_batch(w, app_caller(req), &req.method, &req.path.clone(), &b, None);
     });
-    reg.app("GET /api/requests/batches/{id}", |r, w, req| r.serve_batch(w, &req.path_value("id"), None));
-    reg.app("DELETE /api/requests/batches/{id}", |r, w, req| r.serve_deny_batch(w, &req.path_value("id")));
+    reg.app("GET /api/requests/batches/{id}", |r, w, req| {
+        r.serve_batch(w, &req.path_value("id"), None)
+    });
+    reg.app("DELETE /api/requests/batches/{id}", |r, w, req| {
+        r.serve_deny_batch(w, &req.path_value("id"))
+    });
     for it in INTENTS {
         reg.app(&format!("POST /api/requests/{it}"), move |r, w, req| {
             let b = read_body(req);
-            r.file_intent(w, &req.method.clone(), &req.path.clone(), it, app_caller(req), &b, None);
+            r.file_intent(
+                w,
+                &req.method.clone(),
+                &req.path.clone(),
+                it,
+                app_caller(req),
+                &b,
+                None,
+            );
         });
     }
 
     // ---- the setup session (Claude): its Access token and the setup key's signature ----
-    let setup = || Caller { kind: "setup".into(), ..Default::default() };
+    let setup = || Caller {
+        kind: "setup".into(),
+        ..Default::default()
+    };
     setup_only(reg, "GET /setup/requests", |r, w, _, _| {
-        write_json(w, 200, &json!({"requests": r.inbox(), "batches": r.inbox_batches(None)}));
+        write_json(
+            w,
+            200,
+            &json!({"requests": r.inbox(), "batches": r.inbox_batches(None)}),
+        );
     });
     // the sessions and their current machines (ids, states, and why a failed one failed)
     setup_only(reg, "GET /setup/sessions", |r, w, _, _| {
-        let ids_busy: BTreeMap<String, bool> = r
-            .st
-            .read(|d| d.sessions.keys().cloned().collect::<Vec<_>>())
-            .into_iter()
-            .map(|id| {
-                let b = r.busy(&id);
-                (id, b)
-            })
-            .collect();
+        let ids_busy: BTreeMap<String, bool> =
+            r.st.read(|d| d.sessions.keys().cloned().collect::<Vec<_>>())
+                .into_iter()
+                .map(|id| {
+                    let b = r.busy(&id);
+                    (id, b)
+                })
+                .collect();
         let out: Vec<Value> = r.st.do_(|d| {
             d.sessions
                 .values()
@@ -1035,66 +1258,122 @@ pub fn register_inbox(reg: &mut Registrar) {
         });
         write_json(w, 200, &json!({"sessions": out}));
     });
-    setup_only(reg, "GET /setup/repos", |r, w, _, _| write_json(w, 200, &json!({"repos": r.repos()})));
+    setup_only(reg, "GET /setup/repos", |r, w, _, _| {
+        write_json(w, 200, &json!({"repos": r.repos()}))
+    });
     setup_only(reg, "POST /setup/requests/batch", move |r, w, req, b| {
         r.serve_file_batch(w, setup(), &req.method.clone(), &req.path.clone(), b, None);
     });
-    setup_only(reg, "GET /setup/requests/batches/{id}", |r, w, req, _| r.serve_batch(w, &req.path_value("id"), None));
+    setup_only(reg, "GET /setup/requests/batches/{id}", |r, w, req, _| {
+        r.serve_batch(w, &req.path_value("id"), None)
+    });
     for it in INTENTS {
-        setup_only(reg, &format!("POST /setup/requests/{it}"), move |r, w, req, b| {
-            r.file_intent(w, &req.method.clone(), &req.path.clone(), it, setup(), b, None);
-        });
+        setup_only(
+            reg,
+            &format!("POST /setup/requests/{it}"),
+            move |r, w, req, b| {
+                r.file_intent(
+                    w,
+                    &req.method.clone(),
+                    &req.path.clone(),
+                    it,
+                    setup(),
+                    b,
+                    None,
+                );
+            },
+        );
     }
 
     // ---- a session (its machine key, through the machine's local proxy: $JARVIS_URL/api/requests/…) ----
-    let mine = |sid: &str| Caller { kind: "session".into(), session: sid.into() };
+    let mine = |sid: &str| Caller {
+        kind: "session".into(),
+        session: sid.into(),
+    };
     own(reg, "GET /m/api/requests", move |r, w, _, sid, _| {
         let c = mine(sid);
         let items: Vec<InboxItem> = r.inbox().into_iter().filter(|it| it.caller == c).collect();
-        write_json(w, 200, &json!({"requests": items, "batches": r.inbox_batches(Some(&c))}));
+        write_json(
+            w,
+            200,
+            &json!({"requests": items, "batches": r.inbox_batches(Some(&c))}),
+        );
     });
-    own(reg, "POST /m/api/requests/batch", move |r, w, req, sid, b| {
-        let signed = Some(crate::vouch::signed_request_of(req, &req.header("X-Machine"), b));
-        let p = req.path.strip_prefix("/m").unwrap_or(&req.path).to_string();
-        r.serve_file_batch(w, mine(sid), &req.method.clone(), &p, b, signed);
-    });
-    own(reg, "GET /m/api/requests/batches/{id}", move |r, w, req, sid, _| {
-        r.serve_batch(w, &req.path_value("id"), Some(&mine(sid)));
-    });
-    for it in INTENTS {
-        own(reg, &format!("POST /m/api/requests/{it}"), move |r, w, req, sid, b| {
-            let signed = Some(crate::vouch::signed_request_of(req, &req.header("X-Machine"), b));
+    own(
+        reg,
+        "POST /m/api/requests/batch",
+        move |r, w, req, sid, b| {
+            let signed = Some(crate::vouch::signed_request_of(
+                req,
+                &req.header("X-Machine"),
+                b,
+            ));
             let p = req.path.strip_prefix("/m").unwrap_or(&req.path).to_string();
-            r.file_intent(w, &req.method.clone(), &p, it, mine(sid), b, signed);
-        });
+            r.serve_file_batch(w, mine(sid), &req.method.clone(), &p, b, signed);
+        },
+    );
+    own(
+        reg,
+        "GET /m/api/requests/batches/{id}",
+        move |r, w, req, sid, _| {
+            r.serve_batch(w, &req.path_value("id"), Some(&mine(sid)));
+        },
+    );
+    for it in INTENTS {
+        own(
+            reg,
+            &format!("POST /m/api/requests/{it}"),
+            move |r, w, req, sid, b| {
+                let signed = Some(crate::vouch::signed_request_of(
+                    req,
+                    &req.header("X-Machine"),
+                    b,
+                ));
+                let p = req.path.strip_prefix("/m").unwrap_or(&req.path).to_string();
+                r.file_intent(w, &req.method.clone(), &p, it, mine(sid), b, signed);
+            },
+        );
     }
     // one more store for this session: the router's add-store approval, with the caller's explanation
-    own(reg, "POST /m/api/requests/add-store", move |r, w, req, sid, b| {
-        let i: RequestIn = jarvis_go::unmarshal(b).unwrap_or_default();
-        let expl = match clean_explanation(&i.explanation, true) {
-            Ok(e) => e,
-            Err(e) => {
-                crate::nethttp::write_error(w, 400, &format!("{e:#}"));
-                return;
+    own(
+        reg,
+        "POST /m/api/requests/add-store",
+        move |r, w, req, sid, b| {
+            let i: RequestIn = jarvis_go::unmarshal(b).unwrap_or_default();
+            let expl = match clean_explanation(&i.explanation, true) {
+                Ok(e) => e,
+                Err(e) => {
+                    crate::nethttp::write_error(w, 400, &format!("{e:#}"));
+                    return;
+                }
+            };
+            let machine = r.st.do_(|d| {
+                d.sessions
+                    .get(sid)
+                    .map(|s| s.machine_id.clone())
+                    .unwrap_or_default()
+            });
+            let o = Origin {
+                caller: mine(sid),
+                call: ApiCall {
+                    method: "POST".into(),
+                    path: "/api/requests/add-store".into(),
+                    args: obj(json!({"store": i.store})),
+                },
+                signed: Some(crate::vouch::signed_request_of(
+                    req,
+                    &req.header("X-Machine"),
+                    b,
+                )),
+                ..Default::default()
+            };
+            match r.add_store_from(&machine, &i.store, o, &expl, "") {
+                Err(e) => write_err(w, &e),
+                // id: what the outcome is filed under (an add-store's is the session's id), which jarvis-request waits on
+                Ok(()) => write_json(w, 200, &json!({"ok": true, "approval": true, "id": sid})),
             }
-        };
-        let machine = r.st.do_(|d| d.sessions.get(sid).map(|s| s.machine_id.clone()).unwrap_or_default());
-        let o = Origin {
-            caller: mine(sid),
-            call: ApiCall {
-                method: "POST".into(),
-                path: "/api/requests/add-store".into(),
-                args: obj(json!({"store": i.store})),
-            },
-            signed: Some(crate::vouch::signed_request_of(req, &req.header("X-Machine"), b)),
-            ..Default::default()
-        };
-        match r.add_store_from(&machine, &i.store, o, &expl, "") {
-            Err(e) => write_err(w, &e),
-            // id: what the outcome is filed under (an add-store's is the session's id), which jarvis-request waits on
-            Ok(()) => write_json(w, 200, &json!({"ok": true, "approval": true, "id": sid})),
-        }
-    });
+        },
+    );
 }
 
 /// /api/state's inbox (features.rs state hooks)
@@ -1105,5 +1384,9 @@ pub fn inbox_state_hook(r: &Arc<Router>, out: &mut Map<String, Value>) {
 
 /// a destroyed session's requests go (features.rs destroy hooks)
 pub fn inbox_on_destroy(r: &Arc<Router>, s: &crate::state::Session) {
-    r.drop_requests(|q| q.params.session == s.id, crate::outcomes::OUTCOME_DROPPED, None);
+    r.drop_requests(
+        |q| q.params.session == s.id,
+        crate::outcomes::OUTCOME_DROPPED,
+        None,
+    );
 }

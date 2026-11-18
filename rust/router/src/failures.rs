@@ -13,7 +13,8 @@ use crate::state::Persisted;
 use jarvis_go::GoTime;
 
 /// what a failed session says when the path that failed it gave no reason (a bug to fix there)
-pub const NO_REASON: &str = "it failed without a reason recorded (the router's path that failed it gave none)";
+pub const NO_REASON: &str =
+    "it failed without a reason recorded (the router's path that failed it gave none)";
 
 /// failed_at and a reason on every failed session; the sessions that have just become failed, as (id, reason) pairs.
 /// Called under the state's lock.
@@ -51,7 +52,11 @@ impl Router {
     /// <reason>")
     pub fn lc_ended(&self, session: &str, kind: &str, machine: &str, reason: &str) {
         let at = now_text();
-        let ms = if machine.is_empty() { vec![] } else { vec![machine.to_string()] };
+        let ms = if machine.is_empty() {
+            vec![]
+        } else {
+            vec![machine.to_string()]
+        };
         let op = LcOp {
             id: crate::util::rand_id(),
             session: session.into(),
@@ -61,8 +66,13 @@ impl Router {
             state: "failed".into(),
             error: reason.into(),
             machines: ms,
-            ..Default::default()
         };
-        self.lc_write(session, LcRec { op: Some(op), ..Default::default() });
+        self.lc_write(
+            session,
+            LcRec {
+                op: Some(op),
+                ..Default::default()
+            },
+        );
     }
 }

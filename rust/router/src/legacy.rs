@@ -16,7 +16,8 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::sync::{LazyLock, Mutex};
 
-pub const LEGACY_WAIT_TEXT: &str = "this session's line is an earlier core's: the running core takes it over at its pause";
+pub const LEGACY_WAIT_TEXT: &str =
+    "this session's line is an earlier core's: the running core takes it over at its pause";
 
 #[derive(Deserialize, Default)]
 #[serde(default)]
@@ -34,7 +35,8 @@ struct Claim {
     identity: Option<Key>,
 }
 
-static ADOPT_TRIED: LazyLock<Mutex<BTreeMap<String, GoTime>>> = LazyLock::new(|| Mutex::new(BTreeMap::new()));
+static ADOPT_TRIED: LazyLock<Mutex<BTreeMap<String, GoTime>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 impl Router {
     fn kept_core_certs(&self) -> Vec<MasterCert> {
@@ -49,9 +51,13 @@ impl Router {
     pub fn claim_of_signer(&self, doc: Option<&Doc>) -> Option<MasterCert> {
         let doc = doc?;
         self.kept_core_certs().into_iter().find(|mc| {
-            let Ok(st) = jarvis_go::unmarshal::<Claim>(mc.statement.as_bytes()) else { return false };
+            let Ok(st) = jarvis_go::unmarshal::<Claim>(mc.statement.as_bytes()) else {
+                return false;
+            };
             verify_p256(&st.core.signing_key, doc.payload.as_bytes(), &doc.sig)
-                || st.identity.is_some_and(|i| verify_p256(&i.signing_key, doc.payload.as_bytes(), &doc.sig))
+                || st
+                    .identity
+                    .is_some_and(|i| verify_p256(&i.signing_key, doc.payload.as_bytes(), &doc.sig))
         })
     }
 
@@ -74,7 +80,12 @@ impl Router {
         struct K {
             adopted: Option<Doc>,
         }
-        let Some(a) = kd.and_then(|d| d.decode::<K>().ok()).and_then(|k| k.adopted) else { return };
+        let Some(a) = kd
+            .and_then(|d| d.decode::<K>().ok())
+            .and_then(|k| k.adopted)
+        else {
+            return;
+        };
         self.st.do_(|d| {
             if d.certs.get(machine).is_none_or(|old| old.payload != a.payload) {
                 return;
@@ -122,7 +133,9 @@ impl Router {
         }
         {
             let mut g = ADOPT_TRIED.lock().unwrap_or_else(|e| e.into_inner());
-            if g.get(id).is_some_and(|t| t.since() < time::Duration::minutes(10)) {
+            if g.get(id)
+                .is_some_and(|t| t.since() < time::Duration::minutes(10))
+            {
                 return;
             }
             g.insert(id.to_string(), GoTime::now());
@@ -142,10 +155,19 @@ impl Router {
                 return;
             }
         }
-        let Ok((200, b)) = self.core.raw("GET", "/core-cert", None) else { return };
-        let Ok(mc) = jarvis_go::unmarshal::<MasterCert>(&b) else { return };
-        let Ok(st) = jarvis_go::unmarshal::<Claim>(mc.statement.as_bytes()) else { return };
-        if st.kind != "claim" || st.core.signing_key != key || !verify_p256(&st.master, mc.statement.as_bytes(), &mc.master_sig) {
+        let Ok((200, b)) = self.core.raw("GET", "/core-cert", None) else {
+            return;
+        };
+        let Ok(mc) = jarvis_go::unmarshal::<MasterCert>(&b) else {
+            return;
+        };
+        let Ok(st) = jarvis_go::unmarshal::<Claim>(mc.statement.as_bytes()) else {
+            return;
+        };
+        if st.kind != "claim"
+            || st.core.signing_key != key
+            || !verify_p256(&st.master, mc.statement.as_bytes(), &mc.master_sig)
+        {
             return;
         }
         self.keep_core_cert(&b);

@@ -51,7 +51,10 @@ fn or_medium(s: &str) -> &str {
 
 impl NextMachine {
     pub fn same(&self, o: &NextMachine) -> bool {
-        self.image == o.image && or_medium(&self.size) == or_medium(&o.size) && self.region == o.region && self.disk_gb == o.disk_gb
+        self.image == o.image
+            && or_medium(&self.size) == or_medium(&o.size)
+            && self.region == o.region
+            && self.disk_gb == o.disk_gb
     }
 }
 
@@ -107,7 +110,9 @@ pub type SpareHook = Arc<dyn Fn(&str) + Send + Sync>;
 pub static SPARE_STARTED: RwLock<Option<SpareHook>> = RwLock::new(None);
 
 impl Router {
-    fn spares_lock(&self) -> std::sync::MutexGuard<'_, std::collections::BTreeMap<String, Arc<Spare>>> {
+    fn spares_lock(
+        &self,
+    ) -> std::sync::MutexGuard<'_, std::collections::BTreeMap<String, Arc<Spare>>> {
         self.spares.lock().unwrap_or_else(|e| e.into_inner())
     }
 
@@ -127,7 +132,10 @@ impl Router {
     pub fn handover_next(&self, s: &Session, size: &str, disk_gb: i64) -> Option<NextMachine> {
         let cert = s.cert.as_ref()?;
         let own = crate::flows::cert_image(Some(cert), &s.image);
-        let has_claude = s.stores.as_ref().is_some_and(|st| st.iter().any(|x| x == "claude"));
+        let has_claude = s
+            .stores
+            .as_ref()
+            .is_some_and(|st| st.iter().any(|x| x == "claude"));
         if (has_claude && crate::flows::legacy_login_image(&own, &self.cfg.image_order))
             || !self.resume_once(s).is_empty()
             || crate::flows::cert_mode(Some(cert)) != crate::flows::norm_mode(&s.permission_mode)
@@ -136,7 +144,11 @@ impl Router {
         }
         Some(NextMachine {
             image: own,
-            size: if size.is_empty() { s.size.clone() } else { size.to_string() },
+            size: if size.is_empty() {
+                s.size.clone()
+            } else {
+                size.to_string()
+            },
             region: self.region_of(s),
             disk_gb: if disk_gb == 0 { s.disk_gb } else { disk_gb },
         })
@@ -146,7 +158,10 @@ impl Router {
     /// stays; one for another is dropped.
     pub fn launch_spare(self: &Arc<Self>, sid: &str, want: Option<&NextMachine>) {
         let Some(want) = want else { return };
-        let sp = Arc::new(Spare { want: want.clone(), ..Default::default() });
+        let sp = Arc::new(Spare {
+            want: want.clone(),
+            ..Default::default()
+        });
         {
             let mut g = self.spares_lock();
             if let Some(old) = g.get(sid).cloned() {
@@ -171,7 +186,11 @@ impl Router {
                 or_medium(&want.size)
             ),
         );
-        if let Some(h) = SPARE_STARTED.read().unwrap_or_else(|e| e.into_inner()).clone() {
+        if let Some(h) = SPARE_STARTED
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        {
             h(sid);
         }
         let (r, sid) = (self.clone(), sid.to_string());
@@ -185,7 +204,8 @@ impl Router {
                     &format!("the core's Fly create made the next machine {id} (spare); it boots while the old one stops"),
                 );
             };
-            let res = r.start_machine_with(&w.image, &w.size, &w.region, w.disk_gb, Some(&on_id), false);
+            let res =
+                r.start_machine_with(&w.image, &w.size, &w.region, w.disk_gb, Some(&on_id), false);
             let failed = {
                 let mut g = sp.lock();
                 g.ready_at = Some(Instant::now());
@@ -205,15 +225,30 @@ impl Router {
                 f
             };
             if let Some(e) = failed {
-                crate::logf!("session {sid}: the spare's start: {e} (the start after the kill makes the machine)");
-                r.lc_note(&sid, "", &format!("the spare's start failed ({e}): the start after the kill makes the machine"));
+                crate::logf!(
+                    "session {sid}: the spare's start: {e} (the start after the kill makes the machine)"
+                );
+                r.lc_note(
+                    &sid,
+                    "",
+                    &format!(
+                        "the spare's start failed ({e}): the start after the kill makes the machine"
+                    ),
+                );
                 r.spare_remove_if(&sid, &sp);
                 return;
             }
             // not taken in time: its machine would stop waiting for a cert, so it goes
             std::thread::sleep(spare_max_age());
             if r.spare_remove_if(&sid, &sp) {
-                r.drop_spare(&sid, sp, &format!("not taken within {}", crate::flows::wait_text(spare_max_age())));
+                r.drop_spare(
+                    &sid,
+                    sp,
+                    &format!(
+                        "not taken within {}",
+                        crate::flows::wait_text(spare_max_age())
+                    ),
+                );
             }
         });
     }
@@ -276,16 +311,29 @@ impl Router {
             if id.is_empty() {
                 return;
             }
-            r.lc_note(&sid, &id, &format!("the spare machine {id} isn't used ({why}): asking the core to destroy it"));
+            r.lc_note(
+                &sid,
+                &id,
+                &format!(
+                    "the spare machine {id} isn't used ({why}): asking the core to destroy it"
+                ),
+            );
             if let Err(e) = r.kill_until_destroyed(&json!({"machine": id})) {
-                crate::logf!("session {sid}: the unused spare {id}: kill: {e:#} (the Machines tab lists it)");
+                crate::logf!(
+                    "session {sid}: the unused spare {id}: kill: {e:#} (the Machines tab lists it)"
+                );
             }
         });
     }
 
     /// a handover's resume right after its pause (wait_state has seen the pause end and its lock go). An action that
     /// took the session in between (a wakeup's resume) can still hold it: it tries again for a while.
-    pub fn handover_resume(self: &Arc<Self>, id: &str, prompt: &str, upgrade: bool) -> anyhow::Result<()> {
+    pub fn handover_resume(
+        self: &Arc<Self>,
+        id: &str,
+        prompt: &str,
+        upgrade: bool,
+    ) -> anyhow::Result<()> {
         let end = Instant::now() + Duration::from_secs(30);
         loop {
             match self.resume_with_prompt(id, upgrade, prompt) {

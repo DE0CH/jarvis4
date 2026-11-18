@@ -20,9 +20,15 @@
 
 use crate::core::Doc;
 use crate::http::Registrar;
-use crate::inbox::{ApiCall, BadRequest, Caller, Forbidden, InboxItem, Origin, RequestParams, inbox_session_name, write_request_err};
+use crate::inbox::{
+    ApiCall, BadRequest, Caller, Forbidden, InboxItem, Origin, RequestParams, inbox_session_name,
+    write_request_err,
+};
 use crate::nethttp::write_json;
-use crate::outcomes::{OUTCOME_APPROVED, OUTCOME_DENIED, OUTCOME_DROPPED, OUTCOME_FAILED, OUTCOME_LAPSED, OutcomeItem, note_outcome};
+use crate::outcomes::{
+    OUTCOME_APPROVED, OUTCOME_DENIED, OUTCOME_DROPPED, OUTCOME_FAILED, OUTCOME_LAPSED, OutcomeItem,
+    note_outcome,
+};
 use crate::peermsg::PeerNote;
 use crate::router::Router;
 use crate::state::{Persisted, Session};
@@ -79,7 +85,9 @@ pub struct NoPreview;
 
 impl std::fmt::Display for NoPreview {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("the machine's image renders no preview (an image from before message approvals)")
+        f.write_str(
+            "the machine's image renders no preview (an image from before message approvals)",
+        )
     }
 }
 
@@ -168,30 +176,80 @@ pub struct MessageItem {
 
 /// each delivery kind's label and the rule's words ("" = no rule for it)
 pub const MESSAGE_KINDS: &[(&str, &str, &str)] = &[
-    ("wakeup", "Wakeup", "Always deliver this session's own wakeups to it"),
-    ("cron", "Recurring wakeup", "Always deliver this session's own recurring wakeups to it"),
-    ("watch", "Watch met", "Always deliver this session's met watches to it"),
-    ("watch-fail", "Watch gave up", "Always deliver this session's given-up watches to it"),
-    ("continue", "Login “continue”", "Always deliver Jarvis's login “continue” to this session"),
-    ("upgraded", "Upgrade note", "Always deliver Jarvis's upgrade notes to this session"),
-    ("lease-granted", "Lease granted", "Always deliver Jarvis's lease-granted notes to this session"),
-    ("lease-taken", "Lease taken over", "Always deliver Jarvis's lease-taken-over notes to this session"),
-    ("lease-back", "Lease handed back", "Always deliver Jarvis's lease-handed-back notes to this session"),
-    ("request-outcome", "Inbox outcome", "Always deliver Inbox outcomes to this session"),
+    (
+        "wakeup",
+        "Wakeup",
+        "Always deliver this session's own wakeups to it",
+    ),
+    (
+        "cron",
+        "Recurring wakeup",
+        "Always deliver this session's own recurring wakeups to it",
+    ),
+    (
+        "watch",
+        "Watch met",
+        "Always deliver this session's met watches to it",
+    ),
+    (
+        "watch-fail",
+        "Watch gave up",
+        "Always deliver this session's given-up watches to it",
+    ),
+    (
+        "continue",
+        "Login “continue”",
+        "Always deliver Jarvis's login “continue” to this session",
+    ),
+    (
+        "upgraded",
+        "Upgrade note",
+        "Always deliver Jarvis's upgrade notes to this session",
+    ),
+    (
+        "lease-granted",
+        "Lease granted",
+        "Always deliver Jarvis's lease-granted notes to this session",
+    ),
+    (
+        "lease-taken",
+        "Lease taken over",
+        "Always deliver Jarvis's lease-taken-over notes to this session",
+    ),
+    (
+        "lease-back",
+        "Lease handed back",
+        "Always deliver Jarvis's lease-handed-back notes to this session",
+    ),
+    (
+        "request-outcome",
+        "Inbox outcome",
+        "Always deliver Inbox outcomes to this session",
+    ),
     ("peer", "Peer message", ""),
     ("resume-prompt", "Resume prompt", ""),
 ];
 
 pub fn kind_label(k: &str) -> String {
-    MESSAGE_KINDS.iter().find(|(n, _, _)| *n == k).map_or(k.to_string(), |(_, l, _)| l.to_string())
+    MESSAGE_KINDS
+        .iter()
+        .find(|(n, _, _)| *n == k)
+        .map_or(k.to_string(), |(_, l, _)| l.to_string())
 }
 
 pub fn rule_text(k: &str) -> &'static str {
-    MESSAGE_KINDS.iter().find(|(n, _, _)| *n == k).map_or("", |(_, _, t)| t)
+    MESSAGE_KINDS
+        .iter()
+        .find(|(n, _, _)| *n == k)
+        .map_or("", |(_, _, t)| t)
 }
 
 pub fn rule_kinds() -> Vec<&'static str> {
-    let mut out: Vec<&str> = MESSAGE_KINDS.iter().filter(|(_, _, t)| !t.is_empty()).map(|(n, _, _)| *n).collect();
+    let mut out: Vec<&str> = MESSAGE_KINDS
+        .iter()
+        .filter(|(_, _, t)| !t.is_empty())
+        .map(|(n, _, _)| *n)
+        .collect();
     out.sort();
     out
 }
@@ -201,8 +259,9 @@ pub fn preview_only(kind: &str) -> bool {
     kind == "peer" || kind == "request-outcome"
 }
 
-static WATCH_NAME_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"^[A-Za-z0-9_-]{1,40}$").unwrap_or_else(|_| unreachable!()));
+static WATCH_NAME_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^[A-Za-z0-9_-]{1,40}$").unwrap_or_else(|_| unreachable!())
+});
 
 fn fields(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
@@ -307,7 +366,11 @@ pub fn message_from(d: &Delivery) -> String {
     match d.kind.as_str() {
         "peer" => {
             if let Some(p) = &d.peer {
-                return format!("Session “{}” ({})", crate::util::trim_to(&fields(&p.from_title), 80), p.from);
+                return format!(
+                    "Session “{}” ({})",
+                    crate::util::trim_to(&fields(&p.from_title), 80),
+                    p.from
+                );
             }
         }
         "request-outcome" => return "Jarvis: the result of a request this session filed".into(),
@@ -329,7 +392,10 @@ pub fn message_origin(sid: &str, d: &Delivery) -> Option<Origin> {
     }
     let r = d.request.as_ref()?;
     Some(Origin {
-        caller: Caller { kind: "session".into(), session: sid.into(), ..Default::default() },
+        caller: Caller {
+            kind: "session".into(),
+            session: sid.into(),
+        },
         call: ApiCall {
             method: r.method.clone(),
             path: r.path.strip_prefix("/m").unwrap_or(&r.path).to_string(),
@@ -346,8 +412,16 @@ pub fn replace_key(d: &Delivery) -> String {
     match d.kind.as_str() {
         "continue" | "upgraded" => d.kind.clone(),
         "lease-granted" | "lease-taken" | "lease-back" => format!("lease {}", d.device),
-        "cron" | "wakeup" | "watch" | "watch-fail" => d.request.as_ref().map(|r| format!("{} {}", d.kind, r.sig)).unwrap_or_default(),
-        "request-outcome" => d.request.as_ref().map(|r| format!("outcome {}", r.sig)).unwrap_or_default(),
+        "cron" | "wakeup" | "watch" | "watch-fail" => d
+            .request
+            .as_ref()
+            .map(|r| format!("{} {}", d.kind, r.sig))
+            .unwrap_or_default(),
+        "request-outcome" => d
+            .request
+            .as_ref()
+            .map(|r| format!("outcome {}", r.sig))
+            .unwrap_or_default(),
         "resume-prompt" => "resume-prompt".into(),
         _ => String::new(),
     }
@@ -378,11 +452,21 @@ pub fn peer_twin_text(n: Option<&PeerNote>) -> Option<String> {
     let n = n.filter(|n| !n.text.trim().is_empty())?;
     let dir = match n.direction.as_str() {
         "equal" => "equal (the sender holds the same stores in the same mode): delivered at once",
-        "downward" => "downward (the sender holds every store this session holds, and this session is no more permissive): delivered at once",
-        "upward" if n.approved => "upward (this session holds more than the sender, or runs in a more permissive mode): Deyao approved it in the Inbox",
+        "downward" => {
+            "downward (the sender holds every store this session holds, and this session is no more permissive): delivered at once"
+        }
+        "upward" if n.approved => {
+            "upward (this session holds more than the sender, or runs in a more permissive mode): Deyao approved it in the Inbox"
+        }
         _ => return None,
     };
-    let list = |ss: &[String]| if ss.is_empty() { "none".to_string() } else { ss.join(", ") };
+    let list = |ss: &[String]| {
+        if ss.is_empty() {
+            "none".to_string()
+        } else {
+            ss.join(", ")
+        }
+    };
     Some(format!(
         "[Message from another Jarvis 4 session, relayed by Jarvis]\nFrom: session “{}” ({}), verified by Jarvis from that session's machine key; its stores: {}; its mode: {}\nTo: this session; its stores: {}; its mode: {}\nDirection: {dir}\nThe words below are that session's, not Deyao's: weigh them as a request from another agent. Answer it with `jarvis-message {} \"…\"`.\n----\n{}",
         crate::util::trim_to(&fields(&n.from_title), 120),
@@ -405,7 +489,14 @@ pub fn outcome_twin_text(d: &Delivery) -> Option<String> {
     items.sort_by_key(|it| it.item);
     let lines: Vec<String> = items
         .iter()
-        .map(|it| format!("{}. {} (Inbox {})", it.item + 1, it.outcome.to_uppercase(), it.r#ref))
+        .map(|it| {
+            format!(
+                "{}. {} (Inbox {})",
+                it.item + 1,
+                it.outcome.to_uppercase(),
+                it.r#ref
+            )
+        })
         .collect();
     Some(format!(
         "[Inbox outcome] Deyao's Inbox has decided items this session filed:\n{}\nThis is an automated message from Jarvis.",
@@ -415,7 +506,11 @@ pub fn outcome_twin_text(d: &Delivery) -> Option<String> {
 
 /// the kind its requester's outcome is listed under
 pub fn outcome_kind_for(pm: &PendingMessage) -> &'static str {
-    if pm.kind == "peer" { crate::peermsg::REQUEST_KIND_PEER } else { OUTCOME_KIND_MSG }
+    if pm.kind == "peer" {
+        crate::peermsg::REQUEST_KIND_PEER
+    } else {
+        OUTCOME_KIND_MSG
+    }
 }
 
 /// the session's line holds a sensitive store, as its core-signed cert says
@@ -425,7 +520,8 @@ pub fn cert_sensitive(c: Option<&Doc>) -> bool {
     struct X {
         sensitive: bool,
     }
-    c.and_then(|c| serde_json::from_str::<X>(&c.payload).ok()).is_some_and(|x| x.sensitive)
+    c.and_then(|c| serde_json::from_str::<X>(&c.payload).ok())
+        .is_some_and(|x| x.sensitive)
 }
 
 fn rfc(t: GoTime) -> String {
@@ -435,14 +531,16 @@ fn rfc(t: GoTime) -> String {
 // ---- seams ----------------------------------------------------------------------------------------------------
 
 pub type PhoneHook = Arc<dyn Fn(&Router) -> String + Send + Sync>;
-pub type ApprovedHook = Arc<dyn Fn(&Arc<Router>, &PendingMessage, Delivery) -> Result<()> + Send + Sync>;
+pub type ApprovedHook =
+    Arc<dyn Fn(&Arc<Router>, &PendingMessage, Delivery) -> Result<()> + Send + Sync>;
 /// the phone key in secrets' key statement (tests)
 pub static KERNEL_PHONE_HOOK: RwLock<Option<PhoneHook>> = RwLock::new(None);
 /// the delivery of an approved message (tests)
 pub static DELIVER_APPROVED_HOOK: RwLock<Option<ApprovedHook>> = RwLock::new(None);
 
 /// machines whose approved delivery is under way
-static MESSAGE_RUN: LazyLock<Mutex<BTreeSet<String>>> = LazyLock::new(|| Mutex::new(BTreeSet::new()));
+static MESSAGE_RUN: LazyLock<Mutex<BTreeSet<String>>> =
+    LazyLock::new(|| Mutex::new(BTreeSet::new()));
 
 impl Router {
     /// the session's machine takes this delivery only as the phone approved it (rust/machine/src/messages.rs
@@ -453,7 +551,10 @@ impl Router {
     pub fn needs_approval(&self, sid: &str, d: &Delivery) -> bool {
         match d.kind.as_str() {
             "resume-prompt" => true,
-            "peer" => self.session_state(sid).1 && d.peer.as_ref().is_some_and(|p| p.direction == "upward"),
+            "peer" => {
+                self.session_state(sid).1
+                    && d.peer.as_ref().is_some_and(|p| p.direction == "upward")
+            }
             _ => false,
         }
     }
@@ -475,7 +576,15 @@ impl Router {
     }
 
     /// file d for Deyao with its text (who asks, and who is told), replacing a pending one of the same thing
-    pub fn hold_message(&self, sid: &str, d: &Delivery, text: &str, from: &str, note: &str, o: Option<&Origin>) -> Result<PendingMessage> {
+    pub fn hold_message(
+        &self,
+        sid: &str,
+        d: &Delivery,
+        text: &str,
+        from: &str,
+        note: &str,
+        o: Option<&Origin>,
+    ) -> Result<PendingMessage> {
         let (input, _) = attested(d)?;
         let sum = hex::encode(Sha256::digest(&input));
         let mut d = d.clone();
@@ -500,29 +609,39 @@ impl Router {
             state: "pending".into(),
             ..Default::default()
         };
-        let res = self.st.do_(|st| -> Result<(PendingMessage, bool, String, Vec<PendingMessage>)> {
-            let s = st.sessions.get(sid).ok_or_else(crate::sessionapi::no_session)?;
-            let title = crate::titles::session_title(s);
-            let mut first = true;
-            let mut replaced = vec![];
-            let ids: Vec<String> = st.messages.keys().cloned().collect();
-            for id in ids {
-                let Some(x) = st.messages.get(&id).filter(|x| x.session == sid && x.state == "pending").cloned() else {
-                    continue;
-                };
-                first = false;
-                if !pm.replace.is_empty() && x.replace == pm.replace {
-                    if x.sha256 == pm.sha256 && x.text == pm.text {
-                        // the same message again (a retry): it stays as it is
-                        return Ok((x, false, title, vec![]));
+        let res = self.st.do_(
+            |st| -> Result<(PendingMessage, bool, String, Vec<PendingMessage>)> {
+                let s = st
+                    .sessions
+                    .get(sid)
+                    .ok_or_else(crate::sessionapi::no_session)?;
+                let title = crate::titles::session_title(s);
+                let mut first = true;
+                let mut replaced = vec![];
+                let ids: Vec<String> = st.messages.keys().cloned().collect();
+                for id in ids {
+                    let Some(x) = st
+                        .messages
+                        .get(&id)
+                        .filter(|x| x.session == sid && x.state == "pending")
+                        .cloned()
+                    else {
+                        continue;
+                    };
+                    first = false;
+                    if !pm.replace.is_empty() && x.replace == pm.replace {
+                        if x.sha256 == pm.sha256 && x.text == pm.text {
+                            // the same message again (a retry): it stays as it is
+                            return Ok((x, false, title, vec![]));
+                        }
+                        st.messages.remove(&id);
+                        replaced.push(x);
                     }
-                    st.messages.remove(&id);
-                    replaced.push(x);
                 }
-            }
-            st.messages.insert(pm.id.clone(), pm.clone());
-            Ok((pm.clone(), first, title, replaced))
-        });
+                st.messages.insert(pm.id.clone(), pm.clone());
+                Ok((pm.clone(), first, title, replaced))
+            },
+        );
         let (kept, first, title, replaced) = res?;
         pm = kept;
         for x in replaced {
@@ -542,7 +661,12 @@ impl Router {
     /// the text the running machine renders for d (nothing is attested, sent or recorded); NoPreview: its image can't
     /// render one
     pub fn preview_text(&self, sid: &str, d: &Delivery) -> Result<String> {
-        let machine = self.st.do_(|p| p.sessions.get(sid).map(|s| s.machine_id.clone()).unwrap_or_default());
+        let machine = self.st.do_(|p| {
+            p.sessions
+                .get(sid)
+                .map(|s| s.machine_id.clone())
+                .unwrap_or_default()
+        });
         if machine.is_empty() {
             return Err(anyhow!("the session has no running machine"));
         }
@@ -572,7 +696,11 @@ impl Router {
                 .get(sid)
                 .map(|s| {
                     let kernel = s.kernel.is_some();
-                    let phone = if kernel { String::new() } else { crate::grants::cert_field(s.cert.as_ref(), "phone") };
+                    let phone = if kernel {
+                        String::new()
+                    } else {
+                        crate::grants::cert_field(s.cert.as_ref(), "phone")
+                    };
                     (crate::grants::session_line(s), kernel, phone)
                 })
                 .unwrap_or_default()
@@ -584,11 +712,19 @@ impl Router {
     }
 
     fn kernel_phone(&self) -> String {
-        if let Some(h) = KERNEL_PHONE_HOOK.read().unwrap_or_else(|e| e.into_inner()).clone() {
+        if let Some(h) = KERNEL_PHONE_HOOK
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        {
             return h(self);
         }
-        let Some(k) = &self.kernel else { return String::new() };
-        let Ok((ks, _)) = k.keys() else { return String::new() };
+        let Some(k) = &self.kernel else {
+            return String::new();
+        };
+        let Ok((ks, _)) = k.keys() else {
+            return String::new();
+        };
         serde_json::from_str::<Value>(&ks.payload)
             .ok()
             .and_then(|v| v.get("phone").and_then(Value::as_str).map(String::from))
@@ -605,9 +741,15 @@ impl Router {
             let mut items = vec![];
             let mut sid = String::new();
             for id in ids {
-                let pm = d.messages.get(id).filter(|pm| pm.state == "pending").ok_or_else(|| {
-                    BadRequest(format!("message {id} isn't waiting (delivered, denied, replaced or lapsed)"))
-                })?;
+                let pm = d
+                    .messages
+                    .get(id)
+                    .filter(|pm| pm.state == "pending")
+                    .ok_or_else(|| {
+                        BadRequest(format!(
+                            "message {id} isn't waiting (delivered, denied, replaced or lapsed)"
+                        ))
+                    })?;
                 if !seen.insert(id.clone()) {
                     continue;
                 }
@@ -615,7 +757,10 @@ impl Router {
                     sid = pm.session.clone();
                 }
                 if pm.session != sid {
-                    return Err(BadRequest("the messages are for more than one session: one session at a time".into()).into());
+                    return Err(BadRequest(
+                        "the messages are for more than one session: one session at a time".into(),
+                    )
+                    .into());
                 }
                 items.push(MessageItem {
                     id: pm.id.clone(),
@@ -653,7 +798,12 @@ impl Router {
         let exp = GoTime::parse(&a.expires)
             .filter(|e| GoTime::now().before(e))
             .ok_or_else(|| BadRequest("the approval has expired: deliver again".into()))?;
-        let sid = self.st.do_(|d| d.messages.get(&a.items[0].id).map(|pm| pm.session.clone()).unwrap_or_default());
+        let sid = self.st.do_(|d| {
+            d.messages
+                .get(&a.items[0].id)
+                .map(|pm| pm.session.clone())
+                .unwrap_or_default()
+        });
         let (line, phone) = self.line_phone(&sid);
         let ids = self.st.do_(|d| -> Result<Vec<String>> {
             let mut ids: Vec<String> = vec![];
@@ -695,9 +845,24 @@ impl Router {
         self.st.do_(|d| {
             let mut out = vec![];
             for id in ids {
-                let Some(pm) = d.messages.get(id).filter(|pm| pm.state == "pending").cloned() else { continue };
+                let Some(pm) = d
+                    .messages
+                    .get(id)
+                    .filter(|pm| pm.state == "pending")
+                    .cloned()
+                else {
+                    continue;
+                };
                 d.messages.remove(id);
-                note_outcome(d, pm.origin.as_ref(), outcome_kind_for(&pm), &pm.id, OUTCOME_DENIED, 0, None);
+                note_outcome(
+                    d,
+                    pm.origin.as_ref(),
+                    outcome_kind_for(&pm),
+                    &pm.id,
+                    OUTCOME_DENIED,
+                    0,
+                    None,
+                );
                 crate::logf!("[message] {}: {} {} denied", pm.session, pm.kind, pm.id);
                 out.push(id.clone());
             }
@@ -750,11 +915,16 @@ impl Router {
             if !d.sessions.contains_key(sid) || line.is_empty() || line != a.session {
                 return Err(BadRequest("the rule is for another session".into()).into());
             }
-            if phone.is_empty() || !crate::http::verify_p256(&phone, doc.payload.as_bytes(), &doc.sig) {
-                return Err(Forbidden("not signed by the phone this session's cert names".into()).into());
+            if phone.is_empty()
+                || !crate::http::verify_p256(&phone, doc.payload.as_bytes(), &doc.sig)
+            {
+                return Err(
+                    Forbidden("not signed by the phone this session's cert names".into()).into(),
+                );
             }
             // one rule per kind and session: the newest
-            d.message_rules.retain(|_, x| !(x.session == sid && x.kind == a.delivery));
+            d.message_rules
+                .retain(|_, x| !(x.session == sid && x.kind == a.delivery));
             let rule = MessageRule {
                 id: format!("mr{}", crate::util::rand_id()),
                 session: sid.into(),
@@ -788,14 +958,21 @@ impl Router {
     }
 
     pub fn kick_message(self: &Arc<Self>, id: &str) {
-        if !MESSAGE_RUN.lock().unwrap_or_else(|e| e.into_inner()).insert(id.to_string()) {
+        if !MESSAGE_RUN
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id.to_string())
+        {
             return;
         }
         let (r, id) = (self.clone(), id.to_string());
         std::thread::spawn(move || {
             let i2 = id.clone();
             let _g = crate::flows::scopeguard(move || {
-                MESSAGE_RUN.lock().unwrap_or_else(|e| e.into_inner()).remove(&i2);
+                MESSAGE_RUN
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .remove(&i2);
             });
             r.deliver_approved(&id);
         });
@@ -803,12 +980,27 @@ impl Router {
 
     /// an approved message into its session (started first unless it is an Inbox outcome)
     fn deliver_approved(self: &Arc<Self>, id: &str) {
-        let Some(pm) = self.st.do_(|d| d.messages.get(id).cloned()).filter(|pm| pm.state == "approved") else { return };
+        let Some(pm) = self
+            .st
+            .do_(|d| d.messages.get(id).cloned())
+            .filter(|pm| pm.state == "approved")
+        else {
+            return;
+        };
         let mut d = pm.delivery.clone();
         d.approval = pm.approval.clone();
-        let res = match DELIVER_APPROVED_HOOK.read().unwrap_or_else(|e| e.into_inner()).clone() {
+        let res = match DELIVER_APPROVED_HOOK
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        {
             Some(h) => h(self, &pm, d),
-            None => self.deliver_vouched_opts(&pm.session, d, pm.kind != "request-outcome", pm.origin.as_ref()),
+            None => self.deliver_vouched_opts(
+                &pm.session,
+                d,
+                pm.kind != "request-outcome",
+                pm.origin.as_ref(),
+            ),
         };
         match res {
             Ok(()) => {
@@ -816,7 +1008,15 @@ impl Router {
                     st.messages.remove(id);
                     if pm.kind == "peer" {
                         // its sender hears Deyao delivered it
-                        note_outcome(st, pm.origin.as_ref(), outcome_kind_for(&pm), &pm.id, OUTCOME_APPROVED, 0, None);
+                        note_outcome(
+                            st,
+                            pm.origin.as_ref(),
+                            outcome_kind_for(&pm),
+                            &pm.id,
+                            OUTCOME_APPROVED,
+                            0,
+                            None,
+                        );
                     }
                 });
                 crate::logf!("[message] {}: {} {id} delivered", pm.session, pm.kind);
@@ -828,7 +1028,11 @@ impl Router {
                 });
             }
             Err(e) if crate::schedule::is_skip(&e) || crate::drain::is_busy(&e) => {
-                crate::logf!("[message] {}: {} {id}: {e:#} — tried again", pm.session, pm.kind);
+                crate::logf!(
+                    "[message] {}: {} {id}: {e:#} — tried again",
+                    pm.session,
+                    pm.kind
+                );
             }
             Err(e) => self.fail_message(id, &e),
         }
@@ -836,13 +1040,28 @@ impl Router {
 
     fn fail_message(&self, id: &str, err: &anyhow::Error) {
         self.st.do_(|d| {
-            let Some(pm) = d.messages.get_mut(id).filter(|pm| pm.state != "failed") else { return };
+            let Some(pm) = d.messages.get_mut(id).filter(|pm| pm.state != "failed") else {
+                return;
+            };
             pm.state = "failed".into();
             pm.error = crate::util::trim_to(&format!("{err:#}"), 300);
             pm.expires = GoTime::now().add(MESSAGE_FAILED_TTL);
             let pm = pm.clone();
-            note_outcome(d, pm.origin.as_ref(), outcome_kind_for(&pm), &pm.id, OUTCOME_FAILED, 0, None);
-            crate::logf!("[message] {}: {} {} approved but not delivered: {err:#}", pm.session, pm.kind, pm.id);
+            note_outcome(
+                d,
+                pm.origin.as_ref(),
+                outcome_kind_for(&pm),
+                &pm.id,
+                OUTCOME_FAILED,
+                0,
+                None,
+            );
+            crate::logf!(
+                "[message] {}: {} {} approved but not delivered: {err:#}",
+                pm.session,
+                pm.kind,
+                pm.id
+            );
         });
     }
 
@@ -852,15 +1071,40 @@ impl Router {
             let (mut retry, mut expired) = (vec![], vec![]);
             let ids: Vec<String> = d.messages.keys().cloned().collect();
             for id in ids {
-                let Some(pm) = d.messages.get(&id).cloned() else { continue };
-                let gone = d.sessions.get(&pm.session).is_none_or(|s| s.state == "destroyed" || s.state == "destroying");
+                let Some(pm) = d.messages.get(&id).cloned() else {
+                    continue;
+                };
+                let gone = d
+                    .sessions
+                    .get(&pm.session)
+                    .is_none_or(|s| s.state == "destroyed" || s.state == "destroying");
                 if gone {
                     d.messages.remove(&id);
-                    note_outcome(d, pm.origin.as_ref(), outcome_kind_for(&pm), &pm.id, OUTCOME_DROPPED, 0, None);
+                    note_outcome(
+                        d,
+                        pm.origin.as_ref(),
+                        outcome_kind_for(&pm),
+                        &pm.id,
+                        OUTCOME_DROPPED,
+                        0,
+                        None,
+                    );
                 } else if pm.state == "pending" && !now.before(&pm.expires) {
                     d.messages.remove(&id);
-                    note_outcome(d, pm.origin.as_ref(), outcome_kind_for(&pm), &pm.id, OUTCOME_LAPSED, 0, None);
-                    crate::logf!("[message] {}: {} {id} lapsed after 24h0m0s", pm.session, pm.kind);
+                    note_outcome(
+                        d,
+                        pm.origin.as_ref(),
+                        outcome_kind_for(&pm),
+                        &pm.id,
+                        OUTCOME_LAPSED,
+                        0,
+                        None,
+                    );
+                    crate::logf!(
+                        "[message] {}: {} {id} lapsed after 24h0m0s",
+                        pm.session,
+                        pm.kind
+                    );
                 } else if pm.state == "approved" && !now.before(&pm.until) {
                     expired.push(id);
                 } else if pm.state == "approved" {
@@ -870,11 +1114,15 @@ impl Router {
                 }
             }
             let sessions: BTreeSet<String> = d.sessions.keys().cloned().collect();
-            d.message_rules.retain(|_, x| sessions.contains(&x.session) && now.before(&x.until));
+            d.message_rules
+                .retain(|_, x| sessions.contains(&x.session) && now.before(&x.until));
             (retry, expired)
         });
         for id in expired {
-            self.fail_message(&id, &anyhow!("the approval's hour ran out before the session took it"));
+            self.fail_message(
+                &id,
+                &anyhow!("the approval's hour ran out before the session took it"),
+            );
         }
         for id in retry {
             self.kick_message(&id);
@@ -906,16 +1154,31 @@ pub fn rule_view(x: &MessageRule) -> Value {
 
 /// (under the lock) every message (oldest first) and rule, optionally of one session
 pub fn messages_list(d: &Persisted, sid: &str) -> (Vec<Value>, Vec<Value>) {
-    let mut ms: Vec<&PendingMessage> = d.messages.values().filter(|pm| sid.is_empty() || pm.session == sid).collect();
-    ms.sort_by(|a, b| a.created.cmp(&b.created));
-    let mut rs: Vec<&MessageRule> = d.message_rules.values().filter(|x| sid.is_empty() || x.session == sid).collect();
-    rs.sort_by(|a, b| a.created.cmp(&b.created));
-    (ms.into_iter().map(|pm| message_view(d, pm)).collect(), rs.into_iter().map(rule_view).collect())
+    let mut ms: Vec<&PendingMessage> = d
+        .messages
+        .values()
+        .filter(|pm| sid.is_empty() || pm.session == sid)
+        .collect();
+    ms.sort_by_key(|a| a.created);
+    let mut rs: Vec<&MessageRule> = d
+        .message_rules
+        .values()
+        .filter(|x| sid.is_empty() || x.session == sid)
+        .collect();
+    rs.sort_by_key(|a| a.created);
+    (
+        ms.into_iter().map(|pm| message_view(d, pm)).collect(),
+        rs.into_iter().map(rule_view).collect(),
+    )
 }
 
 /// a session's /api/state fields
 pub fn messages_view(d: &Persisted, sid: &str, v: &mut Map<String, Value>) {
-    let n = d.messages.values().filter(|pm| pm.session == sid && pm.state == "pending").count();
+    let n = d
+        .messages
+        .values()
+        .filter(|pm| pm.session == sid && pm.state == "pending")
+        .count();
     let (_, rules) = messages_list(d, sid);
     v.insert("pendingMessages".into(), json!(n));
     v.insert("messageRules".into(), json!(rules));
@@ -927,19 +1190,39 @@ pub fn message_inbox_items(d: &Persisted) -> Vec<InboxItem> {
         .values()
         .filter(|pm| pm.state == "pending")
         .map(|pm| {
-            let mut c = Caller { kind: "router".into(), ..Default::default() };
+            let mut c = Caller {
+                kind: "router".into(),
+                ..Default::default()
+            };
             if let Some(p) = pm.delivery.peer.as_ref().filter(|_| pm.kind == "peer") {
-                c = Caller { kind: "session".into(), session: p.from.clone(), ..Default::default() };
-            } else if pm.origin.as_ref().is_some_and(|o| o.caller.session == pm.session) {
-                c = Caller { kind: "session".into(), session: pm.session.clone(), ..Default::default() };
+                c = Caller {
+                    kind: "session".into(),
+                    session: p.from.clone(),
+                };
+            } else if pm
+                .origin
+                .as_ref()
+                .is_some_and(|o| o.caller.session == pm.session)
+            {
+                c = Caller {
+                    kind: "session".into(),
+                    session: pm.session.clone(),
+                };
             }
             let mut open = Map::new();
             open.insert("kind".into(), json!(REQUEST_KIND_MSG));
-            open.insert("options".into(), json!({"messageId": pm.id, "sessionId": pm.session}));
+            open.insert(
+                "options".into(),
+                json!({"messageId": pm.id, "sessionId": pm.session}),
+            );
             InboxItem {
                 id: pm.id.clone(),
                 kind: REQUEST_KIND_MSG.into(),
-                params: RequestParams { session: pm.session.clone(), text: pm.text.clone(), ..Default::default() },
+                params: RequestParams {
+                    session: pm.session.clone(),
+                    text: pm.text.clone(),
+                    ..Default::default()
+                },
                 session: pm.session.clone(),
                 session_name: inbox_session_name(d, &pm.session),
                 caller: c,
@@ -958,7 +1241,10 @@ pub fn message_inbox_items(d: &Persisted) -> Vec<InboxItem> {
 pub fn message_headline(d: &Persisted, pm: &PendingMessage) -> String {
     let to = format!("session “{}”", inbox_session_name(d, &pm.session));
     if let Some(p) = pm.delivery.peer.as_ref().filter(|_| pm.kind == "peer") {
-        return format!("Message from session “{}” to {to}", inbox_session_name(d, &p.from));
+        return format!(
+            "Message from session “{}” to {to}",
+            inbox_session_name(d, &p.from)
+        );
     }
     format!("{} for {to}", kind_label(&pm.kind))
 }
@@ -986,35 +1272,53 @@ pub fn register_messages(reg: &mut Registrar) {
         let i: Ids = crate::http::decode_body(req, 1 << 20);
         match r.draft_messages(&i.ids) {
             Err(e) => write_request_err(w, &e),
-            Ok((text, sid, line)) => write_json(w, 200, &json!({"text": text, "session": sid, "line": line})),
+            Ok((text, sid, line)) => {
+                write_json(w, 200, &json!({"text": text, "session": sid, "line": line}))
+            }
         }
     });
     reg.app("POST /api/messages/approve", |r, w, req| {
         let i: Signed = crate::http::decode_body(req, 1 << 20);
-        match r.approve_messages(&Doc { payload: i.payload, sig: i.sig }) {
+        match r.approve_messages(&Doc {
+            payload: i.payload,
+            sig: i.sig,
+        }) {
             Err(e) => write_request_err(w, &e),
             Ok(ids) => write_json(w, 200, &json!({"ok": true, "delivering": ids})),
         }
     });
     reg.app("POST /api/messages/deny", |r, w, req| {
         let i: Ids = crate::http::decode_body(req, 1 << 20);
-        write_json(w, 200, &json!({"ok": true, "denied": r.deny_messages(&i.ids)}));
+        write_json(
+            w,
+            200,
+            &json!({"ok": true, "denied": r.deny_messages(&i.ids)}),
+        );
     });
-    reg.app("POST /api/sessions/{id}/message-rules/draft", |r, w, req| {
-        #[derive(Deserialize, Default)]
-        #[serde(default)]
-        struct In {
-            kind: String,
-        }
-        let i: In = crate::http::decode_body(req, 1 << 20);
-        match r.draft_message_rule(&req.path_value("id"), &i.kind) {
-            Err(e) => write_request_err(w, &e),
-            Ok(text) => write_json(w, 200, &json!({"text": text})),
-        }
-    });
+    reg.app(
+        "POST /api/sessions/{id}/message-rules/draft",
+        |r, w, req| {
+            #[derive(Deserialize, Default)]
+            #[serde(default)]
+            struct In {
+                kind: String,
+            }
+            let i: In = crate::http::decode_body(req, 1 << 20);
+            match r.draft_message_rule(&req.path_value("id"), &i.kind) {
+                Err(e) => write_request_err(w, &e),
+                Ok(text) => write_json(w, 200, &json!({"text": text})),
+            }
+        },
+    );
     reg.app("POST /api/sessions/{id}/message-rules", |r, w, req| {
         let i: Signed = crate::http::decode_body(req, 1 << 20);
-        match r.add_message_rule(&req.path_value("id"), &Doc { payload: i.payload, sig: i.sig }) {
+        match r.add_message_rule(
+            &req.path_value("id"),
+            &Doc {
+                payload: i.payload,
+                sig: i.sig,
+            },
+        ) {
             Err(e) => write_request_err(w, &e),
             Ok(rule) => write_json(w, 200, &rule_view(&rule)),
         }
@@ -1025,7 +1329,11 @@ pub fn register_messages(reg: &mut Registrar) {
         write_json(w, 200, &json!({"rules": rules}));
     });
     reg.app("DELETE /api/message-rules/{rid}", |r, w, req| {
-        write_json(w, 200, &json!({"ok": true, "gone": !r.forget_message_rule(&req.path_value("rid"))}));
+        write_json(
+            w,
+            200,
+            &json!({"ok": true, "gone": !r.forget_message_rule(&req.path_value("rid"))}),
+        );
     });
 }
 
@@ -1037,13 +1345,25 @@ pub fn messages_state_hook(r: &Arc<Router>, out: &mut Map<String, Value>) {
 
 pub fn messages_on_destroy(r: &Arc<Router>, s: &Session) {
     r.st.do_(|d| {
-        let ids: Vec<String> = d.messages.iter().filter(|(_, pm)| pm.session == s.id).map(|(id, _)| id.clone()).collect();
+        let ids: Vec<String> = d
+            .messages
+            .iter()
+            .filter(|(_, pm)| pm.session == s.id)
+            .map(|(id, _)| id.clone())
+            .collect();
         for id in ids {
             if let Some(pm) = d.messages.remove(&id) {
-                note_outcome(d, pm.origin.as_ref(), outcome_kind_for(&pm), &pm.id, OUTCOME_DROPPED, 0, None);
+                note_outcome(
+                    d,
+                    pm.origin.as_ref(),
+                    outcome_kind_for(&pm),
+                    &pm.id,
+                    OUTCOME_DROPPED,
+                    0,
+                    None,
+                );
             }
         }
         d.message_rules.retain(|_, x| x.session != s.id);
     });
 }
-

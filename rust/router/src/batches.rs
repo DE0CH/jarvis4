@@ -7,7 +7,10 @@
 //!   - a batch counts once toward a caller's limits (20 waiting requests, 3 waiting proposals); at most 20 items.
 
 use crate::flows::NewSession;
-use crate::inbox::{ApiCall, BadRequest, Caller, Forbidden, InboxItem, InboxRequest, Origin, RequestIn, RequestParams, SignedRequest};
+use crate::inbox::{
+    ApiCall, BadRequest, Caller, Forbidden, InboxItem, InboxRequest, Origin, RequestIn,
+    RequestParams, SignedRequest,
+};
 use crate::nethttp::{W, write_json};
 use crate::router::Router;
 use crate::state::{Approval, Persisted};
@@ -58,7 +61,9 @@ pub fn caller_load(d: &Persisted, c: &Caller) -> (usize, usize) {
     let mut requests = d
         .inbox
         .values()
-        .filter(|q| q.origin.caller == *c && (q.batch.is_empty() || !d.batches.contains_key(&q.batch)))
+        .filter(|q| {
+            q.origin.caller == *c && (q.batch.is_empty() || !d.batches.contains_key(&q.batch))
+        })
         .count();
     let mut proposals = d
         .approvals
@@ -95,13 +100,22 @@ pub fn batch_preparing(d: &Persisted, b: &Batch) -> usize {
     b.entries
         .iter()
         .filter(|e| e.request.is_empty() && !e.session.is_empty())
-        .filter(|e| d.sessions.get(&e.session).is_some_and(|s| s.state == "approval"))
-        .filter(|e| !d.approvals.values().any(|a| a.session == e.session && a.batch == b.id))
+        .filter(|e| {
+            d.sessions
+                .get(&e.session)
+                .is_some_and(|s| s.state == "approval")
+        })
+        .filter(|e| {
+            !d.approvals
+                .values()
+                .any(|a| a.session == e.session && a.batch == b.id)
+        })
         .count()
 }
 
 pub fn batch_item_count(d: &Persisted, id: &str) -> usize {
-    d.inbox.values().filter(|q| q.batch == id).count() + d.approvals.values().filter(|a| a.batch == id).count()
+    d.inbox.values().filter(|q| q.batch == id).count()
+        + d.approvals.values().filter(|a| a.batch == id).count()
 }
 
 /// an expired batch goes (its items expire with it); a batch with nothing left in it goes
@@ -110,7 +124,9 @@ pub fn prune_batches(d: &mut Persisted, now: GoTime) {
         .batches
         .iter()
         .filter(|(id, b)| {
-            !b.filing && (!now.before(&b.expires) || (batch_item_count(d, id) == 0 && batch_preparing(d, b) == 0))
+            !b.filing
+                && (!now.before(&b.expires)
+                    || (batch_item_count(d, id) == 0 && batch_preparing(d, b) == 0))
         })
         .map(|(id, _)| id.clone())
         .collect();
@@ -251,14 +267,18 @@ impl Router {
                 })
                 .collect()
         });
-        out.sort_by(|a, b| b.created.cmp(&a.created));
+        out.sort_by_key(|a| std::cmp::Reverse(a.created));
         out
     }
 
     /// one batch with its items (GET …/requests/batches/:id)
     pub fn inbox_batch_full(self: &Arc<Self>, id: &str, only: Option<&Caller>) -> Option<Value> {
         let b = self.inbox_batches(only).into_iter().find(|b| b.id == id)?;
-        let by_id: BTreeMap<String, InboxItem> = self.inbox().into_iter().map(|it| (it.id.clone(), it)).collect();
+        let by_id: BTreeMap<String, InboxItem> = self
+            .inbox()
+            .into_iter()
+            .map(|it| (it.id.clone(), it))
+            .collect();
         let list: Vec<&InboxItem> = b.items.iter().filter_map(|i| by_id.get(i)).collect();
         Some(json!({"batch": b, "items": list}))
     }
@@ -268,13 +288,32 @@ impl Router {
     pub fn deny_batch(self: &Arc<Self>, id: &str) -> Result<()> {
         let approvals = self.st.do_(|d| {
             d.batches.remove(id)?;
-            let qs: Vec<String> = d.inbox.iter().filter(|(_, q)| q.batch == id).map(|(k, _)| k.clone()).collect();
+            let qs: Vec<String> = d
+                .inbox
+                .iter()
+                .filter(|(_, q)| q.batch == id)
+                .map(|(k, _)| k.clone())
+                .collect();
             for qid in qs {
                 if let Some(q) = d.inbox.remove(&qid) {
-                    crate::outcomes::note_outcome(d, Some(&q.origin), &q.kind, &q.id, crate::outcomes::OUTCOME_DENIED, 0, None);
+                    crate::outcomes::note_outcome(
+                        d,
+                        Some(&q.origin),
+                        &q.kind,
+                        &q.id,
+                        crate::outcomes::OUTCOME_DENIED,
+                        0,
+                        None,
+                    );
                 }
             }
-            Some(d.approvals.iter().filter(|(_, a)| a.batch == id).map(|(k, _)| k.clone()).collect::<Vec<_>>())
+            Some(
+                d.approvals
+                    .iter()
+                    .filter(|(_, a)| a.batch == id)
+                    .map(|(k, _)| k.clone())
+                    .collect::<Vec<_>>(),
+            )
         });
         let Some(approvals) = approvals else {
             return Err(crate::inbox::already_gone());
@@ -287,18 +326,28 @@ impl Router {
 
     /// one item checked as its own endpoint would check it, before anything is filed
     fn check_batch_item(self: &Arc<Self>, c: &Caller, raw: &str) -> Result<BatchItem> {
-        let i: BatchItemIn = jarvis_go::unmarshal(raw.as_bytes()).map_err(|e| BadRequest(format!("bad JSON: {e}")))?;
-        let expl = crate::inbox::clean_explanation(&i.request.explanation, false).map_err(|e| BadRequest(format!("{e:#}")))?;
-        let mut it = BatchItem { intent: i.intent.clone(), expl, ..Default::default() };
+        let i: BatchItemIn = jarvis_go::unmarshal(raw.as_bytes())
+            .map_err(|e| BadRequest(format!("bad JSON: {e}")))?;
+        let expl = crate::inbox::clean_explanation(&i.request.explanation, false)
+            .map_err(|e| BadRequest(format!("{e:#}")))?;
+        let mut it = BatchItem {
+            intent: i.intent.clone(),
+            expl,
+            ..Default::default()
+        };
         if let Some((kind, p)) = crate::inbox::intent(&i.intent, &i.request) {
             let p = crate::inbox::own_session(c, kind, p, &i.request);
-            let np = self.normalize_request(kind, &p).map_err(|e| BadRequest(format!("{e:#}")))?;
+            let np = self
+                .normalize_request(kind, &p)
+                .map_err(|e| BadRequest(format!("{e:#}")))?;
             crate::inbox::caller_may(c, kind, &np).map_err(|e| Forbidden(format!("{e:#}")))?;
             let (machine, store) = self.existing_repo_store(c, kind, &np);
             if !machine.is_empty() {
                 // repos.rs: the repo has its key, the session needs its store: the item is that add-store
                 it.intent = "add-store".into();
-                it.args = obj(json!({"intent": it.intent, "session": np.session, "store": store, "repo": np.repo}));
+                it.args = obj(
+                    json!({"intent": it.intent, "session": np.session, "store": store, "repo": np.repo}),
+                );
                 it.machine = machine;
                 it.store = store;
                 return Ok(it);
@@ -312,9 +361,11 @@ impl Router {
         match i.intent.as_str() {
             "call" => {
                 // an app API call, run as Deyao once approved (apicalls.rs)
-                let ci: crate::apicalls::CallIn =
-                    jarvis_go::unmarshal(raw.as_bytes()).map_err(|e| BadRequest(format!("bad JSON: {e}")))?;
-                let (p, args) = self.check_call(&ci).map_err(|e| BadRequest(format!("call: {e:#}")))?;
+                let ci: crate::apicalls::CallIn = jarvis_go::unmarshal(raw.as_bytes())
+                    .map_err(|e| BadRequest(format!("bad JSON: {e}")))?;
+                let (p, args) = self
+                    .check_call(&ci)
+                    .map_err(|e| BadRequest(format!("call: {e:#}")))?;
                 it.kind = crate::apicalls::REQUEST_KIND_CALL.into();
                 it.p = p;
                 it.args = args;
@@ -344,15 +395,24 @@ impl Router {
                     return Err(BadRequest(format!("add-store: session {sid:?} has no running machine: a store is added to a paused session at its resume (jarvis-request add-store once it runs)")).into());
                 }
                 it.store = i.request.store.clone();
-                it.args = obj(json!({"intent": i.intent, "session": sid, "store": i.request.store}));
+                it.args =
+                    obj(json!({"intent": i.intent, "session": sid, "store": i.request.store}));
                 Ok(it)
             }
             "new-session" => {
-                let pin: crate::sessionapi::ProposalIn =
-                    jarvis_go::unmarshal(raw.as_bytes()).map_err(|e| BadRequest(format!("bad JSON: {e}")))?;
-                let prefix = if c.kind == "session" { c.session.clone() } else { c.kind.clone() };
+                let pin: crate::sessionapi::ProposalIn = jarvis_go::unmarshal(raw.as_bytes())
+                    .map_err(|e| BadRequest(format!("bad JSON: {e}")))?;
+                let prefix = if c.kind == "session" {
+                    c.session.clone()
+                } else {
+                    c.kind.clone()
+                };
                 let ns = self.check_proposal(c, &prefix, pin, false)?;
-                it.args = ns.origin.as_ref().map(|o| o.call.args.clone()).unwrap_or_default();
+                it.args = ns
+                    .origin
+                    .as_ref()
+                    .map(|o| o.call.args.clone())
+                    .unwrap_or_default();
                 it.args.insert("intent".into(), json!(i.intent));
                 it.ns = Some(ns);
                 Ok(it)
@@ -371,29 +431,44 @@ impl Router {
                     Ok(x) => x,
                 };
                 it.args = obj(json!({"intent": i.intent, "to": recv.id}));
-                let (note, held) = crate::peermsg::held_peer_note(crate::peermsg::peer_note(&from, &recv, &text), &recv);
+                let (note, held) = crate::peermsg::held_peer_note(
+                    crate::peermsg::peer_note(&from, &recv, &text),
+                    &recv,
+                );
                 if held || note.direction != "upward" {
                     it.note = Some(note); // held: the receiver holds a sensitive store, Deyao decides (messages.rs)
                     return Ok(it);
                 }
                 it.kind = crate::peermsg::REQUEST_KIND_PEER.into();
-                it.p = RequestParams { session: recv.id.clone(), text, ..Default::default() };
+                it.p = RequestParams {
+                    session: recv.id.clone(),
+                    text,
+                    ..Default::default()
+                };
                 it.expl = crate::peermsg::peer_explanation(&from, &recv);
                 Ok(it)
             }
             "jarvis1-import" => {
                 if !matches!(c.kind.as_str(), "setup" | "app" | "web") {
-                    return Err(Forbidden("a Jarvis 1 import is filed by the setup session or Deyao".into()).into());
+                    return Err(Forbidden(
+                        "a Jarvis 1 import is filed by the setup session or Deyao".into(),
+                    )
+                    .into());
                 }
-                let mut j: crate::jarvis1import::J1ImportIn = jarvis_go::unmarshal(raw.as_bytes()).unwrap_or_default();
+                let mut j: crate::jarvis1import::J1ImportIn =
+                    jarvis_go::unmarshal(raw.as_bytes()).unwrap_or_default();
                 if i.id.is_empty() || j.stores.is_empty() {
-                    return Err(BadRequest("jarvis1-import: id and stores are required".into()).into());
+                    return Err(
+                        BadRequest("jarvis1-import: id and stores are required".into()).into(),
+                    );
                 }
                 if let Err(e) = self.prepared_jarvis1(&i.id) {
                     return Err(BadRequest(format!("jarvis1-import {}: {e:#}", i.id)).into());
                 }
                 j.explanation = it.expl.clone();
-                it.args = obj(json!({"intent": i.intent, "id": i.id, "stores": j.stores, "size": j.size}));
+                it.args = obj(
+                    json!({"intent": i.intent, "id": i.id, "stores": j.stores, "size": j.size}),
+                );
                 it.j1id = i.id.clone();
                 it.j1 = j;
                 Ok(it)
@@ -405,17 +480,32 @@ impl Router {
     /// every item checked first (any bad item: nothing is filed, 400 naming it), then filed in order. An item that
     /// fails while being filed is reported and the rest stand; when none stands, the batch is dropped. A request
     /// already waiting outside any batch joins this one; one in another batch stays there.
-    pub fn file_batch(self: &Arc<Self>, c: &Caller, method: &str, path: &str, body: &[u8], signed: Option<SignedRequest>) -> (u16, Value) {
+    pub fn file_batch(
+        self: &Arc<Self>,
+        c: &Caller,
+        method: &str,
+        path: &str,
+        body: &[u8],
+        signed: Option<SignedRequest>,
+    ) -> (u16, Value) {
         let i: BatchIn = match jarvis_go::unmarshal(body) {
             Ok(i) => i,
             Err(e) => return (400, json!({"error": format!("bad JSON: {e}")})),
         };
         let summary = match crate::inbox::clean_explanation(&i.summary, true) {
             Ok(s) => s,
-            Err(e) => return (400, json!({"error": format!("summary: {}", format!("{e:#}").replacen("explanation", "summary", 1))})),
+            Err(e) => {
+                return (
+                    400,
+                    json!({"error": format!("summary: {}", format!("{e:#}").replacen("explanation", "summary", 1))}),
+                );
+            }
         };
         if i.items.is_empty() || i.items.len() > BATCH_MAX_ITEMS {
-            return (400, json!({"error": format!("a batch holds 1 to {BATCH_MAX_ITEMS} items ({} given)", i.items.len())}));
+            return (
+                400,
+                json!({"error": format!("a batch holds 1 to {BATCH_MAX_ITEMS} items ({} given)", i.items.len())}),
+            );
         }
         let mut items = vec![];
         let mut keys: BTreeMap<String, usize> = BTreeMap::new();
@@ -425,14 +515,27 @@ impl Router {
             let it = match self.check_batch_item(c, raw.get()) {
                 Ok(it) => it,
                 Err(e) => {
-                    let code = if e.downcast_ref::<Forbidden>().is_some() { 403 } else { 400 };
-                    return (code, json!({"error": format!("item {n}: {e:#}"), "item": n}));
+                    let code = if e.downcast_ref::<Forbidden>().is_some() {
+                        403
+                    } else {
+                        400
+                    };
+                    return (
+                        code,
+                        json!({"error": format!("item {n}: {e:#}"), "item": n}),
+                    );
                 }
             };
             let k = if !it.kind.is_empty() {
                 crate::inbox::request_key(&it.kind, &it.p)
             } else if it.intent == "new-session" {
-                format!("new-session {}", it.ns.as_ref().map(|n| n.request_id.clone()).unwrap_or_default())
+                format!(
+                    "new-session {}",
+                    it.ns
+                        .as_ref()
+                        .map(|n| n.request_id.clone())
+                        .unwrap_or_default()
+                )
             } else if it.intent == "jarvis1-import" {
                 format!("jarvis1-import {}", it.j1id)
             } else if let Some(note) = &it.note {
@@ -441,11 +544,17 @@ impl Router {
                 format!("{} {}", it.intent, jarvis_go::marshal(&it.args))
             };
             if let Some(j) = keys.get(&k) {
-                return (400, json!({"error": format!("item {n} is the same as item {j}"), "item": n}));
+                return (
+                    400,
+                    json!({"error": format!("item {n} is the same as item {j}"), "item": n}),
+                );
             }
             if let Some(a) = it.ns.as_ref().and_then(|ns| ns.attachments.as_ref()) {
                 if let Some(j) = uploads_used.get(&a.upload_id) {
-                    return (400, json!({"error": format!("item {n} attaches upload {}, as item {j} does: each new session needs its own upload", a.upload_id), "item": n}));
+                    return (
+                        400,
+                        json!({"error": format!("item {n} attaches upload {}, as item {j} does: each new session needs its own upload", a.upload_id), "item": n}),
+                    );
                 }
                 uploads_used.insert(a.upload_id.clone(), n);
             }
@@ -462,7 +571,11 @@ impl Router {
             filing: true,
             origin: Origin {
                 caller: c.clone(),
-                call: ApiCall { method: method.into(), path: path.into(), args: obj(json!({"items": items.len()})) },
+                call: ApiCall {
+                    method: method.into(),
+                    path: path.into(),
+                    args: obj(json!({"items": items.len()})),
+                },
                 ..Default::default()
             },
             entries: vec![],
@@ -505,20 +618,43 @@ impl Router {
             }
         });
         if none {
-            if results.iter().any(|x| (x.own || x.delivering) && x.error.is_empty()) {
+            if results
+                .iter()
+                .any(|x| (x.own || x.delivering) && x.error.is_empty())
+            {
                 // only requests of their own or messages delivered at once: no batch, but nothing failed
                 return (200, json!({"items": results}));
             }
-            return (400, json!({"error": "nothing in the batch could be filed", "items": results}));
+            return (
+                400,
+                json!({"error": "nothing in the batch could be filed", "items": results}),
+            );
         }
-        (200, json!({"id": b.id, "expires": b.expires, "items": results}))
+        (
+            200,
+            json!({"id": b.id, "expires": b.expires, "items": results}),
+        )
     }
 
-    fn file_batch_item(self: &Arc<Self>, c: &Caller, method: &str, path: &str, b: &Batch, it: BatchItem) -> (BatchResult, Option<BatchEntry>) {
-        let mut res = BatchResult { intent: it.intent.clone(), ..Default::default() };
+    fn file_batch_item(
+        self: &Arc<Self>,
+        c: &Caller,
+        method: &str,
+        path: &str,
+        b: &Batch,
+        it: BatchItem,
+    ) -> (BatchResult, Option<BatchEntry>) {
+        let mut res = BatchResult {
+            intent: it.intent.clone(),
+            ..Default::default()
+        };
         let mut o = Origin {
             caller: c.clone(),
-            call: ApiCall { method: method.into(), path: path.into(), args: it.args.clone() },
+            call: ApiCall {
+                method: method.into(),
+                path: path.into(),
+                args: it.args.clone(),
+            },
             signed: it.signed.clone(),
             item: it.index,
             batch: b.id.clone(),
@@ -562,10 +698,17 @@ impl Router {
             let (id, dup, other) = self.st.do_(|d| {
                 let mut target = q.clone();
                 let mut dup = false;
-                let ids: Vec<String> = d.inbox.iter().filter(|(_, x)| x.key == q.key).map(|(k, _)| k.clone()).collect();
+                let ids: Vec<String> = d
+                    .inbox
+                    .iter()
+                    .filter(|(_, x)| x.key == q.key)
+                    .map(|(k, _)| k.clone())
+                    .collect();
                 for xid in ids {
                     dup = true;
-                    let Some(x) = d.inbox.get_mut(&xid) else { continue };
+                    let Some(x) = d.inbox.get_mut(&xid) else {
+                        continue;
+                    };
                     if !x.batch.is_empty() && d.batches.contains_key(&x.batch) {
                         return (x.id.clone(), true, x.batch.clone()); // stays in its own batch
                     }
@@ -586,16 +729,32 @@ impl Router {
             if !other.is_empty() {
                 return (res, None);
             }
-            return (res, Some(BatchEntry { intent: it.intent, request: id, ..Default::default() }));
+            return (
+                res,
+                Some(BatchEntry {
+                    intent: it.intent,
+                    request: id,
+                    ..Default::default()
+                }),
+            );
         }
         if it.intent == "add-store" {
-            let sid = self.st.do_(|d| d.machines.get(&it.machine).cloned().unwrap_or_default());
+            let sid = self
+                .st
+                .do_(|d| d.machines.get(&it.machine).cloned().unwrap_or_default());
             res.session = sid.clone();
             if let Err(e) = self.add_store_from(&it.machine, &it.store, o, &it.expl, &b.id) {
                 res.error = format!("{e:#}");
                 return (res, None);
             }
-            return (res, Some(BatchEntry { intent: it.intent, session: sid, ..Default::default() }));
+            return (
+                res,
+                Some(BatchEntry {
+                    intent: it.intent,
+                    session: sid,
+                    ..Default::default()
+                }),
+            );
         }
         if it.intent == "new-session" || it.intent == "jarvis1-import" {
             let sid = if it.intent == "new-session" {
@@ -646,20 +805,40 @@ impl Router {
                 return (res, None);
             }
             let proposes = it.intent == "new-session";
-            return (res, Some(BatchEntry { intent: it.intent, session: sid, proposes_new: proposes, ..Default::default() }));
+            return (
+                res,
+                Some(BatchEntry {
+                    intent: it.intent,
+                    session: sid,
+                    proposes_new: proposes,
+                    ..Default::default()
+                }),
+            );
         }
         res.error = "unknown intent".into();
         (res, None)
     }
 
-    pub fn serve_file_batch(self: &Arc<Self>, w: &mut W, c: Caller, method: &str, path: &str, body: &[u8], signed: Option<SignedRequest>) {
+    pub fn serve_file_batch(
+        self: &Arc<Self>,
+        w: &mut W,
+        c: Caller,
+        method: &str,
+        path: &str,
+        body: &[u8],
+        signed: Option<SignedRequest>,
+    ) {
         let (code, out) = self.file_batch(&c, method, path, body, signed);
         write_json(w, code, &out);
     }
 
     pub fn serve_batch(self: &Arc<Self>, w: &mut W, id: &str, only: Option<&Caller>) {
         match self.inbox_batch_full(id, only) {
-            None => crate::nethttp::write_error(w, 404, "this batch is gone (answered, denied or expired)"),
+            None => crate::nethttp::write_error(
+                w,
+                404,
+                "this batch is gone (answered, denied or expired)",
+            ),
             Some(out) => write_json(w, 200, &out),
         }
     }

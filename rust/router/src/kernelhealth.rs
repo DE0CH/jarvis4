@@ -60,8 +60,16 @@ impl Router {
     /// checks the kernel once and keeps the answer
     pub fn kernel_health_check(&self) -> KernelHealth {
         let (problems, copies) = self.kernel_problems();
-        let h = KernelHealth { healthy: problems.is_empty(), problems, at: GoTime::now(), copies };
-        *self.kernel_health_now.lock().unwrap_or_else(|e| e.into_inner()) = Some(h.clone());
+        let h = KernelHealth {
+            healthy: problems.is_empty(),
+            problems,
+            at: GoTime::now(),
+            copies,
+        };
+        *self
+            .kernel_health_now
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(h.clone());
         h
     }
 
@@ -75,7 +83,11 @@ impl Router {
         let cur = self.current_roster();
         let serving = self.serving_copy();
         let (pending, mut stale, waiting) = self.st.do_(|p| {
-            let stale: Vec<String> = p.kernel_roster.as_ref().map(|c| c.stale.keys().cloned().collect()).unwrap_or_default();
+            let stale: Vec<String> = p
+                .kernel_roster
+                .as_ref()
+                .map(|c| c.stale.keys().cloned().collect())
+                .unwrap_or_default();
             let waiting = p
                 .kernel_flip
                 .as_ref()
@@ -90,7 +102,10 @@ impl Router {
         } else if cur.is_none() {
             probs.push("No signed kernel roster".to_string());
         } else if !stale.is_empty() {
-            probs.push(format!("Kernel roster stale: {} restarted", stale.join(", ")));
+            probs.push(format!(
+                "Kernel roster stale: {} restarted",
+                stale.join(", ")
+            ));
         }
         if !waiting.is_empty() {
             probs.push(waiting);
@@ -134,11 +149,15 @@ impl Router {
             }
         }
         for s in ["down", "none", "other"] {
-            let Some(deps) = by.get_mut(s).filter(|d| !d.is_empty()) else { continue };
+            let Some(deps) = by.get_mut(s).filter(|d| !d.is_empty()) else {
+                continue;
+            };
             deps.sort();
             let names = deps.join(", ");
             match s {
-                "down" if deps.len() == KERNEL_ROLES.len() => probs.push("No kernel component answering".into()),
+                "down" if deps.len() == KERNEL_ROLES.len() => {
+                    probs.push("No kernel component answering".into())
+                }
                 "down" => probs.push(format!("{names} not answering")),
                 // without a signed roster, holding none is expected (said above)
                 "none" if cur.is_some() => probs.push(format!("{names} holding no roster")),
@@ -152,7 +171,9 @@ impl Router {
     /// one component's GET /roster against cur: "" (answers and holds cur, or holds a roster while none is signed),
     /// "down" (no answer, or not a roster), "none" (it holds no roster), "other" (another roster)
     pub fn kernel_roster_held(&self, dep: &str, cur: Option<&SDoc>) -> String {
-        let Some(k) = &self.kernel else { return "down".into() };
+        let Some(k) = &self.kernel else {
+            return "down".into();
+        };
         let resp = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(5))
             .build()
@@ -166,7 +187,9 @@ impl Router {
             }
             return "down".into();
         }
-        let Ok(held) = jarvis_go::unmarshal::<SDoc>(&b) else { return "down".into() };
+        let Ok(held) = jarvis_go::unmarshal::<SDoc>(&b) else {
+            return "down".into();
+        };
         if held.payload.is_empty() {
             return "down".into();
         }
@@ -178,7 +201,12 @@ impl Router {
 
     /// the last check as the app reads it ({"checked": false} before the first)
     pub fn kernel_health_view(&self) -> Value {
-        match self.kernel_health_now.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        match self
+            .kernel_health_now
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
             None => json!({"checked": false, "healthy": false, "problems": []}),
             Some(h) => {
                 json!({"checked": true, "healthy": h.healthy, "problems": h.problems, "at": h.at, "copies": h.copies})

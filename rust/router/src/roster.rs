@@ -42,7 +42,17 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 /// every component of a copy (a roster names exactly these, sorted)
-pub const KERNEL_ROLES: &[&str] = &["gullible", "identity", "merger", "minter", "mover", "notarizer", "notary", "secrets", "spawner"];
+pub const KERNEL_ROLES: &[&str] = &[
+    "gullible",
+    "identity",
+    "merger",
+    "minter",
+    "mover",
+    "notarizer",
+    "notary",
+    "secrets",
+    "spawner",
+];
 
 /// a copy's Deployments, which its roster goes to (KERNEL_URL's %s)
 pub fn roster_targets(copy: &str) -> Vec<String> {
@@ -77,7 +87,10 @@ pub struct RosterCurrent {
 
 impl RosterCurrent {
     pub fn doc(&self) -> SDoc {
-        SDoc { payload: self.payload.clone(), sig: self.sig.clone() }
+        SDoc {
+            payload: self.payload.clone(),
+            sig: self.sig.clone(),
+        }
     }
 
     /// the payload read (the router checked the root key's signature when it took it)
@@ -103,7 +116,8 @@ pub fn check_filed_roster(copy: &str, payload: &str) -> Result<()> {
     if copy != "blue" && copy != "green" {
         return Err(anyhow!("copy: blue or green"));
     }
-    let ro: Roster = jarvis_sig::strict_json(payload.as_bytes()).map_err(|e| anyhow!("payload: not a roster: {e}"))?;
+    let ro: Roster = jarvis_sig::strict_json(payload.as_bytes())
+        .map_err(|e| anyhow!("payload: not a roster: {e}"))?;
     if ro.kind != "kernel-roster" || ro.copy != copy || ro.members.is_empty() {
         return Err(anyhow!("payload: not a kernel roster for this copy"));
     }
@@ -115,10 +129,17 @@ pub fn check_filed_roster(copy: &str, payload: &str) -> Result<()> {
         roles.push(m.role.as_str());
     }
     if roles != KERNEL_ROLES {
-        return Err(anyhow!("payload: the members must be exactly {}, sorted", KERNEL_ROLES.join(", ")));
+        return Err(anyhow!(
+            "payload: the members must be exactly {}, sorted",
+            KERNEL_ROLES.join(", ")
+        ));
     }
     for m in &ro.retired {
-        if !KERNEL_ROLES.contains(&m.role.as_str()) || m.role == "secrets" || m.signing_key.is_empty() || m.agreement_key.is_empty() {
+        if !KERNEL_ROLES.contains(&m.role.as_str())
+            || m.role == "secrets"
+            || m.signing_key.is_empty()
+            || m.agreement_key.is_empty()
+        {
             return Err(anyhow!(
                 "payload: a retired member that isn't a kernel component's keys (never secrets)"
             ));
@@ -162,7 +183,8 @@ pub fn check_takeover(ro: &Roster, cur: &Roster) -> Result<()> {
 impl Router {
     /// the root key's roster the serving copy holds (None: none yet)
     pub fn current_roster(&self) -> Option<SDoc> {
-        self.st.do_(|p| p.kernel_roster.as_ref().map(RosterCurrent::doc))
+        self.st
+            .do_(|p| p.kernel_roster.as_ref().map(RosterCurrent::doc))
     }
 
     /// the roster a copy's components should hold: the serving copy's, or the other copy's while it takes over (None:
@@ -172,7 +194,10 @@ impl Router {
             if let Some(c) = p.kernel_roster.as_ref().filter(|c| c.copy == copy) {
                 return Some(c.clone());
             }
-            p.kernel_roster_next.as_ref().filter(|c| c.copy == copy).cloned()
+            p.kernel_roster_next
+                .as_ref()
+                .filter(|c| c.copy == copy)
+                .cloned()
         })
     }
 
@@ -180,9 +205,18 @@ impl Router {
     pub fn roster_stale(&self, dep: &str, msg: &str) {
         let first = self.st.do_(|p| {
             let copy = copy_of(dep);
-            let next = p.kernel_roster_next.as_ref().is_some_and(|n| n.copy == copy);
-            let c = if next { p.kernel_roster_next.as_mut() } else { p.kernel_roster.as_mut() };
-            let Some(c) = c.filter(|c| c.copy == copy) else { return false };
+            let next = p
+                .kernel_roster_next
+                .as_ref()
+                .is_some_and(|n| n.copy == copy);
+            let c = if next {
+                p.kernel_roster_next.as_mut()
+            } else {
+                p.kernel_roster.as_mut()
+            };
+            let Some(c) = c.filter(|c| c.copy == copy) else {
+                return false;
+            };
             let first = !c.stale.contains_key(dep);
             c.stale.insert(dep.to_string(), msg.to_string());
             c.results.insert(dep.to_string(), msg.to_string());
@@ -236,7 +270,9 @@ impl Router {
                     json!({"copy": n.copy, "id": n.doc().id(), "at": n.at, "results": n.results}),
                 );
             }
-            let Some(c) = &p.kernel_roster else { return Value::Object(out) };
+            let Some(c) = &p.kernel_roster else {
+                return Value::Object(out);
+            };
             out.insert("copy".into(), json!(c.copy));
             out.insert("id".into(), json!(c.doc().id()));
             out.insert("at".into(), json!(c.at));
@@ -273,7 +309,9 @@ impl Router {
             for dep in roster_targets(copy) {
                 match k.do_(&dep, &dep, "GET", "/roster", None) {
                     Ok((b, _)) => {
-                        if serde_json::from_slice::<SDoc>(&b).is_ok_and(|held| held.payload == d.payload) {
+                        if serde_json::from_slice::<SDoc>(&b)
+                            .is_ok_and(|held| held.payload == d.payload)
+                        {
                             continue;
                         }
                     }
@@ -281,7 +319,9 @@ impl Router {
                     Err(_) => {}
                 }
                 if k.post_roster(&dep, &d).is_ok() {
-                    crate::logf!("kernel: {dep} had no roster (a restart?); it took its copy's again");
+                    crate::logf!(
+                        "kernel: {dep} had no roster (a restart?); it took its copy's again"
+                    );
                     k.forget(&dep);
                 }
             }
@@ -295,11 +335,17 @@ impl Router {
     /// nothing)
     pub fn retired_in_use(&self) -> Vec<Identity> {
         let (ro, docs) = self.st.do_(|p| {
-            let Some(cur) = &p.kernel_roster else { return (Roster::default(), vec![]) };
+            let Some(cur) = &p.kernel_roster else {
+                return (Roster::default(), vec![]);
+            };
             let mut docs: Vec<(String, SDoc)> = vec![];
             for s in p.sessions.values() {
                 let Some(l) = &s.kernel else { continue };
-                if let Some(g) = l.grant.as_ref().filter(|g| g.by == "mover" || g.by == "merger") {
+                if let Some(g) = l
+                    .grant
+                    .as_ref()
+                    .filter(|g| g.by == "mover" || g.by == "merger")
+                {
                     docs.push((g.by.clone(), g.grant.clone()));
                 }
                 for c in [&l.source_cert, &l.machine_cert].into_iter().flatten() {
@@ -317,26 +363,40 @@ impl Router {
         keys.extend(ro.members.iter().filter(|m| m.role != "secrets").cloned());
         keys.into_iter()
             .filter(|m| {
-                docs.iter()
-                    .any(|(role, d)| *role == m.role && jarvis_sig::verify(&m.signing_key, d.payload.as_bytes(), &d.sig))
+                docs.iter().any(|(role, d)| {
+                    *role == m.role
+                        && jarvis_sig::verify(&m.signing_key, d.payload.as_bytes(), &d.sig)
+                })
             })
             .collect()
     }
 
     /// the root key's roster: the serving copy's (or the very first) replaces the current one; the other copy's starts
     /// the copy flip once every one of its components took it → (the answer, the status on an error)
-    pub fn take_roster(self: &Arc<Self>, payload: &str, root_sig: &str) -> std::result::Result<Value, (u16, anyhow::Error)> {
+    pub fn take_roster(
+        self: &Arc<Self>,
+        payload: &str,
+        root_sig: &str,
+    ) -> std::result::Result<Value, (u16, anyhow::Error)> {
         let (root, cur, flipping) = self.st.do_(|p| {
             (
                 p.kernel_root_key.clone(),
                 p.kernel_roster.clone(),
-                p.kernel_flip.as_ref().is_some_and(|f| !f.handoffs.is_empty()),
+                p.kernel_flip
+                    .as_ref()
+                    .is_some_and(|f| !f.handoffs.is_empty()),
             )
         });
         if root.is_empty() {
-            return Err((409, anyhow!("no root key registered (POST /api/kernel/root-key first)")));
+            return Err((
+                409,
+                anyhow!("no root key registered (POST /api/kernel/root-key first)"),
+            ));
         }
-        let d = SDoc { payload: payload.into(), sig: root_sig.into() };
+        let d = SDoc {
+            payload: payload.into(),
+            sig: root_sig.into(),
+        };
         let ro = jarvis_sig::open_roster(&d, &root)
             .map_err(|e| anyhow!("{e}"))
             .and_then(|ro| check_filed_roster(&ro.copy, payload).map(|()| ro))
@@ -347,11 +407,17 @@ impl Router {
             if flipping {
                 // a component of the copy taking over restarted mid-flip: the frozen components hand their state to the
                 // newer roster too (one that took a handoff already serves and takes no other)
-                crate::logf!("kernel: a newer {} roster during the flip: the handoffs are made again for it", ro.copy);
+                crate::logf!(
+                    "kernel: a newer {} roster during the flip: the handoffs are made again for it",
+                    ro.copy
+                );
             }
             check_takeover(&ro, &cur.roster()).map_err(|e| (403, e))?;
         } else if ro.secrets_boot.is_some() {
-            return Err((403, anyhow!("the serving copy's roster names its own secrets, no secretsBoot")));
+            return Err((
+                403,
+                anyhow!("the serving copy's roster names its own secrets, no secretsBoot"),
+            ));
         }
         let res = self.distribute_roster(&d, &ro.copy);
         let rc = RosterCurrent {
@@ -377,7 +443,10 @@ impl Router {
         for (dep, msg) in &res {
             // one that restarted after the setup session read its identity
             if let Some(m) = msg.strip_prefix("refused: ") {
-                self.roster_stale(dep, &format!("roster stale: component {dep} restarted ({m})"));
+                self.roster_stale(
+                    dep,
+                    &format!("roster stale: component {dep} restarted ({m})"),
+                );
             }
         }
         if let Some(k) = &self.kernel {
@@ -432,10 +501,21 @@ pub fn register_roster(reg: &mut Registrar) {
             #[serde(rename = "rootKey", default)]
             root_key: String,
         }
-        let Ok(i) = crate::http::decode_body_strict::<In>(req, 1 << 16).map_err(|_| ()).and_then(|i| {
-            if valid_root_key(&i.root_key) { Ok(i) } else { Err(()) }
-        }) else {
-            return write_json(w, 400, &json!({"error": "{rootKey}: a P-256 public key, base64 X9.63"}));
+        let Ok(i) = crate::http::decode_body_strict::<In>(req, 1 << 16)
+            .map_err(|_| ())
+            .and_then(|i| {
+                if valid_root_key(&i.root_key) {
+                    Ok(i)
+                } else {
+                    Err(())
+                }
+            })
+        else {
+            return write_json(
+                w,
+                400,
+                &json!({"error": "{rootKey}: a P-256 public key, base64 X9.63"}),
+            );
         };
         r.st.do_(|p| p.kernel_root_key = i.root_key.clone());
         crate::logf!(
@@ -486,7 +566,9 @@ pub fn register_roster(reg: &mut Registrar) {
             if let Err(e) = check_filed_roster(&i.copy, &i.payload) {
                 return write_json(w, 400, &json!({"error": format!("{e:#}")}));
             }
-            if r.cfg.setup_key.is_empty() || !crate::http::verify_p256(&r.cfg.setup_key, i.payload.as_bytes(), &i.setup_sig) {
+            if r.cfg.setup_key.is_empty()
+                || !crate::http::verify_p256(&r.cfg.setup_key, i.payload.as_bytes(), &i.setup_sig)
+            {
                 return write_json(
                     w,
                     403,
@@ -501,8 +583,15 @@ pub fn register_roster(reg: &mut Registrar) {
                     at: GoTime::now(),
                 })
             });
-            crate::logf!("kernel: a roster for copy {} is filed, waiting for the root key", i.copy);
-            let id = SDoc { payload: i.payload.clone(), sig: String::new() }.id();
+            crate::logf!(
+                "kernel: a roster for copy {} is filed, waiting for the root key",
+                i.copy
+            );
+            let id = SDoc {
+                payload: i.payload.clone(),
+                sig: String::new(),
+            }
+            .id();
             write_json(w, 200, &json!({"ok": true, "id": id}));
         }),
     );

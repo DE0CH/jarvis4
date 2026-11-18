@@ -203,7 +203,10 @@ impl W {
 impl std::io::Write for W {
     fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
         if self.gone() {
-            return Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "the client went"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "the client went",
+            ));
         }
         Ok(W::write(self, b))
     }
@@ -340,13 +343,22 @@ impl Pattern {
     /// Go's precedence, near enough: more literal segments first, then fewer wildcards, then a method over none, an
     /// exact path over a subtree
     fn rank(&self) -> (usize, usize, bool, bool) {
-        let lits = self.segs.iter().filter(|s| matches!(s, Seg::Lit(_))).count();
+        let lits = self
+            .segs
+            .iter()
+            .filter(|s| matches!(s, Seg::Lit(_)))
+            .count();
         let rests = self
             .segs
             .iter()
             .filter(|s| matches!(s, Seg::Rest(_)))
             .count();
-        (lits, self.segs.len() - rests, !self.method.is_empty(), !self.subtree)
+        (
+            lits,
+            self.segs.len() - rests,
+            !self.method.is_empty(),
+            !self.subtree,
+        )
     }
 }
 
@@ -364,16 +376,26 @@ impl Mux {
         self.routes.push((parse_pattern(pattern), h));
     }
 
-    pub fn handle_fn(&mut self, pattern: &str, h: impl Fn(&mut W, &mut Req) + Send + Sync + 'static) {
+    pub fn handle_fn(
+        &mut self,
+        pattern: &str,
+        h: impl Fn(&mut W, &mut Req) + Send + Sync + 'static,
+    ) {
         self.handle(pattern, Arc::new(h));
     }
 
     /// the pattern that serves req (Go's mux.Handler), its values
-    fn find(&self, method: &str, path: &str) -> Result<(HandlerFn, BTreeMap<String, String>, String), Vec<String>> {
+    fn find(
+        &self,
+        method: &str,
+        path: &str,
+    ) -> Result<(HandlerFn, BTreeMap<String, String>, String), Vec<String>> {
         let mut best: Option<(&Pattern, &HandlerFn, BTreeMap<String, String>)> = None;
         let mut allowed = vec![];
         for (p, h) in &self.routes {
-            let Some(vals) = p.matches(path) else { continue };
+            let Some(vals) = p.matches(path) else {
+                continue;
+            };
             let method_ok = p.method.is_empty()
                 || p.method == method
                 || (p.method == "GET" && method == "HEAD");
@@ -416,7 +438,9 @@ impl Mux {
 
     /// the pattern a request would be served by ("" = none): tests, apicalls.rs
     pub fn pattern_for(&self, method: &str, path: &str) -> String {
-        self.find(method, path).map(|(_, _, p)| p).unwrap_or_default()
+        self.find(method, path)
+            .map(|(_, _, p)| p)
+            .unwrap_or_default()
     }
 }
 
@@ -446,8 +470,16 @@ impl Read for BodyReader {
 pub type Handler = Arc<dyn Fn(&mut W, &mut Req) + Send + Sync>;
 
 /// serve h on addr until the token says stop (Go's ListenAndServe and Shutdown)
-pub async fn serve(addr: &str, h: Handler, stop: tokio_util::sync::CancellationToken) -> anyhow::Result<()> {
-    let addr = if addr.starts_with(':') { format!("0.0.0.0{addr}") } else { addr.to_string() };
+pub async fn serve(
+    addr: &str,
+    h: Handler,
+    stop: tokio_util::sync::CancellationToken,
+) -> anyhow::Result<()> {
+    let addr = if addr.starts_with(':') {
+        format!("0.0.0.0{addr}")
+    } else {
+        addr.to_string()
+    };
     let ln = tokio::net::TcpListener::bind(&addr).await?;
     loop {
         let (conn, peer) = tokio::select! {
@@ -477,7 +509,11 @@ pub async fn serve(addr: &str, h: Handler, stop: tokio_util::sync::CancellationT
 
 type RespBody = http_body_util::combinators::BoxBody<Bytes, std::convert::Infallible>;
 
-async fn handle(h: Handler, req: hyper::Request<Incoming>, peer: String) -> hyper::Response<RespBody> {
+async fn handle(
+    h: Handler,
+    req: hyper::Request<Incoming>,
+    peer: String,
+) -> hyper::Response<RespBody> {
     let (parts, body) = req.into_parts();
     let (btx, brx) = mpsc::channel::<Bytes>(8);
     tokio::spawn(async move {
@@ -501,7 +537,10 @@ async fn handle(h: Handler, req: hyper::Request<Incoming>, peer: String) -> hype
         raw_query: parts.uri.query().unwrap_or("").to_string(),
         headers: parts.headers,
         remote_addr: peer,
-        body: Box::new(BodyReader { rx: brx, cur: Bytes::new() }),
+        body: Box::new(BodyReader {
+            rx: brx,
+            cur: Bytes::new(),
+        }),
         params: BTreeMap::new(),
         ctx: BTreeMap::new(),
     };
@@ -528,7 +567,8 @@ async fn handle(h: Handler, req: hyper::Request<Incoming>, peer: String) -> hype
             let stream = tokio_stream::wrappers::ReceiverStream::new(rx)
                 .map(|b| Ok::<_, std::convert::Infallible>(Frame::data(b)));
             let mut resp = hyper::Response::new(StreamBody::new(stream).boxed());
-            *resp.status_mut() = hyper::StatusCode::from_u16(status).unwrap_or(hyper::StatusCode::OK);
+            *resp.status_mut() =
+                hyper::StatusCode::from_u16(status).unwrap_or(hyper::StatusCode::OK);
             *resp.headers_mut() = headers;
             resp
         }
@@ -579,13 +619,25 @@ mod tests {
             "GET /files/{rest...}",
             "GET /m/{$}",
         ]);
-        assert_eq!(get(&m, "GET", "/api/sessions/s1").1, "GET /api/sessions/{id} id=s1");
-        assert_eq!(get(&m, "GET", "/api/sessions/new").1, "GET /api/sessions/new ");
-        assert_eq!(get(&m, "POST", "/api/sessions/s1/pause").1, "POST /api/sessions/{id}/pause id=s1");
+        assert_eq!(
+            get(&m, "GET", "/api/sessions/s1").1,
+            "GET /api/sessions/{id} id=s1"
+        );
+        assert_eq!(
+            get(&m, "GET", "/api/sessions/new").1,
+            "GET /api/sessions/new "
+        );
+        assert_eq!(
+            get(&m, "POST", "/api/sessions/s1/pause").1,
+            "POST /api/sessions/{id}/pause id=s1"
+        );
         // another method's pattern: "/" (any method) serves it, as Go's mux does
         assert_eq!(get(&m, "GET", "/api/sessions/s1/pause").1, "/ ");
         assert_eq!(get(&mux(&["POST /api/x/{id}"]), "GET", "/api/x/1").0, 405);
-        assert_eq!(get(&m, "GET", "/files/a/b.txt").1, "GET /files/{rest...} rest=a/b.txt");
+        assert_eq!(
+            get(&m, "GET", "/files/a/b.txt").1,
+            "GET /files/{rest...} rest=a/b.txt"
+        );
         assert_eq!(get(&m, "GET", "/web/index.html").1, "/ ");
         assert_eq!(get(&m, "GET", "/m/").1, "GET /m/{$} ");
         let m2 = mux(&["GET /api/x"]);

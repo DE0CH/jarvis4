@@ -5,6 +5,7 @@
 //!   - proxy, line A: per session, rounded to whole MB (1 MB minimum when any proxy was used); 1,000 MB included,
 //!     then USD 0.012/MB
 //!   - proxy, line B: every proxy byte at USD 0.00000001 (USD 10/GB, nothing included), on top of line A
+//!
 //! BROWSERBASE_API_KEY, BROWSERBASE_BUDGET_USD (0/unset = off) and BROWSERBASE_BUDGET_WARN_USD (default 80% of the cap).
 
 use crate::router::Router;
@@ -83,7 +84,9 @@ fn month_of(t: &GoTime) -> String {
 pub fn bb_cycle_usage(sessions: &[BbSession], month: &str, now: GoTime) -> BbUsage {
     let mut u = BbUsage::default();
     for s in sessions {
-        let Some(created) = bb_time(&s.created_at) else { continue };
+        let Some(created) = bb_time(&s.created_at) else {
+            continue;
+        };
         if month_of(&created) != month {
             continue;
         }
@@ -116,11 +119,20 @@ pub fn bb_overage_of(u: &BbUsage) -> BbOverage {
 }
 
 /// fold one estimate into the month's flags; which DM (if any) to send now → (state, cap DM, warn DM)
-pub fn bb_apply(prev: Option<&BBBudgetState>, now: GoTime, over: f64, cap: f64, warn: f64) -> (BBBudgetState, bool, bool) {
+pub fn bb_apply(
+    prev: Option<&BBBudgetState>,
+    now: GoTime,
+    over: f64,
+    cap: f64,
+    warn: f64,
+) -> (BBBudgetState, bool, bool) {
     let month = month_of(&now);
     let mut s = match prev {
         Some(p) if p.month == month => p.clone(),
-        _ => BBBudgetState { month, ..Default::default() },
+        _ => BBBudgetState {
+            month,
+            ..Default::default()
+        },
     };
     s.over_usd = over;
     s.sampled_at = now.utc();
@@ -153,7 +165,11 @@ pub static BB_API_BASE: Mutex<String> = Mutex::new(String::new());
 
 fn bb_api_base() -> String {
     let b = BB_API_BASE.lock().map(|g| g.clone()).unwrap_or_default();
-    if b.is_empty() { "https://api.browserbase.com".into() } else { b }
+    if b.is_empty() {
+        "https://api.browserbase.com".into()
+    } else {
+        b
+    }
 }
 
 pub fn bb_list_sessions(key: &str) -> Result<Vec<BbSession>> {
@@ -165,7 +181,10 @@ pub fn bb_list_sessions(key: &str) -> Result<Vec<BbSession>> {
         .header("User-Agent", "jarvis2-router")
         .send()?;
     if resp.status().as_u16() != 200 {
-        return Err(anyhow!("browserbase sessions: HTTP {}", resp.status().as_u16()));
+        return Err(anyhow!(
+            "browserbase sessions: HTTP {}",
+            resp.status().as_u16()
+        ));
     }
     let b = crate::util::read_limited(resp, 64 << 20)?;
     Ok(jarvis_go::unmarshal(&b)?)
@@ -178,7 +197,13 @@ pub const BB_VIEW_DOC: &str = "browserbase-budget-view.json";
 
 impl Router {
     /// one sample; the DM texts are Jarvis 1's
-    pub fn bb_budget_tick(self: &Arc<Self>, sessions: &[BbSession], now: GoTime, cap: f64, warn: f64) {
+    pub fn bb_budget_tick(
+        self: &Arc<Self>,
+        sessions: &[BbSession],
+        now: GoTime,
+        cap: f64,
+        warn: f64,
+    ) {
         let month = month_of(&now);
         let u = bb_cycle_usage(sessions, &month, now);
         let o = bb_overage_of(&u);
@@ -195,7 +220,9 @@ impl Router {
         if let Ok(mut g) = BB_VIEW.lock() {
             *g = Some(v.clone());
         }
-        if let Err(e) = self.st.write_doc(BB_VIEW_DOC, jarvis_go::marshal(&v).as_bytes())
+        if let Err(e) = self
+            .st
+            .write_doc(BB_VIEW_DOC, jarvis_go::marshal(&v).as_bytes())
             && self.st.db().is_some()
         {
             crate::logf!("[bb-budget] saving the view: {e:#}");
@@ -208,9 +235,23 @@ impl Router {
         );
         let usd = crate::budget::usd;
         if cap_dm {
-            crate::budget::budget_dm(self, &format!("Browserbase spend cap reached: estimated overage {} above the USD 20 plan fee in {month} (cap {}). {detail}. Nothing is blocked.", usd(o.total), usd(cap)));
+            crate::budget::budget_dm(
+                self,
+                &format!(
+                    "Browserbase spend cap reached: estimated overage {} above the USD 20 plan fee in {month} (cap {}). {detail}. Nothing is blocked.",
+                    usd(o.total),
+                    usd(cap)
+                ),
+            );
         } else if warn_dm {
-            crate::budget::budget_dm(self, &format!("Browserbase spend: estimated overage {} of the {} cap in {month}. {detail}.", usd(o.total), usd(cap)));
+            crate::budget::budget_dm(
+                self,
+                &format!(
+                    "Browserbase spend: estimated overage {} of the {} cap in {month}. {detail}.",
+                    usd(o.total),
+                    usd(cap)
+                ),
+            );
         }
     }
 
@@ -238,7 +279,12 @@ impl Router {
 
 /// /api/state's browserbaseBudget (features.rs state hooks)
 pub fn bb_state_hook(r: &Arc<Router>, out: &mut Map<String, Value>) {
-    let mut v = BB_VIEW.lock().ok().and_then(|g| g.clone()).map(Value::Object).unwrap_or(Value::Null);
+    let mut v = BB_VIEW
+        .lock()
+        .ok()
+        .and_then(|g| g.clone())
+        .map(Value::Object)
+        .unwrap_or(Value::Null);
     if let Some(b) = r.st.read_doc(BB_VIEW_DOC)
         && let Ok(x) = serde_json::from_slice::<Value>(&b)
     {

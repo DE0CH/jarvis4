@@ -131,7 +131,10 @@ pub fn lc_events(recs: &[LcRec], from: usize) -> (Vec<SessionEvent>, Option<LcOp
                 at: e.at.clone(),
                 source: or(&e.source, "router").to_string(),
                 machine: e.machine.clone(),
-                op: ops.get(&rec.op_id).map(|o| o.kind.clone()).unwrap_or_default(),
+                op: ops
+                    .get(&rec.op_id)
+                    .map(|o| o.kind.clone())
+                    .unwrap_or_default(),
                 op_id: rec.op_id.clone(),
                 text: e.text.clone(),
                 ..Default::default()
@@ -173,12 +176,22 @@ impl Router {
     /// every record of a session's lifecycle file, in file order
     pub fn lc_records(&self, session: &str) -> Vec<LcRec> {
         // a bad line stays a record (an empty one): the record numbers stay the log's
-        self.lc_lines(session).iter().map(|raw| jarvis_go::unmarshal(raw).unwrap_or_default()).collect()
+        self.lc_lines(session)
+            .iter()
+            .map(|raw| jarvis_go::unmarshal(raw).unwrap_or_default())
+            .collect()
     }
 
     /// the session's stream. tail (no cursor): the newest limit events. Otherwise what came after the cursor
     /// (supervisor lines: at most limit, oldest first, so the cursor walks through a long backlog).
-    pub fn session_events(&self, session: &str, tail: bool, after_sup: i64, after_lc: usize, limit: usize) -> EventsPage {
+    pub fn session_events(
+        &self,
+        session: &str,
+        tail: bool,
+        after_sup: i64,
+        after_lc: usize,
+        limit: usize,
+    ) -> EventsPage {
         let recs = self.lc_records(session);
         let (mut out, running) = lc_events(&recs, if tail { 0 } else { after_lc });
         let mut next_sup = if tail { 0 } else { after_sup };
@@ -208,7 +221,12 @@ impl Router {
             out.drain(..out.len() - limit);
             more = true;
         }
-        EventsPage { events: out, next: format!("{next_sup}.{}", recs.len()), running, more }
+        EventsPage {
+            events: out,
+            next: format!("{next_sup}.{}", recs.len()),
+            running,
+            more,
+        }
     }
 }
 

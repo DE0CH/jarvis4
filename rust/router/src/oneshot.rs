@@ -27,11 +27,15 @@ impl Router {
                     {
                         title = a.title.clone(); // the title it was archived under (the app's, from the transcript)
                     }
-                    let text = one_shot_lost_dm(&title, &changes.unwrap_or_default(), archived, aerr);
+                    let text =
+                        one_shot_lost_dm(&title, &changes.unwrap_or_default(), archived, aerr);
                     if !text.is_empty() {
                         r.dm(&text);
                     }
-                    crate::logf!("[oneshot] {id2} destroyed (archive: {})", archive_where(archived, aerr));
+                    crate::logf!(
+                        "[oneshot] {id2} destroyed (archive: {})",
+                        archive_where(archived, aerr)
+                    );
                 })),
             },
         )
@@ -64,23 +68,47 @@ pub fn archive_where(a: Option<&ArchiveInfo>, aerr: Option<&anyhow::Error>) -> S
     }
     match a {
         None => "nothing archived (no snapshot, or records off)".into(),
-        Some(a) => format!("{} ({} transcript(s), {} artifact file(s))", a.file, a.transcripts.len(), a.artifacts),
+        Some(a) => format!(
+            "{} ({} transcript(s), {} artifact file(s))",
+            a.file,
+            a.transcripts.len(),
+            a.artifacts
+        ),
     }
 }
 
 /// the DM, or "" when nothing was lost
-pub fn one_shot_lost_dm(title: &str, changes: &Map<String, Value>, archived: Option<&ArchiveInfo>, aerr: Option<&anyhow::Error>) -> String {
-    let checked = changes.get("checked").and_then(Value::as_bool).unwrap_or(false);
-    let repos: Vec<RepoChange> = changes.get("repos").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+pub fn one_shot_lost_dm(
+    title: &str,
+    changes: &Map<String, Value>,
+    archived: Option<&ArchiveInfo>,
+    aerr: Option<&anyhow::Error>,
+) -> String {
+    let checked = changes
+        .get("checked")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let repos: Vec<RepoChange> = changes
+        .get("repos")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
     let lost = dirty_lines(&repos);
     if lost.is_empty() && checked && aerr.is_none() {
         return String::new();
     }
-    let mut lines = vec![format!("Jarvis 4: one-shot session “{title}” was destroyed with work lost:")];
+    let mut lines = vec![format!(
+        "Jarvis 4: one-shot session “{title}” was destroyed with work lost:"
+    )];
     lines.extend(lost.iter().map(|l| format!("• {l}")));
     if !checked {
-        let reason = changes.get("reason").and_then(Value::as_str).filter(|s| !s.is_empty()).unwrap_or("unknown");
-        lines.push(format!("• could not check the repos for unsaved work ({reason})"));
+        let reason = changes
+            .get("reason")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("unknown");
+        lines.push(format!(
+            "• could not check the repos for unsaved work ({reason})"
+        ));
     }
     match aerr {
         Some(e) => lines.push(format!("• the archive to the Storage Box failed — the transcript and ~/artifacts are gone: {e:#}")),

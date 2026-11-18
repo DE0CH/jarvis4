@@ -107,7 +107,14 @@ impl std::fmt::Display for DiscordRateLimited {
 impl std::error::Error for DiscordRateLimited {}
 
 impl DiscordClient {
-    pub fn new(api: &str, token: &str, guild: &str, dm: &str, category: &str, channels: bool) -> DiscordClient {
+    pub fn new(
+        api: &str,
+        token: &str,
+        guild: &str,
+        dm: &str,
+        category: &str,
+        channels: bool,
+    ) -> DiscordClient {
         DiscordClient {
             api: api.to_string(),
             token: token.to_string(),
@@ -153,11 +160,16 @@ impl DiscordClient {
         loop {
             let mut rb = self
                 .http
-                .request(reqwest::Method::from_bytes(method.as_bytes())?, format!("{}{path}", self.api))
+                .request(
+                    reqwest::Method::from_bytes(method.as_bytes())?,
+                    format!("{}{path}", self.api),
+                )
                 .header("Authorization", format!("Bot {}", self.token))
                 .header("User-Agent", DISCORD_UA);
             if let Some(p) = &payload {
-                rb = rb.header("Content-Type", "application/json").body(p.clone());
+                rb = rb
+                    .header("Content-Type", "application/json")
+                    .body(p.clone());
             }
             let resp = rb.send()?;
             let status = resp.status().as_u16();
@@ -172,7 +184,12 @@ impl DiscordClient {
                 429 if i < 3 => {
                     let wait = retry_after(&b, &ra);
                     if wait > self.max_wait {
-                        return Err(DiscordRateLimited { method: method.into(), path: path.into(), wait }.into());
+                        return Err(DiscordRateLimited {
+                            method: method.into(),
+                            path: path.into(),
+                            wait,
+                        }
+                        .into());
                     }
                     (self.sleep)(wait);
                     i += 1;
@@ -196,7 +213,11 @@ impl DiscordClient {
     pub fn send(&self, channel: &str, text: &str) -> Result<()> {
         for part in split_message(text) {
             if self
-                .req("POST", &format!("/channels/{channel}/messages"), Some(&json!({"content": part})))?
+                .req(
+                    "POST",
+                    &format!("/channels/{channel}/messages"),
+                    Some(&json!({"content": part})),
+                )?
                 .is_none()
             {
                 return Err(anyhow!("discord channel {channel} not found"));
@@ -210,11 +231,15 @@ impl DiscordClient {
     pub fn ensure_category(&self) -> Result<String> {
         {
             let g = self.lock();
-            if !g.category_id.is_empty() && (self.now)().sub(&g.category_at) < time::Duration::hours(1) {
+            if !g.category_id.is_empty()
+                && (self.now)().sub(&g.category_at) < time::Duration::hours(1)
+            {
                 return Ok(g.category_id.clone());
             }
         }
-        let b = self.req("GET", &format!("/guilds/{}/channels", self.guild), None)?.unwrap_or_default();
+        let b = self
+            .req("GET", &format!("/guilds/{}/channels", self.guild), None)?
+            .unwrap_or_default();
         let all: Vec<DiscordChannel> = jarvis_go::unmarshal(&b).unwrap_or_default();
         let mut id = all
             .iter()
@@ -245,7 +270,9 @@ impl DiscordClient {
         if id.is_empty() {
             return Ok(None);
         }
-        let Some(b) = self.req("GET", &format!("/channels/{id}"), None)? else { return Ok(None) };
+        let Some(b) = self.req("GET", &format!("/channels/{id}"), None)? else {
+            return Ok(None);
+        };
         match jarvis_go::unmarshal::<DiscordChannel>(&b) {
             Ok(c) if c.guild_id == self.guild => Ok(Some(c)),
             _ => Ok(None),
@@ -256,11 +283,20 @@ impl DiscordClient {
         self.lock()
             .names
             .entry(c.id.clone())
-            .or_insert_with(|| ChanInfo { name: c.name.clone(), topic: c.topic.clone(), edits: vec![] });
+            .or_insert_with(|| ChanInfo {
+                name: c.name.clone(),
+                topic: c.topic.clone(),
+                edits: vec![],
+            });
     }
 
     /// the channel a session carries when it still exists, else a new one under the category → (it, made now)
-    pub fn ensure_channel(&self, id: &str, sid: &str, title: &str) -> Result<(DiscordChannel, bool)> {
+    pub fn ensure_channel(
+        &self,
+        id: &str,
+        sid: &str,
+        title: &str,
+    ) -> Result<(DiscordChannel, bool)> {
         if let Some(cur) = self.get_channel(id)? {
             self.remember(&cur);
             return Ok((cur, false));
@@ -286,12 +322,16 @@ impl DiscordClient {
     /// were made in the last 10 minutes. Returns true when it edited.
     pub fn sync_name(&self, id: &str, title: &str, sid: &str) -> Result<bool> {
         if !self.lock().names.contains_key(id) {
-            let Some(c) = self.get_channel(id)? else { return Ok(false) };
+            let Some(c) = self.get_channel(id)? else {
+                return Ok(false);
+            };
             self.remember(&c);
         }
         let patch = {
             let mut g = self.lock();
-            let Some(cur) = g.names.get_mut(id) else { return Ok(false) };
+            let Some(cur) = g.names.get_mut(id) else {
+                return Ok(false);
+            };
             let mut patch = Map::new();
             let want = channel_name(title, sid);
             if cur.name != want {
@@ -309,7 +349,12 @@ impl DiscordClient {
             cur.edits.push(now); // counted even if it fails: no hammering a rate-limited edit
             patch
         };
-        let Some(b) = self.req("PATCH", &format!("/channels/{id}"), Some(&Value::Object(patch)))? else {
+        let Some(b) = self.req(
+            "PATCH",
+            &format!("/channels/{id}"),
+            Some(&Value::Object(patch)),
+        )?
+        else {
             return Ok(false);
         };
         if let Ok(c) = jarvis_go::unmarshal::<DiscordChannel>(&b)
@@ -339,7 +384,9 @@ impl DiscordClient {
         sink: &dyn ExportSink,
         fetch: &dyn Fn(&str) -> Result<Vec<u8>>,
     ) -> Result<Option<ExportResult>> {
-        let Some(ch) = self.get_channel(id)? else { return Ok(None) };
+        let Some(ch) = self.get_channel(id)? else {
+            return Ok(None);
+        };
         let mut all: Vec<Map<String, Value>> = vec![];
         let mut before = String::new();
         loop {
@@ -354,20 +401,39 @@ impl DiscordClient {
                 break;
             }
             let n = page.len();
-            before = page[n - 1].get("id").and_then(Value::as_str).unwrap_or_default().to_string();
+            before = page[n - 1]
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
             all.extend(page);
             if n < 100 || before.is_empty() {
                 break;
             }
         }
         all.reverse();
-        let mut res = ExportResult { messages: all.len(), name: ch.name.clone(), ..Default::default() };
+        let mut res = ExportResult {
+            messages: all.len(),
+            name: ch.name.clone(),
+            ..Default::default()
+        };
         for m in all.iter_mut() {
-            let mid = m.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
-            let Some(Value::Array(atts)) = m.get_mut("attachments") else { continue };
+            let mid = m
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let Some(Value::Array(atts)) = m.get_mut("attachments") else {
+                continue;
+            };
             for x in atts.iter_mut() {
                 let Value::Object(a) = x else { continue };
-                let s = |k: &str| a.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+                let s = |k: &str| {
+                    a.get(k)
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string()
+                };
                 let mut name = s("filename");
                 if name.is_empty() {
                     name = s("id");
@@ -466,7 +532,12 @@ pub fn channel_name(title: &str, sid: &str) -> String {
     }
     let mut s = b.trim_matches('-').to_string();
     if s.chars().count() > 90 {
-        s = s.chars().take(90).collect::<String>().trim_end_matches('-').to_string();
+        s = s
+            .chars()
+            .take(90)
+            .collect::<String>()
+            .trim_end_matches('-')
+            .to_string();
     }
     if s.is_empty() {
         let mut sid = sid.to_string();
@@ -499,7 +570,13 @@ pub struct ExportResult {
 
 pub fn safe_file_name(s: &str) -> String {
     s.chars()
-        .map(|c| if r#"/\:*?"<>|"#.contains(c) || (c as u32) < 0x20 { '_' } else { c })
+        .map(|c| {
+            if r#"/\:*?"<>|"#.contains(c) || (c as u32) < 0x20 {
+                '_'
+            } else {
+                c
+            }
+        })
         .take(120)
         .collect()
 }
@@ -522,7 +599,8 @@ pub fn http_fetch(u: &str) -> Result<Vec<u8>> {
 /// the bot (None without LOBSTER_TOKEN); tests set their own
 pub static DISC: RwLock<Option<Arc<DiscordClient>>> = RwLock::new(None);
 pub type FetchFn = Arc<dyn Fn(&str) -> Result<Vec<u8>> + Send + Sync>;
-pub static DISC_FETCH: LazyLock<RwLock<FetchFn>> = LazyLock::new(|| RwLock::new(Arc::new(http_fetch)));
+pub static DISC_FETCH: LazyLock<RwLock<FetchFn>> =
+    LazyLock::new(|| RwLock::new(Arc::new(http_fetch)));
 /// tests catch DMs here instead of the bot
 pub type DmHook = Arc<dyn Fn(&str) + Send + Sync>;
 pub static DM_HOOK: RwLock<Option<DmHook>> = RwLock::new(None);
@@ -534,8 +612,12 @@ pub fn disc() -> Option<Arc<DiscordClient>> {
 static DISCORD_STARTED: OnceLock<()> = OnceLock::new();
 
 /// the export of each destroyed session's channel, so the destroy hook deletes it: Ok = in its archive
-static DISCORD_EXPORTS: LazyLock<Mutex<BTreeMap<String, std::result::Result<ExportResult, String>>>> =
-    LazyLock::new(|| Mutex::new(BTreeMap::new()));
+static DISCORD_EXPORTS: LazyLock<
+    Mutex<BTreeMap<String, std::result::Result<ExportResult, String>>>,
+> = LazyLock::new(|| Mutex::new(BTreeMap::new()));
+
+/// what the archive calls once its upload ended (the error, if any)
+pub type ExportDone = Box<dyn FnOnce(Option<String>) + Send>;
 
 impl Router {
     /// a message to Deyao's Discord DM; without a bot token it only logs
@@ -583,7 +665,9 @@ impl Router {
     /// channels follow their sessions' titles; a running session without one (Discord was down when it started) gets
     /// one, so its destroy has something to export (its env can't change: it keeps DMing)
     pub fn discord_tick(&self) {
-        let Some(disc) = disc().filter(|d| d.channels) else { return };
+        let Some(disc) = disc().filter(|d| d.channels) else {
+            return;
+        };
         let list: Vec<Session> = self.st.do_(|d| d.sessions.values().cloned().collect());
         for s in list {
             if matches!(s.state.as_str(), "destroying" | "destroyed" | "approval")
@@ -603,7 +687,11 @@ impl Router {
                                 x.discord_channel = ch.id.clone();
                             }
                         });
-                        crate::logf!("[discord] {}: channel #{} made for a session that had none", s.id, ch.name);
+                        crate::logf!(
+                            "[discord] {}: channel #{} made for a session that had none",
+                            s.id,
+                            ch.name
+                        );
                     }
                 }
                 continue;
@@ -627,9 +715,11 @@ impl Router {
     /// the session's channel exported into a local dir (tmp/discord) for its archive (archivetar.rs); None when it has
     /// no channel, the channel is gone, or the export failed (then the channel is kept and Deyao told, by
     /// discord_destroy). The returned done(archived) notes whether the archive holding it reached the Storage Box.
-    pub fn discord_export(&self, s: &Session, tmp: &Path) -> (Option<PathBuf>, Box<dyn FnOnce(Option<String>) + Send>) {
-        let none: Box<dyn FnOnce(Option<String>) + Send> = Box::new(|_| {});
-        let Some(disc) = disc() else { return (None, none) };
+    pub fn discord_export(&self, s: &Session, tmp: &Path) -> (Option<PathBuf>, ExportDone) {
+        let none: ExportDone = Box::new(|_| {});
+        let Some(disc) = disc() else {
+            return (None, none);
+        };
         if s.discord_channel.is_empty() {
             return (None, none);
         }
@@ -638,7 +728,11 @@ impl Router {
         let sink = DirSink { dir: dir.clone() };
         match disc.export_channel(&s.discord_channel, &sink, &*fetch) {
             Err(e) => {
-                crate::logf!("[discord] {}: channel {} NOT exported: {e:#}", s.id, s.discord_channel);
+                crate::logf!(
+                    "[discord] {}: channel {} NOT exported: {e:#}",
+                    s.id,
+                    s.discord_channel
+                );
                 exports().insert(s.id.clone(), Err(format!("{e:#}")));
                 (None, none)
             }
@@ -660,7 +754,8 @@ impl Router {
     }
 }
 
-fn exports() -> std::sync::MutexGuard<'static, BTreeMap<String, std::result::Result<ExportResult, String>>> {
+fn exports()
+-> std::sync::MutexGuard<'static, BTreeMap<String, std::result::Result<ExportResult, String>>> {
     DISCORD_EXPORTS.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -668,7 +763,9 @@ fn exports() -> std::sync::MutexGuard<'static, BTreeMap<String, std::result::Res
 /// machine's env as LOBSTER_CHANNEL. Best effort: Discord being down mustn't stop a session (the session's
 /// lobster-send then DMs).
 pub fn discord_env(r: &Arc<Router>, s: &Session, e: &mut BTreeMap<String, String>) {
-    let Some(disc) = disc().filter(|d| d.channels) else { return };
+    let Some(disc) = disc().filter(|d| d.channels) else {
+        return;
+    };
     if crate::tasks::is_task_harness(&s.harness) {
         return; // task lines report to their run records and the DM
     }
@@ -694,7 +791,9 @@ pub fn discord_env(r: &Arc<Router>, s: &Session, e: &mut BTreeMap<String, String
 
 /// the destroy hook: the channel goes once its archive holds it; otherwise it is kept and Deyao told
 pub fn discord_destroy(r: &Arc<Router>, s: &Session) {
-    let Some(disc) = disc().filter(|d| d.channels) else { return };
+    let Some(disc) = disc().filter(|d| d.channels) else {
+        return;
+    };
     if s.discord_channel.is_empty() {
         return;
     }
@@ -706,7 +805,11 @@ pub fn discord_destroy(r: &Arc<Router>, s: &Session) {
                 Some(Err(e)) => e,
                 _ => "the session has no archive".to_string(),
             };
-            crate::logf!("[discord] {}: channel {} NOT exported, kept: {why}", s.id, s.discord_channel);
+            crate::logf!(
+                "[discord] {}: channel {} NOT exported, kept: {why}",
+                s.id,
+                s.discord_channel
+            );
             r.dm(&format!(
                 "Jarvis 4: the Discord channel of destroyed session {} wasn't exported ({why}); it is kept: https://discord.com/channels/{}/{}",
                 jarvis_go::fmt::go_quote(&session_title(s)),
@@ -717,7 +820,11 @@ pub fn discord_destroy(r: &Arc<Router>, s: &Session) {
         }
     };
     if let Err(e) = disc.delete_channel(&s.discord_channel) {
-        crate::logf!("[discord] {}: channel {} exported but NOT deleted: {e:#}", s.id, s.discord_channel);
+        crate::logf!(
+            "[discord] {}: channel {} exported but NOT deleted: {e:#}",
+            s.id,
+            s.discord_channel
+        );
         return;
     }
     crate::logf!(
@@ -760,7 +867,10 @@ mod tests {
         assert_eq!(parts.len(), 2);
         assert!(parts[0].chars().count() <= DISCORD_MSG_LIMIT && parts[0].ends_with('\n'));
         assert_eq!(parts.concat(), long);
-        assert_eq!(retry_after(br#"{"retry_after": 1.5}"#, ""), Duration::from_millis(1500));
+        assert_eq!(
+            retry_after(br#"{"retry_after": 1.5}"#, ""),
+            Duration::from_millis(1500)
+        );
         assert_eq!(retry_after(b"", "2"), Duration::from_secs(2));
         assert_eq!(retry_after(b"", ""), Duration::from_secs(1));
     }

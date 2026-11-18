@@ -5,6 +5,7 @@
 //!     /m/machine-output, signed by the machine's certified key, so the instance id on the lines is the router's word;
 //!   - the instance's serial console (source "console"), read by the leader every CONSOLE_EVERY with the router's
 //!     read-only key (GetConsoleOutput, awsread.rs).
+//!
 //! Every line goes to the shipper (AWS_LOG_SHIPPER_URL: Alloy with the secret-shape redaction, which holds the Grafana
 //! write token and labels everything box="aws"); the router labels each stream with instance, aws_region, session and
 //! source.
@@ -47,11 +48,14 @@ pub struct AwsLogQueue {
     pub failing: bool,
 }
 
-pub static AWS_LOGS: LazyLock<Mutex<AwsLogQueue>> = LazyLock::new(|| Mutex::new(AwsLogQueue::default()));
+pub static AWS_LOGS: LazyLock<Mutex<AwsLogQueue>> =
+    LazyLock::new(|| Mutex::new(AwsLogQueue::default()));
 
 /// the labels of one machine's stream (box="aws" is the shipper's)
 pub fn aws_log_labels(instance: &str, region: &str, session: &str, source: &str) -> String {
-    let mut l: BTreeMap<&str, &str> = [("instance", instance), ("source", source)].into_iter().collect();
+    let mut l: BTreeMap<&str, &str> = [("instance", instance), ("source", source)]
+        .into_iter()
+        .collect();
     if !region.is_empty() {
         l.insert("aws_region", region);
     }
@@ -79,7 +83,11 @@ pub fn ship(labels: &str, at: &[i128], texts: &[String]) {
         } else {
             t.clone()
         };
-        q.lines.push(AwsLogLine { labels: labels.into(), at_nanos: at[i], text: t });
+        q.lines.push(AwsLogLine {
+            labels: labels.into(),
+            at_nanos: at[i],
+            text: t,
+        });
     }
     let over = q.lines.len().saturating_sub(AWS_LOG_QUEUE_MAX);
     if over > 0 {
@@ -100,7 +108,16 @@ pub fn loki_push(lines: &[AwsLogLine]) -> Result<String> {
     for l in lines {
         if !by.contains_key(&l.labels) {
             let st: BTreeMap<String, String> = serde_json::from_str(&l.labels)?;
-            by.insert(l.labels.clone(), (Stream { stream: st, values: vec![] }, vec![]));
+            by.insert(
+                l.labels.clone(),
+                (
+                    Stream {
+                        stream: st,
+                        values: vec![],
+                    },
+                    vec![],
+                ),
+            );
             order.push(l.labels.clone());
         }
         if let Some(s) = by.get_mut(&l.labels) {
@@ -109,7 +126,9 @@ pub fn loki_push(lines: &[AwsLogLine]) -> Result<String> {
     }
     let mut streams = vec![];
     for k in order {
-        let Some((mut s, mut vals)) = by.remove(&k) else { continue };
+        let Some((mut s, mut vals)) = by.remove(&k) else {
+            continue;
+        };
         vals.sort_by_key(|v| v.0); // stable
         s.values = vals.into_iter().map(|(t, x)| [t.to_string(), x]).collect();
         streams.push(s);
@@ -147,7 +166,10 @@ pub fn push_once() -> Result<()> {
             .body(body)
             .send()?;
         if resp.status().as_u16() / 100 != 2 {
-            return Err(anyhow!("the shipper answered HTTP {}", resp.status().as_u16()));
+            return Err(anyhow!(
+                "the shipper answered HTTP {}",
+                resp.status().as_u16()
+            ));
         }
         Ok(())
     });
@@ -179,7 +201,10 @@ impl Router {
         loop {
             std::thread::sleep(AWS_LOG_EVERY);
             while push_once().is_ok() {
-                let more = AWS_LOGS.lock().map(|q| !q.lines.is_empty()).unwrap_or(false);
+                let more = AWS_LOGS
+                    .lock()
+                    .map(|q| !q.lines.is_empty())
+                    .unwrap_or(false);
                 if !more {
                     break;
                 }
@@ -190,11 +215,19 @@ impl Router {
     /// each live session instance's new console lines to the shipper, and the notable ones (an OOM kill, a panic,
     /// Ignition failing, the power-off) into the session's running lifecycle operation. Only on the leader.
     pub fn console_tick(self: &Arc<Self>) {
-        if !crate::awsread::aws_read_on() || std::env::var("AWS_LOG_SHIPPER_URL").unwrap_or_default().is_empty() {
+        if !crate::awsread::aws_read_on()
+            || std::env::var("AWS_LOG_SHIPPER_URL")
+                .unwrap_or_default()
+                .is_empty()
+        {
             return;
         }
         let mut st = CONSOLE.lock().unwrap_or_else(|e| e.into_inner());
-        if st.off_until.as_ref().is_some_and(|t| GoTime::now().before(t)) {
+        if st
+            .off_until
+            .as_ref()
+            .is_some_and(|t| GoTime::now().before(t))
+        {
             return;
         }
         let live: BTreeMap<String, String> = crate::awsrunner::aws_seen()
@@ -208,11 +241,15 @@ impl Router {
             let out = match crate::awsread::aws_console(&region, &id) {
                 Ok(o) => o,
                 Err(e) => {
-                    if e.downcast_ref::<crate::awsread::Ec2ReadError>().is_some_and(|x| x.code == "UnauthorizedOperation") {
+                    if e.downcast_ref::<crate::awsread::Ec2ReadError>()
+                        .is_some_and(|x| x.code == "UnauthorizedOperation")
+                    {
                         if let Ok(mut g) = CONSOLE.lock() {
                             g.off_until = Some(GoTime::now().add(time::Duration::minutes(10)));
                         }
-                        crate::logf!("[aws-logs] the read key may not GetConsoleOutput (infra/aws/iam.tf jarvis4-router-read): no console lines for 10 min");
+                        crate::logf!(
+                            "[aws-logs] the read key may not GetConsoleOutput (infra/aws/iam.tf jarvis4-router-read): no console lines for 10 min"
+                        );
                         return;
                     }
                     continue;
@@ -228,11 +265,17 @@ impl Router {
             if lines.is_empty() {
                 continue;
             }
-            let session = self.st.do_(|d| d.machines.get(&id).cloned().unwrap_or_default());
+            let session = self
+                .st
+                .do_(|d| d.machines.get(&id).cloned().unwrap_or_default());
             let now = GoTime::now().unix_nanos();
             let n = lines.len() as i128;
             let ats: Vec<i128> = (0..n).map(|i| now + (i - n) * 1000).collect(); // one read, its lines in order
-            ship(&aws_log_labels(&id, &region, &session, "console"), &ats, &lines);
+            ship(
+                &aws_log_labels(&id, &region, &session, "console"),
+                &ats,
+                &lines,
+            );
             if session.is_empty() {
                 continue;
             }
@@ -244,7 +287,6 @@ impl Router {
                             source: "aws".into(),
                             machine: id.clone(),
                             text: format!("AWS console: {l}"),
-                            ..Default::default()
                         });
                     }
                 }
@@ -271,7 +313,8 @@ struct ConsoleState {
     off_until: Option<GoTime>,
 }
 
-static CONSOLE: LazyLock<Mutex<ConsoleState>> = LazyLock::new(|| Mutex::new(ConsoleState::default()));
+static CONSOLE: LazyLock<Mutex<ConsoleState>> =
+    LazyLock::new(|| Mutex::new(ConsoleState::default()));
 
 /// the machine's keys line on the console (kernel/spawner keysMark): shipped, never a lifecycle entry
 pub const KEYS_LINE_MARK: &str = "JARVIS2-KEYS ";
@@ -280,8 +323,9 @@ static CONSOLE_ANSI_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"\x1b(\[[0-9;?=]*[ -/]*[@-~]|\][^\x07\x1b]*(\x07|\x1b\\)|P[^\x1b]*\x1b\\|[()][0-9A-Za-z]|[=>78DEHMc])")
         .unwrap_or_else(|e| panic!("{e}"))
 });
-static CONSOLE_CTRL_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"[\x00-\x08\x0b-\x1f\x7f]").unwrap_or_else(|e| panic!("{e}")));
+static CONSOLE_CTRL_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"[\x00-\x08\x0b-\x1f\x7f]").unwrap_or_else(|e| panic!("{e}"))
+});
 static CONSOLE_NOTABLE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"(?i)out of memory|oom-kill|killed process|kernel panic|call trace|ignition.*(fail|error)|segfault|hung_task|blocked for more than|\breboot: |EXT4-fs error|I/O error|JARVIS4-SESSION-END")
         .unwrap_or_else(|e| panic!("{e}"))

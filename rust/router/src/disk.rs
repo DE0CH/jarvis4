@@ -98,16 +98,28 @@ impl DiskState {
         self.last = Some(s.clone());
         self.last_at = now;
         let (fs, place) = s.main();
-        let Some(fs) = fs.filter(|f| f.total_kb > 0) else { return false };
+        let Some(fs) = fs.filter(|f| f.total_kb > 0) else {
+            return false;
+        };
         let low = fs.pct() < DISK_LOW_PCT || fs.avail_kb < DISK_LOW_MB * 1024;
-        let detail = format!("{} free of {} on {place}", gb_text(fs.avail_kb), gb_text(fs.total_kb));
+        let detail = format!(
+            "{} free of {} on {place}",
+            gb_text(fs.avail_kb),
+            gb_text(fs.total_kb)
+        );
         match self.alert.as_mut() {
             None if low => {
-                self.alert = Some(DiskAlert { since: now, reason: "it is almost out of disk".into(), detail });
+                self.alert = Some(DiskAlert {
+                    since: now,
+                    reason: "it is almost out of disk".into(),
+                    detail,
+                });
                 return true;
             }
             Some(a) if low => a.detail = detail,
-            Some(_) if fs.pct() >= DISK_CLEAR_PCT && fs.avail_kb >= DISK_CLEAR_MB * 1024 => self.alert = None,
+            Some(_) if fs.pct() >= DISK_CLEAR_PCT && fs.avail_kb >= DISK_CLEAR_MB * 1024 => {
+                self.alert = None
+            }
             Some(a) => a.detail = detail,
             None => {}
         }
@@ -124,22 +136,30 @@ pub fn next_disk(cur: i64) -> i64 {
 pub fn disk_message(name: &str, a: &DiskAlert, vol: Option<&Volume>) -> String {
     let msg = format!("🔴 Session “{name}” is running out of disk: {}.", a.detail);
     match vol {
-        None => msg + "\nIts machine has no volume, so More disk can't grow it yet (that comes with the core release that adds volumes): free space in it, or ask it to.",
-        Some(v) => msg + &format!(
-            "\nOne tap gives it {} GB: the More disk button on its card in the Jarvis 4 app.",
-            next_disk(v.size_gb)
-        ),
+        None => {
+            msg + "\nIts machine has no volume, so More disk can't grow it yet (that comes with the core release that adds volumes): free space in it, or ask it to."
+        }
+        Some(v) => {
+            msg + &format!(
+                "\nOne tap gives it {} GB: the More disk button on its card in the Jarvis 4 app.",
+                next_disk(v.size_gb)
+            )
+        }
     }
 }
 
 /// the session's disk, diskAlert and diskGb in /api/state (under the state lock)
 pub fn disk_view(s: &Session, v: &mut Map<String, Value>) {
     v.insert("diskGb".into(), json!(s.disk_gb));
-    let Some(d) = s.live.as_ref().and_then(|l| l.disk.as_ref()) else { return };
+    let Some(d) = s.live.as_ref().and_then(|l| l.disk.as_ref()) else {
+        return;
+    };
     if s.state != "started" || d.machine != s.machine_id {
         return;
     }
-    let Some(last) = d.last.as_ref().filter(|_| d.last_at.since() <= DISK_SILENT) else { return };
+    let Some(last) = d.last.as_ref().filter(|_| d.last_at.since() <= DISK_SILENT) else {
+        return;
+    };
     let Some(fs) = last.main().0 else { return };
     let has_vol = last.data.is_some_and(|x| x.total_kb > 0);
     let mut out = Map::new();
@@ -185,17 +205,26 @@ pub fn register_disk(reg: &mut Registrar) {
         };
         let alert = r.st.do_(|d| {
             let sid = d.machines.get(machine).cloned()?;
-            let s = d.sessions.get_mut(&sid).filter(|s| s.machine_id == machine)?;
+            let s = d
+                .sessions
+                .get_mut(&sid)
+                .filter(|s| s.machine_id == machine)?;
             let live = s.live.get_or_insert_with(Liveness::default);
             if live.disk.as_ref().is_none_or(|x| x.machine != machine) {
-                live.disk = Some(DiskState { machine: machine.to_string(), ..Default::default() });
+                live.disk = Some(DiskState {
+                    machine: machine.to_string(),
+                    ..Default::default()
+                });
             }
             let ds = live.disk.as_mut()?;
             if !ds.observe(&input, GoTime::now()) {
                 return None;
             }
             let a = ds.alert.clone()?;
-            Some((crate::autopilot::session_name(s, s.live.as_ref().and_then(|l| l.reg.as_ref())), a))
+            Some((
+                crate::autopilot::session_name(s, s.live.as_ref().and_then(|l| l.reg.as_ref())),
+                a,
+            ))
         });
         if let Some((name, a)) = alert {
             let msg = disk_message(&name, &a, r.machine_volume(machine).as_ref());
@@ -204,9 +233,11 @@ pub fn register_disk(reg: &mut Registrar) {
         }
         write_json(w, 200, &json!({"ok": true}));
     });
-    reg.app("POST /api/sessions/{id}/disk", |r, w, req| match r.more_disk(&req.path_value("id")) {
-        Err(e) => crate::schedule::schedule_err(w, &e),
-        Ok(out) => write_json(w, 202, &out),
+    reg.app("POST /api/sessions/{id}/disk", |r, w, req| {
+        match r.more_disk(&req.path_value("id")) {
+            Err(e) => crate::schedule::schedule_err(w, &e),
+            Ok(out) => write_json(w, 202, &out),
+        }
     });
 }
 
@@ -221,7 +252,11 @@ impl Router {
         // too, then Pause again; one with no machine (paused, failed) or no volume gets the bigger disk at its next
         // start
         let live = !s.machine_id.is_empty() && (s.state == "started" || s.state == "failed");
-        let mut vol = if live { self.machine_volume(&s.machine_id) } else { None };
+        let mut vol = if live {
+            self.machine_volume(&s.machine_id)
+        } else {
+            None
+        };
         // a kernel line's volume doesn't grow in place: the kernel's spawner makes a machine's volume and deletes it,
         // nothing else (DECISIONS 231), and the old core knows none of its machines. The size is the next spawn's: a
         // failed session's kept machine is replaced at its Resume; a running one moves to a new machine now (below)
@@ -232,7 +267,10 @@ impl Router {
         let Some(vol) = vol else {
             if !matches!(s.state.as_str(), "paused" | "failed" | "started") {
                 // "session is …" → 409
-                return Err(anyhow!("session is {}: More disk once it is running, paused or failed", s.state));
+                return Err(anyhow!(
+                    "session is {}: More disk once it is running, paused or failed",
+                    s.state
+                ));
             }
             let to = next_disk(s.disk_gb);
             if to <= s.disk_gb {
@@ -243,7 +281,9 @@ impl Router {
                     x.disk_gb = to;
                 }
             });
-            return Ok(json!({"ok": true, "kind": "disk", "fromGb": s.disk_gb.max(DEFAULT_DISK), "toGb": to, "nextStart": true}));
+            return Ok(
+                json!({"ok": true, "kind": "disk", "fromGb": s.disk_gb.max(DEFAULT_DISK), "toGb": to, "nextStart": true}),
+            );
         };
         let from = vol.size_gb.max(s.disk_gb);
         let to = next_disk(from);
@@ -278,9 +318,14 @@ impl Router {
                 needs_restart: bool,
             }
             let ext = if kernel {
-                Ext { needs_restart: true } // the next machine's volume: a pause and a resume
+                Ext {
+                    needs_restart: true,
+                } // the next machine's volume: a pause and a resume
             } else {
-                match r.core.call("/extend", &json!({"machine": s.machine_id, "sizeGb": to})) {
+                match r
+                    .core
+                    .call("/extend", &json!({"machine": s.machine_id, "sizeGb": to}))
+                {
                     Err(e) => return fail(e),
                     Ok(d) => d.decode::<Ext>().unwrap_or_default(),
                 }
@@ -310,7 +355,10 @@ impl Router {
                 }
             }
             r.ops.phase(&j, "done", None);
-            crate::logf!("[disk] {id}: volume {from} → {to} GB (restart: {})", ext.needs_restart);
+            crate::logf!(
+                "[disk] {id}: volume {from} → {to} GB (restart: {})",
+                ext.needs_restart
+            );
         });
         Ok(json!({"started": true, "kind": "disk", "fromGb": from, "toGb": to}))
     }

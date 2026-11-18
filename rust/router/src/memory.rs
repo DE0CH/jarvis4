@@ -21,7 +21,9 @@ use crate::autopilot::Liveness;
 use crate::http::Registrar;
 use crate::nethttp::write_json;
 use crate::router::Router;
-use crate::sizes::{core_takes_size, next_size, size_label, size_mem_gb, size_text, upgrade_target};
+use crate::sizes::{
+    core_takes_size, next_size, size_label, size_mem_gb, size_text, upgrade_target,
+};
 use crate::state::{Persisted, Session};
 use crate::vouch::Delivery;
 use anyhow::{Result, anyhow};
@@ -109,7 +111,11 @@ pub fn describe_mem(s: Option<&MemSample>) -> String {
         .filter(|p| p.rss_kb > 100 * 1024)
         .map(|p| format!("{} {:.1} GB", p.comm, p.rss_kb as f64 / 1048576.0))
         .collect();
-    let mut out = format!("{} MB free of {:.1} GB", s.avail_kb / 1024, s.total_kb as f64 / 1048576.0);
+    let mut out = format!(
+        "{} MB free of {:.1} GB",
+        s.avail_kb / 1024,
+        s.total_kb as f64 / 1048576.0
+    );
     if !top.is_empty() {
         out += &format!(" (biggest: {})", top.join(", "));
     }
@@ -125,7 +131,10 @@ impl MemState {
                 && new > old
             {
                 let n = new - old;
-                reason = format!("the kernel killed {n} process{} for lack of memory", if n == 1 { "" } else { "es" });
+                reason = format!(
+                    "the kernel killed {n} process{} for lack of memory",
+                    if n == 1 { "" } else { "es" }
+                );
             } else if let Some(p) = s.psi_full_60.filter(|p| *p >= MEM_PSI_FULL_PCT) {
                 reason = format!("it is thrashing (stalled on memory {p:.0}% of the last minute)");
             } else if s.avail_pct() < MEM_LOW_AVAIL_PCT {
@@ -136,7 +145,11 @@ impl MemState {
             }
             self.last = Some(s.clone());
             self.last_at = now;
-        } else if self.last.as_ref().is_some_and(|l| l.avail_pct() < MEM_SHORT_AVAIL_PCT) {
+        } else if self
+            .last
+            .as_ref()
+            .is_some_and(|l| l.avail_pct() < MEM_SHORT_AVAIL_PCT)
+        {
             reason = "its machine stopped answering while short of memory".into();
         }
         if !reason.is_empty() {
@@ -147,7 +160,11 @@ impl MemState {
             }
             match self.alert.as_mut() {
                 None => {
-                    self.alert = Some(MemAlert { since: now, reason, detail });
+                    self.alert = Some(MemAlert {
+                        since: now,
+                        reason,
+                        detail,
+                    });
                     return true;
                 }
                 Some(a) => {
@@ -173,15 +190,26 @@ impl MemState {
 
 /// the DM; it offers Upgrade only to a size the running core starts (sizes.rs upgrade_target)
 pub fn mem_message(name: &str, size: &str, a: &MemAlert) -> String {
-    let mut msg = format!("🔴 Session “{name}” is running out of memory: {}.", a.reason);
+    let mut msg = format!(
+        "🔴 Session “{name}” is running out of memory: {}.",
+        a.reason
+    );
     if !a.detail.is_empty() {
         msg += &format!(" Now {}.", a.detail);
     }
     let next = upgrade_target(size);
     if !next.is_empty() {
-        return msg + &format!("\nOne tap moves it to {}: the Upgrade button on its card in the Jarvis 4 app.", size_text(&next));
+        return msg
+            + &format!(
+                "\nOne tap moves it to {}: the Upgrade button on its card in the Jarvis 4 app.",
+                size_text(&next)
+            );
     }
-    let cur = if size_mem_gb(size) == 0 { "medium" } else { size };
+    let cur = if size_mem_gb(size) == 0 {
+        "medium"
+    } else {
+        size
+    };
     msg + &format!(
         "\nIt is on {}, the largest size the running core starts ({} needs the new core), so there is no Upgrade for it now: free memory in the session (fewer heavy jobs at once).",
         size_text(cur),
@@ -202,7 +230,9 @@ pub fn upgraded_text(from: &str, to: &str) -> String {
 
 /// the session's memAlert and latest memory sample in /api/state (under the state lock)
 pub fn mem_view(s: &Session, v: &mut Map<String, Value>) {
-    let Some(m) = s.live.as_ref().and_then(|l| l.mem.as_ref()) else { return };
+    let Some(m) = s.live.as_ref().and_then(|l| l.mem.as_ref()) else {
+        return;
+    };
     if s.state != "started" || m.machine != s.machine_id {
         return;
     }
@@ -230,7 +260,9 @@ pub fn mem_silent_tick(d: &mut Persisted, now: GoTime) -> Vec<String> {
     let mut dms = vec![];
     for s in d.sessions.values_mut() {
         let (state, machine, size) = (s.state.clone(), s.machine_id.clone(), s.size.clone());
-        let Some(live) = s.live.as_mut() else { continue };
+        let Some(live) = s.live.as_mut() else {
+            continue;
+        };
         let Some(m) = live.mem.as_mut() else { continue };
         if state != "started" || machine != m.machine {
             live.mem = None;
@@ -238,7 +270,8 @@ pub fn mem_silent_tick(d: &mut Persisted, now: GoTime) -> Vec<String> {
         }
         if !m.last_at.is_zero() && now.sub(&m.last_at) >= MEM_SILENT && m.observe(None, now) {
             let alert = m.alert.clone().unwrap_or_default();
-            let name = crate::autopilot::session_name(s, s.live.as_ref().and_then(|l| l.reg.as_ref()));
+            let name =
+                crate::autopilot::session_name(s, s.live.as_ref().and_then(|l| l.reg.as_ref()));
             dms.push(mem_message(&name, &size, &alert));
         }
     }
@@ -248,24 +281,37 @@ pub fn mem_silent_tick(d: &mut Persisted, now: GoTime) -> Vec<String> {
 pub fn register_memory(reg: &mut Registrar) {
     reg.m("POST /m/memory", |r, w, _, machine, body| {
         let input = match jarvis_go::unmarshal::<MemSample>(body) {
-            Ok(i) if i.total_kb > 0 && i.avail_kb >= 0 && i.top.as_ref().is_none_or(|t| t.len() <= 10) => i,
+            Ok(i)
+                if i.total_kb > 0
+                    && i.avail_kb >= 0
+                    && i.top.as_ref().is_none_or(|t| t.len() <= 10) =>
+            {
+                i
+            }
             _ => return write_json(w, 400, &json!({"error": "bad memory sample"})),
         };
         r.refresh_core_sizes(); // sizes.rs: what the DM may offer (at most one /identity a minute)
         let dm = r.st.do_(|d| {
             let sid = d.machines.get(machine).cloned()?;
-            let s = d.sessions.get_mut(&sid).filter(|s| s.machine_id == machine)?;
+            let s = d
+                .sessions
+                .get_mut(&sid)
+                .filter(|s| s.machine_id == machine)?;
             let size = s.size.clone();
             let live = s.live.get_or_insert_with(Liveness::default);
             if live.mem.as_ref().is_none_or(|m| m.machine != machine) {
-                live.mem = Some(MemState { machine: machine.to_string(), ..Default::default() });
+                live.mem = Some(MemState {
+                    machine: machine.to_string(),
+                    ..Default::default()
+                });
             }
             let m = live.mem.as_mut()?;
             if !m.observe(Some(&input), GoTime::now()) {
                 return None;
             }
             let alert = m.alert.clone().unwrap_or_default();
-            let name = crate::autopilot::session_name(s, s.live.as_ref().and_then(|l| l.reg.as_ref()));
+            let name =
+                crate::autopilot::session_name(s, s.live.as_ref().and_then(|l| l.reg.as_ref()));
             Some(mem_message(&name, &size, &alert))
         });
         if let Some(dm) = dm {
@@ -274,9 +320,11 @@ pub fn register_memory(reg: &mut Registrar) {
         }
         write_json(w, 200, &json!({"ok": true}));
     });
-    reg.app("POST /api/sessions/{id}/upgrade", |r, w, req| match r.upgrade(&req.path_value("id")) {
-        Err(e) => crate::schedule::schedule_err(w, &e),
-        Ok(out) => write_json(w, 202, &out),
+    reg.app("POST /api/sessions/{id}/upgrade", |r, w, req| {
+        match r.upgrade(&req.path_value("id")) {
+            Err(e) => crate::schedule::schedule_err(w, &e),
+            Ok(out) => write_json(w, 202, &out),
+        }
     });
 }
 
@@ -288,7 +336,11 @@ impl Router {
             .st
             .do_(|d| d.sessions.get(id).cloned())
             .ok_or_else(crate::sessionapi::no_session)?;
-        let from = if s.size.is_empty() { "medium".to_string() } else { s.size.clone() };
+        let from = if s.size.is_empty() {
+            "medium".to_string()
+        } else {
+            s.size.clone()
+        };
         let to = next_size(&s.size);
         let refuse = || {
             anyhow!(
@@ -309,13 +361,24 @@ impl Router {
             if !takes() {
                 return Err(refuse());
             }
-            self.apply_resume_options(id, crate::sessionops::ResumeOptions { size: to.clone(), ..Default::default() })?;
-            return Ok(json!({"ok": true, "kind": "upgrade", "from": from, "to": to, "nextStart": true}));
+            self.apply_resume_options(
+                id,
+                crate::sessionops::ResumeOptions {
+                    size: to.clone(),
+                    ..Default::default()
+                },
+            )?;
+            return Ok(
+                json!({"ok": true, "kind": "upgrade", "from": from, "to": to, "nextStart": true}),
+            );
         }
         // running, or failed with its machine kept (an out-of-memory machine whose pause couldn't finish): freed,
         // paused, resumed bigger
         if s.machine_id.is_empty() || (s.state != "started" && s.state != "failed") {
-            return Err(anyhow!("session is {}: Upgrade once it is running, paused or failed", s.state)); // → 409
+            return Err(anyhow!(
+                "session is {}: Upgrade once it is running, paused or failed",
+                s.state
+            )); // → 409
         }
         if !takes() {
             return Err(refuse());
@@ -332,7 +395,10 @@ impl Router {
         self.ops.set_busy(id, "upgrading");
         let op = self.lc_begin_job(id, "upgrade"); // lifecycle.rs: its free, pause and resume are this one operation
         op.machine(&s.machine_id);
-        op.note("", &format!("Upgrade {} → {}", size_text(&from), size_text(&to)));
+        op.note(
+            "",
+            &format!("Upgrade {} → {}", size_text(&from), size_text(&to)),
+        );
         let (r, id, from2, to2) = (self.clone(), id.to_string(), from.clone(), to.clone());
         std::thread::spawn(move || {
             let (from, to) = (from2, to2);
@@ -349,7 +415,10 @@ impl Router {
             // and gets its cert once the old one is killed
             let next = r.handover_next(&s, &to, 0);
             r.ops.phase(&j, "freeing", None);
-            op.note(&s.machine_id, "sent the supervisor free (stop the harness and free memory before the snapshot)");
+            op.note(
+                &s.machine_id,
+                "sent the supervisor free (stop the harness and free memory before the snapshot)",
+            );
             r.send(&s.machine_id, "free");
             r.launch_spare(&id, next.as_ref());
             std::thread::sleep(MEM_FREE_WAIT);
@@ -367,7 +436,12 @@ impl Router {
             r.ops.phase(&j, "done", None);
             op.end_job(None);
             crate::logf!("[memory] {id} upgraded {from} → {to}");
-            let d = Delivery { kind: "upgraded".into(), from: from.clone(), to: to.clone(), ..Default::default() };
+            let d = Delivery {
+                kind: "upgraded".into(),
+                from: from.clone(),
+                to: to.clone(),
+                ..Default::default()
+            };
             if let Err(e) = r.deliver_canned(&id, d, &upgraded_text(&from, &to)) {
                 crate::logf!("[memory] telling {id} about its upgrade: {e:#}");
             }
@@ -379,14 +453,22 @@ impl Router {
     /// doesn't know the size) ends with that error, word for word, and the session comes back on its old size rather
     /// than staying down.
     pub fn resume_bigger(self: &Arc<Self>, id: &str, from: &str, to: &str) -> Result<()> {
-        self.apply_resume_options(id, crate::sessionops::ResumeOptions { size: to.into(), ..Default::default() })?;
+        self.apply_resume_options(
+            id,
+            crate::sessionops::ResumeOptions {
+                size: to.into(),
+                ..Default::default()
+            },
+        )?;
         self.handover_resume(id, "", false)?;
         let msg = self.wait_start_outcome(id, UPGRADE_START_WAIT);
         if msg.is_empty() {
             return Ok(());
         }
         if let Err(e) = self.resume_on_size(id, from) {
-            return Err(anyhow!("{to}: {msg}; resuming it on {from} failed too: {e:#}"));
+            return Err(anyhow!(
+                "{to}: {msg}; resuming it on {from} failed too: {e:#}"
+            ));
         }
         Err(anyhow!("{to}: {msg}; it is back on {from}"))
     }
@@ -396,7 +478,12 @@ impl Router {
     pub fn wait_start_outcome(&self, id: &str, timeout: Duration) -> String {
         let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
-            let (st, msg) = self.st.do_(|d| d.sessions.get(id).map(|x| (x.state.clone(), x.error.clone())).unwrap_or_default());
+            let (st, msg) = self.st.do_(|d| {
+                d.sessions
+                    .get(id)
+                    .map(|x| (x.state.clone(), x.error.clone()))
+                    .unwrap_or_default()
+            });
             if st == "failed" && msg.starts_with("start: ") {
                 return msg["start: ".len()..].to_string();
             }
@@ -428,7 +515,9 @@ impl Router {
         for _ in 0..60 {
             res = self.resume_with_prompt(id, false, "");
             match &res {
-                Err(e) if crate::drain::is_busy(e) => std::thread::sleep(crate::sessionops::OPS_POLL),
+                Err(e) if crate::drain::is_busy(e) => {
+                    std::thread::sleep(crate::sessionops::OPS_POLL)
+                }
                 _ => break,
             }
         }

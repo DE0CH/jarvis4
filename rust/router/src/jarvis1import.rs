@@ -96,7 +96,11 @@ pub struct J1Record {
 }
 
 fn j1_path(root: &str, parts: &[&str]) -> String {
-    if root.is_empty() { parts.join("/") } else { format!("{root}/{}", parts.join("/")) }
+    if root.is_empty() {
+        parts.join("/")
+    } else {
+        format!("{root}/{}", parts.join("/"))
+    }
 }
 
 /// an import's small files are rows of router_docs, jarvis1-imports/<id>/<file> (statedb.rs)
@@ -135,7 +139,8 @@ fn preps() -> std::sync::MutexGuard<'static, BTreeMap<String, J1Prep>> {
 }
 
 /// how long an import waits for the prepare it starts itself (ms; tests shorten it)
-pub static J1_PREPARE_WAIT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(10 * 60 * 1000);
+pub static J1_PREPARE_WAIT_MS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(10 * 60 * 1000);
 
 /// small files first (the record, the manifest, claude.json, transcripts), then the tarballs
 fn j1_order(n: &str) -> i64 {
@@ -152,7 +157,10 @@ fn j1_order(n: &str) -> i64 {
 
 fn check_id(id: &str) -> Result<()> {
     if !J1_SESSION_ID_RE.is_match(id) {
-        return Err(bad(format!("not a Jarvis 1 session id: {}", jarvis_go::fmt::go_quote(id))));
+        return Err(bad(format!(
+            "not a Jarvis 1 session id: {}",
+            jarvis_go::fmt::go_quote(id)
+        )));
     }
     Ok(())
 }
@@ -206,7 +214,11 @@ fn j1_size(s: &str) -> Option<&'static str> {
 }
 
 fn first_non_empty(s: &[&str]) -> String {
-    s.iter().map(|x| x.trim()).find(|x| !x.is_empty()).unwrap_or("").to_string()
+    s.iter()
+        .map(|x| x.trim())
+        .find(|x| !x.is_empty())
+        .unwrap_or("")
+        .to_string()
 }
 
 /// sha256 and byte count of what is written through it, reporting progress
@@ -237,7 +249,10 @@ impl Router {
         if !u.is_empty() {
             return Ok((Arc::new(StorageBox::new(&u, "", "")), ""));
         }
-        Ok((self.box_().ok_or_else(crate::storagebox::no_storage_box)?, J1_PAUSED_ROOT))
+        Ok((
+            self.box_().ok_or_else(crate::storagebox::no_storage_box)?,
+            J1_PAUSED_ROOT,
+        ))
     }
 
     /// starts hashing a paused Jarvis 1 session's files (in the background; j1_status follows it)
@@ -247,7 +262,11 @@ impl Router {
         if let Some(p) = g.get(id).filter(|p| p.state == "preparing") {
             return Ok(p.clone());
         }
-        let p = J1Prep { state: "preparing".into(), started: GoTime::now().utc(), ..Default::default() };
+        let p = J1Prep {
+            state: "preparing".into(),
+            started: GoTime::now().utc(),
+            ..Default::default()
+        };
         g.insert(id.into(), p.clone());
         let (r, id) = (self.clone(), id.to_string());
         std::thread::spawn(move || {
@@ -273,9 +292,13 @@ impl Router {
 
     fn prepare_jarvis1_run(&self, id: &str) -> Result<String> {
         let (src, root) = self.j1_source()?;
-        let ls = src.list(&j1_path(root, &[id]))?.ok_or_else(|| anyhow!("no paused Jarvis 1 session {id}"))?;
+        let ls = src
+            .list(&j1_path(root, &[id]))?
+            .ok_or_else(|| anyhow!("no paused Jarvis 1 session {id}"))?;
         if !ls.contains_key("manifest.txt") {
-            bail!("the snapshot has no manifest.txt (Jarvis 1 writes it last): incomplete, not imported");
+            bail!(
+                "the snapshot has no manifest.txt (Jarvis 1 writes it last): incomplete, not imported"
+            );
         }
         if !ls.contains_key("session.json") {
             bail!("the snapshot has no session.json");
@@ -289,11 +312,18 @@ impl Router {
             }
         };
         set(&|p| p.total = total);
-        let mut man = J1ImportManifest { kind: J1_IMPORT_KIND.into(), v: 1, session: id.into(), files: None };
+        let mut man = J1ImportManifest {
+            kind: J1_IMPORT_KIND.into(),
+            v: 1,
+            session: id.into(),
+            files: None,
+        };
         let mut rec = vec![];
         for n in names {
             set(&|p| p.file = n.clone());
-            let (mut body, _) = src.open(&j1_path(root, &[id, n]))?.ok_or_else(|| anyhow!("{n} went missing"))?;
+            let (mut body, _) = src
+                .open(&j1_path(root, &[id, n]))?
+                .ok_or_else(|| anyhow!("{n} went missing"))?;
             let mut h = HashCounter {
                 h: Sha256::new(),
                 n: 0,
@@ -315,7 +345,11 @@ impl Router {
                 }
             }
             let sum = hex::encode(h.h.finalize());
-            man.files.get_or_insert_with(Vec::new).push(J1ImportFile { name: n.clone(), sha256: sum, size: h.n });
+            man.files.get_or_insert_with(Vec::new).push(J1ImportFile {
+                name: n.clone(),
+                sha256: sum,
+                size: h.n,
+            });
         }
         let jr: J1Record = jarvis_go::unmarshal(&rec).map_err(|e| anyhow!("session.json: {e}"))?;
         if !jr.id.is_empty() && jr.id != id {
@@ -323,7 +357,8 @@ impl Router {
         }
         let mb = jarvis_go::marshal(&man);
         self.st.write_doc(&j1_doc(id, J1_RECORD_FILE), &rec)?;
-        self.st.write_doc(&j1_doc(id, J1_MANIFEST_FILE), mb.as_bytes())?;
+        self.st
+            .write_doc(&j1_doc(id, J1_MANIFEST_FILE), mb.as_bytes())?;
         Ok(sha256_bytes(mb.as_bytes()))
     }
 
@@ -335,10 +370,14 @@ impl Router {
             return Ok(());
         }
         self.prepare_jarvis1(id)?;
-        let wait = Duration::from_millis(J1_PREPARE_WAIT_MS.load(std::sync::atomic::Ordering::Relaxed));
+        let wait =
+            Duration::from_millis(J1_PREPARE_WAIT_MS.load(std::sync::atomic::Ordering::Relaxed));
         let end = Instant::now() + wait;
         while Instant::now() < end {
-            let (st, msg) = preps().get(id).map(|p| (p.state.clone(), p.error.clone())).unwrap_or_default();
+            let (st, msg) = preps()
+                .get(id)
+                .map(|p| (p.state.clone(), p.error.clone()))
+                .unwrap_or_default();
             match st.as_str() {
                 "ready" => return Ok(()),
                 "failed" => bail!("Jarvis 1 session {id} couldn't be prepared: {msg}"),
@@ -357,8 +396,15 @@ impl Router {
         let mb = self
             .st
             .read_doc(&j1_doc(id, J1_MANIFEST_FILE))
-            .ok_or_else(|| bad(format!("Jarvis 1 session {id} isn't prepared: POST …/jarvis1/{id}/prepare first")))?;
-        let rb = self.st.read_doc(&j1_doc(id, J1_RECORD_FILE)).ok_or_else(|| anyhow!("Jarvis 1 session {id}: its record is gone"))?;
+            .ok_or_else(|| {
+                bad(format!(
+                    "Jarvis 1 session {id} isn't prepared: POST …/jarvis1/{id}/prepare first"
+                ))
+            })?;
+        let rb = self
+            .st
+            .read_doc(&j1_doc(id, J1_RECORD_FILE))
+            .ok_or_else(|| anyhow!("Jarvis 1 session {id}: its record is gone"))?;
         let rec: J1Record = jarvis_go::unmarshal(&rb)?;
         let sum = sha256_bytes(&mb);
         Ok((mb, sum, rec))
@@ -366,21 +412,40 @@ impl Router {
 
     /// the prepared Jarvis 1 session as a new session waiting for the phone (approval kind new-session,
     /// options.restore names it). The same import asked again answers the session it already made (requestId).
-    pub fn import_jarvis1(self: &Arc<Self>, id: &str, mut i: J1ImportIn, o: Origin) -> Result<String> {
+    pub fn import_jarvis1(
+        self: &Arc<Self>,
+        id: &str,
+        mut i: J1ImportIn,
+        o: Origin,
+    ) -> Result<String> {
         self.ensure_prepared_jarvis1(id)?;
         let (_, sum, rec) = self.prepared_jarvis1(id)?;
         // the shared login's old store comes as the Claude account
-        i.stores.retain(|n| n != crate::claudeaccounts::LEGACY_CLAUDE_STORE);
+        i.stores
+            .retain(|n| n != crate::claudeaccounts::LEGACY_CLAUDE_STORE);
         let label = first_non_empty(&[&rec.title, &rec.label, &format!("Jarvis 1 {id}")]);
         let harness = first_non_empty(&[&rec.harness, "claude"]);
-        let h = self.policy.harnesses.get(&harness).cloned().ok_or_else(|| anyhow!("no harness {harness} in the policy"))?;
-        let size = if i.size.is_empty() { j1_size(&rec.size).unwrap_or("medium").to_string() } else { i.size.clone() };
+        let h = self
+            .policy
+            .harnesses
+            .get(&harness)
+            .cloned()
+            .ok_or_else(|| anyhow!("no harness {harness} in the policy"))?;
+        let size = if i.size.is_empty() {
+            j1_size(&rec.size).unwrap_or("medium").to_string()
+        } else {
+            i.size.clone()
+        };
         let all = self.with_harness_stores(&i.stores, &h.stores)?;
         let mut prompt = i.prompt.trim().to_string();
         if prompt.is_empty() {
             prompt = j1_default_prompt(id, &all);
         }
-        let repos: Vec<&str> = rec.repos.split([',', ' ', '\n']).filter(|s| !s.is_empty()).collect();
+        let repos: Vec<&str> = rec
+            .repos
+            .split([',', ' ', '\n'])
+            .filter(|s| !s.is_empty())
+            .collect();
         let auto = rec.auto_pause != "off";
         let mut paused = rec.paused_at.as_str();
         if paused.len() >= 10 && paused.is_char_boundary(10) {
@@ -416,13 +481,16 @@ impl Router {
     /// the Jarvis 1 session a machine imports
     pub fn import_for(&self, machine: &str) -> String {
         self.st.do_(|d| {
-            let Some(s) = d.machines.get(machine).and_then(|sid| d.sessions.get(sid)) else { return String::new() };
+            let Some(s) = d.machines.get(machine).and_then(|sid| d.sessions.get(sid)) else {
+                return String::new();
+            };
             // the line's first machine, or a successor whose cert names no snapshot (its predecessor left none: the
             // machine takes the import again, rust/machine/src/restore.rs reimport_jarvis1)
             let cert = d.certs.get(machine);
             if s.import_from.is_empty()
                 || s.machine_id != machine
-                || (!crate::grants::cert_field(cert, "predecessorId").is_empty() && !crate::grants::cert_field(cert, "snapshot").is_empty())
+                || (!crate::grants::cert_field(cert, "predecessorId").is_empty()
+                    && !crate::grants::cert_field(cert, "snapshot").is_empty())
             {
                 return String::new();
             }
@@ -450,7 +518,12 @@ impl Router {
             Ok((mb, _, _)) => mb,
         };
         let man: J1ImportManifest = jarvis_go::unmarshal(&mb).unwrap_or_default();
-        let Some(want) = man.files.unwrap_or_default().into_iter().rfind(|f| f.name == name) else {
+        let Some(want) = man
+            .files
+            .unwrap_or_default()
+            .into_iter()
+            .rfind(|f| f.name == name)
+        else {
             return write_error(w, 404, "not a file of this import");
         };
         let (src, root) = match self.j1_source() {
@@ -484,7 +557,9 @@ impl Router {
                 continue;
             }
             let b = jarvis_go::marshal(&json!({"session": sid, "at": GoTime::now().utc()}));
-            let _ = self.st.write_doc(&j1_doc(&from, J1_IMPORTED_FILE), b.as_bytes());
+            let _ = self
+                .st
+                .write_doc(&j1_doc(&from, J1_IMPORTED_FILE), b.as_bytes());
         }
     }
 
@@ -498,7 +573,11 @@ impl Router {
             let b = src.get(J1_PAUSED_INDEX)?.unwrap_or_default();
             let idx: Vec<Map<String, Value>> = serde_json::from_slice(&b).unwrap_or_default();
             for e in idx {
-                if let Some(id) = e.get("id").and_then(Value::as_str).filter(|id| J1_SESSION_ID_RE.is_match(id)) {
+                if let Some(id) = e
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .filter(|id| J1_SESSION_ID_RE.is_match(id))
+                {
                     entries.push((id.to_string(), e.clone()));
                 }
             }
@@ -514,7 +593,10 @@ impl Router {
                 let g = |k: &str| e.get(k).cloned().unwrap_or(Value::Null);
                 let mut v = Map::new();
                 v.insert("id".into(), json!(id));
-                v.insert("title".into(), json!(first_non_empty(&[&s("title"), &s("label")])));
+                v.insert(
+                    "title".into(),
+                    json!(first_non_empty(&[&s("title"), &s("label")])),
+                );
                 for k in ["pausedAt", "size", "model", "environment", "repos"] {
                     v.insert(k.into(), g(k));
                 }
@@ -533,7 +615,10 @@ impl Router {
             v.insert("sha256".into(), json!(sum));
         }
         if let Some(b) = self.st.read_doc(&j1_doc(id, J1_IMPORTED_FILE)) {
-            v.insert("imported".into(), serde_json::from_slice(&b).unwrap_or(Value::Null));
+            v.insert(
+                "imported".into(),
+                serde_json::from_slice(&b).unwrap_or(Value::Null),
+            );
         }
         let sessions: Vec<Value> = self.st.do_(|d| {
             d.sessions
@@ -581,7 +666,15 @@ fn import_it(r: &Arc<Router>, w: &mut W, req: &Req, id: &str, caller: Caller, b:
     let mut args = Map::new();
     args.insert("stores".into(), json!(i.stores));
     args.insert("size".into(), json!(i.size));
-    let o = Origin { caller, call: ApiCall { method: "POST".into(), path: req.path.clone(), args }, ..Default::default() };
+    let o = Origin {
+        caller,
+        call: ApiCall {
+            method: "POST".into(),
+            path: req.path.clone(),
+            args,
+        },
+        ..Default::default()
+    };
     match r.import_jarvis1(id, i, o) {
         Err(e) => write_err(w, &e),
         Ok(sid) => write_json(w, 200, &json!({"id": sid, "from": id, "approval": true})),
@@ -591,71 +684,114 @@ fn import_it(r: &Arc<Router>, w: &mut W, req: &Req, id: &str, caller: Caller, b:
 pub fn register_jarvis1_import(reg: &mut Registrar) {
     // Deyao's login (the web page; the app later)
     reg.app("GET /api/jarvis1/paused", |r, w, _| list(r, w));
-    reg.app("GET /api/jarvis1/paused/{id}", |r, w, req| status(r, w, &req.path_value("id")));
-    reg.app("POST /api/jarvis1/paused/{id}/prepare", |r, w, req| prepare(r, w, &req.path_value("id")));
+    reg.app("GET /api/jarvis1/paused/{id}", |r, w, req| {
+        status(r, w, &req.path_value("id"))
+    });
+    reg.app("POST /api/jarvis1/paused/{id}/prepare", |r, w, req| {
+        prepare(r, w, &req.path_value("id"))
+    });
     reg.app("POST /api/jarvis1/paused/{id}/import", |r, w, req| {
         let b = req.read_body(1 << 16);
         let caller = crate::inbox::app_caller(req);
         import_it(r, w, req, &req.path_value("id"), caller, &b);
     });
     // the setup session (Claude): its Access token and the setup key's signature
-    reg.setup_signed("GET /setup/jarvis1/paused", 1 << 16, |r, w, _, _| list(r, w));
-    reg.setup_signed("GET /setup/jarvis1/paused/{id}", 1 << 16, |r, w, req, _| status(r, w, &req.path_value("id")));
-    reg.setup_signed("POST /setup/jarvis1/paused/{id}/prepare", 1 << 16, |r, w, req, _| prepare(r, w, &req.path_value("id")));
-    reg.setup_signed("POST /setup/jarvis1/paused/{id}/import", 1 << 16, |r, w, req, b| {
-        let caller = Caller { kind: "setup".into(), ..Default::default() };
-        import_it(r, w, req, &req.path_value("id"), caller, b);
+    reg.setup_signed("GET /setup/jarvis1/paused", 1 << 16, |r, w, _, _| {
+        list(r, w)
     });
+    reg.setup_signed("GET /setup/jarvis1/paused/{id}", 1 << 16, |r, w, req, _| {
+        status(r, w, &req.path_value("id"))
+    });
+    reg.setup_signed(
+        "POST /setup/jarvis1/paused/{id}/prepare",
+        1 << 16,
+        |r, w, req, _| prepare(r, w, &req.path_value("id")),
+    );
+    reg.setup_signed(
+        "POST /setup/jarvis1/paused/{id}/import",
+        1 << 16,
+        |r, w, req, b| {
+            let caller = Caller {
+                kind: "setup".into(),
+                ..Default::default()
+            };
+            import_it(r, w, req, &req.path_value("id"), caller, b);
+        },
+    );
     // stopping a session from the setup session (2026-10-13: Deyao stopped the imported sessions): pause it (its
     // snapshot if the machine answers, else none) and cancel its wakeups and crons, so nothing resumes it by itself
-    reg.setup_signed("POST /setup/sessions/{id}/pause", 1 << 16, |r, w, req, _| {
-        let id = req.path_value("id");
-        let mut cancelled = r.cancel_wakeups(&id, &[], true).unwrap_or_default();
-        for c in r.list_crons(&id).unwrap_or_default() {
-            let _ = r.cancel_cron(&id, &c.name);
-            cancelled.push(format!("cron {}", c.name));
-        }
-        if let Err(e) = r.pause(&id) {
-            let status = if e.downcast_ref::<crate::router::Busy>().is_some() {
-                409 // another action holds it: try again (as write_err)
-            } else if e.downcast_ref::<crate::drain::Draining>().is_some() {
-                503
-            } else {
-                400
-            };
-            return write_json(w, status, &json!({"error": format!("{e:#}"), "cancelled": cancelled}));
-        }
-        write_json(w, 202, &json!({"ok": true, "phase": "pausing", "cancelled": cancelled}));
-    });
+    reg.setup_signed(
+        "POST /setup/sessions/{id}/pause",
+        1 << 16,
+        |r, w, req, _| {
+            let id = req.path_value("id");
+            let mut cancelled = r.cancel_wakeups(&id, &[], true).unwrap_or_default();
+            for c in r.list_crons(&id).unwrap_or_default() {
+                let _ = r.cancel_cron(&id, &c.name);
+                cancelled.push(format!("cron {}", c.name));
+            }
+            if let Err(e) = r.pause(&id) {
+                let status = if e.downcast_ref::<crate::router::Busy>().is_some() {
+                    409 // another action holds it: try again (as write_err)
+                } else if e.downcast_ref::<crate::drain::Draining>().is_some() {
+                    503
+                } else {
+                    400
+                };
+                return write_json(
+                    w,
+                    status,
+                    &json!({"error": format!("{e:#}"), "cancelled": cancelled}),
+                );
+            }
+            write_json(
+                w,
+                202,
+                &json!({"ok": true, "phase": "pausing", "cancelled": cancelled}),
+            );
+        },
+    );
     // resume and restart from the setup session, as the actions key's resume and the app's Restart (no prompt, no
     // option change): a line on an image from before the router's Claude login gets a resume-upgrade approval instead
     // (flows.rs legacy_login_image), so the phone decides; wakeups and crons stay armed
-    reg.setup_signed("POST /setup/sessions/{id}/resume", 1 << 16, |r, w, req, _| match r.resume(&req.path_value("id"), false) {
-        Err(e) => write_err(w, &e),
-        Ok(()) => write_json(w, 202, &json!({"ok": true})),
-    });
-    reg.setup_signed("POST /setup/sessions/{id}/restart", 1 << 16, |r, w, req, _| {
-        match r.restart(&req.path_value("id"), Default::default()) {
+    reg.setup_signed(
+        "POST /setup/sessions/{id}/resume",
+        1 << 16,
+        |r, w, req, _| match r.resume(&req.path_value("id"), false) {
+            Err(e) => write_err(w, &e),
+            Ok(()) => write_json(w, 202, &json!({"ok": true})),
+        },
+    );
+    reg.setup_signed(
+        "POST /setup/sessions/{id}/restart",
+        1 << 16,
+        |r, w, req, _| match r.restart(&req.path_value("id"), Default::default()) {
             Err(e) => write_err(w, &e),
             Ok(out) => write_json(w, 202, &out),
-        }
-    });
+        },
+    );
     // destroy from the setup session (Deyao, 2026-10-22: "destroy should be an api endpoint too"): the app's
     // POST /api/sessions/{id}/destroy — a running session is paused first (its final snapshot), then archived to the
     // Storage Box and burnt; a failed archive leaves it paused with the error unless force (?force=1 as the app's, or
     // {"force": true} in the body, which the setup signature covers; infra/setup.py sends the body)
-    reg.setup_signed("POST /setup/sessions/{id}/destroy", 1 << 16, |r, w, req, b| {
-        #[derive(Deserialize, Default)]
-        #[serde(default)]
-        struct In {
-            force: bool,
-        }
-        let i: In = jarvis_go::unmarshal(b).unwrap_or_default();
-        match r.destroy_with(&req.path_value("id"), i.force || req.query("force") == "1") {
-            Err(e) => write_err(w, &e),
-            Ok(()) => write_json(w, 202, &json!({"ok": true, "phase": "destroying"})),
-        }
-    });
+    reg.setup_signed(
+        "POST /setup/sessions/{id}/destroy",
+        1 << 16,
+        |r, w, req, b| {
+            #[derive(Deserialize, Default)]
+            #[serde(default)]
+            struct In {
+                force: bool,
+            }
+            let i: In = jarvis_go::unmarshal(b).unwrap_or_default();
+            match r.destroy_with(&req.path_value("id"), i.force || req.query("force") == "1") {
+                Err(e) => write_err(w, &e),
+                Ok(()) => write_json(w, 202, &json!({"ok": true, "phase": "destroying"})),
+            }
+        },
+    );
     // the importing line's first machine (its manifest is served at /m/restore-snapshot, archive.rs)
-    reg.m("GET /m/import-file/{name}", |r, w, req, machine, _| r.serve_import_file(w, machine, &req.path_value("name")));
+    reg.m("GET /m/import-file/{name}", |r, w, req, machine, _| {
+        r.serve_import_file(w, machine, &req.path_value("name"))
+    });
 }

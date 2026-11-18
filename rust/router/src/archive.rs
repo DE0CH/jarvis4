@@ -126,7 +126,9 @@ pub fn fly_machine_gone(id: &str) -> Result<bool> {
 pub fn resolve_link(link: &str, target: &str) -> String {
     const HOME: &str = "/home/claude/";
     let t = if target.starts_with('/') {
-        let Some(rest) = target.strip_prefix(HOME) else { return String::new() };
+        let Some(rest) = target.strip_prefix(HOME) else {
+            return String::new();
+        };
         crate::util::path_clean(rest)
     } else {
         let dir = link.rsplit_once('/').map_or("", |(d, _)| d);
@@ -139,7 +141,10 @@ pub fn resolve_link(link: &str, target: &str) -> String {
 }
 
 /// each entry of the snapshot at p (S2 or gzip, snapformat.rs)
-pub fn walk_tar(p: &std::path::Path, mut f: impl FnMut(&tar::Header, &mut dyn Read) -> Result<()>) -> Result<()> {
+pub fn walk_tar(
+    p: &std::path::Path,
+    mut f: impl FnMut(&tar::Header, &mut dyn Read) -> Result<()>,
+) -> Result<()> {
     let file = std::fs::File::open(p)?;
     let zr = crate::snapformat::open_snap_reader(file)?;
     let mut tr = tar::Archive::new(zr);
@@ -151,12 +156,17 @@ pub fn walk_tar(p: &std::path::Path, mut f: impl FnMut(&tar::Header, &mut dyn Re
     Ok(())
 }
 
-pub fn update_index(box_: &StorageBox, f: impl FnOnce(Vec<Map<String, Value>>) -> Vec<Map<String, Value>>) -> Result<()> {
+pub fn update_index(
+    box_: &StorageBox,
+    f: impl FnOnce(Vec<Map<String, Value>>) -> Vec<Map<String, Value>>,
+) -> Result<()> {
     let _g = INDEX_MU.lock().unwrap_or_else(|e| e.into_inner());
     let idx = records_index();
     let raw = box_.get(&idx)?;
     let list: Vec<Map<String, Value>> = match raw {
-        Some(b) => serde_json::from_slice(&b).map_err(|e| anyhow!("{idx} is not a JSON array: {e}"))?,
+        Some(b) => {
+            serde_json::from_slice(&b).map_err(|e| anyhow!("{idx} is not a JSON array: {e}"))?
+        }
         None => vec![],
     };
     let next = f(list);
@@ -279,7 +289,9 @@ impl Router {
     /// a running session's repos (a command under the archive holder's grant), or a paused session's as its last
     /// snapshot recorded them
     pub fn changes(self: &Arc<Self>, id: &str) -> Map<String, Value> {
-        let s: Session = self.st.do_(|d| d.sessions.get(id).cloned().unwrap_or_default());
+        let s: Session = self
+            .st
+            .do_(|d| d.sessions.get(id).cloned().unwrap_or_default());
         if s.id.is_empty() {
             return no_changes("no such session");
         }
@@ -318,7 +330,9 @@ impl Router {
 
     /// the end of a paused session's conversation, from its snapshot
     pub fn paused_tail(&self, id: &str) -> Result<crate::tails::Tail, (u16, anyhow::Error)> {
-        let s: Session = self.st.do_(|d| d.sessions.get(id).cloned().unwrap_or_default());
+        let s: Session = self
+            .st
+            .do_(|d| d.sessions.get(id).cloned().unwrap_or_default());
         if s.id.is_empty() {
             return Err((404, anyhow!("no such session")));
         }
@@ -334,7 +348,8 @@ impl Router {
     }
 
     pub fn record(&self, id: &str) -> Option<Record> {
-        self.st.do_(|d| d.records.iter().find(|x| x.session.id == id).cloned())
+        self.st
+            .do_(|d| d.records.iter().find(|x| x.session.id == id).cloned())
     }
 
     /// the end of a destroyed session's conversation, from its archive (a Range read)
@@ -343,19 +358,23 @@ impl Router {
             .record(id)
             .ok_or_else(|| (404, anyhow!("no such previous session")))?;
         let Some(a) = rec.archive.filter(|a| !a.transcripts.is_empty()) else {
-            return Err((404, anyhow!("this session was destroyed without an archived transcript")));
+            return Err((
+                404,
+                anyhow!("this session was destroyed without an archived transcript"),
+            ));
         };
         let b = self
             .box_()
             .ok_or_else(|| (500, crate::storagebox::no_storage_box()))?;
         let name = a.transcripts.last().cloned().unwrap_or_default();
-        let text = crate::archivetar::archive_tail(&b, &a.file, &name, crate::tails::TAIL_BYTES).map_err(|e| {
-            if e.downcast_ref::<crate::archivetar::NoArchive>().is_some() {
-                (404, e)
-            } else {
-                (500, e)
-            }
-        })?;
+        let text = crate::archivetar::archive_tail(&b, &a.file, &name, crate::tails::TAIL_BYTES)
+            .map_err(|e| {
+                if e.downcast_ref::<crate::archivetar::NoArchive>().is_some() {
+                    (404, e)
+                } else {
+                    (500, e)
+                }
+            })?;
         let Some(mut text) = text else {
             return Err((404, anyhow!("transcript missing: {name} in {}", a.file)));
         };
@@ -406,18 +425,25 @@ impl Router {
 }
 
 static ARCHIVE_FILE_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new(r"^claude-records/\.jarvis4-records/[^/.][^/]*\.tar\.gz$").unwrap_or_else(|e| panic!("{e}"))
+    regex::Regex::new(r"^claude-records/\.jarvis4-records/[^/.][^/]*\.tar\.gz$")
+        .unwrap_or_else(|e| panic!("{e}"))
 });
 
 pub fn register_archive(reg: &mut Registrar) {
-    reg.app("GET /api/sessions/{id}/changes", |r, w, req| write_json(w, 200, &r.changes(&req.path_value("id"))));
-    reg.app("GET /api/sessions/{id}/tail", |r, w, req| match r.paused_tail(&req.path_value("id")) {
-        Err((st, e)) => crate::nethttp::write_error(w, st, &format!("{e:#}")),
-        Ok(t) => write_json(w, 200, &t),
+    reg.app("GET /api/sessions/{id}/changes", |r, w, req| {
+        write_json(w, 200, &r.changes(&req.path_value("id")))
     });
-    reg.app("GET /api/records/{id}/tail", |r, w, req| match r.record_tail(&req.path_value("id")) {
-        Err((st, e)) => crate::nethttp::write_error(w, st, &format!("{e:#}")),
-        Ok(t) => write_json(w, 200, &t),
+    reg.app("GET /api/sessions/{id}/tail", |r, w, req| {
+        match r.paused_tail(&req.path_value("id")) {
+            Err((st, e)) => crate::nethttp::write_error(w, st, &format!("{e:#}")),
+            Ok(t) => write_json(w, 200, &t),
+        }
+    });
+    reg.app("GET /api/records/{id}/tail", |r, w, req| {
+        match r.record_tail(&req.path_value("id")) {
+            Err((st, e)) => crate::nethttp::write_error(w, st, &format!("{e:#}")),
+            Ok(t) => write_json(w, 200, &t),
+        }
     });
     reg.app("DELETE /api/records/{id}", |r, w, req| {
         match r.delete_record(&req.path_value("id"), req.query("purge") == "1") {
@@ -443,7 +469,11 @@ pub fn register_archive(reg: &mut Registrar) {
                     &sid,
                     Origin {
                         caller: crate::inbox::app_caller(req),
-                        call: ApiCall { method: "POST".into(), path: req.path.clone(), ..Default::default() },
+                        call: ApiCall {
+                            method: "POST".into(),
+                            path: req.path.clone(),
+                            ..Default::default()
+                        },
                         via_call: crate::apicalls::via_call(req),
                         ..Default::default()
                     },
@@ -452,7 +482,9 @@ pub fn register_archive(reg: &mut Registrar) {
             }
         }
     });
-    reg.m("POST /m/live-transcript", |r, w, req, machine, body| r.live_transcript(w, req, machine, body)); // livesync.rs
+    reg.m("POST /m/live-transcript", |r, w, req, machine, body| {
+        r.live_transcript(w, req, machine, body)
+    }); // livesync.rs
     reg.m("GET /m/restore-snapshot", |r, w, req, machine, _| {
         let id = r.import_for(machine);
         if !id.is_empty() {

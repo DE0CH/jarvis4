@@ -49,7 +49,8 @@ pub struct FlySnapshot {
 }
 
 /// each volume's snapshots, listed at most every SNAPSHOT_EVERY
-static SNAP_CACHE: LazyLock<Mutex<BTreeMap<String, (GoTime, Vec<FlySnapshot>)>>> = LazyLock::new(|| Mutex::new(BTreeMap::new()));
+type SnapCache = BTreeMap<String, (GoTime, Vec<FlySnapshot>)>;
+static SNAP_CACHE: LazyLock<Mutex<SnapCache>> = LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 /// the stored snapshot GB past the free ones, per hour
 pub fn hourly_snapshot_cost(stored: i64) -> f64 {
@@ -68,7 +69,11 @@ pub fn snapshot_volumes(vs: &[FlyVolume]) -> Vec<String> {
 }
 
 /// the stored bytes of every billed snapshot (each counted once) → bytes, snapshots, the first error
-pub fn snapshot_storage(fly: &dyn FlyReader, volumes: &[String], now: GoTime) -> (i64, usize, Option<anyhow::Error>) {
+pub fn snapshot_storage(
+    fly: &dyn FlyReader,
+    volumes: &[String],
+    now: GoTime,
+) -> (i64, usize, Option<anyhow::Error>) {
     let mut first = None;
     let mut ids: BTreeMap<String, i64> = BTreeMap::new();
     for v in volumes {
@@ -102,9 +107,23 @@ pub fn snapshot_storage(fly: &dyn FlyReader, volumes: &[String], now: GoTime) ->
 
 /// Fly's machine price markup per region (read 2026-10-29); a region not listed is priced at the dearest
 const REGION_MARKUP: &[(&str, f64)] = &[
-    ("ams", 1.038461538), ("arn", 1.038461538), ("cdg", 1.134615385), ("dfw", 1.25), ("ewr", 1.0), ("fra", 1.153846154),
-    ("gru", 1.615384615), ("iad", 1.0), ("jnb", 1.302884615), ("lax", 1.199519231), ("lhr", 1.134615385), ("nrt", 1.307692308),
-    ("ord", 1.25), ("sin", 1.269230769), ("sjc", 1.192307692), ("syd", 1.269230769), ("yyz", 1.115384615),
+    ("ams", 1.038461538),
+    ("arn", 1.038461538),
+    ("cdg", 1.134615385),
+    ("dfw", 1.25),
+    ("ewr", 1.0),
+    ("fra", 1.153846154),
+    ("gru", 1.615384615),
+    ("iad", 1.0),
+    ("jnb", 1.302884615),
+    ("lax", 1.199519231),
+    ("lhr", 1.134615385),
+    ("nrt", 1.307692308),
+    ("ord", 1.25),
+    ("sin", 1.269230769),
+    ("sjc", 1.192307692),
+    ("syd", 1.269230769),
+    ("yyz", 1.115384615),
 ];
 
 pub fn markup_of(region: &str) -> f64 {
@@ -170,7 +189,8 @@ pub fn hourly_machine_cost(g: Option<&FlyGuest>, region: &str) -> f64 {
     } else {
         (SHARED_CPU_PER_HOUR, SHARED_RAM_INCLUDED)
     };
-    (cpus * rate + f64::max(0.0, g.memory_mb as f64 / 1024.0 - cpus * included) * RAM_PER_GB_HOUR) * markup_of(region)
+    (cpus * rate + f64::max(0.0, g.memory_mb as f64 / 1024.0 - cpus * included) * RAM_PER_GB_HOUR)
+        * markup_of(region)
 }
 
 pub fn hourly_volume_cost(size_gb: i64) -> f64 {
@@ -266,11 +286,20 @@ pub struct BudgetActions {
 
 /// fold one sample in. enforce: the month is over the cap (every tick); cap_dm: first crossing of the cap this month;
 /// warn_dm: first crossing of the warn line (none once capped, or in the same tick)
-pub fn apply_sample(prev: Option<&BudgetState>, now: GoTime, smp: &SpendSample, cap: f64, warn: f64) -> (BudgetState, BudgetActions, f64) {
+pub fn apply_sample(
+    prev: Option<&BudgetState>,
+    now: GoTime,
+    smp: &SpendSample,
+    cap: f64,
+    warn: f64,
+) -> (BudgetState, BudgetActions, f64) {
     let month = now.utc().rfc3339()[..7].to_string();
     let mut s = match prev {
         Some(p) if p.month == month => p.clone(),
-        _ => BudgetState { month: month.clone(), ..Default::default() },
+        _ => BudgetState {
+            month: month.clone(),
+            ..Default::default()
+        },
     };
     let mut delta_h = 0.0;
     if let Some(last) = &s.last_sample_at {
@@ -395,7 +424,8 @@ pub struct FlyOther {
 
 /// the last tick's figures. Only the replica that leads ticks, so it also writes them to router_docs and /api/state
 /// reads them from there, whichever replica answers; this copy is what a router without a database shows
-static BUDGET_VIEW: LazyLock<Mutex<(Value, Value)>> = LazyLock::new(|| Mutex::new((Value::Null, Value::Null)));
+static BUDGET_VIEW: LazyLock<Mutex<(Value, Value)>> =
+    LazyLock::new(|| Mutex::new((Value::Null, Value::Null)));
 
 pub const BUDGET_VIEW_DOC: &str = "fly-budget-view.json";
 
@@ -462,18 +492,29 @@ impl Router {
                     .config
                     .guest
                     .as_ref()
-                    .map(|g| format!("{}×{} · {} GB", g.cpus, g.cpu_kind, (g.memory_mb as f64 / 1024.0).round() as i64))
+                    .map(|g| {
+                        format!(
+                            "{}×{} · {} GB",
+                            g.cpus,
+                            g.cpu_kind,
+                            (g.memory_mb as f64 / 1024.0).round() as i64
+                        )
+                    })
                     .unwrap_or_default();
                 let s = sid.and_then(|sid| d.sessions.get(sid));
                 match (sid, s) {
                     (None, _) => {
-                        detail = format!("{detail} · not started by this router").trim_start_matches(" · ").to_string();
+                        detail = format!("{detail} · not started by this router")
+                            .trim_start_matches(" · ")
+                            .to_string();
                     }
                     (Some(sid), s) if s.is_none_or(|s| s.machine_id != m.id) => {
                         if m.state != "started" {
                             continue; // a session's old machine, stopped: Fly keeps it a while
                         }
-                        detail = format!("{detail} · its session ({sid}) no longer runs on it").trim_start_matches(" · ").to_string();
+                        detail = format!("{detail} · its session ({sid}) no longer runs on it")
+                            .trim_start_matches(" · ")
+                            .to_string();
                     }
                     _ => continue,
                 }
@@ -491,7 +532,11 @@ impl Router {
             out
         });
         let live: BTreeSet<String> = self.st.read(|d| {
-            d.sessions.values().filter(|s| !s.machine_id.is_empty()).map(|s| s.machine_id.clone()).collect()
+            d.sessions
+                .values()
+                .filter(|s| !s.machine_id.is_empty())
+                .map(|s| s.machine_id.clone())
+                .collect()
         });
         for v in vs {
             // deleted (pending_destroy: not billed) or a running session's own: not outside the sessions
@@ -519,7 +564,14 @@ impl Router {
     }
 
     /// one sample (aws None: no AWS key, Fly alone) → what it did, for tests
-    pub fn budget_tick(self: &Arc<Self>, fly: &dyn FlyReader, aws: Option<&dyn AwsCoster>, now: GoTime, cap: f64, warn: f64) -> Result<(BudgetActions, Vec<String>)> {
+    pub fn budget_tick(
+        self: &Arc<Self>,
+        fly: &dyn FlyReader,
+        aws: Option<&dyn AwsCoster>,
+        now: GoTime,
+        cap: f64,
+        warn: f64,
+    ) -> Result<(BudgetActions, Vec<String>)> {
         let ms = match fly.machines() {
             Err(e) => {
                 self.set_fly_view(json!({"apps": 1, "machines": 0, "volumes": 0, "other": [], "error": format!("{e:#}"), "checkedAt": now.utc()}));
@@ -583,12 +635,26 @@ impl Router {
         }
         self.save_budget_view();
         // what is running: Fly's started machines and AWS's running instances, each a session's or not
-        let mut up: Vec<String> = ms.iter().filter(|m| m.state == "started").map(|m| m.id.clone()).collect();
+        let mut up: Vec<String> = ms
+            .iter()
+            .filter(|m| m.state == "started")
+            .map(|m| m.id.clone())
+            .collect();
         if let Some(ap) = &ap {
-            up.extend(ap.inv.instances.iter().filter(|i| i.state == "running" || i.state == "pending").map(|i| i.id.clone()));
+            up.extend(
+                ap.inv
+                    .instances
+                    .iter()
+                    .filter(|i| i.state == "running" || i.state == "pending")
+                    .map(|i| i.id.clone()),
+            );
         }
         let split = if ap.is_some() {
-            format!(" (Fly {}, AWS {})", usd(state.fly_part()), usd(state.aws_part()))
+            format!(
+                " (Fly {}, AWS {})",
+                usd(state.fly_part()),
+                usd(state.aws_part())
+            )
         } else {
             String::new()
         };
@@ -597,8 +663,16 @@ impl Router {
             let mut unknown = vec![];
             for id in &up {
                 let found = self.st.do_(|d| {
-                    let s = d.machines.get(id).and_then(|sid| d.sessions.get(sid)).filter(|s| s.machine_id == *id)?;
-                    let name = [&s.label, &s.title, &s.id].into_iter().find(|x| !x.is_empty()).cloned().unwrap_or_default();
+                    let s = d
+                        .machines
+                        .get(id)
+                        .and_then(|sid| d.sessions.get(sid))
+                        .filter(|s| s.machine_id == *id)?;
+                    let name = [&s.label, &s.title, &s.id]
+                        .into_iter()
+                        .find(|x| !x.is_empty())
+                        .cloned()
+                        .unwrap_or_default();
                     Some((s.id.clone(), name))
                 });
                 let Some((sid, name)) = found else {
@@ -639,15 +713,18 @@ impl Router {
                 budget_dm(self, &msg);
             }
         } else if act.warn_dm {
-            budget_dm(self, &format!(
-                "Spend (Jarvis 4, Fly + AWS): an estimated {}{split} of {} in {} ({}%), {running} session machine(s) running at {} a month. At {} running sessions are paused.",
-                usd(spent),
-                usd(cap),
-                state.month,
-                (spent / cap * 100.0) as i64,
-                usd(rate * HOURS_PER_MONTH),
-                usd(cap)
-            ));
+            budget_dm(
+                self,
+                &format!(
+                    "Spend (Jarvis 4, Fly + AWS): an estimated {}{split} of {} in {} ({}%), {running} session machine(s) running at {} a month. At {} running sessions are paused.",
+                    usd(spent),
+                    usd(cap),
+                    state.month,
+                    (spent / cap * 100.0) as i64,
+                    usd(rate * HOURS_PER_MONTH),
+                    usd(cap)
+                ),
+            );
         }
         Ok((act, paused))
     }
@@ -660,7 +737,11 @@ impl Router {
             self.save_budget_view();
             return;
         }
-        let fly = FlyApi { base: "https://api.machines.dev".into(), app: SESSIONS_APP.into(), token };
+        let fly = FlyApi {
+            base: "https://api.machines.dev".into(),
+            app: SESSIONS_APP.into(),
+            token,
+        };
         let (cap, warn) = budget_thresholds(|k| std::env::var(k).unwrap_or_default());
         let aws = crate::awsbudget::aws_coster_from_env(); // AWS in the same pool (None without the router's key)
         if aws.is_none() {

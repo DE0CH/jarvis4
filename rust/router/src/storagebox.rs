@@ -40,7 +40,11 @@ static STREAM_CLIENT: LazyLock<Client> = LazyLock::new(|| {
 /// None when any of the three is missing
 pub fn records_box_from_env() -> Option<StorageBox> {
     let get = |k: &str| std::env::var(k).unwrap_or_default();
-    let (h, u, p) = (get("STORAGEBOX_HOST"), get("STORAGEBOX_USER"), get("STORAGEBOX_PASSWORD"));
+    let (h, u, p) = (
+        get("STORAGEBOX_HOST"),
+        get("STORAGEBOX_USER"),
+        get("STORAGEBOX_PASSWORD"),
+    );
     if h.is_empty() || u.is_empty() || p.is_empty() {
         return None;
     }
@@ -82,7 +86,12 @@ impl StorageBox {
         }
     }
 
-    fn request(&self, c: &Client, method: &str, u: &str) -> Result<reqwest::blocking::RequestBuilder> {
+    fn request(
+        &self,
+        c: &Client,
+        method: &str,
+        u: &str,
+    ) -> Result<reqwest::blocking::RequestBuilder> {
         let m = reqwest::Method::from_bytes(method.as_bytes())?;
         let mut rb = c.request(m, u);
         if !self.user.is_empty() {
@@ -91,7 +100,13 @@ impl StorageBox {
         Ok(rb)
     }
 
-    pub fn do_(&self, method: &str, p: &str, body: Option<Body>, hdr: &BTreeMap<&str, String>) -> Result<Response> {
+    pub fn do_(
+        &self,
+        method: &str,
+        p: &str,
+        body: Option<Body>,
+        hdr: &BTreeMap<&str, String>,
+    ) -> Result<Response> {
         let mut u = dav_url(&self.base, p);
         // a directory keeps its trailing "/": Apache answers a collection without it with a 301, which a client follows
         // as a GET (an HTML listing instead of a multistatus)
@@ -231,7 +246,10 @@ impl StorageBox {
     /// stream can't be sent again (the caller makes it again)
     pub fn put_stream(&self, p: &str, body: impl Read + Send + 'static) -> Result<()> {
         let u = dav_url(&self.base, p);
-        let mut resp = self.request(&STREAM_CLIENT, "PUT", &u)?.body(Body::new(body)).send()?;
+        let mut resp = self
+            .request(&STREAM_CLIENT, "PUT", &u)?
+            .body(Body::new(body))
+            .send()?;
         std::io::copy(&mut resp, &mut std::io::sink()).ok();
         let st = resp.status().as_u16();
         if st >= 300 {
@@ -242,7 +260,10 @@ impl StorageBox {
 
     /// a file to a new name (WebDAV MOVE, server side), replacing what is there
     pub fn move_(&self, from: &str, to: &str) -> Result<()> {
-        let hdr = BTreeMap::from([("Destination", dav_url(&self.base, to)), ("Overwrite", "T".to_string())]);
+        let hdr = BTreeMap::from([
+            ("Destination", dav_url(&self.base, to)),
+            ("Overwrite", "T".to_string()),
+        ]);
         let st = self.do_("MOVE", from, None, &hdr)?.status().as_u16();
         if st >= 300 {
             return Err(anyhow!("MOVE {from} → {to}: HTTP {st}"));
@@ -283,7 +304,12 @@ impl StorageBox {
     /// the direct children of a directory (relative to the box root); None when it doesn't exist
     pub fn children(&self, dir: &str) -> Result<Option<Vec<DavEntry>>> {
         let d = format!("{}/", dir.trim_end_matches('/'));
-        let resp = self.do_("PROPFIND", &d, None, &BTreeMap::from([("Depth", "1".to_string())]))?;
+        let resp = self.do_(
+            "PROPFIND",
+            &d,
+            None,
+            &BTreeMap::from([("Depth", "1".to_string())]),
+        )?;
         let st = resp.status().as_u16();
         if st == 404 {
             return Ok(None);
@@ -296,7 +322,9 @@ impl StorageBox {
         let me = format!("/{}/", dir.trim_matches('/'));
         Ok(Some(
             all.into_iter()
-                .filter(|e| format!("{}/", e.href.trim_end_matches('/')) != me && !e.name.is_empty())
+                .filter(|e| {
+                    format!("{}/", e.href.trim_end_matches('/')) != me && !e.name.is_empty()
+                })
                 .collect(),
         ))
     }
@@ -342,7 +370,9 @@ pub fn parse_multistatus(body: &[u8]) -> Result<Vec<DavEntry>> {
                     c.dir = true;
                 }
             }
-            Event::Text(t) => text.push_str(&t.unescape().map(|c| c.into_owned()).unwrap_or_default()),
+            Event::Text(t) => {
+                text.push_str(&t.unescape().map(|c| c.into_owned()).unwrap_or_default())
+            }
             Event::CData(t) => text.push_str(&String::from_utf8_lossy(&t)),
             Event::End(_) => {
                 let n = path.pop().unwrap_or_default();

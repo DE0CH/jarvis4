@@ -39,7 +39,9 @@ impl Router {
 
     /// the countersignature in a claim body, if any (the newest 10 kept)
     pub fn keep_claim_device(&self, body: &[u8]) {
-        let Ok(i) = jarvis_go::unmarshal::<ClaimDevice>(body) else { return };
+        let Ok(i) = jarvis_go::unmarshal::<ClaimDevice>(body) else {
+            return;
+        };
         if i.statement.is_empty()
             || i.device_key.is_empty()
             || i.device_sig.is_empty()
@@ -53,14 +55,19 @@ impl Router {
         let _g = CLAIM_DEVICE_MU.lock();
         list.insert(0, i);
         list.truncate(10);
-        if let Err(e) = self.st.write_doc("claim-device.json", jarvis_go::marshal(&list).as_bytes()) {
+        if let Err(e) = self
+            .st
+            .write_doc("claim-device.json", jarvis_go::marshal(&list).as_bytes())
+        {
             crate::logf!("claim device: {e:#}");
         }
     }
 
     /// a claim body the core answered 200
     pub fn keep_core_cert(&self, body: &[u8]) {
-        let Ok(i) = jarvis_go::unmarshal::<MasterCert>(body) else { return };
+        let Ok(i) = jarvis_go::unmarshal::<MasterCert>(body) else {
+            return;
+        };
         if i.statement.is_empty() || i.master_sig.is_empty() || i.statement.len() > 8 << 10 {
             return;
         }
@@ -72,7 +79,10 @@ impl Router {
             .unwrap_or_default();
         list.insert(0, i);
         list.truncate(10);
-        if let Err(e) = self.st.write_doc("core-certs.json", jarvis_go::marshal(&list).as_bytes()) {
+        if let Err(e) = self
+            .st
+            .write_doc("core-certs.json", jarvis_go::marshal(&list).as_bytes())
+        {
             crate::logf!("core certs: {e:#}");
         }
     }

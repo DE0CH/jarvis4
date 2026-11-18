@@ -49,7 +49,13 @@ pub fn log_file_name(s: &str) -> String {
         return "_".into();
     }
     s.bytes()
-        .map(|c| if c.is_ascii_alphanumeric() || c == b'-' || c == b'_' { c as char } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == b'-' || c == b'_' {
+                c as char
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -70,11 +76,16 @@ impl Router {
     }
 
     fn read_sup_log_locked(&self, session: &str) -> Vec<SupLine> {
-        let raw = self.st.read_log(session, LOG_SUPERVISOR).unwrap_or_else(|e| {
-            crate::logf!("[supervisor-log] reading {session}: {e:#}");
-            vec![]
-        });
-        raw.iter().filter_map(|b| jarvis_go::unmarshal(b).ok()).collect()
+        let raw = self
+            .st
+            .read_log(session, LOG_SUPERVISOR)
+            .unwrap_or_else(|e| {
+                crate::logf!("[supervisor-log] reading {session}: {e:#}");
+                vec![]
+            });
+        raw.iter()
+            .filter_map(|b| jarvis_go::unmarshal(b).ok())
+            .collect()
     }
 
     /// lines of one machine onto its session's log, numbered; cut to the newer half past SUP_LOG_MAX_FILE
@@ -85,7 +96,10 @@ impl Router {
         }
         let mut next = match g.get(session) {
             Some(n) => *n,
-            None => self.read_sup_log_locked(session).last().map_or(1, |l| l.seq + 1),
+            None => self
+                .read_sup_log_locked(session)
+                .last()
+                .map_or(1, |l| l.seq + 1),
         };
         let rows: Vec<String> = lines
             .into_iter()
@@ -116,8 +130,10 @@ impl Router {
                     all.len() - keep.len()
                 ),
             };
-            let out: Vec<Vec<u8>> =
-                std::iter::once(&note).chain(keep.iter()).map(|l| jarvis_go::marshal(l).into_bytes()).collect();
+            let out: Vec<Vec<u8>> = std::iter::once(&note)
+                .chain(keep.iter())
+                .map(|l| jarvis_go::marshal(l).into_bytes())
+                .collect();
             return self.st.replace_log(session, LOG_SUPERVISOR, &out);
         }
         Ok(())
@@ -149,9 +165,14 @@ pub fn register_supervisor_log(reg: &mut Registrar) {
             Err(e) => return write_error(w, 400, &format!("not JSON: {e}")),
         };
         if i.lines.len() > SUP_LOG_MAX_LINES {
-            return write_error(w, 400, &format!("at most {SUP_LOG_MAX_LINES} lines per push"));
+            return write_error(
+                w,
+                400,
+                &format!("at most {SUP_LOG_MAX_LINES} lines per push"),
+            );
         }
-        let session = r.st.do_(|d| d.machines.get(machine).cloned().unwrap_or_default());
+        let session =
+            r.st.do_(|d| d.machines.get(machine).cloned().unwrap_or_default());
         if session.is_empty() {
             return write_error(w, 404, "this machine belongs to no session");
         }
@@ -161,7 +182,11 @@ pub fn register_supervisor_log(reg: &mut Registrar) {
             .into_iter()
             .map(|l| {
                 let at = match GoTime::parse(&l.at) {
-                    Some(at) if (-86_400_000..=60_000).contains(&at.sub(&now).whole_milliseconds()) => at,
+                    Some(at)
+                        if (-86_400_000..=60_000).contains(&at.sub(&now).whole_milliseconds()) =>
+                    {
+                        at
+                    }
                     _ => now, // a machine clock off by a lot: the router's time
                 };
                 let text = if l.text.len() > SUP_LOG_MAX_LINE {
@@ -169,7 +194,11 @@ pub fn register_supervisor_log(reg: &mut Registrar) {
                 } else {
                     l.text
                 };
-                SupLine { at: at.utc().rfc3339_nano(), text, ..Default::default() }
+                SupLine {
+                    at: at.utc().rfc3339_nano(),
+                    text,
+                    ..Default::default()
+                }
             })
             .collect();
         let texts: Vec<String> = lines.iter().map(|l| l.text.clone()).collect();
@@ -177,7 +206,11 @@ pub fn register_supervisor_log(reg: &mut Registrar) {
             return write_error(w, 500, &format!("{e:#}"));
         }
         // neverbooted.rs: a machine that says it refuses to start fails its session
-        if let Some(why) = texts.iter().map(|t| crate::neverbooted::refused_in_log(t)).find(|w| !w.is_empty()) {
+        if let Some(why) = texts
+            .iter()
+            .map(|t| crate::neverbooted::refused_in_log(t))
+            .find(|w| !w.is_empty())
+        {
             r.boot_failed(machine, &why);
         }
         write_json(w, 200, &json!({"ok": true}));

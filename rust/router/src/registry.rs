@@ -147,7 +147,10 @@ pub fn json_lines(s: &str) -> Vec<Obj> {
 }
 
 pub fn str_of(m: &Obj, k: &str) -> String {
-    m.get(k).and_then(Value::as_str).unwrap_or_default().to_string()
+    m.get(k)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
 }
 
 pub fn num_of(m: &Obj, k: &str) -> i64 {
@@ -202,7 +205,11 @@ pub fn parse_workers(section: &str, sid: &str) -> Option<Workers> {
         if sid.is_empty() || str_of(&e, "workersOf") != sid {
             continue;
         }
-        let mut w = Workers { subagents: num_of(&e, "subagents").clamp(0, 1000), jobs: BTreeMap::new(), at: num_of(&e, "at") };
+        let mut w = Workers {
+            subagents: num_of(&e, "subagents").clamp(0, 1000),
+            jobs: BTreeMap::new(),
+            at: num_of(&e, "at"),
+        };
         if let Some(jobs) = e.get("jobs").and_then(Value::as_object) {
             for (k, v) in jobs {
                 if let Some(n) = v.as_f64()
@@ -253,7 +260,12 @@ pub fn parse_refusals(section: &str) -> Vec<Refusal> {
     let mut out = vec![];
     for e in json_lines(section) {
         let at = ms_of(&str_of(&e, "timestamp")).unwrap_or(0);
-        let first = |ks: &[&str]| ks.iter().map(|k| str_of(&e, k)).find(|v| !v.is_empty()).unwrap_or_default();
+        let first = |ks: &[&str]| {
+            ks.iter()
+                .map(|k| str_of(&e, k))
+                .find(|v| !v.is_empty())
+                .unwrap_or_default()
+        };
         let msg = e.get("message").and_then(Value::as_object);
         if str_of(&e, "type") == "system" && str_of(&e, "subtype") == "model_refusal_fallback" {
             out.push(Refusal {
@@ -265,11 +277,18 @@ pub fn parse_refusals(section: &str) -> Vec<Refusal> {
                 category: first(&["apiRefusalCategory", "api_refusal_category"]),
                 ..Default::default()
             });
-        } else if let Some(msg) = msg.filter(|m| str_of(&e, "type") == "assistant" && str_of(m, "stop_reason") == "refusal") {
+        } else if let Some(msg) = msg
+            .filter(|m| str_of(&e, "type") == "assistant" && str_of(m, "stop_reason") == "refusal")
+        {
             let texts: Vec<String> = msg
                 .get("content")
                 .and_then(Value::as_array)
-                .map(|cs| cs.iter().filter_map(Value::as_object).map(|c| str_of(c, "text")).collect())
+                .map(|cs| {
+                    cs.iter()
+                        .filter_map(Value::as_object)
+                        .map(|c| str_of(c, "text"))
+                        .collect()
+                })
                 .unwrap_or_default();
             let mut model = str_of(msg, "model");
             if model.is_empty() || model == "<synthetic>" {
@@ -280,7 +299,14 @@ pub fn parse_refusals(section: &str) -> Vec<Refusal> {
                 .and_then(Value::as_object)
                 .map(|sd| str_of(sd, "category"))
                 .unwrap_or_default();
-            out.push(Refusal { kind: "refusal".into(), at, uuid: str_of(&e, "uuid"), model, category: cat, ..Default::default() });
+            out.push(Refusal {
+                kind: "refusal".into(),
+                at,
+                uuid: str_of(&e, "uuid"),
+                model,
+                category: cat,
+                ..Default::default()
+            });
         }
     }
     out.sort_by_key(|r| r.at);
@@ -335,12 +361,22 @@ pub fn parse_registry(raw: &str) -> Option<Registry> {
         .or_else(|| entries.first());
     let Some(host) = host else {
         if one_shot_done {
-            return Some(Registry { one_shot_done: true, ai_title: last_title, refusals, ..Default::default() });
+            return Some(Registry {
+                one_shot_done: true,
+                ai_title: last_title,
+                refusals,
+                ..Default::default()
+            });
         }
         return None;
     };
     let sid = str_of(host, "sessionId");
-    let (status, n) = normalize(&str_of(host, "status"), bg.get(&num_of(host, "pid").to_string()).copied().unwrap_or(0));
+    let (status, n) = normalize(
+        &str_of(host, "status"),
+        bg.get(&num_of(host, "pid").to_string())
+            .copied()
+            .unwrap_or(0),
+    );
     Some(Registry {
         live_name: str_of(host, "name"),
         name_source: str_of(host, "nameSource"),

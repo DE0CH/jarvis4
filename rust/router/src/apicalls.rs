@@ -10,7 +10,9 @@
 //!   No      never requestable: the Inbox itself, or a call that can't be run server-side or would hand out Deyao's
 //!           own login
 
-use crate::inbox::{ApiCall, Caller, InboxItem, InboxRequest, Origin, RequestParams, SignedRequest};
+use crate::inbox::{
+    ApiCall, Caller, InboxItem, InboxRequest, Origin, RequestParams, SignedRequest,
+};
 use crate::nethttp::{Req, W, write_json};
 use crate::router::Router;
 use crate::state::{Approval, Persisted};
@@ -157,7 +159,9 @@ pub fn caller_exists(d: &Persisted, c: &Caller) -> bool {
     if c.kind != "session" && c.kind != "actions" {
         return true; // the setup session, the app or the web page: no session to end with
     }
-    d.sessions.get(&c.session).is_some_and(|s| s.state != "destroyed")
+    d.sessions
+        .get(&c.session)
+        .is_some_and(|s| s.state != "destroyed")
 }
 
 /// an approval whose origin is an approved call joins that call's follow-ups (inside do_)
@@ -166,7 +170,9 @@ pub fn link_followup(d: &mut Persisted, a: &Approval) {
     if o.via_call.is_empty() {
         return;
     }
-    let Some(x) = d.call_results.get_mut(&o.via_call) else { return };
+    let Some(x) = d.call_results.get_mut(&o.via_call) else {
+        return;
+    };
     if !x.followups.contains(&a.id) {
         x.followups.push(a.id.clone());
     }
@@ -187,18 +193,29 @@ impl Router {
             ));
         }
         let path = target.split_once('?').map_or(target, |(p, _)| p);
-        let path = percent_encoding::percent_decode_str(path).decode_utf8_lossy().into_owned();
+        let path = percent_encoding::percent_decode_str(path)
+            .decode_utf8_lossy()
+            .into_owned();
         let (public, _) = self.handlers();
         let pattern = public.pattern_for(method, &path);
         if pattern.is_empty() {
             return Err(anyhow!("no route {method} {path}"));
         }
-        let known = CALL_RULES.iter().find(|(p, _)| *p == pattern).map(|(_, r)| *r);
-        let is_app = self.app_patterns.get().is_some_and(|a| a.contains_key(&pattern));
+        let known = CALL_RULES
+            .iter()
+            .find(|(p, _)| *p == pattern)
+            .map(|(_, r)| *r);
+        let is_app = self
+            .app_patterns
+            .get()
+            .is_some_and(|a| a.contains_key(&pattern));
         match known {
             Some(rule) if is_app => {
                 if rule == CallRule::No {
-                    return Err(anyhow!("{pattern} can't be requested ({})", call_no_why(&pattern)));
+                    return Err(anyhow!(
+                        "{pattern} can't be requested ({})",
+                        call_no_why(&pattern)
+                    ));
                 }
                 Ok((pattern, rule))
             }
@@ -228,7 +245,11 @@ impl Router {
             }
             (None, false) => {
                 p.body = i.body_text.clone();
-                p.content_type = if i.content_type.is_empty() { "text/plain".into() } else { i.content_type.clone() };
+                p.content_type = if i.content_type.is_empty() {
+                    "text/plain".into()
+                } else {
+                    i.content_type.clone()
+                };
             }
             (None, true) => {}
         }
@@ -244,7 +265,14 @@ impl Router {
     }
 
     /// an API-call request into the Inbox → {id, duplicate, expires}
-    pub fn file_call(self: &Arc<Self>, w: &mut W, c: Caller, path: &str, b: &[u8], signed: Option<SignedRequest>) {
+    pub fn file_call(
+        self: &Arc<Self>,
+        w: &mut W,
+        c: Caller,
+        path: &str,
+        b: &[u8],
+        signed: Option<SignedRequest>,
+    ) {
         let i: CallIn = match jarvis_go::unmarshal(b) {
             Ok(i) => i,
             Err(e) => {
@@ -261,13 +289,21 @@ impl Router {
         };
         let o = Origin {
             caller: c,
-            call: ApiCall { method: "POST".into(), path: path.into(), args, ..Default::default() },
+            call: ApiCall {
+                method: "POST".into(),
+                path: path.into(),
+                args,
+            },
             signed,
             ..Default::default()
         };
         match self.file_request(REQUEST_KIND_CALL, p, &i.explanation, o) {
             Err(e) => crate::inbox::write_request_err(w, &e),
-            Ok((q, dup)) => write_json(w, 200, &json!({"id": q.id, "duplicate": dup, "expires": q.expires})),
+            Ok((q, dup)) => write_json(
+                w,
+                200,
+                &json!({"id": q.id, "duplicate": dup, "expires": q.expires}),
+            ),
         }
     }
 
@@ -285,7 +321,9 @@ impl Router {
         let res = self.approve_call_run(&q, approver);
         // outcomes.rs: the requesting session is told (its result stays readable for INBOX_TTL)
         self.st.do_(|d| {
-            let Some(x) = d.call_results.get(&q.id).cloned() else { return };
+            let Some(x) = d.call_results.get(&q.id).cloned() else {
+                return;
+            };
             let (o, st) = if x.state == "done" {
                 (crate::outcomes::OUTCOME_APPROVED, x.status)
             } else {
@@ -319,9 +357,14 @@ impl Router {
         running.state = "running".into();
         self.keep_call_result(running); // the approvals the call files link to it while it runs (link_followup)
         let mut req = Req::new(&q.params.method, &q.params.path, q.params.body.as_bytes());
-        req.ctx.insert(ON_BEHALF_KEY.into(), jarvis_go::marshal(&q.origin.caller));
+        req.ctx
+            .insert(ON_BEHALF_KEY.into(), jarvis_go::marshal(&q.origin.caller));
         req.ctx.insert(VIA_CALL_KEY.into(), q.id.clone());
-        for h in ["Cf-Access-Jwt-Assertion", "cf-access-token", "Cf-Access-Authenticated-User-Email"] {
+        for h in [
+            "Cf-Access-Jwt-Assertion",
+            "cf-access-token",
+            "Cf-Access-Authenticated-User-Email",
+        ] {
             let v = approver.header(h);
             if !v.is_empty() {
                 req = req.with_header(h, &v);
@@ -413,7 +456,10 @@ impl Router {
             awaiting: x.awaiting,
         };
         for fid in x.followups {
-            let mut f = CallFollowup { id: fid.clone(), ..Default::default() };
+            let mut f = CallFollowup {
+                id: fid.clone(),
+                ..Default::default()
+            };
             if let Some(it) = self.arc().inbox_item(&fid) {
                 f.open = true;
                 f.item = Some(it);
@@ -461,7 +507,9 @@ impl Router {
                 404,
                 &format!(
                     "no such request of this session (expired, or its result is over {} old)",
-                    jarvis_go::fmt::duration_string(std::time::Duration::from_secs(crate::inbox::INBOX_TTL_SECS as u64))
+                    jarvis_go::fmt::duration_string(std::time::Duration::from_secs(
+                        crate::inbox::INBOX_TTL_SECS as u64
+                    ))
                 ),
             ),
             Some(v) => write_json(w, 200, &v),
@@ -569,17 +617,17 @@ pub const CALL_RULES: &[(&str, CallRule)] = &[
     ("GET /api/repos", CallRule::Body),
     ("POST /api/repos/key/begin", CallRule::No), // half of a deploy key the phone finishes with its signature
     ("POST /api/repos/key/finish", CallRule::No), // needs the phone's signature and sealed share
-    ("GET /api/requests", CallRule::No), // the Inbox
-    ("POST /api/requests/batch", CallRule::No), // the Inbox
+    ("GET /api/requests", CallRule::No),         // the Inbox
+    ("POST /api/requests/batch", CallRule::No),  // the Inbox
     ("DELETE /api/requests/batches/{id}", CallRule::No), // the Inbox
     ("GET /api/requests/batches/{id}", CallRule::No), // the Inbox
-    ("POST /api/requests/grant", CallRule::No), // the Inbox
+    ("POST /api/requests/grant", CallRule::No),  // the Inbox
     ("POST /api/requests/repo/add", CallRule::No), // the Inbox
     ("POST /api/requests/repo/remove", CallRule::No), // the Inbox
     ("POST /api/requests/restore", CallRule::No), // the Inbox
     ("POST /api/requests/unlock", CallRule::No), // the Inbox
     ("DELETE /api/requests/{id}", CallRule::No), // the Inbox
-    ("GET /api/requests/{id}", CallRule::No), // the Inbox
+    ("GET /api/requests/{id}", CallRule::No),    // the Inbox
     ("GET /api/requests/calls/{id}", CallRule::No), // the Inbox
     ("POST /api/requests/{id}/approve", CallRule::No), // the Inbox
     ("POST /api/requests/{id}/done", CallRule::No), // the Inbox
@@ -597,7 +645,7 @@ pub const CALL_RULES: &[(&str, CallRule)] = &[
     ("POST /api/sessions/{id}/env", CallRule::Body),
     ("POST /api/sessions/{id}/exec", CallRule::Status), // another session's command output (its env, its files)
     ("GET /api/sessions/{id}/grants", CallRule::Status), // phone-signed grant documents
-    ("POST /api/sessions/{id}/grants", CallRule::No), // takes a phone-signed grant
+    ("POST /api/sessions/{id}/grants", CallRule::No),   // takes a phone-signed grant
     ("POST /api/sessions/{id}/grants/draft", CallRule::Body),
     ("POST /api/sessions/{id}/notify-idle", CallRule::Body),
     ("POST /api/sessions/{id}/pause", CallRule::Body),

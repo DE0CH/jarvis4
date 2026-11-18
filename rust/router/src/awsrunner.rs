@@ -34,7 +34,16 @@ pub struct RunnerOption {
 /// what New session offers. Not the fabric until a session boots on it end to end (Deyao, 2026-11-17); a request that
 /// names it is still taken (valid_runner)
 pub fn session_runners() -> Vec<RunnerOption> {
-    vec![RunnerOption { id: "aws", label: "AWS" }, RunnerOption { id: "fly", label: "Fly" }]
+    vec![
+        RunnerOption {
+            id: "aws",
+            label: "AWS",
+        },
+        RunnerOption {
+            id: "fly",
+            label: "Fly",
+        },
+    ]
 }
 
 pub fn valid_runner(id: &str) -> bool {
@@ -110,7 +119,11 @@ pub fn new_aws_wg(used: &BTreeSet<String>) -> Result<AwsWg> {
             if used.contains(&a) {
                 continue;
             }
-            return Ok(AwsWg { private_key: b64.encode(k), public_key: b64.encode(pubk), address: a });
+            return Ok(AwsWg {
+                private_key: b64.encode(k),
+                public_key: b64.encode(pubk),
+                address: a,
+            });
         }
     }
     Err(anyhow!("no free WireGuard address for an AWS machine"))
@@ -121,7 +134,11 @@ pub fn used_wg_addresses(d: &Persisted) -> BTreeSet<String> {
     d.started
         .values()
         .filter_map(|s| s.wg.as_ref().map(|w| w.address.clone()))
-        .chain(d.sessions.values().filter_map(|s| s.wg.as_ref().map(|w| w.address.clone())))
+        .chain(
+            d.sessions
+                .values()
+                .filter_map(|s| s.wg.as_ref().map(|w| w.address.clone())),
+        )
         .collect()
 }
 
@@ -132,11 +149,16 @@ pub fn aws_gateways() -> Result<Vec<WgPeer>> {
         .split(',')
         .filter_map(|p| {
             let (k, a) = p.trim().split_once('@')?;
-            Some(WgPeer { public_key: k.into(), address: a.into() })
+            Some(WgPeer {
+                public_key: k.into(),
+                address: a.into(),
+            })
         })
         .collect();
     if out.is_empty() {
-        return Err(anyhow!("WG_AWS_GATEWAYS is not set: no AWS machine can reach the router"));
+        return Err(anyhow!(
+            "WG_AWS_GATEWAYS is not set: no AWS machine can reach the router"
+        ));
     }
     Ok(out)
 }
@@ -167,7 +189,8 @@ pub fn state_word(s: &str) -> String {
 }
 
 /// the newest listing (lost_tick), for the gateways' peers
-static AWS_SEEN: LazyLock<Mutex<BTreeMap<String, Instance>>> = LazyLock::new(|| Mutex::new(BTreeMap::new()));
+static AWS_SEEN: LazyLock<Mutex<BTreeMap<String, Instance>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 /// the region the newest listing saw the instance in ("" when it didn't)
 pub fn aws_region_of_instance(id: &str) -> String {
@@ -287,7 +310,11 @@ pub struct AwsPeer {
 impl Router {
     /// where the session's machines run (its own runner, else the default)
     pub fn runner_of(&self, s: &Session) -> String {
-        if valid_runner(&s.runner) { s.runner.clone() } else { default_runner() }
+        if valid_runner(&s.runner) {
+            s.runner.clone()
+        } else {
+            default_runner()
+        }
     }
 
     /// the region the spawner gets for the session's next machine, in its runner's terms
@@ -306,13 +333,20 @@ impl Router {
         let peers = aws_gateways()?;
         let wg = self.st.do_(|d| -> Result<AwsWg> {
             let used = used_wg_addresses(d);
-            let s = d.sessions.get_mut(sid).ok_or_else(|| anyhow!("no session {sid}"))?;
+            let s = d
+                .sessions
+                .get_mut(sid)
+                .ok_or_else(|| anyhow!("no session {sid}"))?;
             if s.wg.as_ref().is_none_or(|w| w.private_key.is_empty()) {
                 s.wg = Some(new_aws_wg(&used)?);
             }
             Ok(s.wg.clone().unwrap_or_default())
         })?;
-        Ok(SpawnWireGuard { private_key: wg.private_key, address: wg.address, peers })
+        Ok(SpawnWireGuard {
+            private_key: wg.private_key,
+            address: wg.address,
+            peers,
+        })
     }
 
     /// the listing every 10 s, so a new instance's address reaches the gateways soon after it boots

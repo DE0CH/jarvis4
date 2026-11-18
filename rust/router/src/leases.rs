@@ -56,8 +56,9 @@ pub const LEASE_MAX_ATTEMPTS: u32 = 20;
 /// always listed (so Take over is there even when a device is free)
 pub const KNOWN_DEVICES: &[&str] = &["wechat-phone", "iphone", "mac"];
 
-static LEASE_NAME_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"^[a-z0-9][a-z0-9-]{0,40}$").unwrap_or_else(|_| unreachable!()));
+static LEASE_NAME_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^[a-z0-9][a-z0-9-]{0,40}$").unwrap_or_else(|_| unreachable!())
+});
 /// Go's \s: ASCII whitespace only
 static SPACE_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"[\t\n\x0C\r ]+").unwrap_or_else(|_| unreachable!()));
@@ -172,7 +173,12 @@ impl std::fmt::Display for LeaseError {
 impl std::error::Error for LeaseError {}
 
 fn lease_err(status: u16, msg: impl Into<String>) -> anyhow::Error {
-    LeaseError { status, msg: msg.into(), taken_over: false }.into()
+    LeaseError {
+        status,
+        msg: msg.into(),
+        taken_over: false,
+    }
+    .into()
 }
 
 fn bad_name() -> anyhow::Error {
@@ -198,8 +204,16 @@ impl LeaseResource {
             return None;
         }
         let next = self.queue.remove(0);
-        let ttl = if next.ttl == 0 { LEASE_DEFAULT_TTL } else { next.ttl };
-        let d = if next.described_at == 0 { now } else { next.described_at };
+        let ttl = if next.ttl == 0 {
+            LEASE_DEFAULT_TTL
+        } else {
+            next.ttl
+        };
+        let d = if next.described_at == 0 {
+            now
+        } else {
+            next.described_at
+        };
         self.holder = Some(LeaseEntry {
             sid: next.sid.clone(),
             purpose: next.purpose.clone(),
@@ -220,8 +234,11 @@ impl LeaseResource {
 }
 
 pub fn lease_ttl(v: Option<&Value>) -> Result<i64> {
-    let Some(v) = v.filter(|v| !v.is_null()) else { return Ok(LEASE_DEFAULT_TTL) };
-    let f = crate::schedule::number(v).ok_or_else(|| lease_err(400, "ttlSeconds must be a number"))?;
+    let Some(v) = v.filter(|v| !v.is_null()) else {
+        return Ok(LEASE_DEFAULT_TTL);
+    };
+    let f =
+        crate::schedule::number(v).ok_or_else(|| lease_err(400, "ttlSeconds must be a number"))?;
     Ok((f.round().max(LEASE_MIN_TTL as f64)).min(LEASE_MAX_TTL as f64) as i64)
 }
 
@@ -236,7 +253,9 @@ pub fn clean_line(s: &str, max: usize) -> String {
 /// multi-line: keeps line breaks, trims trailing spaces, collapses blank runs
 pub fn clean_text(s: &str, max: usize) -> String {
     let s = s.replace("\r\n", "\n").replace('\r', "\n");
-    let s = TRAILING_SPACE_RE.replace_all(&format!("{s}\n"), "\n").into_owned();
+    let s = TRAILING_SPACE_RE
+        .replace_all(&format!("{s}\n"), "\n")
+        .into_owned();
     let s = BLANK_RUN_RE.replace_all(&s, "\n\n").into_owned();
     trunc_runes(s.trim(), max)
 }
@@ -317,7 +336,9 @@ pub struct LeasePending {
 }
 
 fn iso_ms(ms: i64) -> String {
-    GoTime::from_unix_nanos(ms as i128 * 1_000_000).utc().rfc3339()
+    GoTime::from_unix_nanos(ms as i128 * 1_000_000)
+        .utc()
+        .rfc3339()
 }
 
 pub fn is_known_device(name: &str) -> bool {
@@ -341,7 +362,11 @@ impl LeaseState {
         if let Some(h) = r.holder.as_mut().filter(|h| h.sid == sid) {
             h.expires_at = now + h.ttl * 1000;
             h.set_text(o, now);
-            return Ok(LeaseOut { status: "renewed".into(), position: 0, lease: lease_view(r, name, now) });
+            return Ok(LeaseOut {
+                status: "renewed".into(),
+                position: 0,
+                lease: lease_view(r, name, now),
+            });
         }
         let prompt = clean_line(&o.prompt, LEASE_MAX_PROMPT);
         if r.holder.is_none() {
@@ -361,14 +386,34 @@ impl LeaseState {
             };
             let purpose = h.purpose.clone();
             r.holder = Some(h);
-            r.log_ev(now, "granted", sid, LeaseEvent { purpose, ..Default::default() });
-            return Ok(LeaseOut { status: "granted".into(), position: 0, lease: lease_view(r, name, now) });
+            r.log_ev(
+                now,
+                "granted",
+                sid,
+                LeaseEvent {
+                    purpose,
+                    ..Default::default()
+                },
+            );
+            return Ok(LeaseOut {
+                status: "granted".into(),
+                position: 0,
+                lease: lease_view(r, name, now),
+            });
         }
         if o.low_priority {
-            return Ok(LeaseOut { status: "busy".into(), position: 0, lease: lease_view(r, name, now) });
+            return Ok(LeaseOut {
+                status: "busy".into(),
+                position: 0,
+                lease: lease_view(r, name, now),
+            });
         }
         if !r.queue.iter().any(|x| x.sid == sid) {
-            r.queue.push(LeaseEntry { sid: sid.into(), enqueued_at: now, ..Default::default() });
+            r.queue.push(LeaseEntry {
+                sid: sid.into(),
+                enqueued_at: now,
+                ..Default::default()
+            });
         }
         let i = r.queue.iter().rposition(|x| x.sid == sid).unwrap_or(0);
         let w = &mut r.queue[i];
@@ -380,14 +425,24 @@ impl LeaseState {
         w.prompt = prompt;
         w.signed = o.signed.clone();
         w.ttl = ttl;
-        let pos = r.queue.iter().position(|x| x.sid == sid).map_or(0, |p| p + 1);
-        Ok(LeaseOut { status: "queued".into(), position: pos, lease: lease_view(r, name, now) })
+        let pos = r
+            .queue
+            .iter()
+            .position(|x| x.sid == sid)
+            .map_or(0, |p| p + 1);
+        Ok(LeaseOut {
+            status: "queued".into(),
+            position: pos,
+            lease: lease_view(r, name, now),
+        })
     }
 
     /// a session found the device taken over by Deyao; it is told when he hands it back. True while he has it.
     pub fn note_blocked(&mut self, name: &str, sid: &str) -> Result<bool> {
         let r = self.res(name)?;
-        let Some(h) = r.holder.as_mut().filter(|h| h.human && !sid.is_empty()) else { return Ok(false) };
+        let Some(h) = r.holder.as_mut().filter(|h| h.human && !sid.is_empty()) else {
+            return Ok(false);
+        };
         if h.blocked.iter().any(|b| b == sid) {
             return Ok(true);
         }
@@ -406,7 +461,10 @@ impl LeaseState {
             let pos = r.queue.iter().position(|w| w.sid == sid);
             self.note_blocked(name, sid)?;
             let msg = match pos {
-                Some(i) => format!("don't touch it. You are #{} in the queue and will be woken when it is your turn", i + 1),
+                Some(i) => format!(
+                    "don't touch it. You are #{} in the queue and will be woken when it is your turn",
+                    i + 1
+                ),
                 None => format!(
                     "don't touch it. Jarvis will tell this session when he hands it back; to be GIVEN it then, queue now with scripts/lease.py acquire {name}"
                 ),
@@ -431,13 +489,22 @@ impl LeaseState {
         match r.holder.as_mut() {
             Some(h) if h.sid == sid => {
                 h.expires_at = now + h.ttl * 1000;
-                Ok(LeaseOut { status: "renewed".into(), position: 0, lease: lease_view(r, name, now) })
+                Ok(LeaseOut {
+                    status: "renewed".into(),
+                    position: 0,
+                    lease: lease_view(r, name, now),
+                })
             }
             other => {
-                let held = other.map(|h| format!(" (held by {})", h.sid)).unwrap_or_default();
+                let held = other
+                    .map(|h| format!(" (held by {})", h.sid))
+                    .unwrap_or_default();
                 Err(lease_err(
                     409,
-                    format!("this session does not hold {}{held}", jarvis_go::fmt::go_quote(name)),
+                    format!(
+                        "this session does not hold {}{held}",
+                        jarvis_go::fmt::go_quote(name)
+                    ),
                 ))
             }
         }
@@ -456,23 +523,48 @@ impl LeaseState {
             // nothing of this session's to describe: the lease as it is
             "none"
         };
-        Ok(LeaseOut { status: status.into(), position: 0, lease: lease_view(r, name, now) })
+        Ok(LeaseOut {
+            status: status.into(),
+            position: 0,
+            lease: lease_view(r, name, now),
+        })
     }
 
     /// the holder returns it ("return", never "release": releasing the cloud phone deletes it); force = the app's
     /// escape hatch
-    pub fn give_back(&mut self, name: &str, sid: &str, now: i64, force: bool) -> Result<GiveBackOut> {
+    pub fn give_back(
+        &mut self,
+        name: &str,
+        sid: &str,
+        now: i64,
+        force: bool,
+    ) -> Result<GiveBackOut> {
         let r = self.res(name)?;
-        let Some(h) = r.holder.as_ref() else { return Ok(GiveBackOut::default()) };
+        let Some(h) = r.holder.as_ref() else {
+            return Ok(GiveBackOut::default());
+        };
         if !force && h.sid != sid {
             return Err(lease_err(
                 409,
-                format!("this session does not hold {} (held by {})", jarvis_go::fmt::go_quote(name), h.sid),
+                format!(
+                    "this session does not hold {} (held by {})",
+                    jarvis_go::fmt::go_quote(name),
+                    h.sid
+                ),
             ));
         }
         let prev = h.sid.clone();
-        r.log_ev(now, if force { "force-returned" } else { "returned" }, &prev, LeaseEvent::default());
-        Ok(GiveBackOut { returned: true, previous: prev, promoted: r.promote(now) })
+        r.log_ev(
+            now,
+            if force { "force-returned" } else { "returned" },
+            &prev,
+            LeaseEvent::default(),
+        );
+        Ok(GiveBackOut {
+            returned: true,
+            previous: prev,
+            promoted: r.promote(now),
+        })
     }
 
     pub fn leave(&mut self, name: &str, sid: &str) -> Result<bool> {
@@ -487,13 +579,29 @@ impl LeaseState {
     pub fn take_over(&mut self, name: &str, note: Option<&str>, now: i64) -> Result<TakeOverOut> {
         let r = self.res(name)?;
         if let Some(h) = r.holder.as_mut().filter(|h| h.human) {
-            let Some(note) = note else { return Ok(TakeOverOut::default()) };
+            let Some(note) = note else {
+                return Ok(TakeOverOut::default());
+            };
             h.note = clean_line(note, LEASE_MAX_NOTE);
             let n = h.note.clone();
-            r.log_ev(now, "note", LEASE_HUMAN, LeaseEvent { note: n, ..Default::default() });
-            return Ok(TakeOverOut { note_updated: true, ..Default::default() });
+            r.log_ev(
+                now,
+                "note",
+                LEASE_HUMAN,
+                LeaseEvent {
+                    note: n,
+                    ..Default::default()
+                },
+            );
+            return Ok(TakeOverOut {
+                note_updated: true,
+                ..Default::default()
+            });
         }
-        let mut out = TakeOverOut { taken: true, ..Default::default() };
+        let mut out = TakeOverOut {
+            taken: true,
+            ..Default::default()
+        };
         if let Some(h) = r.holder.take() {
             out.interrupted = h.sid.clone();
             r.queue.retain(|w| w.sid != h.sid);
@@ -526,7 +634,11 @@ impl LeaseState {
             now,
             "taken-over",
             LEASE_HUMAN,
-            LeaseEvent { note, interrupted: out.interrupted.clone(), ..Default::default() },
+            LeaseEvent {
+                note,
+                interrupted: out.interrupted.clone(),
+                ..Default::default()
+            },
         );
         Ok(out)
     }
@@ -535,14 +647,24 @@ impl LeaseState {
     /// over meanwhile are to be told it is back
     pub fn hand_back(&mut self, name: &str, note: &str, now: i64) -> Result<HandBackOut> {
         let r = self.res(name)?;
-        let Some(holder) = r.holder.clone().filter(|h| h.human) else { return Ok(HandBackOut::default()) };
+        let Some(holder) = r.holder.clone().filter(|h| h.human) else {
+            return Ok(HandBackOut::default());
+        };
         let h = LeaseHandover {
             taken_at: holder.since,
             returned_at: now,
             take_note: holder.note.clone(),
             note: clean_line(note, LEASE_MAX_NOTE),
         };
-        r.log_ev(now, "handed-back", LEASE_HUMAN, LeaseEvent { note: h.note.clone(), ..Default::default() });
+        r.log_ev(
+            now,
+            "handed-back",
+            LEASE_HUMAN,
+            LeaseEvent {
+                note: h.note.clone(),
+                ..Default::default()
+            },
+        );
         let p = r.promote(now);
         if p.is_some()
             && let Some(nh) = r.holder.as_mut()
@@ -555,7 +677,11 @@ impl LeaseState {
             .filter(|sid| p.as_ref().is_none_or(|p| **sid != p.sid))
             .cloned()
             .collect();
-        Ok(HandBackOut { handed_back: true, promoted: p, notify })
+        Ok(HandBackOut {
+            handed_back: true,
+            promoted: p,
+            notify,
+        })
     }
 
     /// expire holders that stopped renewing; drop sessions that no longer exist (holder or waiting)
@@ -563,16 +689,30 @@ impl LeaseState {
         let mut out = vec![];
         let names: Vec<String> = self.resources.keys().cloned().collect();
         for name in names {
-            let Some(r) = self.resources.get_mut(&name) else { continue };
+            let Some(r) = self.resources.get_mut(&name) else {
+                continue;
+            };
             r.queue.retain(|w| alive(&w.sid));
-            while let Some(h) = r.holder.as_ref().filter(|h| !h.human && (h.expires_at <= now || !alive(&h.sid))) {
+            while let Some(h) = r
+                .holder
+                .as_ref()
+                .filter(|h| !h.human && (h.expires_at <= now || !alive(&h.sid)))
+            {
                 let exp = h.sid.clone();
                 r.log_ev(now, "expired", &exp, LeaseEvent::default());
                 r.queue.retain(|w| alive(&w.sid));
                 let promoted = r.promote(now);
-                out.push(SweepChange { name: name.clone(), expired: exp, promoted });
+                out.push(SweepChange {
+                    name: name.clone(),
+                    expired: exp,
+                    promoted,
+                });
             }
-            if r.holder.is_none() && r.queue.is_empty() && !is_known_device(&name) && r.log.is_empty() {
+            if r.holder.is_none()
+                && r.queue.is_empty()
+                && !is_known_device(&name)
+                && r.log.is_empty()
+            {
                 self.resources.remove(&name);
             }
         }
@@ -611,7 +751,12 @@ impl LeaseState {
 
     pub fn list(&self, now: i64) -> Vec<Value> {
         let mut names: Vec<String> = KNOWN_DEVICES.iter().map(|s| s.to_string()).collect();
-        names.extend(self.resources.keys().filter(|n| !is_known_device(n)).cloned());
+        names.extend(
+            self.resources
+                .keys()
+                .filter(|n| !is_known_device(n))
+                .cloned(),
+        );
         let empty = LeaseResource::default();
         names
             .iter()
@@ -621,7 +766,11 @@ impl LeaseState {
 }
 
 pub fn lease_entry_view(e: &LeaseEntry, now: i64) -> Value {
-    let d = if e.described_at == 0 { e.since } else { e.described_at };
+    let d = if e.described_at == 0 {
+        e.since
+    } else {
+        e.described_at
+    };
     let mut v = Map::new();
     v.insert("sid".into(), json!(e.sid));
     v.insert("human".into(), json!(e.human));
@@ -643,7 +792,10 @@ pub fn lease_entry_view(e: &LeaseEntry, now: i64) -> Value {
 }
 
 pub fn lease_view(r: &LeaseResource, name: &str, now: i64) -> Value {
-    let holder = r.holder.as_ref().map_or(Value::Null, |h| lease_entry_view(h, now));
+    let holder = r
+        .holder
+        .as_ref()
+        .map_or(Value::Null, |h| lease_entry_view(h, now));
     let q: Vec<Value> = r
         .queue
         .iter()
@@ -660,16 +812,27 @@ pub fn lease_view(r: &LeaseResource, name: &str, now: i64) -> Value {
 
 // ---- the wake texts (built the same way in rust/machine/src/deliver.rs; the router picks when and for which device) --
 
-pub fn lease_granted_text(device: &str, ttl_min: i64, handover: bool, interrupted: bool, prompt: &str) -> String {
+pub fn lease_granted_text(
+    device: &str,
+    ttl_min: i64,
+    handover: bool,
+    interrupted: bool,
+    prompt: &str,
+) -> String {
     let q = jarvis_go::fmt::go_quote(device);
-    let mut t = format!("[lease {q} granted] This session now holds the shared device {q} (you were queued for it). ")
-        + &format!("It is yours for {ttl_min} min, renewed automatically by the device helpers on every action; return it when done (scripts/lease.py return {device}). ");
+    let mut t = format!(
+        "[lease {q} granted] This session now holds the shared device {q} (you were queued for it). "
+    ) + &format!(
+        "It is yours for {ttl_min} min, renewed automatically by the device helpers on every action; return it when done (scripts/lease.py return {device}). "
+    );
     if handover {
         t += &format!("Deyao had taken {q} over himself");
         if interrupted {
             t += " (interrupting you: your earlier steps may no longer apply)";
         }
-        t += &format!(" and has handed it back; his notes are in scripts/lease.py status {device}. The device is in whatever state he left it: look at it first (screenshot / UI tree) and continue from there.");
+        t += &format!(
+            " and has handed it back; his notes are in scripts/lease.py status {device}. The device is in whatever state he left it: look at it first (screenshot / UI tree) and continue from there."
+        );
     } else {
         t += "The previous holder may have left it in any state: inspect it first.";
     }
@@ -681,29 +844,37 @@ pub fn lease_granted_text(device: &str, ttl_min: i64, handover: bool, interrupte
 
 pub fn lease_taken_text(device: &str) -> String {
     let q = jarvis_go::fmt::go_quote(device);
-    format!("[lease {q} taken over] Deyao has taken the shared device {q} himself. Stop using it now: every device action is refused while he has it. ")
-        + "You are first in the queue; when he hands it back you'll be woken. Then look at the device first: it will be in whatever state he left it. "
+    format!(
+        "[lease {q} taken over] Deyao has taken the shared device {q} himself. Stop using it now: every device action is refused while he has it. "
+    ) + "You are first in the queue; when he hands it back you'll be woken. Then look at the device first: it will be in whatever state he left it. "
         + "This is an automated message from Jarvis."
 }
 
 pub fn lease_back_text(device: &str) -> String {
     let q = jarvis_go::fmt::go_quote(device);
-    format!("[lease {q} handed back] Deyao has handed the shared device {q} back. Earlier this session found it taken over: that no longer applies. ")
-        + &format!("Run scripts/lease.py status {device} to see whether it is free or who holds it now, and acquire it if this session still needs it (scripts/lease.py acquire {device} --purpose \"…\"). ")
-        + "If you told Deyao or planned around it being unavailable, reconsider now. It is in whatever state he left it: look at it first. "
+    format!(
+        "[lease {q} handed back] Deyao has handed the shared device {q} back. Earlier this session found it taken over: that no longer applies. "
+    ) + &format!(
+        "Run scripts/lease.py status {device} to see whether it is free or who holds it now, and acquire it if this session still needs it (scripts/lease.py acquire {device} --purpose \"…\"). "
+    ) + "If you told Deyao or planned around it being unavailable, reconsider now. It is in whatever state he left it: look at it first. "
         + "This is an automated message from Jarvis."
 }
 
 /// the prompt of a signed acquire request (what the machine reads from it too)
 pub fn signed_prompt(s: Option<&SignedRequest>) -> String {
     let Some(s) = s else { return String::new() };
-    let Ok(b) = base64::engine::general_purpose::STANDARD.decode(&s.body) else { return String::new() };
+    let Ok(b) = base64::engine::general_purpose::STANDARD.decode(&s.body) else {
+        return String::new();
+    };
     #[derive(Deserialize, Default)]
     #[serde(default)]
     struct X {
         prompt: String,
     }
-    clean_line(&jarvis_go::unmarshal::<X>(&b).unwrap_or_default().prompt, LEASE_MAX_PROMPT)
+    clean_line(
+        &jarvis_go::unmarshal::<X>(&b).unwrap_or_default().prompt,
+        LEASE_MAX_PROMPT,
+    )
 }
 
 // ---- the router's side --------------------------------------------------------------------------------------------
@@ -740,7 +911,9 @@ fn promoted_sid(p: &Option<LeaseEntry>) -> Value {
 }
 
 fn promoted_suffix(p: &Option<LeaseEntry>) -> String {
-    p.as_ref().map(|p| format!(" → {}", p.sid)).unwrap_or_default()
+    p.as_ref()
+        .map(|p| format!(" → {}", p.sid))
+        .unwrap_or_default()
 }
 
 /// the wait between tries of a lease text (tests shorten it)
@@ -763,21 +936,31 @@ impl Router {
     /// fn on the lease state inside one records change (kept even when fn refuses: a take-over refusal records the
     /// session that found it)
     pub fn lease_tx<R>(&self, mut f: impl FnMut(&mut LeaseState) -> Result<R>) -> Result<R> {
-        self.st.do_(|d| f(d.leases.get_or_insert_with(LeaseState::default)))
+        self.st
+            .do_(|d| f(d.leases.get_or_insert_with(LeaseState::default)))
     }
 
     pub fn lease_list(&self) -> Vec<Value> {
-        self.lease_tx(|st| Ok(st.list(now_ms()))).unwrap_or_default()
+        self.lease_tx(|st| Ok(st.list(now_ms())))
+            .unwrap_or_default()
     }
 
     fn get_lease(&self, w: &mut W, name: &str) {
         if !LEASE_NAME_RE.is_match(name) {
-            return write_json(w, 400, &json!({"error": "bad resource name (lowercase letters/digits/dashes)"}));
+            return write_json(
+                w,
+                400,
+                &json!({"error": "bad resource name (lowercase letters/digits/dashes)"}),
+            );
         }
         let v = self
             .lease_tx(|st| {
                 let empty = LeaseResource::default();
-                Ok(lease_view(st.resources.get(name).unwrap_or(&empty), name, now_ms()))
+                Ok(lease_view(
+                    st.resources.get(name).unwrap_or(&empty),
+                    name,
+                    now_ms(),
+                ))
             })
             .unwrap_or_default();
         write_json(w, 200, &json!({"lease": v}));
@@ -785,7 +968,9 @@ impl Router {
 
     /// Deyao takes the device himself (the app, or the setup session for him)
     pub fn take_over_lease(self: &Arc<Self>, w: &mut W, name: &str, b: &[u8]) {
-        let res = lease_body(b).and_then(|m| self.lease_tx(|st| st.take_over(name, opt_str(&m, "note").as_deref(), now_ms())));
+        let res = lease_body(b).and_then(|m| {
+            self.lease_tx(|st| st.take_over(name, opt_str(&m, "note").as_deref(), now_ms()))
+        });
         let out = match res {
             Err(e) => return lease_error_out(w, &e),
             Ok(o) => o,
@@ -802,7 +987,15 @@ impl Router {
         if !out.interrupted.is_empty() {
             let (r, sid, name) = (self.clone(), out.interrupted.clone(), name.to_string());
             std::thread::spawn(move || {
-                r.tell_lease(&sid, Delivery { kind: "lease-taken".into(), device: name, ..Default::default() }, 1)
+                r.tell_lease(
+                    &sid,
+                    Delivery {
+                        kind: "lease-taken".into(),
+                        device: name,
+                        ..Default::default()
+                    },
+                    1,
+                )
             });
         }
     }
@@ -831,7 +1024,15 @@ impl Router {
         for sid in out.notify {
             let (r, name) = (self.clone(), name.to_string());
             std::thread::spawn(move || {
-                r.tell_lease(&sid, Delivery { kind: "lease-back".into(), device: name, ..Default::default() }, 5)
+                r.tell_lease(
+                    &sid,
+                    Delivery {
+                        kind: "lease-back".into(),
+                        device: name,
+                        ..Default::default()
+                    },
+                    5,
+                )
             });
         }
     }
@@ -856,12 +1057,18 @@ impl Router {
                 }
                 Err(e) => {
                     if i >= tries || crate::sessionapi::is_no_session(&e) {
-                        crate::logf!("[lease] {}: telling {sid} ({}) failed: {e:#}", d.device, d.kind);
+                        crate::logf!(
+                            "[lease] {}: telling {sid} ({}) failed: {e:#}",
+                            d.device,
+                            d.kind
+                        );
                         return;
                     }
                 }
             }
-            std::thread::sleep(Duration::from_millis(LEASE_RETRY_WAIT_MS.load(Ordering::Relaxed)));
+            std::thread::sleep(Duration::from_millis(
+                LEASE_RETRY_WAIT_MS.load(Ordering::Relaxed),
+            ));
             i += 1;
         }
     }
@@ -878,7 +1085,9 @@ impl Router {
     /// the state lock (a paused session takes minutes to start) and marked only once delivered, so a failure is retried
     /// at the next tick.
     pub fn lease_tick(self: &Arc<Self>) {
-        let Ok(_t) = LEASE_TICKING.try_lock() else { return };
+        let Ok(_t) = LEASE_TICKING.try_lock() else {
+            return;
+        };
         let now = now_ms();
         let (changes, pending) = self.st.do_(|d| {
             let alive: BTreeSet<String> = d
@@ -903,7 +1112,9 @@ impl Router {
             let key = format!("{}/{}/{}", p.name, p.sid, p.since);
             {
                 let mut g = lease_run();
-                if g.busy.contains(&key) || g.attempts.get(&key).copied().unwrap_or(0) >= LEASE_MAX_ATTEMPTS {
+                if g.busy.contains(&key)
+                    || g.attempts.get(&key).copied().unwrap_or(0) >= LEASE_MAX_ATTEMPTS
+                {
                     continue;
                 }
                 g.busy.insert(key.clone());
@@ -937,7 +1148,11 @@ impl Router {
                             *n += 1;
                             *n
                         };
-                        crate::logf!("[lease] {}: waking {} failed ({n}/{LEASE_MAX_ATTEMPTS}): {e:#}", p.name, p.sid);
+                        crate::logf!(
+                            "[lease] {}: waking {} failed ({n}/{LEASE_MAX_ATTEMPTS}): {e:#}",
+                            p.name,
+                            p.sid
+                        );
                         if crate::sessionapi::is_no_session(&e) || n >= LEASE_MAX_ATTEMPTS {
                             mark(&r);
                         }
@@ -970,7 +1185,11 @@ fn own(
         };
         let id = req.path_value("id");
         if !id.is_empty() && id != sid {
-            return write_json(w, 403, &json!({"error": format!("this machine is session {sid}, not {id}")}));
+            return write_json(
+                w,
+                403,
+                &json!({"error": format!("this machine is session {sid}, not {id}")}),
+            );
         }
         f(r, w, req, &sid, machine, body)
     });
@@ -978,8 +1197,12 @@ fn own(
 
 pub fn register_leases(reg: &mut Registrar) {
     // ---- the app (Deyao) ------------------------------------------------------------------------------------
-    reg.app("GET /api/leases", |r, w, _| write_json(w, 200, &json!({"leases": r.lease_list()})));
-    reg.app("GET /api/leases/{name}", |r, w, req| r.get_lease(w, &req.path_value("name")));
+    reg.app("GET /api/leases", |r, w, _| {
+        write_json(w, 200, &json!({"leases": r.lease_list()}))
+    });
+    reg.app("GET /api/leases/{name}", |r, w, req| {
+        r.get_lease(w, &req.path_value("name"))
+    });
     reg.app("POST /api/leases/{name}/force-return", |r, w, req| {
         let name = req.path_value("name");
         let out = match r.lease_tx(|st| st.give_back(&name, "", now_ms(), true)) {
@@ -1009,104 +1232,144 @@ pub fn register_leases(reg: &mut Registrar) {
     // the setup session (Claude, fully trusted: DECISIONS 57) acts for Deyao here, e.g. to carry his Jarvis 1
     // take-overs over (DECISIONS 113); signed with the setup key like every /setup call
     for act in ["take-over", "hand-back"] {
-        reg.setup_route(&format!("POST /setup/leases/{{name}}/{act}"), move |r, w, req| {
-            let b = req.read_body(1 << 16);
-            if let Err(e) = r.check_setup_sig(
-                &req.method,
-                &req.path,
-                &req.header("X-Setup-Time"),
-                &req.header("X-Setup-Sig"),
-                &b,
-            ) {
-                return write_json(w, 401, &json!({"error": format!("{e:#}")}));
-            }
-            if act == "take-over" {
-                r.take_over_lease(w, &req.path_value("name"), &b);
-            } else {
-                r.hand_back_lease(w, &req.path_value("name"), &b);
-            }
-        });
+        reg.setup_route(
+            &format!("POST /setup/leases/{{name}}/{act}"),
+            move |r, w, req| {
+                let b = req.read_body(1 << 16);
+                if let Err(e) = r.check_setup_sig(
+                    &req.method,
+                    &req.path,
+                    &req.header("X-Setup-Time"),
+                    &req.header("X-Setup-Sig"),
+                    &b,
+                ) {
+                    return write_json(w, 401, &json!({"error": format!("{e:#}")}));
+                }
+                if act == "take-over" {
+                    r.take_over_lease(w, &req.path_value("name"), &b);
+                } else {
+                    r.hand_back_lease(w, &req.path_value("name"), &b);
+                }
+            },
+        );
     }
 
     // ---- the session itself (through its machine's local proxy; the path's id must be its own) ---------------
-    own(reg, "GET /m/api/leases", |r, w, _, _, _, _| write_json(w, 200, &json!({"leases": r.lease_list()})));
-    own(reg, "GET /m/api/leases/{name}", |r, w, req, _, _, _| r.get_lease(w, &req.path_value("name")));
-    own(reg, "POST /m/api/sessions/{id}/leases/{name}", |r, w, req, sid, machine, b| {
-        let name = req.path_value("name");
-        let m = match lease_body(b) {
-            Err(e) => return lease_error_out(w, &e),
-            Ok(m) => m,
-        };
-        let o = LeaseOpts {
-            purpose: opt_str(&m, "purpose"),
-            description: opt_str(&m, "description"),
-            prompt: opt_str(&m, "prompt").unwrap_or_default(),
-            ttl: m.get("ttlSeconds").cloned(),
-            low_priority: m.get("lowPriority").and_then(Value::as_bool).unwrap_or(false),
-            signed: Some(crate::vouch::signed_request_of(req, machine, b)),
-        };
-        let out = match r.lease_tx(|st| st.acquire(&name, sid, &o, now_ms())) {
-            Err(e) => return lease_error_out(w, &e),
-            Ok(o) => o,
-        };
-        if out.status != "renewed" {
-            crate::logf!(
-                "[lease] {name}: {sid} {} #{} ({})",
-                out.status,
-                out.position,
-                crate::util::trim_to(o.purpose.as_deref().unwrap_or(""), 60)
-            );
-        }
-        write_json(w, if out.status == "busy" { 409 } else { 200 }, &out);
+    own(reg, "GET /m/api/leases", |r, w, _, _, _, _| {
+        write_json(w, 200, &json!({"leases": r.lease_list()}))
     });
-    own(reg, "PUT /m/api/sessions/{id}/leases/{name}", |r, w, req, sid, _, _| {
-        // a take-over refusal is kept too: it records the session to be told when Deyao hands the device back
-        let res = r.lease_tx(|st| st.renew(&req.path_value("name"), sid, now_ms()));
-        match res {
-            Err(e) => lease_error_out(w, &e),
-            Ok(out) => write_json(w, 200, &out),
-        }
+    own(reg, "GET /m/api/leases/{name}", |r, w, req, _, _, _| {
+        r.get_lease(w, &req.path_value("name"))
     });
-    own(reg, "PATCH /m/api/sessions/{id}/leases/{name}", |r, w, req, sid, _, b| {
-        let res = lease_body(b).and_then(|m| {
-            let o = LeaseOpts { purpose: opt_str(&m, "purpose"), description: opt_str(&m, "description"), ..Default::default() };
-            r.lease_tx(|st| st.describe(&req.path_value("name"), sid, &o, now_ms()))
-        });
-        match res {
-            Err(e) => lease_error_out(w, &e),
-            Ok(out) => write_json(w, 200, &out),
-        }
-    });
-    own(reg, "POST /m/api/sessions/{id}/leases/{name}/seen", |r, w, req, sid, _, _| {
-        match r.lease_tx(|st| st.note_blocked(&req.path_value("name"), sid)) {
+    own(
+        reg,
+        "POST /m/api/sessions/{id}/leases/{name}",
+        |r, w, req, sid, machine, b| {
+            let name = req.path_value("name");
+            let m = match lease_body(b) {
+                Err(e) => return lease_error_out(w, &e),
+                Ok(m) => m,
+            };
+            let o = LeaseOpts {
+                purpose: opt_str(&m, "purpose"),
+                description: opt_str(&m, "description"),
+                prompt: opt_str(&m, "prompt").unwrap_or_default(),
+                ttl: m.get("ttlSeconds").cloned(),
+                low_priority: m
+                    .get("lowPriority")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                signed: Some(crate::vouch::signed_request_of(req, machine, b)),
+            };
+            let out = match r.lease_tx(|st| st.acquire(&name, sid, &o, now_ms())) {
+                Err(e) => return lease_error_out(w, &e),
+                Ok(o) => o,
+            };
+            if out.status != "renewed" {
+                crate::logf!(
+                    "[lease] {name}: {sid} {} #{} ({})",
+                    out.status,
+                    out.position,
+                    crate::util::trim_to(o.purpose.as_deref().unwrap_or(""), 60)
+                );
+            }
+            write_json(w, if out.status == "busy" { 409 } else { 200 }, &out);
+        },
+    );
+    own(
+        reg,
+        "PUT /m/api/sessions/{id}/leases/{name}",
+        |r, w, req, sid, _, _| {
+            // a take-over refusal is kept too: it records the session to be told when Deyao hands the device back
+            let res = r.lease_tx(|st| st.renew(&req.path_value("name"), sid, now_ms()));
+            match res {
+                Err(e) => lease_error_out(w, &e),
+                Ok(out) => write_json(w, 200, &out),
+            }
+        },
+    );
+    own(
+        reg,
+        "PATCH /m/api/sessions/{id}/leases/{name}",
+        |r, w, req, sid, _, b| {
+            let res = lease_body(b).and_then(|m| {
+                let o = LeaseOpts {
+                    purpose: opt_str(&m, "purpose"),
+                    description: opt_str(&m, "description"),
+                    ..Default::default()
+                };
+                r.lease_tx(|st| st.describe(&req.path_value("name"), sid, &o, now_ms()))
+            });
+            match res {
+                Err(e) => lease_error_out(w, &e),
+                Ok(out) => write_json(w, 200, &out),
+            }
+        },
+    );
+    own(
+        reg,
+        "POST /m/api/sessions/{id}/leases/{name}/seen",
+        |r, w, req, sid, _, _| match r.lease_tx(|st| st.note_blocked(&req.path_value("name"), sid))
+        {
             Err(e) => lease_error_out(w, &e),
             Ok(taken) => write_json(w, 200, &json!({"takenOver": taken})),
-        }
-    });
-    own(reg, "DELETE /m/api/sessions/{id}/leases/{name}", |r, w, req, sid, _, _| {
-        let name = req.path_value("name");
-        let res = r.lease_tx(|st| {
-            let holds = st.res(&name)?.holder.as_ref().is_some_and(|h| h.sid == sid);
-            if holds {
-                return Ok((st.give_back(&name, sid, now_ms(), false)?, false));
-            }
-            Ok((GiveBackOut::default(), st.leave(&name, sid)?))
-        });
-        let (gb, left) = match res {
-            Err(e) => return lease_error_out(w, &e),
-            Ok(x) => x,
-        };
-        let what = if gb.returned {
-            "returned it"
-        } else if left {
-            "left the queue"
-        } else {
-            "had nothing"
-        };
-        crate::logf!("[lease] {name}: {sid} {what}{}", promoted_suffix(&gb.promoted));
-        write_json(w, 200, &json!({"returned": gb.returned, "left": left, "next": promoted_sid(&gb.promoted)}));
-        r.kick_leases(&gb.promoted);
-    });
+        },
+    );
+    own(
+        reg,
+        "DELETE /m/api/sessions/{id}/leases/{name}",
+        |r, w, req, sid, _, _| {
+            let name = req.path_value("name");
+            let res = r.lease_tx(|st| {
+                let holds = st.res(&name)?.holder.as_ref().is_some_and(|h| h.sid == sid);
+                if holds {
+                    return Ok((st.give_back(&name, sid, now_ms(), false)?, false));
+                }
+                Ok((GiveBackOut::default(), st.leave(&name, sid)?))
+            });
+            let (gb, left) = match res {
+                Err(e) => return lease_error_out(w, &e),
+                Ok(x) => x,
+            };
+            let what = if gb.returned {
+                "returned it"
+            } else if left {
+                "left the queue"
+            } else {
+                "had nothing"
+            };
+            crate::logf!(
+                "[lease] {name}: {sid} {what}{}",
+                promoted_suffix(&gb.promoted)
+            );
+            write_json(
+                w,
+                200,
+                &json!({"returned": gb.returned, "left": left, "next": promoted_sid(&gb.promoted)}),
+            );
+            r.kick_leases(&gb.promoted);
+        },
+    );
 }
 
 #[cfg(test)]
@@ -1116,8 +1379,14 @@ mod tests {
     #[test]
     fn queue_take_over_and_back() {
         let mut st = LeaseState::default();
-        let o = LeaseOpts { purpose: Some("  screen  shot ".into()), ..Default::default() };
-        assert_eq!(st.acquire("mac", "a", &o, 1000).map(|x| x.status).ok(), Some("granted".into()));
+        let o = LeaseOpts {
+            purpose: Some("  screen  shot ".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            st.acquire("mac", "a", &o, 1000).map(|x| x.status).ok(),
+            Some("granted".into())
+        );
         let q = st.acquire("mac", "b", &o, 2000).unwrap_or_default();
         assert_eq!((q.status.as_str(), q.position), ("queued", 1));
         let t = st.take_over("mac", Some("mine"), 3000).unwrap_or_default();
@@ -1128,7 +1397,10 @@ mod tests {
         assert_eq!(hb.promoted.map(|p| p.sid), Some("a".into()));
         assert_eq!(hb.notify, vec!["c".to_string()]);
         let res = &st.resources["mac"];
-        assert_eq!(res.holder.as_ref().map(|h| h.purpose.as_str()), Some("screen shot"));
+        assert_eq!(
+            res.holder.as_ref().map(|h| h.purpose.as_str()),
+            Some("screen shot")
+        );
         assert!(res.holder.as_ref().is_some_and(|h| h.handover.is_some()));
         assert_eq!(clean_text("a  \n\n\n\nb\r\n", 100), "a\n\nb");
     }

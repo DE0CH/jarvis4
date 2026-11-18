@@ -66,7 +66,12 @@ pub struct SweepChoice {
 }
 
 /// the pure decision (tested): which volumes are leftovers. named = volume id → who names it.
-pub fn sweep_select(vols: &[FlyVolume], ms: &[SweepMachine], named: &BTreeMap<String, String>, now: GoTime) -> SweepChoice {
+pub fn sweep_select(
+    vols: &[FlyVolume],
+    ms: &[SweepMachine],
+    named: &BTreeMap<String, String>,
+    now: GoTime,
+) -> SweepChoice {
     let mut mounted: BTreeMap<&str, &str> = BTreeMap::new();
     for m in ms.iter().filter(|m| m.state != "destroyed") {
         for mt in m.config.mounts.iter().filter(|mt| !mt.volume.is_empty()) {
@@ -88,7 +93,9 @@ pub fn sweep_select(vols: &[FlyVolume], ms: &[SweepMachine], named: &BTreeMap<St
         } else {
             match GoTime::parse(&v.created_at) {
                 None => format!("no creation time: {}", v.created_at),
-                Some(t) if now.sub(&t) < VOL_SWEEP_MIN_AGE => format!("young: created {}", v.created_at),
+                Some(t) if now.sub(&t) < VOL_SWEEP_MIN_AGE => {
+                    format!("young: created {}", v.created_at)
+                }
                 Some(_) => String::new(),
             }
         };
@@ -164,7 +171,8 @@ fn vol_sweep_reader_live() -> Result<(Vec<FlyVolume>, Vec<SweepMachine>)> {
 pub static VOLUME_DELETE: RwLock<DeleteFn> = RwLock::new(volume_delete_live);
 pub static VOL_SWEEP_READER: RwLock<ReaderFn> = RwLock::new(vol_sweep_reader_live);
 
-static VOL_SWEEP_STATUS: LazyLock<Mutex<Option<Map<String, Value>>>> = LazyLock::new(Default::default);
+static VOL_SWEEP_STATUS: LazyLock<Mutex<Option<Map<String, Value>>>> =
+    LazyLock::new(Default::default);
 
 fn set_status(v: Value) {
     *VOL_SWEEP_STATUS.lock().unwrap_or_else(|e| e.into_inner()) = v.as_object().cloned();
@@ -172,7 +180,11 @@ fn set_status(v: Value) {
 
 /// the last sweep, for /setup/status (counts and ids only; null before the first)
 pub fn volume_sweep_status() -> Value {
-    VOL_SWEEP_STATUS.lock().unwrap_or_else(|e| e.into_inner()).clone().map_or(Value::Null, Value::Object)
+    VOL_SWEEP_STATUS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+        .map_or(Value::Null, Value::Object)
 }
 
 impl Router {
@@ -186,13 +198,22 @@ impl Router {
                 }
             };
             for s in d.sessions.values() {
-                add(cert_volume(s.cert.as_ref()), format!("session {}'s line", s.id));
-                add(cert_volume(d.sess_certs.get(&s.id)), format!("session {}'s line", s.id));
+                add(
+                    cert_volume(s.cert.as_ref()),
+                    format!("session {}'s line", s.id),
+                );
+                add(
+                    cert_volume(d.sess_certs.get(&s.id)),
+                    format!("session {}'s line", s.id),
+                );
                 for m in [&s.machine_id, &s.booted] {
                     if m.is_empty() {
                         continue;
                     }
-                    add(cert_volume(d.certs.get(m)), format!("session {}'s machine {m}", s.id));
+                    add(
+                        cert_volume(d.certs.get(m)),
+                        format!("session {}'s machine {m}", s.id),
+                    );
                     if let Some(v) = d.started.get(m).and_then(|st| st.volume.as_ref()) {
                         add(v.id.clone(), format!("session {}'s machine {m}", s.id));
                     }
@@ -222,7 +243,9 @@ impl Router {
         }
         let mut kept: BTreeMap<String, i64> = BTreeMap::new();
         for why in ch.kept.values() {
-            *kept.entry(jarvis_go::fmt::cut(why, ":").0.to_string()).or_default() += 1;
+            *kept
+                .entry(jarvis_go::fmt::cut(why, ":").0.to_string())
+                .or_default() += 1;
         }
         crate::logf!(
             "[volsweep] {} volumes, {} machines in {SESSIONS_APP}: deleted {}, failed {} (tried again next sweep), kept {}",
@@ -232,14 +255,22 @@ impl Router {
             jarvis_go::fmt::go_sprint(&json!(failed)),
             jarvis_go::fmt::go_sprint(&json!(kept))
         );
-        set_status(json!({"checkedAt": now.utc().rfc3339(), "volumes": vols.len(), "deleted": deleted, "failed": failed, "kept": kept}));
+        set_status(
+            json!({"checkedAt": now.utc().rfc3339(), "volumes": vols.len(), "deleted": deleted, "failed": failed, "kept": kept}),
+        );
         Ok(deleted)
     }
 
     pub fn vol_sweep_loop(self: &Arc<Self>) {
         let token = std::env::var("FLY_VOLUME_TOKEN").unwrap_or_default();
-        if token.is_empty() || std::env::var("FLY_READ_TOKEN").unwrap_or_default().is_empty() {
-            crate::logf!("[volsweep] FLY_VOLUME_TOKEN or FLY_READ_TOKEN unset: no leftover-volume sweep");
+        if token.is_empty()
+            || std::env::var("FLY_READ_TOKEN")
+                .unwrap_or_default()
+                .is_empty()
+        {
+            crate::logf!(
+                "[volsweep] FLY_VOLUME_TOKEN or FLY_READ_TOKEN unset: no leftover-volume sweep"
+            );
             set_status(json!({"error": "off: FLY_VOLUME_TOKEN or FLY_READ_TOKEN not set"}));
             return;
         }
@@ -247,8 +278,13 @@ impl Router {
         loop {
             crate::leaderlease::await_lead();
             if let Err(e) = self.volume_sweep(&token, GoTime::now()) {
-                crate::logf!("[volsweep] {e:#} (tried again in {})", jarvis_go::fmt::duration_string(VOL_SWEEP_EVERY));
-                set_status(json!({"checkedAt": GoTime::now().utc().rfc3339(), "error": format!("{e:#}")}));
+                crate::logf!(
+                    "[volsweep] {e:#} (tried again in {})",
+                    jarvis_go::fmt::duration_string(VOL_SWEEP_EVERY)
+                );
+                set_status(
+                    json!({"checkedAt": GoTime::now().utc().rfc3339(), "error": format!("{e:#}")}),
+                );
             }
             std::thread::sleep(VOL_SWEEP_EVERY);
         }

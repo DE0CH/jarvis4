@@ -83,7 +83,7 @@ pub static INIT_MAX_MS: AtomicU64 = AtomicU64::new(12 * 60_000);
 pub static KILL_STEP_MS: AtomicU64 = AtomicU64::new(1_000);
 pub static KILL_MAX_MS: AtomicU64 = AtomicU64::new(45 * 60_000);
 /// how long a start waits out Fly's org machine limit, and how often it tries
-pub static MACHINE_LIMIT_WAIT_MS: AtomicU64 = AtomicU64::new(3 * 3600_000);
+pub static MACHINE_LIMIT_WAIT_MS: AtomicU64 = AtomicU64::new(3 * 3_600_000);
 pub static MACHINE_LIMIT_STEP_MS: AtomicU64 = AtomicU64::new(60_000);
 /// how often and how far apart a kill that failed on the way is tried again
 pub static KILL_TRANSIENT_TRIES: AtomicI64 = AtomicI64::new(4);
@@ -125,7 +125,7 @@ static SELF_SUCCESSION_LOCKS: std::sync::LazyLock<Mutex<BTreeMap<String, &'stati
     std::sync::LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 pub fn self_succession_lock(machine: &str) -> std::sync::MutexGuard<'static, ()> {
-    let m: &'static Mutex<()> = *SELF_SUCCESSION_LOCKS
+    let m: &'static Mutex<()> = SELF_SUCCESSION_LOCKS
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .entry(machine.to_string())
@@ -173,7 +173,11 @@ pub fn cert_mode(c: Option<&Doc>) -> &'static str {
 }
 
 /// the stores and harness the line's cert names (the fallbacks when it names none)
-pub fn cert_stores_harness(c: Option<&Doc>, stores: &[String], harness: &str) -> (Vec<String>, String) {
+pub fn cert_stores_harness(
+    c: Option<&Doc>,
+    stores: &[String],
+    harness: &str,
+) -> (Vec<String>, String) {
     #[derive(Deserialize, Default)]
     #[serde(default)]
     struct O {
@@ -187,7 +191,9 @@ pub fn cert_stores_harness(c: Option<&Doc>, stores: &[String], harness: &str) ->
     }
     let (mut s, mut h) = (stores.to_vec(), harness.to_string());
     let Some(c) = c else { return (s, h) };
-    let Ok(x) = c.decode::<X>() else { return (s, h) };
+    let Ok(x) = c.decode::<X>() else {
+        return (s, h);
+    };
     if let Some(st) = x.stores {
         s = st;
     }
@@ -306,7 +312,10 @@ pub fn pinned_image(image: &str, current: &str, order: &[String]) -> String {
 
 /// image is a pin older than FIRST_ROUTER_LOGIN_IMAGE, by its digest's place in the pin order
 pub fn legacy_login_image(image: &str, order: &[String]) -> bool {
-    let Some(mark) = order.iter().position(|o| o.contains(FIRST_ROUTER_LOGIN_IMAGE)) else {
+    let Some(mark) = order
+        .iter()
+        .position(|o| o.contains(FIRST_ROUTER_LOGIN_IMAGE))
+    else {
         return false;
     };
     if image.is_empty() {
@@ -327,8 +336,12 @@ pub struct DestroyOpts {
     #[allow(clippy::type_complexity)]
     pub report: Option<
         Arc<
-            dyn Fn(&Session, Option<serde_json::Map<String, Value>>, Option<&crate::archive::ArchiveInfo>, Option<&anyhow::Error>)
-                + Send
+            dyn Fn(
+                    &Session,
+                    Option<serde_json::Map<String, Value>>,
+                    Option<&crate::archive::ArchiveInfo>,
+                    Option<&anyhow::Error>,
+                ) + Send
                 + Sync,
         >,
     >,
@@ -417,8 +430,14 @@ impl Router {
     ) -> Result<Doc> {
         // the defaults are the router's: the core refuses rather than fills in (R2)
         let mode = if mode == "bypass" { "bypass" } else { "auto" };
-        let harness = if harness.is_empty() { "claude" } else { harness };
-        let mut opts: BTreeMap<&str, &str> = [("harness", harness), ("permissionMode", mode)].into_iter().collect();
+        let harness = if harness.is_empty() {
+            "claude"
+        } else {
+            harness
+        };
+        let mut opts: BTreeMap<&str, &str> = [("harness", harness), ("permissionMode", mode)]
+            .into_iter()
+            .collect();
         if !config.is_empty() {
             opts.insert("config", config);
         }
@@ -465,7 +484,11 @@ impl Router {
         wait_limit: bool,
     ) -> Result<Doc> {
         let size = if size.is_empty() { "medium" } else { size };
-        let region = if region.is_empty() { self.cfg.region.as_str() } else { region };
+        let region = if region.is_empty() {
+            self.cfg.region.as_str()
+        } else {
+            region
+        };
         let mut input = json!({"image": image, "region": region, "size": size});
         if disk_gb > 0 {
             input["diskGb"] = json!(disk_gb);
@@ -511,8 +534,9 @@ impl Router {
             match self.core.call("/init", &json!({"machine": c.id})) {
                 Ok(st) => return Ok(st),
                 Err(e) => {
-                    let retry = core_err(&e)
-                        .is_some_and(|ce| ce.status == 502 || (ce.status == 409 && ce.msg.contains("not started")));
+                    let retry = core_err(&e).is_some_and(|ce| {
+                        ce.status == 502 || (ce.status == 409 && ce.msg.contains("not started"))
+                    });
                     if !retry || Instant::now() > deadline {
                         let _ = self.kill_until_destroyed(&json!({"machine": c.id}));
                         return Err(e);
@@ -570,19 +594,25 @@ impl Router {
             request: Rq,
         }
         let a: A = approval.decode().unwrap_or_default();
-        let s: Session = self.st.do_(|d| d.sessions.get(sid).cloned().unwrap_or_default());
+        let s: Session = self
+            .st
+            .do_(|d| d.sessions.get(sid).cloned().unwrap_or_default());
         self.set_state(sid, "starting", "");
         // lifecycle.rs: the operation this start belongs to (a resume's), or a boot of its own; this function ends it
-        let op = self
-            .lc_current(sid)
-            .unwrap_or_else(|| self.lc_begin(sid, if s.cert.is_some() { "resume" } else { "boot" }));
+        let op = self.lc_current(sid).unwrap_or_else(|| {
+            self.lc_begin(sid, if s.cert.is_some() { "resume" } else { "boot" })
+        });
         op.set_handed();
         let fail = |msg: &str| {
             self.set_state(sid, "failed", msg);
             op.note("", msg);
             op.end_joined("failed", msg);
         };
-        let size = if s.size.is_empty() { "medium".to_string() } else { s.size.clone() };
+        let size = if s.size.is_empty() {
+            "medium".to_string()
+        } else {
+            s.size.clone()
+        };
         // handover.rs: the machine started while the old one stopped, when it is the one this start asks for
         let region = self.region_of(&s);
         let next = crate::handover::NextMachine {
@@ -597,12 +627,24 @@ impl Router {
                 Ok(d)
             }
             None => {
-                op.note("", &format!("asked the core to start a machine ({size}, image {})", a.request.image));
+                op.note(
+                    "",
+                    &format!(
+                        "asked the core to start a machine ({size}, image {})",
+                        a.request.image
+                    ),
+                );
                 let created = |id: &str| {
                     op.machine(id);
                     op.note(id, &format!("the core's Fly create made machine {id}; waiting for it to come up and give its keys (init)"));
                 };
-                self.start_machine_disk(&a.request.image, &s.size, &region, s.disk_gb, Some(&created))
+                self.start_machine_disk(
+                    &a.request.image,
+                    &s.size,
+                    &region,
+                    s.disk_gb,
+                    Some(&created),
+                )
             }
         };
         let d = match d {
@@ -639,7 +681,10 @@ impl Router {
         );
         let (cert, ans) = match res {
             Err(e) => {
-                op.note(&m.id, &format!("certify refused: {e:#}; asking the core to kill the machine"));
+                op.note(
+                    &m.id,
+                    &format!("certify refused: {e:#}; asking the core to kill the machine"),
+                );
                 let _ = self.kill_until_destroyed(&json!({"machine": m.id}));
                 fail(&format!("certify: {e:#}"));
                 return;
@@ -741,7 +786,10 @@ impl Router {
             input.size = "medium".into();
         }
         if !input.region.is_empty() && !crate::regions::valid_region(&input.region) {
-            return Err(bad(format!("region {:?}: one of GET /api/regions", input.region)));
+            return Err(bad(format!(
+                "region {:?}: one of GET /api/regions",
+                input.region
+            )));
         }
         if !input.runner.is_empty() && !crate::awsrunner::valid_runner(&input.runner) {
             return Err(bad(format!("runner {:?}: aws or fly", input.runner)));
@@ -797,15 +845,18 @@ impl Router {
             s.import_from = i.session.clone();
             s.import_sha = i.sha256.clone();
         }
-        let (dup, err) = self.st.do_(|d| match crate::sessionops::admit_session(d, &mut s, &input) {
-            Ok(dup) => {
-                if dup.is_empty() {
-                    d.sessions.insert(s.id.clone(), s.clone());
-                }
-                (dup, None)
-            }
-            Err(e) => (String::new(), Some(e)),
-        });
+        let (dup, err) =
+            self.st.do_(
+                |d| match crate::sessionops::admit_session(d, &mut s, &input) {
+                    Ok(dup) => {
+                        if dup.is_empty() {
+                            d.sessions.insert(s.id.clone(), s.clone());
+                        }
+                        (dup, None)
+                    }
+                    Err(e) => (String::new(), Some(e)),
+                },
+            );
         if let Some(e) = err {
             return Err(e);
         }
@@ -822,7 +873,9 @@ impl Router {
             }
         };
         // kernelline.rs: a new line goes on the kernel once it serves (D7); the old core's lines go on there
-        let kernel = self.kernel_serves() && input.import.is_none() && !crate::tasks::is_task_harness(&s.harness);
+        let kernel = self.kernel_serves()
+            && input.import.is_none()
+            && !crate::tasks::is_task_harness(&s.harness);
         let mut ch = None;
         if !kernel {
             match self.succession(
@@ -888,11 +941,17 @@ impl Router {
     }
 
     /// the chosen stores plus the harness's, sorted (the core refuses unknown ones)
-    pub fn with_harness_stores(&self, chosen: &[String], harness: &[String]) -> Result<Vec<String>> {
+    pub fn with_harness_stores(
+        &self,
+        chosen: &[String],
+        harness: &[String],
+    ) -> Result<Vec<String>> {
         let mut set = std::collections::BTreeSet::new();
         for n in chosen.iter().chain(harness.iter()) {
             if n == crate::policy::FLY_STORE {
-                return Err(anyhow!("store {n} holds the core's Fly token and never goes to a session"));
+                return Err(anyhow!(
+                    "store {n} holds the core's Fly token and never goes to a session"
+                ));
             }
             if n == DEPLOY_KEY_TOKEN_STORE {
                 return Err(anyhow!(
@@ -924,10 +983,10 @@ impl Router {
         // a start the answer leads to is a tracked lifecycle action (drain.rs): during a drain the answer is refused
         // before the core uses it up, so the approval stays in the Inbox for the phone to answer again
         let done = self.begin(&a.session, "approved")?;
-        let (ans, extra) = match self
-            .core
-            .call_answer("/approve/by-phone", &json!({"challenge": a.challenge, "signature": signature}))
-        {
+        let (ans, extra) = match self.core.call_answer(
+            "/approve/by-phone",
+            &json!({"challenge": a.challenge, "signature": signature}),
+        ) {
             Ok(x) => x,
             Err(e) => {
                 done.call();
@@ -939,7 +998,15 @@ impl Router {
             d.approvals.remove(id);
             if a.kind == "new-session" {
                 // outcomes.rs: the core's approval, by the phone, of exactly the proposal
-                crate::outcomes::note_outcome(d, a.origin.as_ref(), &a.kind, &a.session, crate::outcomes::OUTCOME_APPROVED, 0, Some(&ans));
+                crate::outcomes::note_outcome(
+                    d,
+                    a.origin.as_ref(),
+                    &a.kind,
+                    &a.session,
+                    crate::outcomes::OUTCOME_APPROVED,
+                    0,
+                    Some(&ans),
+                );
             }
         });
         let r = self.clone();
@@ -954,7 +1021,11 @@ impl Router {
     /// The phone's answer to "add store X to this running machine". The core answers every add-store onto the
     /// machine's newest cert, which the router sends beside it as current (core addOnto). The router never stores an
     /// answer that loses a store the session holds: then the approval is filed again from the newest cert.
-    pub fn respond_add_store(self: &Arc<Self>, a: &Approval, signature: &str) -> Result<(Doc, String)> {
+    pub fn respond_add_store(
+        self: &Arc<Self>,
+        a: &Approval,
+        signature: &str,
+    ) -> Result<(Doc, String)> {
         let _unlock = self_succession_lock(&a.machine);
         let (cur, have, chs) = self.st.do_(|d| {
             let (mut cur, mut have) = (None, vec![]);
@@ -977,9 +1048,19 @@ impl Router {
         let Some(cur) = cur else {
             self.st.do_(|d| {
                 d.approvals.remove(&a.id);
-                crate::outcomes::note_outcome(d, a.origin.as_ref(), &a.kind, &a.session, crate::outcomes::OUTCOME_DROPPED, 0, None);
+                crate::outcomes::note_outcome(
+                    d,
+                    a.origin.as_ref(),
+                    &a.kind,
+                    &a.session,
+                    crate::outcomes::OUTCOME_DROPPED,
+                    0,
+                    None,
+                );
             });
-            return Err(anyhow!("the session no longer runs on the machine this store was asked for"));
+            return Err(anyhow!(
+                "the session no longer runs on the machine this store was asked for"
+            ));
         };
         let store = a.options.get("store").cloned().unwrap_or_default();
         let done = self.begin(&a.session, "approved")?;
@@ -991,7 +1072,9 @@ impl Router {
             let input = json!({"challenge": ch, "signature": signature, "current": cur, "carry": self.read_carry(&a.machine)});
             res = self.core.call_answer("/approve/by-phone", &input);
             match &res {
-                Err(e) if core_err(e).is_some_and(|c| c.status == 403) && i + 1 < chs.len() => continue,
+                Err(e) if core_err(e).is_some_and(|c| c.status == 403) && i + 1 < chs.len() => {
+                    continue;
+                }
                 _ => break,
             }
         }
@@ -1001,7 +1084,15 @@ impl Router {
                     // this very challenge was answered before (the same store asked for twice from one cert): it's in
                     self.st.do_(|d| {
                         d.approvals.remove(&a.id);
-                        crate::outcomes::note_outcome(d, a.origin.as_ref(), &a.kind, &a.session, crate::outcomes::OUTCOME_APPROVED, 0, Some(&cur));
+                        crate::outcomes::note_outcome(
+                            d,
+                            a.origin.as_ref(),
+                            &a.kind,
+                            &a.session,
+                            crate::outcomes::OUTCOME_APPROVED,
+                            0,
+                            Some(&cur),
+                        );
                     });
                     return Ok((cur, a.session.clone()));
                 }
@@ -1032,7 +1123,16 @@ impl Router {
                     .map(|s| (s.harness.clone(), crate::vouch::line_config(s)))
                     .unwrap_or_default()
             });
-            match self.succession(Some(&cur), &a.machine, &sorted_set(&want), &harness, cert_mode(Some(&cur)), "", &config, "") {
+            match self.succession(
+                Some(&cur),
+                &a.machine,
+                &sorted_set(&want),
+                &harness,
+                cert_mode(Some(&cur)),
+                "",
+                &config,
+                "",
+            ) {
                 Err(e) => {
                     self.st.do_(|d| d.approvals.remove(&a.id).map(|_| ()));
                     return Err(anyhow!(
@@ -1051,7 +1151,15 @@ impl Router {
         }
         self.st.do_(|d| {
             d.approvals.remove(&a.id);
-            crate::outcomes::note_outcome(d, a.origin.as_ref(), &a.kind, &a.session, crate::outcomes::OUTCOME_APPROVED, 0, Some(&ans));
+            crate::outcomes::note_outcome(
+                d,
+                a.origin.as_ref(),
+                &a.kind,
+                &a.session,
+                crate::outcomes::OUTCOME_APPROVED,
+                0,
+                Some(&ans),
+            );
             d.certs.insert(a.machine.clone(), ans.clone());
             if let Some(s) = d.sessions.get_mut(&a.session) {
                 s.cert = Some(ans.clone());
@@ -1078,7 +1186,12 @@ impl Router {
                 .approvals
                 .iter()
                 .filter(|(_, x)| x.kind == "add-store" && x.machine == machine)
-                .map(|(id, x)| (id.clone(), x.options.get("store").cloned().unwrap_or_default()))
+                .map(|(id, x)| {
+                    (
+                        id.clone(),
+                        x.options.get("store").cloned().unwrap_or_default(),
+                    )
+                })
                 .collect();
             let (h, cfg) = d
                 .machines
@@ -1095,8 +1208,19 @@ impl Router {
             }
             let mut want = c.stores.clone();
             want.push(store.clone());
-            match self.succession(Some(cert), machine, &sorted_set(&want), &harness, cert_mode(Some(cert)), "", &config, "") {
-                Err(e) => crate::logf!("add-store {store} for {machine}: making it again from the new cert failed: {e:#}"),
+            match self.succession(
+                Some(cert),
+                machine,
+                &sorted_set(&want),
+                &harness,
+                cert_mode(Some(cert)),
+                "",
+                &config,
+                "",
+            ) {
+                Err(e) => crate::logf!(
+                    "add-store {store} for {machine}: making it again from the new cert failed: {e:#}"
+                ),
                 Ok(ch) => self.st.do_(|d| {
                     if let Some(x) = d.approvals.get_mut(&id) {
                         if let Some(old) = x.challenge.take() {
@@ -1119,7 +1243,15 @@ impl Router {
         let a = self.st.do_(|d| {
             let a = d.approvals.remove(id);
             if let Some(a) = &a {
-                crate::outcomes::note_outcome(d, a.origin.as_ref(), &a.kind, &a.session, outcome, 0, None);
+                crate::outcomes::note_outcome(
+                    d,
+                    a.origin.as_ref(),
+                    &a.kind,
+                    &a.session,
+                    outcome,
+                    0,
+                    None,
+                );
             }
             a
         });
@@ -1171,13 +1303,24 @@ impl Router {
 
     /// the pause of a restart (an Upgrade, a bigger machine or disk): the session starts again right after, so its
     /// runners stay (runners.rs). next = a handover's next machine (handover.rs)
-    pub fn pause_with(self: &Arc<Self>, id: &str, next: Option<crate::handover::NextMachine>) -> Result<()> {
+    pub fn pause_with(
+        self: &Arc<Self>,
+        id: &str,
+        next: Option<crate::handover::NextMachine>,
+    ) -> Result<()> {
         self.pause_as(id, next, true)
     }
 
-    fn pause_as(self: &Arc<Self>, id: &str, next: Option<crate::handover::NextMachine>, restart: bool) -> Result<()> {
+    fn pause_as(
+        self: &Arc<Self>,
+        id: &str,
+        next: Option<crate::handover::NextMachine>,
+        restart: bool,
+    ) -> Result<()> {
         let unlock = self.lock_args(id, "pausing", json!({"restart": restart}))?;
-        let s: Session = self.st.do_(|d| d.sessions.get(id).cloned().unwrap_or_default());
+        let s: Session = self
+            .st
+            .do_(|d| d.sessions.get(id).cloned().unwrap_or_default());
         if !s.id.is_empty() && s.state == "paused" {
             return Ok(()); // already what was asked for
         }
@@ -1230,10 +1373,17 @@ impl Router {
 
     pub fn resume(self: &Arc<Self>, id: &str, upgrade: bool) -> Result<()> {
         let unlock = self.lock(id, "starting")?;
-        let s: Session = self.st.do_(|d| d.sessions.get(id).cloned().unwrap_or_default());
+        let s: Session = self
+            .st
+            .do_(|d| d.sessions.get(id).cloned().unwrap_or_default());
         // paused, or failed. With no machine the line is where its last pause left it. With one (a pause or destroy
         // whose kill failed, or one cut off) the pause is finished first, then the resume, on this one tap.
-        if !s.id.is_empty() && matches!(s.state.as_str(), "started" | "initialising" | "starting" | "resuming") {
+        if !s.id.is_empty()
+            && matches!(
+                s.state.as_str(),
+                "started" | "initialising" | "starting" | "resuming"
+            )
+        {
             return Ok(()); // already running (or on its way)
         }
         if !s.id.is_empty() && s.state == "approval" {
@@ -1280,7 +1430,14 @@ impl Router {
         Ok(())
     }
 
-    fn resume_run(self: &Arc<Self>, id: String, mut s: Session, mut upgrade: bool, unlock: OnceFn, op: crate::lifecycle::LcHandle) {
+    fn resume_run(
+        self: &Arc<Self>,
+        id: String,
+        mut s: Session,
+        mut upgrade: bool,
+        unlock: OnceFn,
+        op: crate::lifecycle::LcHandle,
+    ) {
         let _u = scopeguard(move || unlock.call());
         let op2 = op.clone();
         let _e = scopeguard(move || op2.end_from_state()); // unless start_and_certify took it over
@@ -1293,7 +1450,11 @@ impl Router {
             op.note(&s.machine_id, "finishing the machine's pause first");
             self.set_waiting(&id, "finishing the pause first");
             // handover.rs: the next machine starts once the old one is told to stop (an unattended resume only)
-            let next = if upgrade { None } else { self.handover_next(&s, "", 0) };
+            let next = if upgrade {
+                None
+            } else {
+                self.handover_next(&s, "", 0)
+            };
             if !self.final_snapshot_and_kill_next(&id, &s.machine_id, next) {
                 self.set_waiting(&id, "");
                 return;
@@ -1316,16 +1477,30 @@ impl Router {
         let own = cert_image(s.cert.as_ref(), &s.image);
         let pinned = pinned_image(&own, &self.cfg.session_image, &self.cfg.image_order);
         let stores = s.stores.clone().unwrap_or_default();
-        if !upgrade && contains_string(&stores, "claude") && legacy_login_image(&own, &self.cfg.image_order) {
+        if !upgrade
+            && contains_string(&stores, "claude")
+            && legacy_login_image(&own, &self.cfg.image_order)
+        {
             upgrade = true; // its machine would fetch the Claude login from Jarvis 1: the newest image instead
-            crate::logf!("session {id}: resume on the newest image (its image {own} predates the router's Claude login)");
+            crate::logf!(
+                "session {id}: resume on the newest image (its image {own} predates the router's Claude login)"
+            );
         }
         let once = self.resume_once(&s); // vouch.rs: a resume prompt or a rollback: only the phone approves one
         // the permission mode is signed: a resume in another mode than the line's cert is a change the iPhone approves
         let mode_change = cert_mode(s.cert.as_ref()) != norm_mode(&s.permission_mode);
         let phone = |image: &str, opts: BTreeMap<String, String>| {
             self.cancel_spare(&id, "the resume waits for Deyao's approval"); // handover.rs
-            let ch = match self.succession(s.cert.as_ref(), "", &stores, &s.harness, &s.permission_mode, image, &crate::vouch::line_config(&s), &once) {
+            let ch = match self.succession(
+                s.cert.as_ref(),
+                "",
+                &stores,
+                &s.harness,
+                &s.permission_mode,
+                image,
+                &crate::vouch::line_config(&s),
+                &once,
+            ) {
                 Err(e) => {
                     self.set_state(&id, "paused", &format!("resume: {e:#}"));
                     return;
@@ -1346,9 +1521,18 @@ impl Router {
             });
             op.note("", "waiting for Deyao's approval in the Inbox (resume-upgrade): the start is its own operation once he allows it");
         };
-        let phone_image = if upgrade { self.cfg.session_image.clone() } else { pinned.clone() };
+        let phone_image = if upgrade {
+            self.cfg.session_image.clone()
+        } else {
+            pinned.clone()
+        };
         let pm = || -> BTreeMap<String, String> {
-            [("permissionMode".to_string(), norm_mode(&s.permission_mode).to_string())].into_iter().collect()
+            [(
+                "permissionMode".to_string(),
+                norm_mode(&s.permission_mode).to_string(),
+            )]
+            .into_iter()
+            .collect()
         };
         if !once.is_empty() {
             let mut o = pm();
@@ -1366,24 +1550,41 @@ impl Router {
         }
         // the core compares the cert's stores, options and image with the challenge's: all of them from the cert
         let (cstores, harness) = cert_stores_harness(s.cert.as_ref(), &stores, &s.harness);
-        let ch = match self.succession(s.cert.as_ref(), "", &cstores, &harness, &s.permission_mode, &own, &crate::vouch::line_config(&s), "") {
+        let ch = match self.succession(
+            s.cert.as_ref(),
+            "",
+            &cstores,
+            &harness,
+            &s.permission_mode,
+            &own,
+            &crate::vouch::line_config(&s),
+            "",
+        ) {
             Err(e) => {
                 self.set_state(&id, "paused", &format!("resume: {e:#}"));
                 return;
             }
             Ok(c) => c,
         };
-        match self.core.call("/approve/by-dead-machine", &json!({"challenge": ch})) {
+        match self
+            .core
+            .call("/approve/by-dead-machine", &json!({"challenge": ch}))
+        {
             Err(e) if refused_same_line(&e) => {
                 // the core won't answer this resume by itself: it becomes the resume-upgrade approval in the Inbox, on
                 // the same image, so one tap (and Face ID) resumes it
-                crate::logf!("session {id}: the core refused the unattended resume ({e:#}): asking the phone");
+                crate::logf!(
+                    "session {id}: the core refused the unattended resume ({e:#}): asking the phone"
+                );
                 phone(&pinned, BTreeMap::new());
             }
             Err(e) => self.set_state(&id, "paused", &format!("resume: {e:#}")),
             Ok(a) => {
                 self.settle_followups(&id); // no approval follows: the machine starts now
-                op.note("", "the core answered the resume by itself (same line, same image)");
+                op.note(
+                    "",
+                    "the core answered the resume by itself (same line, same image)",
+                );
                 self.start_and_certify(&id, &a);
             }
         }
@@ -1391,7 +1592,12 @@ impl Router {
 
     /// a new line whose first start failed gets its new-session approval again, built from the session as it is:
     /// one Face ID starts it. Its Deny leaves the session failed (Approval.again) rather than removing it.
-    fn start_again(self: &Arc<Self>, s: Session, unlock: OnceFn, op: crate::lifecycle::LcHandle) -> Result<()> {
+    fn start_again(
+        self: &Arc<Self>,
+        s: Session,
+        unlock: OnceFn,
+        op: crate::lifecycle::LcHandle,
+    ) -> Result<()> {
         self.set_state(&s.id, "resuming", "");
         let r = self.clone();
         std::thread::spawn(move || {
@@ -1401,7 +1607,16 @@ impl Router {
             let (r2, id2) = (r.clone(), s.id.clone());
             let _f = scopeguard(move || r2.settle_followups(&id2));
             let ch = r.session_config(&s).and_then(|config| {
-                r.succession(None, "", s.stores.as_deref().unwrap_or_default(), &s.harness, &s.permission_mode, &r.cfg.session_image, &config, "")
+                r.succession(
+                    None,
+                    "",
+                    s.stores.as_deref().unwrap_or_default(),
+                    &s.harness,
+                    &s.permission_mode,
+                    &r.cfg.session_image,
+                    &config,
+                    "",
+                )
             });
             let ch = match ch {
                 Err(e) => {
@@ -1448,12 +1663,20 @@ impl Router {
     /// a running session is paused first (its final snapshot), then archived (archive.rs); a failed archive leaves
     /// it paused with the error, unless force. Then the destroy hooks, the burn, the records.
     pub fn destroy_with(self: &Arc<Self>, id: &str, force: bool) -> Result<()> {
-        self.destroy_opts(id, DestroyOpts { force, report: None })
+        self.destroy_opts(
+            id,
+            DestroyOpts {
+                force,
+                report: None,
+            },
+        )
     }
 
     pub fn destroy_opts(self: &Arc<Self>, id: &str, o: DestroyOpts) -> Result<()> {
         let unlock = self.lock_args(id, "destroying", json!({"force": o.force}))?;
-        let s: Session = self.st.do_(|d| d.sessions.get(id).cloned().unwrap_or_default());
+        let s: Session = self
+            .st
+            .do_(|d| d.sessions.get(id).cloned().unwrap_or_default());
         if s.id.is_empty() {
             return Err(anyhow!("no session {id}"));
         }
@@ -1468,7 +1691,14 @@ impl Router {
 
     /// the destroy's work under its job (jobs.rs); a replica that carries on a job whose holder died runs it again:
     /// the kill answers the same cert, the archive skips what it holds, the burn is kept on the line
-    pub fn destroy_run(self: &Arc<Self>, id: &str, mut s: Session, o: DestroyOpts, unlock: OnceFn, op: crate::lifecycle::LcHandle) {
+    pub fn destroy_run(
+        self: &Arc<Self>,
+        id: &str,
+        mut s: Session,
+        o: DestroyOpts,
+        unlock: OnceFn,
+        op: crate::lifecycle::LcHandle,
+    ) {
         let force = o.force;
         let gone = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let _u = scopeguard(move || unlock.call());
@@ -1491,7 +1721,12 @@ impl Router {
             (Some(e), _) => op.note("", &format!("the archive failed: {e:#}")),
             (None, Some(a)) => op.note(
                 "",
-                &format!("archived to {} ({}, uploaded in {:.1} s)", a.file, crate::util::mb(a.bytes), a.upload_seconds),
+                &format!(
+                    "archived to {} ({}, uploaded in {:.1} s)",
+                    a.file,
+                    crate::util::mb(a.bytes),
+                    a.upload_seconds
+                ),
             ),
             (None, None) => op.note("", "nothing to archive"),
         }
@@ -1518,8 +1753,14 @@ impl Router {
             // end the line: a succession to the null image, answered by the dead-machine responder → burn cert
             let res = self
                 .succession(Some(cert), "", &[], "", "", NULL_IMAGE, "", "")
-                .and_then(|ch| self.core.call("/approve/by-dead-machine", &json!({"challenge": ch})))
-                .and_then(|a| self.core.call("/certify", &json!({"approval": a, "machine": ""})));
+                .and_then(|ch| {
+                    self.core
+                        .call("/approve/by-dead-machine", &json!({"challenge": ch}))
+                })
+                .and_then(|a| {
+                    self.core
+                        .call("/certify", &json!({"approval": a, "machine": ""}))
+                });
             match res {
                 Err(e) => {
                     crate::logf!("session {id}: burn: {e:#}");
@@ -1533,7 +1774,10 @@ impl Router {
             match self.delete_fabric_files(&f.conversation) {
                 Err(e) => {
                     crate::logf!("session {id}: the fabric files: {e:#}");
-                    op.note("", &format!("deleting its files at the fabric hermit: {e:#}"));
+                    op.note(
+                        "",
+                        &format!("deleting its files at the fabric hermit: {e:#}"),
+                    );
                 }
                 Ok(()) => op.note("", "its files at the fabric hermit are deleted"),
             }
@@ -1569,7 +1813,9 @@ impl Router {
     /// change (its archive, what was kept)
     pub fn finish(&self, id: &str, fill: impl Fn(&mut Record)) {
         let drop_snaps = self.st.do_(|d| {
-            let Some(mut s) = d.sessions.remove(id) else { return vec![] };
+            let Some(mut s) = d.sessions.remove(id) else {
+                return vec![];
+            };
             d.approvals.retain(|_, ap| ap.session != id);
             let mut ms = vec![];
             for (m, sid) in &d.machines {
@@ -1597,14 +1843,21 @@ impl Router {
     // ---- add a store (asked by the machine) ----------------------------------------------------------------
 
     pub fn add_store(self: &Arc<Self>, machine: &str, store: &str) -> Result<()> {
-        let sid = self.st.do_(|d| d.machines.get(machine).cloned().unwrap_or_default());
+        let sid = self
+            .st
+            .do_(|d| d.machines.get(machine).cloned().unwrap_or_default());
         let o = Origin {
-            caller: crate::inbox::Caller { kind: "session".into(), session: sid, ..Default::default() },
+            caller: crate::inbox::Caller {
+                kind: "session".into(),
+                session: sid,
+            },
             call: crate::inbox::ApiCall {
                 method: "POST".into(),
                 path: "/m/add-store".into(),
-                args: json!({"store": store}).as_object().cloned().unwrap_or_default(),
-                ..Default::default()
+                args: json!({"store": store})
+                    .as_object()
+                    .cloned()
+                    .unwrap_or_default(),
             },
             ..Default::default()
         };
@@ -1612,12 +1865,27 @@ impl Router {
     }
 
     /// the add-store approval, with its caller and the caller's explanation (inbox.rs)
-    pub fn add_store_from(self: &Arc<Self>, machine: &str, store: &str, o: Origin, explanation: &str, batch: &str) -> Result<()> {
-        self.add_store_approval(machine, store, o, explanation, batch).map(|_| ())
+    pub fn add_store_from(
+        self: &Arc<Self>,
+        machine: &str,
+        store: &str,
+        o: Origin,
+        explanation: &str,
+        batch: &str,
+    ) -> Result<()> {
+        self.add_store_approval(machine, store, o, explanation, batch)
+            .map(|_| ())
     }
 
     /// add_store_from → the approval's id
-    pub fn add_store_approval(self: &Arc<Self>, machine: &str, store: &str, o: Origin, explanation: &str, batch: &str) -> Result<String> {
+    pub fn add_store_approval(
+        self: &Arc<Self>,
+        machine: &str,
+        store: &str,
+        o: Origin,
+        explanation: &str,
+        batch: &str,
+    ) -> Result<String> {
         let s: Session = self.st.do_(|d| {
             d.machines
                 .get(machine)
@@ -1628,7 +1896,11 @@ impl Router {
         if !s.id.is_empty() && s.machine_id == machine && s.kernel.is_some() {
             return self.kernel_add_store_approval(&s, store, o, explanation, batch); // kernelline.rs
         }
-        let Some(cert) = s.cert.clone().filter(|_| !s.id.is_empty() && s.machine_id == machine) else {
+        let Some(cert) = s
+            .cert
+            .clone()
+            .filter(|_| !s.id.is_empty() && s.machine_id == machine)
+        else {
             return Err(anyhow!("this machine isn't a running session"));
         };
         if store == crate::claudeaccounts::LEGACY_CLAUDE_STORE {
@@ -1643,21 +1915,37 @@ impl Router {
                         x.claude_account = def.clone();
                     }
                 });
-                return Err(bad(format!("the store claude is gone: this session now has the Claude account {def}; its machine logs in with it by itself (restart the harness if it doesn't)")));
+                return Err(bad(format!(
+                    "the store claude is gone: this session now has the Claude account {def}; its machine logs in with it by itself (restart the harness if it doesn't)"
+                )));
             }
-            return Err(bad(format!("the store claude is gone: this session already has the Claude account {} (Settings → Claude accounts re-logs it in)", s.claude_account)));
+            return Err(bad(format!(
+                "the store claude is gone: this session already has the Claude account {} (Settings → Claude accounts re-logs it in)",
+                s.claude_account
+            )));
         }
         let mut want = s.stores.clone().unwrap_or_default();
         want.push(store.to_string());
         let stores = self.with_harness_stores(&want, &[])?;
-        let ch = self.succession(Some(&cert), machine, &stores, &s.harness, cert_mode(Some(&cert)), "", &crate::vouch::line_config(&s), "")?;
+        let ch = self.succession(
+            Some(&cert),
+            machine,
+            &stores,
+            &s.harness,
+            cert_mode(Some(&cert)),
+            "",
+            &crate::vouch::line_config(&s),
+            "",
+        )?;
         let id = self.add_approval(Approval {
             kind: "add-store".into(),
             session: s.id.clone(),
             machine: machine.into(),
             label: s.label.clone(),
             challenge: Some(ch),
-            options: [("store".to_string(), store.to_string())].into_iter().collect(),
+            options: [("store".to_string(), store.to_string())]
+                .into_iter()
+                .collect(),
             origin: Some(o),
             explanation: explanation.into(),
             batch: batch.into(),
@@ -1669,7 +1957,13 @@ impl Router {
     // ---- downgrade in place (asked by the machine) ---------------------------------------------------------
 
     /// the machine names a subset of its stores and its new key pair → the challenge it must sign with its old key
-    pub fn downgrade_begin(&self, machine: &str, stores: &[String], enc_key: &str, sig_key: &str) -> Result<Doc> {
+    pub fn downgrade_begin(
+        &self,
+        machine: &str,
+        stores: &[String],
+        enc_key: &str,
+        sig_key: &str,
+    ) -> Result<Doc> {
         let s: Session = self.st.do_(|d| {
             d.machines
                 .get(machine)
@@ -1677,10 +1971,18 @@ impl Router {
                 .cloned()
                 .unwrap_or_default()
         });
-        let Some(cert) = s.cert.clone().filter(|_| !s.id.is_empty() && s.machine_id == machine) else {
+        let Some(cert) = s
+            .cert
+            .clone()
+            .filter(|_| !s.id.is_empty() && s.machine_id == machine)
+        else {
             return Err(anyhow!("this machine isn't a running session"));
         };
-        let harness = if s.harness.is_empty() { "claude".to_string() } else { s.harness.clone() };
+        let harness = if s.harness.is_empty() {
+            "claude".to_string()
+        } else {
+            s.harness.clone()
+        };
         let mut opts = json!({"harness": harness, "permissionMode": cert_mode(Some(&cert))});
         let c = crate::vouch::line_config(&s);
         if !c.is_empty() {
@@ -1695,7 +1997,12 @@ impl Router {
 
     /// the challenge signed with the machine's old key → its new cert; from now on the router knows the machine by its
     /// new signing key
-    pub fn downgrade_finish(&self, machine: &str, challenge: Option<&Doc>, signature: &str) -> Result<Doc> {
+    pub fn downgrade_finish(
+        &self,
+        machine: &str,
+        challenge: Option<&Doc>,
+        signature: &str,
+    ) -> Result<Doc> {
         let _unlock = self_succession_lock(machine);
         let (cert, ans) = self.core.call_answer(
             "/approve/by-old-key",
@@ -1744,7 +2051,13 @@ impl Router {
     /// waiting as long as the snapshot makes progress (snapwait.rs). A machine that never got past boot isn't asked.
     /// stop_sent runs once the supervisor has been sent the snapshot command (handover.rs). destroying: a fabric
     /// machine sends the whole state (fabricrunner.rs).
-    pub fn last_snapshot_then(self: &Arc<Self>, id: &str, machine: &str, stop_sent: Option<&dyn Fn()>, destroying: bool) -> Result<()> {
+    pub fn last_snapshot_then(
+        self: &Arc<Self>,
+        id: &str,
+        machine: &str,
+        stop_sent: Option<&dyn Fn()>,
+        destroying: bool,
+    ) -> Result<()> {
         let booted = || {
             self.st
                 .do_(|d| d.sessions.get(id).is_some_and(|x| x.booted == machine))
@@ -1761,7 +2074,11 @@ impl Router {
         }
         if !booted() {
             crate::logf!("session {id}: {machine} never got past boot; nothing to snapshot");
-            self.lc_note(id, machine, "the machine never got past boot: nothing to snapshot");
+            self.lc_note(
+                id,
+                machine,
+                "the machine never got past boot: nothing to snapshot",
+            );
             return Ok(());
         }
         // a machine that has gone silent can't answer: no wait
@@ -1772,15 +2089,29 @@ impl Router {
                 .unwrap_or_default()
         });
         if last.since().whole_seconds() > SILENT_AFTER_SECS.load(Ordering::Relaxed) {
-            crate::logf!("session {id}: {machine} silent since {}; not waiting for a snapshot", last.rfc3339());
-            self.lc_note(id, machine, &format!("the machine has been silent since {}: not asking it for a snapshot", last.utc().rfc3339()));
+            crate::logf!(
+                "session {id}: {machine} silent since {}; not waiting for a snapshot",
+                last.rfc3339()
+            );
+            self.lc_note(
+                id,
+                machine,
+                &format!(
+                    "the machine has been silent since {}: not asking it for a snapshot",
+                    last.utc().rfc3339()
+                ),
+            );
             return Err(anyhow!(
                 "its machine has been silent since {}, so it can't send its snapshot",
                 crate::util::fmt_utc_minute(&last)
             ));
         }
         let done = self.await_snapshot(machine);
-        let cmd = if destroying && self.is_fabric_session(id) { "snapshot-full" } else { "snapshot" };
+        let cmd = if destroying && self.is_fabric_session(id) {
+            "snapshot-full"
+        } else {
+            "snapshot"
+        };
         self.send(machine, cmd);
         self.lc_note(id, machine, "asked the supervisor for the final snapshot (it pauses the Claude process and freezes the session first)");
         if let Some(f) = stop_sent {
@@ -1807,7 +2138,10 @@ impl Router {
             Some(s) if s.state == "committed" => self.lc_note(
                 id,
                 machine,
-                &format!("the final snapshot arrived ({:.1} MB, signed by the machine)", s.bytes as f64 / (1 << 20) as f64),
+                &format!(
+                    "the final snapshot arrived ({:.1} MB, signed by the machine)",
+                    s.bytes as f64 / (1 << 20) as f64
+                ),
             ),
             _ => self.lc_note(id, machine, "the machine answered: nothing to snapshot"),
         }

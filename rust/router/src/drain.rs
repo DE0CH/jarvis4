@@ -48,7 +48,9 @@ pub fn is_busy(e: &anyhow::Error) -> bool {
 /// a start waiting out Fly's machine limit when the drain began. The wait (up to machine_limit_wait) would hold the
 /// rollout for hours, so the start ends instead (Deyao starts it again; DECISIONS).
 pub fn limit_draining() -> anyhow::Error {
-    anyhow::anyhow!("the Fly org is at its machine limit and the router is updating: start it again")
+    anyhow::anyhow!(
+        "the Fly org is at its machine limit and the router is updating: start it again"
+    )
 }
 
 #[derive(Default)]
@@ -104,7 +106,12 @@ impl Router {
     /// finish rather than leaving the session paused half way.
     pub fn begin_job(self: &Arc<Self>, session: &str, what: &str) -> Result<OnceFn> {
         let end = self.begin(session, what)?;
-        *self.drain.lock().jobs.entry(session.to_string()).or_default() += 1;
+        *self
+            .drain
+            .lock()
+            .jobs
+            .entry(session.to_string())
+            .or_default() += 1;
         let r = self.clone();
         let session = session.to_string();
         Ok(OnceFn::new(move || {
@@ -184,7 +191,10 @@ impl Router {
             }
             let now = Instant::now();
             if abort.cancelled() {
-                crate::logf!("drain aborted; still running: {:?}", DrainState::running(&g));
+                crate::logf!(
+                    "drain aborted; still running: {:?}",
+                    DrainState::running(&g)
+                );
                 return false;
             }
             if now >= end {
@@ -199,8 +209,13 @@ impl Router {
                 crate::logf!("draining: still running: {:?}", DrainState::running(&g));
                 next_log = now + Duration::from_secs(60);
             }
-            let wait = (end - now).min(next_log - now).min(Duration::from_millis(250));
-            g = d.cv.wait_timeout(g, wait).map(|(g, _)| g).unwrap_or_else(|e| e.into_inner().0);
+            let wait = (end - now)
+                .min(next_log - now)
+                .min(Duration::from_millis(250));
+            g =
+                d.cv.wait_timeout(g, wait)
+                    .map(|(g, _)| g)
+                    .unwrap_or_else(|e| e.into_inner().0);
         }
     }
 

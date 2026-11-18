@@ -103,12 +103,19 @@ pub struct MachineView {
 }
 
 pub fn guest_text(g: &FlyGuest) -> String {
-    format!("{}×{} · {} GB", g.cpus, g.cpu_kind, (g.memory_mb as f64 / 1024.0).round() as i64)
+    format!(
+        "{}×{} · {} GB",
+        g.cpus,
+        g.cpu_kind,
+        (g.memory_mb as f64 / 1024.0).round() as i64
+    )
 }
 
 /// the size whose guest this is (sizes.rs size_guest), "" = none of them
 pub fn size_of(g: Option<&FlyGuest>) -> String {
-    let Some(g) = g.filter(|g| g.memory_mb % 1024 == 0) else { return String::new() };
+    let Some(g) = g.filter(|g| g.memory_mb % 1024 == 0) else {
+        return String::new();
+    };
     let size = crate::sizes::NAMED_SIZES
         .iter()
         .find(|(_, gb)| gb * 1024 == g.memory_mb)
@@ -133,7 +140,10 @@ pub fn is_test_router(u: &str) -> bool {
 
 pub fn image_of(m: &FlyMachineDetail) -> String {
     if m.config.image.is_empty() && !m.image_ref.repository.is_empty() {
-        return format!("{}/{}:{}", m.image_ref.registry, m.image_ref.repository, m.image_ref.tag);
+        return format!(
+            "{}/{}:{}",
+            m.image_ref.registry, m.image_ref.repository, m.image_ref.tag
+        );
     }
     m.config.image.clone()
 }
@@ -154,9 +164,15 @@ pub fn orphan_refusal(d: &Persisted, m: &FlyMachineDetail, now: GoTime) -> Strin
     // anyway, flows.rs) is an orphan like any other; one a live session still names is that session's
     if sid.is_none()
         && (d.started.contains_key(&m.id) || d.certs.contains_key(&m.id))
-        && let Some(s) = d.sessions.values().find(|s| s.machine_id == m.id || s.booted == m.id)
+        && let Some(s) = d
+            .sessions
+            .values()
+            .find(|s| s.machine_id == m.id || s.booted == m.id)
     {
-        return format!("it belongs to session {}: pause or destroy the session", s.id);
+        return format!(
+            "it belongs to session {}: pause or destroy the session",
+            s.id
+        );
     }
     match GoTime::parse(&m.created_at) {
         Some(t) if now.sub(&t) >= ORPHAN_MIN_AGE => String::new(),
@@ -225,7 +241,14 @@ impl Router {
                         v.current = d.sessions.get(sid).is_some_and(|s| s.machine_id == m.id);
                     }
                     v.no_destroy = orphan_refusal(d, m, now);
-                    v.attention = crate::flyorgs::attention_of(&m.state, &m.created_at, true, &v.session_id, SESSIONS_APP, now);
+                    v.attention = crate::flyorgs::attention_of(
+                        &m.state,
+                        &m.created_at,
+                        true,
+                        &v.session_id,
+                        SESSIONS_APP,
+                        now,
+                    );
                     v
                 })
                 .collect()
@@ -237,7 +260,10 @@ impl Router {
     /// destroy a machine that belongs to no session (re-checked against a fresh Fly list)
     pub fn destroy_orphan(&self, id: &str) -> Result<()> {
         let ms = list_fly_machines().map_err(|e| anyhow!("Fly: {e:#}"))?;
-        let Some(m) = ms.into_iter().rfind(|m| m.id == id && m.state != "destroyed") else {
+        let Some(m) = ms
+            .into_iter()
+            .rfind(|m| m.id == id && m.state != "destroyed")
+        else {
             return Err(anyhow!("no machine {id} in {SESSIONS_APP}"));
         };
         let why = self.st.do_(|d| orphan_refusal(d, &m, GoTime::now()));
@@ -248,7 +274,13 @@ impl Router {
         crate::logf!(
             "machine {id} ({}, router {}) destroyed from the Machines view: it belonged to no session",
             or_dash(&m.name),
-            or_dash(m.config.env.get("JARVIS2_URL").map(String::as_str).unwrap_or_default())
+            or_dash(
+                m.config
+                    .env
+                    .get("JARVIS2_URL")
+                    .map(String::as_str)
+                    .unwrap_or_default()
+            )
         );
         Ok(())
     }
@@ -271,8 +303,10 @@ pub fn register_machines(reg: &mut Registrar) {
                 "configError": config_err, "checkedAt": now.utc()}),
         );
     });
-    reg.app("POST /api/machines/{id}/destroy", |r, w, req| match r.destroy_orphan(&req.path_value("id")) {
-        Err(e) => write_err(w, &e),
-        Ok(()) => write_json(w, 200, &json!({"ok": true, "id": req.path_value("id")})),
+    reg.app("POST /api/machines/{id}/destroy", |r, w, req| {
+        match r.destroy_orphan(&req.path_value("id")) {
+            Err(e) => write_err(w, &e),
+            Ok(()) => write_json(w, 200, &json!({"ok": true, "id": req.path_value("id")})),
+        }
     });
 }

@@ -41,8 +41,12 @@ pub struct Volume {
 impl Router {
     /// the volume the machine's cert names (None: a machine of a core without volumes)
     pub fn machine_volume(&self, machine: &str) -> Option<Volume> {
-        let (cert, st): (Option<Doc>, Option<Started>) =
-            self.st.do_(|d| (d.certs.get(machine).cloned(), d.started.get(machine).cloned()));
+        let (cert, st): (Option<Doc>, Option<Started>) = self.st.do_(|d| {
+            (
+                d.certs.get(machine).cloned(),
+                d.started.get(machine).cloned(),
+            )
+        });
         #[derive(Deserialize, Default)]
         #[serde(default)]
         struct M {
@@ -70,12 +74,23 @@ impl Router {
     }
 
     /// destroying = a destroy's (archive.rs snapshot_and_kill: its kill falls back, DECISIONS 181)
-    pub fn final_snapshot_and_kill_for(self: &Arc<Self>, id: &str, machine: &str, destroying: bool, force: bool) -> bool {
+    pub fn final_snapshot_and_kill_for(
+        self: &Arc<Self>,
+        id: &str,
+        machine: &str,
+        destroying: bool,
+        force: bool,
+    ) -> bool {
         self.final_snapshot_and_kill_with(id, machine, destroying, force, None)
     }
 
     /// a pause's end that hands over to next (handover.rs; None = a plain pause)
-    pub fn final_snapshot_and_kill_next(self: &Arc<Self>, id: &str, machine: &str, next: Option<NextMachine>) -> bool {
+    pub fn final_snapshot_and_kill_next(
+        self: &Arc<Self>,
+        id: &str,
+        machine: &str,
+        next: Option<NextMachine>,
+    ) -> bool {
         self.final_snapshot_and_kill_with(id, machine, false, false, next)
     }
 
@@ -98,8 +113,10 @@ impl Router {
             }
         };
         let mut ok = false;
-        let res = (|| {
-            let serr = self.last_snapshot_then(id, machine, Some(&stop_sent), destroying).err();
+        (|| {
+            let serr = self
+                .last_snapshot_then(id, machine, Some(&stop_sent), destroying)
+                .err();
             let vol = self.machine_volume(machine);
             if let Some(e) = serr.as_ref().filter(|_| !force) {
                 self.keep_machine(id, machine, e);
@@ -107,7 +124,9 @@ impl Router {
             }
             stop_sent(); // the kill below is the stop when no snapshot was asked for (one already here, or a machine never booted)
             if let Some(e) = &serr {
-                crate::logf!("session {id}: {machine}'s final snapshot: {e:#}; going on (destroy anyway)");
+                crate::logf!(
+                    "session {id}: {machine}'s final snapshot: {e:#}; going on (destroy anyway)"
+                );
             }
             self.lc_note(id, machine, "asked the core to destroy the machine on Fly");
             if self.is_kernel_machine(machine) {
@@ -135,12 +154,16 @@ impl Router {
                 }
                 Ok(kd) => {
                     self.record_kill(id, machine, kd.as_ref(), serr.as_ref(), destroying);
-                    self.lc_note(id, machine, "the core confirmed the machine destroyed on Fly");
+                    self.lc_note(
+                        id,
+                        machine,
+                        "the core confirmed the machine destroyed on Fly",
+                    );
                     ok = true;
                 }
             }
         })();
-        let _: () = res;
+        let _: () = ();
         if !ok && has_next {
             self.cancel_spare(id, "the old machine was kept");
         }
@@ -151,7 +174,9 @@ impl Router {
         self.st.do_(|d| {
             d.sessions
                 .get(id)
-                .map(|s| crate::autopilot::session_name(s, s.live.as_ref().and_then(|l| l.reg.as_ref())))
+                .map(|s| {
+                    crate::autopilot::session_name(s, s.live.as_ref().and_then(|l| l.reg.as_ref()))
+                })
                 .unwrap_or_else(|| id.to_string())
         })
     }
@@ -176,10 +201,25 @@ impl Router {
     }
 
     /// the core still refuses or can't finish the kill: the machine (with its volume) stays
-    pub fn kill_failed(&self, id: &str, machine: &str, has_volume: bool, destroying: bool, err: &anyhow::Error) {
+    pub fn kill_failed(
+        &self,
+        id: &str,
+        machine: &str,
+        has_volume: bool,
+        destroying: bool,
+        err: &anyhow::Error,
+    ) {
         let _ = machine;
-        let what = if has_volume { "its machine and its volume are kept" } else { "its machine is kept" };
-        let (action, retry) = if destroying { ("destroy", "Destroy again to retry") } else { ("pause", "Pause again to retry") };
+        let what = if has_volume {
+            "its machine and its volume are kept"
+        } else {
+            "its machine is kept"
+        };
+        let (action, retry) = if destroying {
+            ("destroy", "Destroy again to retry")
+        } else {
+            ("pause", "Pause again to retry")
+        };
         self.set_state(id, "failed", &format!("kill: {err:#} — {what}: {retry}"));
         self.dm(&format!(
             "🔴 Session “{}” needs you — its {action} couldn't finish ({err:#}); {what}, nothing was destroyed. {retry}.",
@@ -190,7 +230,14 @@ impl Router {
     /// the kill's record — a kill that names no snapshot of a line that had state marks it no_snapshot (Resume refuses)
     /// and DMs. A destroy's kill never DMs: a destroy isn't a resume, so there is nothing to refuse; the reason goes into
     /// its record (ArchiveInfo.no_snapshot, the archive's session.json).
-    pub fn record_kill(&self, id: &str, machine: &str, kd: Option<&Doc>, serr: Option<&anyhow::Error>, destroying: bool) {
+    pub fn record_kill(
+        &self,
+        id: &str,
+        machine: &str,
+        kd: Option<&Doc>,
+        serr: Option<&anyhow::Error>,
+        destroying: bool,
+    ) {
         #[derive(Deserialize, Default)]
         #[serde(default)]
         struct K {
@@ -248,7 +295,10 @@ impl Router {
             state_left(&older, older_at)
         );
         if dm {
-            self.dm(&format!("🔴 Session “{}” needs you — a resume was refused: {msg}", self.dm_name(id)));
+            self.dm(&format!(
+                "🔴 Session “{}” needs you — a resume was refused: {msg}",
+                self.dm_name(id)
+            ));
         }
         Some(anyhow!(msg))
     }
@@ -257,7 +307,13 @@ impl Router {
     /// core has no key for it) is killed without the claim, the session marked so its archive says so; a kill still
     /// failing is no obstacle when Fly no longer has the machine, or with force (the router stops taking the machine's
     /// calls; it is an orphan on the Machines tab, whose Destroy tries the kill again)
-    pub fn destroy_kill_fallback(&self, id: &str, machine: &str, force: bool, mut err: anyhow::Error) -> Result<Option<Doc>> {
+    pub fn destroy_kill_fallback(
+        &self,
+        id: &str,
+        machine: &str,
+        force: bool,
+        mut err: anyhow::Error,
+    ) -> Result<Option<Doc>> {
         if crate::archive::refused_snapshot(&err) {
             crate::logf!(
                 "session {id}: the core refused {machine}'s snapshot ({err:#}): killed without it (a destroy restores nothing)"
@@ -274,7 +330,9 @@ impl Router {
         }
         match crate::archive::fly_machine_gone(machine) {
             Ok(true) => {
-                crate::logf!("session {id}: the kill of {machine} failed ({err:#}) but Fly has no such machine: destroying on");
+                crate::logf!(
+                    "session {id}: the kill of {machine} failed ({err:#}) but Fly has no such machine: destroying on"
+                );
                 Ok(None)
             }
             _ if force => {

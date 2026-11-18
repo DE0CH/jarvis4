@@ -38,8 +38,9 @@ pub fn device_scheme(app: &str) -> &'static str {
     }
 }
 
-static PAIR_STATE_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"^[A-Za-z0-9_-]{16,64}$").unwrap_or_else(|_| unreachable!()));
+static PAIR_STATE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^[A-Za-z0-9_-]{16,64}$").unwrap_or_else(|_| unreachable!())
+});
 
 pub static CF_API_BASE: LazyLock<RwLock<String>> =
     LazyLock::new(|| RwLock::new("https://api.cloudflare.com/client/v4".into()));
@@ -85,9 +86,14 @@ pub struct CfServiceToken {
 pub fn cf_call(method: &str, path: &str, body: Option<&Value>) -> Result<Value> {
     let tok = std::env::var("CF_DEVICE_TOKENS_API").unwrap_or_default();
     if tok.is_empty() {
-        return Err(anyhow!("the router has no CF_DEVICE_TOKENS_API: it can't mint device tokens"));
+        return Err(anyhow!(
+            "the router has no CF_DEVICE_TOKENS_API: it can't mint device tokens"
+        ));
     }
-    let base = CF_API_BASE.read().unwrap_or_else(|e| e.into_inner()).clone();
+    let base = CF_API_BASE
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
     let mut rb = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(20))
         .build()?
@@ -110,7 +116,9 @@ pub fn cf_call(method: &str, path: &str, body: Option<&Value>) -> Result<Value> 
         errors: Option<Box<serde_json::value::RawValue>>,
         result: Value,
     }
-    let j: J = serde_json::from_slice(&crate::util::read_limited(resp, 1 << 20).unwrap_or_default()).unwrap_or_default();
+    let j: J =
+        serde_json::from_slice(&crate::util::read_limited(resp, 1 << 20).unwrap_or_default())
+            .unwrap_or_default();
     if !j.success {
         let e = j.errors.map(|e| e.get().to_string()).unwrap_or_default();
         return Err(anyhow!(
@@ -125,7 +133,11 @@ pub type MintFn = fn(&str) -> Result<CfServiceToken>;
 pub type DeleteFn = fn(&str) -> Result<()>;
 
 fn mint_device_token_cf(name: &str) -> Result<CfServiceToken> {
-    let v = cf_call("POST", "/access/service_tokens", Some(&json!({"name": name, "duration": "forever"})))?;
+    let v = cf_call(
+        "POST",
+        "/access/service_tokens",
+        Some(&json!({"name": name, "duration": "forever"})),
+    )?;
     let t: CfServiceToken = serde_json::from_value(v).unwrap_or_default();
     if t.id.is_empty() || t.client_id.is_empty() || t.client_secret.is_empty() {
         return Err(anyhow!("Cloudflare answered no service token"));
@@ -168,12 +180,24 @@ pub fn clean_device_text(s: &str, n: usize) -> String {
 
 impl Router {
     /// a new device of app (openclaw | paseo) → its id and the service token's credentials
-    pub fn pair_device(&self, name: &str, model: &str, app: &str, now: GoTime) -> Result<(Device, CfServiceToken)> {
+    pub fn pair_device(
+        &self,
+        name: &str,
+        model: &str,
+        app: &str,
+        now: GoTime,
+    ) -> Result<(Device, CfServiceToken)> {
         if device_scheme(app).is_empty() {
             return Err(crate::router::bad(format!("unknown app: {app}")));
         }
         let _g = PAIR_MU.lock().unwrap_or_else(|e| e.into_inner());
-        let newest = self.st.do_(|d| d.devices.values().map(|x| x.created_at).max().unwrap_or_default());
+        let newest = self.st.do_(|d| {
+            d.devices
+                .values()
+                .map(|x| x.created_at)
+                .max()
+                .unwrap_or_default()
+        });
         if now.sub(&newest) < PAIR_EVERY {
             return Err(ContentErr {
                 status: 429,
@@ -208,7 +232,9 @@ impl Router {
         let Some(dev) = self.st.do_(|d| d.devices.get(id).cloned()) else {
             return Ok(()); // already unpaired: what was asked for holds
         };
-        let del = *DELETE_DEVICE_TOKEN.read().unwrap_or_else(|e| e.into_inner());
+        let del = *DELETE_DEVICE_TOKEN
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
         del(&dev.service_token_id)?;
         self.st.do_(|d| {
             d.devices.remove(id);
@@ -250,11 +276,16 @@ impl Router {
     }
 
     pub fn deyao_or_device(&self, tok: &str) -> bool {
-        for aud in [self.cfg.app_aud.clone(), std::env::var("ACCESS_DEVICES_AUD").unwrap_or_default()] {
+        for aud in [
+            self.cfg.app_aud.clone(),
+            std::env::var("ACCESS_DEVICES_AUD").unwrap_or_default(),
+        ] {
             if aud.is_empty() {
                 continue;
             }
-            let Ok(c) = self.access().verify(tok, &aud) else { continue };
+            let Ok(c) = self.access().verify(tok, &aud) else {
+                continue;
+            };
             return self.admit_claims(&c, GoTime::now());
         }
         false
@@ -279,7 +310,13 @@ impl Router {
 
 fn values_encode(v: &BTreeMap<&str, String>) -> String {
     v.iter()
-        .map(|(k, x)| format!("{}={}", jarvis_go::fmt::query_escape(k), jarvis_go::fmt::query_escape(x)))
+        .map(|(k, x)| {
+            format!(
+                "{}={}",
+                jarvis_go::fmt::query_escape(k),
+                jarvis_go::fmt::query_escape(x)
+            )
+        })
         .collect::<Vec<_>>()
         .join("&")
 }
@@ -296,7 +333,12 @@ pub fn register_devices(reg: &mut Registrar) {
             return write_json(w, 400, &json!({"error": format!("unknown app: {app_id}")}));
         }
         let mut back = BTreeMap::from([("state", state.clone())]);
-        match r.pair_device(&req.query("name"), &req.query("model"), &app_id, GoTime::now()) {
+        match r.pair_device(
+            &req.query("name"),
+            &req.query("model"),
+            &app_id,
+            GoTime::now(),
+        ) {
             Err(e) => {
                 let status = if let Some(ce) = e.downcast_ref::<ContentErr>() {
                     ce.status
@@ -315,34 +357,46 @@ pub fn register_devices(reg: &mut Registrar) {
             }
         }
         w.set_header("Cache-Control", "no-store");
-        crate::util::redirect(w, req, &format!("{scheme}://paired?{}", values_encode(&back)), 302);
+        crate::util::redirect(
+            w,
+            req,
+            &format!("{scheme}://paired?{}", values_encode(&back)),
+            302,
+        );
     });
     reg.app("GET /api/devices", |r, w, _| {
         let out: Vec<Value> = r.st.do_(|d| {
             let mut list: Vec<&Device> = d.devices.values().collect();
-            list.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+            list.sort_by_key(|a| a.created_at);
             list.into_iter().map(device_view).collect()
         });
         write_json(w, 200, &json!({"devices": out}));
     });
-    reg.app("DELETE /api/devices/{id}", |r, w, req| match r.revoke_device(&req.path_value("id")) {
-        Err(e) => content_write_err(w, &e),
-        Ok(()) => write_json(w, 200, &json!({"ok": true})),
+    reg.app("DELETE /api/devices/{id}", |r, w, req| {
+        match r.revoke_device(&req.path_value("id")) {
+            Err(e) => content_write_err(w, &e),
+            Ok(()) => write_json(w, 200, &json!({"ok": true})),
+        }
     });
     // the apps: their sessions, and Start for a paused one (a resume on the same image: no phone step)
-    let device_route = |reg: &mut Registrar, pattern: &str, f: fn(&Arc<Router>, &mut W, &mut Req)| {
-        reg.app_patterns.insert(pattern.to_string(), true); // Deyao's too (apicalls.rs)
-        let r = reg.r.clone();
-        let r2 = r.clone();
-        let h = r.require_deyao_or_device(Arc::new(move |w, req| f(&r2, w, req)));
-        reg.handle(pattern, h);
-    };
+    let device_route =
+        |reg: &mut Registrar, pattern: &str, f: fn(&Arc<Router>, &mut W, &mut Req)| {
+            reg.app_patterns.insert(pattern.to_string(), true); // Deyao's too (apicalls.rs)
+            let r = reg.r.clone();
+            let r2 = r.clone();
+            let h = r.require_deyao_or_device(Arc::new(move |w, req| f(&r2, w, req)));
+            reg.handle(pattern, h);
+        };
     device_route(reg, "GET /api/remotes", |r, w, req| r.remotes(w, req));
     // whose machine signed a request for a service outside Jarvis 4 (machinesig.rs; hermit-jarvis)
-    device_route(reg, "POST /api/machine-signatures/verify", |r, w, req| r.verify_machine_signature(w, req));
+    device_route(reg, "POST /api/machine-signatures/verify", |r, w, req| {
+        r.verify_machine_signature(w, req)
+    });
     // the next fire of an aviary session's chat schedules (schedule.rs ChatSchedule; hermit-jarvis), on the devices'
     // Access app as the signature check is: hermit-jarvis's service token reaches only its paths
-    device_route(reg, "PUT /api/sessions/{id}/chat-schedule", |r, w, req| r.put_chat_schedule(w, req));
+    device_route(reg, "PUT /api/sessions/{id}/chat-schedule", |r, w, req| {
+        r.put_chat_schedule(w, req)
+    });
     device_route(reg, "POST /api/sessions/{id}/start", |r, w, req| {
         match r.resume_with_prompt(&req.path_value("id"), false, "") {
             Err(e) => crate::schedule::schedule_err(w, &e),

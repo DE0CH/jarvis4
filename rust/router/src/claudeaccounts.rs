@@ -37,7 +37,9 @@
 //! The Go router's one-time move of the single shared login (claude-login.json on the volume) into an account is not
 //! carried over: every router that runs this code has made it already.
 
-use crate::claudelogin::{LoginErr, LoginHub, account_email, account_uuid, is_login_err, login_note};
+use crate::claudelogin::{
+    LoginErr, LoginHub, account_email, account_uuid, is_login_err, login_note,
+};
 use crate::http::{Registrar, null_if_empty};
 use crate::nethttp::{Req, W, write_json};
 use crate::router::Router;
@@ -51,8 +53,9 @@ use std::time::Duration;
 /// the core's store of the one shared login before accounts (sessions from before the cut still hold it)
 pub const LEGACY_CLAUDE_STORE: &str = "claude";
 
-static ACCOUNT_STORE_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"^claude-[a-z0-9]+(-[a-z0-9]+)*$").unwrap_or_else(|_| unreachable!()));
+static ACCOUNT_STORE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^claude-[a-z0-9]+(-[a-z0-9]+)*$").unwrap_or_else(|_| unreachable!())
+});
 
 pub fn is_account_store(s: &str) -> bool {
     ACCOUNT_STORE_RE.is_match(s)
@@ -185,7 +188,11 @@ impl ClaudeAccounts {
         drop(r);
         loop {
             sub.recv_timeout(Duration::from_secs(30));
-            let gone = !self.lock().hubs.get(store).is_some_and(|x| Arc::ptr_eq(x, h));
+            let gone = !self
+                .lock()
+                .hubs
+                .get(store)
+                .is_some_and(|x| Arc::ptr_eq(x, h));
             if gone {
                 return;
             }
@@ -203,10 +210,13 @@ impl ClaudeAccounts {
             }
             Ok(None) => {}
         }
-        let names = self.st.list_sealed("claude-accounts/claude-").unwrap_or_else(|e| {
-            crate::logf!("[accounts] {e:#}");
-            vec![]
-        });
+        let names = self
+            .st
+            .list_sealed("claude-accounts/claude-")
+            .unwrap_or_else(|e| {
+                crate::logf!("[accounts] {e:#}");
+                vec![]
+            });
         for f in names {
             let store = f
                 .trim_start_matches("claude-accounts/")
@@ -220,8 +230,10 @@ impl ClaudeAccounts {
     }
 
     fn save_doc(&self, g: &Inner) -> Result<()> {
-        self.st
-            .write_sealed(ACCOUNTS_DOC_NAME, jarvis_go::fmt::marshal_indent1(&g.doc).as_bytes())
+        self.st.write_sealed(
+            ACCOUNTS_DOC_NAME,
+            jarvis_go::fmt::marshal_indent1(&g.doc).as_bytes(),
+        )
     }
 
     /// the account's hub; None = no such account
@@ -236,7 +248,11 @@ impl ClaudeAccounts {
 
     pub fn default_store(&self) -> String {
         let g = self.lock();
-        if g.hubs.contains_key(&g.doc.default) { g.doc.default.clone() } else { String::new() }
+        if g.hubs.contains_key(&g.doc.default) {
+            g.doc.default.clone()
+        } else {
+            String::new()
+        }
     }
 
     pub fn default_hub(&self) -> Option<Arc<LoginHub>> {
@@ -279,7 +295,10 @@ impl ClaudeAccounts {
     /// (claude-<name>, a number added when taken)
     pub fn hub_for(self: &Arc<Self>, uuid: &str, email: &str) -> Result<Arc<LoginHub>> {
         if !uuid.is_empty()
-            && let Some(h) = self.all().into_iter().find(|h| account_uuid(&h.current().account) == uuid)
+            && let Some(h) = self
+                .all()
+                .into_iter()
+                .find(|h| account_uuid(&h.current().account) == uuid)
         {
             return Ok(h);
         }
@@ -288,7 +307,11 @@ impl ClaudeAccounts {
             base = "account".into();
         }
         for i in 1..100 {
-            let name = if i > 1 { format!("{base}-{i}") } else { base.clone() };
+            let name = if i > 1 {
+                format!("{base}-{i}")
+            } else {
+                base.clone()
+            };
             let store = account_store_name(&name);
             if !store.is_empty() && self.hub(&store).is_none() {
                 return self.add(&name);
@@ -353,7 +376,10 @@ impl ClaudeAccounts {
     /// switched); otherwise it goes, the next account becomes the default when it was the default, and its core store
     /// loses its keys. Answers the new default.
     pub fn remove(&self, store: &str) -> Result<String> {
-        let r = self.r.upgrade().ok_or_else(|| anyhow!("the router is gone"))?;
+        let r = self
+            .r
+            .upgrade()
+            .ok_or_else(|| anyhow!("the router is gone"))?;
         let users = r.account_users(store);
         if !users.is_empty() {
             return Err(AccountConflict(format!(
@@ -370,7 +396,9 @@ impl ClaudeAccounts {
     }
 
     fn remove_hub(&self, store: &str) -> Result<String> {
-        let h = self.hub(store).ok_or_else(|| anyhow!("no Claude account {store}"))?;
+        let h = self
+            .hub(store)
+            .ok_or_else(|| anyhow!("no Claude account {store}"))?;
         // not while its refresh or a sign-in is out (taken before mu: finish_login's check takes mu)
         let _r = h.lock_refresh();
         let mut g = self.lock();
@@ -398,7 +426,10 @@ impl ClaudeAccounts {
                 let mut st = h.status();
                 st.insert("name".into(), json!(h.store.trim_start_matches("claude-")));
                 st.insert("default".into(), json!(h.store == def));
-                let users = r.as_ref().map(|r| r.account_users(&h.store)).unwrap_or_default();
+                let users = r
+                    .as_ref()
+                    .map(|r| r.account_users(&h.store))
+                    .unwrap_or_default();
                 st.insert("sessions".into(), json!(users));
                 Value::Object(st)
             })
@@ -416,7 +447,11 @@ fn login_err_status(e: &anyhow::Error) -> u16 {
 }
 
 fn no_such(w: &mut W, store: &str) {
-    write_json(w, 404, &json!({"error": format!("no Claude account {store}")}));
+    write_json(
+        w,
+        404,
+        &json!({"error": format!("no Claude account {store}")}),
+    );
 }
 
 fn refresh(_r: &Arc<Router>, w: &mut W, _req: &mut Req, h: &Arc<LoginHub>) {
@@ -425,9 +460,17 @@ fn refresh(_r: &Arc<Router>, w: &mut W, _req: &mut Req, h: &Arc<LoginHub>) {
             let no_pair = is_login_err(&e, LoginErr::NoPair);
             let msg = format!("{e:#}");
             let status = if no_pair { 409 } else { 502 };
-            write_json(w, status, &json!({"error": msg, "needLogin": no_pair || msg.contains("Re-login")}));
+            write_json(
+                w,
+                status,
+                &json!({"error": msg, "needLogin": no_pair || msg.contains("Re-login")}),
+            );
         }
-        Ok(ok) => write_json(w, 200, &json!({"ok": true, "refreshed": ok, "expiresAt": h.current().expires_at})),
+        Ok(ok) => write_json(
+            w,
+            200,
+            &json!({"ok": true, "refreshed": ok, "expiresAt": h.current().expires_at}),
+        ),
     }
 }
 
@@ -449,7 +492,11 @@ fn code(r: &Arc<Router>, w: &mut W, req: &mut Req, h: &Arc<LoginHub>) {
         Err(e) => return write_json(w, 400, &json!({"error": format!("{e:#}")})),
         Ok(x) => x,
     };
-    let exp = r.accounts().hub(&store).map(|t| t.current().expires_at).unwrap_or(0);
+    let exp = r
+        .accounts()
+        .hub(&store)
+        .map(|t| t.current().expires_at)
+        .unwrap_or(0);
     let r2 = r.clone();
     std::thread::spawn(move || r2.resume_stuck_logins());
     let mut out = json!({"ok": true, "store": store, "email": email, "expiresAt": exp});
@@ -493,7 +540,9 @@ fn with_default(f: HubRoute) -> impl Fn(&Arc<Router>, &mut W, &mut Req) + Send +
 }
 
 /// the setup session: its Access token and its key's signature over the request
-fn setup_signed(f: fn(&Arc<Router>, &mut W)) -> impl Fn(&Arc<Router>, &mut W, &mut Req) + Send + Sync + 'static {
+fn setup_signed(
+    f: fn(&Arc<Router>, &mut W),
+) -> impl Fn(&Arc<Router>, &mut W, &mut Req) + Send + Sync + 'static {
     move |r, w, req| {
         let b = req.read_body(1 << 20);
         if let Err(e) = r.check_setup_sig(
@@ -510,7 +559,9 @@ fn setup_signed(f: fn(&Arc<Router>, &mut W)) -> impl Fn(&Arc<Router>, &mut W, &m
 }
 
 pub fn register_claude_accounts(reg: &mut Registrar) {
-    reg.app("GET /api/claude-accounts", |r, w, _| write_json(w, 200, &r.accounts().list()));
+    reg.app("GET /api/claude-accounts", |r, w, _| {
+        write_json(w, 200, &r.accounts().list())
+    });
     reg.app("POST /api/claude-accounts", |r, w, req| {
         #[derive(Deserialize)]
         struct B {
@@ -528,7 +579,10 @@ pub fn register_claude_accounts(reg: &mut Registrar) {
     });
     reg.app("POST /api/claude-accounts/{store}/login", with_hub(start));
     reg.app("POST /api/claude-accounts/{store}/code", with_hub(code));
-    reg.app("POST /api/claude-accounts/{store}/refresh", with_hub(refresh));
+    reg.app(
+        "POST /api/claude-accounts/{store}/refresh",
+        with_hub(refresh),
+    );
     reg.app("GET /api/claude-accounts/{store}/usage", with_hub(usage));
     reg.app(
         "POST /api/claude-accounts/{store}/default",
@@ -545,7 +599,10 @@ pub fn register_claude_accounts(reg: &mut Registrar) {
         }),
     );
 
-    reg.app("GET /api/claude-login", with_default(|_, w, _, h| write_json(w, 200, &h.status())));
+    reg.app(
+        "GET /api/claude-login",
+        with_default(|_, w, _, h| write_json(w, 200, &h.status())),
+    );
     reg.app("POST /api/claude-login/refresh", with_default(refresh));
     reg.app("POST /api/claude-login/start", with_default(start));
     reg.app("POST /api/claude-login/code", with_default(code));
@@ -560,7 +617,11 @@ pub fn register_claude_accounts(reg: &mut Registrar) {
         "GET /setup/claude-login",
         setup_signed(|r, w| match r.accounts().default_hub() {
             Some(h) => write_json(w, 200, &h.status()),
-            None => write_json(w, 409, &json!({"error": "no Claude account yet", "needLogin": true})),
+            None => write_json(
+                w,
+                409,
+                &json!({"error": "no Claude account yet", "needLogin": true}),
+            ),
         }),
     );
 }

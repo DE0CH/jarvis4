@@ -57,16 +57,26 @@ fn re(s: &str) -> regex::Regex {
     regex::Regex::new(s).unwrap_or_else(|_| unreachable!())
 }
 
-static TASK_TEMPLATE_RE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"^[a-z0-9][a-z0-9-]{0,39}$"));
+static TASK_TEMPLATE_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| re(r"^[a-z0-9][a-z0-9-]{0,39}$"));
 static TASK_FIELD_RE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"^[a-z][a-z0-9_]{0,39}$"));
-static TASK_STORE_RE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"^[a-z0-9]([a-z0-9-]{0,40}[a-z0-9])?$"));
+static TASK_STORE_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| re(r"^[a-z0-9]([a-z0-9-]{0,40}[a-z0-9])?$"));
 static HHMM_RE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"^(\d{1,2}):(\d{2})$"));
-const TASK_TYPES: &[&str] = &["text", "textarea", "number", "select", "multiselect", "checkbox"];
+const TASK_TYPES: &[&str] = &[
+    "text",
+    "textarea",
+    "number",
+    "select",
+    "multiselect",
+    "checkbox",
+];
 const TASK_SOURCES: &[&str] = &["stores", "content", "sizes", "models"];
 const TASK_SIZES: &[&str] = &["small", "medium", "large"];
 
 /// the templates as the router image carries them (the session image has its own copy)
-pub static TASKS_DIR: LazyLock<RwLock<String>> = LazyLock::new(|| RwLock::new(crate::router::env("TASKS_DIR", "/tasks")));
+pub static TASKS_DIR: LazyLock<RwLock<String>> =
+    LazyLock::new(|| RwLock::new(crate::router::env("TASKS_DIR", "/tasks")));
 
 fn tasks_dir() -> String {
     TASKS_DIR.read().unwrap_or_else(|e| e.into_inner()).clone()
@@ -144,7 +154,11 @@ fn is_select(t: &str) -> bool {
 
 fn parse_option(raw: &Value) -> Result<TaskOption, String> {
     if let Value::String(s) = raw {
-        return Ok(TaskOption { value: s.clone(), label: s.clone(), sub: String::new() });
+        return Ok(TaskOption {
+            value: s.clone(),
+            label: s.clone(),
+            sub: String::new(),
+        });
     }
     let err = || "an option is a string or {value, label?, sub?}".to_string();
     let o = raw.as_object().ok_or_else(err)?;
@@ -159,13 +173,20 @@ fn parse_option(raw: &Value) -> Result<TaskOption, String> {
     if label.is_empty() {
         label = value.clone();
     }
-    Ok(TaskOption { value, label, sub: s("sub")? })
+    Ok(TaskOption {
+        value,
+        label,
+        sub: s("sub")?,
+    })
 }
 
 /// a task.json (+ the dir's file list) → the template, or an error for a bad spec
 pub fn parse_template(name: &str, spec: &[u8], files: &[String]) -> Result<TaskTemplate, String> {
     if !TASK_TEMPLATE_RE.is_match(name) {
-        return Err(format!("template dir name {} must be lowercase letters/digits/dashes", jarvis_go::fmt::go_quote(name)));
+        return Err(format!(
+            "template dir name {} must be lowercase letters/digits/dashes",
+            jarvis_go::fmt::go_quote(name)
+        ));
     }
     #[derive(Deserialize, Default)]
     #[serde(default)]
@@ -206,13 +227,21 @@ pub fn parse_template(name: &str, spec: &[u8], files: &[String]) -> Result<TaskT
         return Err("give run or prompt, not both".into());
     }
     if t.run.is_empty() && t.prompt.is_empty() {
-        return Err(r#"no run file ("run.py", "run.sh", "run.js") and no prompt ("prompt.md")"#.into());
+        return Err(
+            r#"no run file ("run.py", "run.sh", "run.js") and no prompt ("prompt.md")"#.into(),
+        );
     }
     if !t.run.is_empty() && !has(&t.run) {
-        return Err(format!("run file {} is not in the template dir", jarvis_go::fmt::go_quote(&t.run)));
+        return Err(format!(
+            "run file {} is not in the template dir",
+            jarvis_go::fmt::go_quote(&t.run)
+        ));
     }
     if !t.prompt.is_empty() && !has(&t.prompt) {
-        return Err(format!("prompt file {} is not in the template dir", jarvis_go::fmt::go_quote(&t.prompt)));
+        return Err(format!(
+            "prompt file {} is not in the template dir",
+            jarvis_go::fmt::go_quote(&t.prompt)
+        ));
     }
     for st in s.stores {
         if !TASK_STORE_RE.is_match(&st) || st == crate::policy::FLY_STORE {
@@ -224,7 +253,11 @@ pub fn parse_template(name: &str, spec: &[u8], files: &[String]) -> Result<TaskT
     if !(10..=6 * 3600).contains(&t.timeout_seconds) {
         return Err("timeoutSeconds must be 10–21600".into());
     }
-    t.size = if s.size.is_empty() { "small".into() } else { s.size };
+    t.size = if s.size.is_empty() {
+        "small".into()
+    } else {
+        s.size
+    };
     if !valid_size(&t.size) {
         return Err("size must be small, medium or large".into());
     }
@@ -249,20 +282,37 @@ pub fn parse_template(name: &str, spec: &[u8], files: &[String]) -> Result<TaskT
         }
         let f: F = serde_json::from_value(raw.clone()).map_err(|e| format!("a field: {e}"))?;
         if !TASK_FIELD_RE.is_match(&f.name) {
-            return Err(format!("field name {} must be lowercase letters/digits/_", jarvis_go::fmt::go_quote(&f.name)));
+            return Err(format!(
+                "field name {} must be lowercase letters/digits/_",
+                jarvis_go::fmt::go_quote(&f.name)
+            ));
         }
         if !seen.insert(f.name.clone()) {
             return Err(format!("field {} is defined twice", f.name));
         }
-        let ty = if f.type_.is_empty() { "text".to_string() } else { f.type_ };
+        let ty = if f.type_.is_empty() {
+            "text".to_string()
+        } else {
+            f.type_
+        };
         if !TASK_TYPES.contains(&ty.as_str()) {
-            return Err(format!("field {}: type must be one of text, textarea, number, select, multiselect, checkbox", f.name));
+            return Err(format!(
+                "field {}: type must be one of text, textarea, number, select, multiselect, checkbox",
+                f.name
+            ));
         }
         if !f.secret_keys.is_null() {
-            return Err(format!("field {}: secretKeys is Jarvis 1's; in Jarvis 4 a picked store brings all its keys", f.name));
+            return Err(format!(
+                "field {}: secretKeys is Jarvis 1's; in Jarvis 4 a picked store brings all its keys",
+                f.name
+            ));
         }
         let mut out = TaskField {
-            label: if f.label.is_empty() { f.name.clone() } else { f.label },
+            label: if f.label.is_empty() {
+                f.name.clone()
+            } else {
+                f.label
+            },
             name: f.name.clone(),
             type_: ty.clone(),
             required: f.required,
@@ -274,15 +324,22 @@ pub fn parse_template(name: &str, spec: &[u8], files: &[String]) -> Result<TaskT
         if is_select(&ty) {
             if !f.options_from.is_empty() {
                 if !TASK_SOURCES.contains(&f.options_from.as_str()) {
-                    return Err(format!("field {}: optionsFrom must be stores, content, sizes or models", f.name));
+                    return Err(format!(
+                        "field {}: optionsFrom must be stores, content, sizes or models",
+                        f.name
+                    ));
                 }
                 out.options_from = f.options_from;
             } else {
                 for o in &f.options {
-                    out.options.push(parse_option(o).map_err(|e| format!("field {}: {e}", f.name))?);
+                    out.options
+                        .push(parse_option(o).map_err(|e| format!("field {}: {e}", f.name))?);
                 }
                 if out.options.is_empty() {
-                    return Err(format!("field {}: a {ty} needs options or optionsFrom", f.name));
+                    return Err(format!(
+                        "field {}: a {ty} needs options or optionsFrom",
+                        f.name
+                    ));
                 }
             }
         }
@@ -297,7 +354,9 @@ pub fn valid_size(s: &str) -> bool {
 
 /// every tasks/*/task.json; a broken one is listed with its error rather than dropped
 pub fn read_templates(root: &Path) -> Vec<TaskTemplate> {
-    let Ok(ents) = std::fs::read_dir(root) else { return vec![] };
+    let Ok(ents) = std::fs::read_dir(root) else {
+        return vec![];
+    };
     let mut out = vec![];
     for e in ents.flatten() {
         if !e.file_type().is_ok_and(|t| t.is_dir()) {
@@ -305,7 +364,9 @@ pub fn read_templates(root: &Path) -> Vec<TaskTemplate> {
         }
         let name = e.file_name().to_string_lossy().into_owned();
         let dir = e.path();
-        let Ok(spec) = std::fs::read(dir.join("task.json")) else { continue }; // not a template
+        let Ok(spec) = std::fs::read(dir.join("task.json")) else {
+            continue;
+        }; // not a template
         let mut files: Vec<String> = std::fs::read_dir(&dir)
             .map(|fs| {
                 fs.flatten()
@@ -317,9 +378,19 @@ pub fn read_templates(root: &Path) -> Vec<TaskTemplate> {
             .unwrap_or_default();
         files.sort();
         match parse_template(&name, &spec, &files) {
-            Err(err) => out.push(TaskTemplate { name: name.clone(), title: name, error: err, files, ..Default::default() }),
+            Err(err) => out.push(TaskTemplate {
+                name: name.clone(),
+                title: name,
+                error: err,
+                files,
+                ..Default::default()
+            }),
             Ok(mut t) => {
-                let main = if t.run.is_empty() { t.prompt.clone() } else { t.run.clone() };
+                let main = if t.run.is_empty() {
+                    t.prompt.clone()
+                } else {
+                    t.run.clone()
+                };
                 if let Ok(b) = std::fs::read(dir.join(main)) {
                     t.source = String::from_utf8_lossy(&b[..b.len().min(100_000)]).into_owned();
                 }
@@ -340,13 +411,21 @@ pub fn with_options(t: &TaskTemplate) -> TaskTemplate {
             "sizes" => {
                 f.options = TASK_SIZES
                     .iter()
-                    .map(|s| TaskOption { value: (*s).into(), label: crate::sizes::size_label(s), sub: String::new() })
+                    .map(|s| TaskOption {
+                        value: (*s).into(),
+                        label: crate::sizes::size_label(s),
+                        sub: String::new(),
+                    })
                     .collect()
             }
             "models" => {
                 f.options = crate::harness::MODEL_CATALOG
                     .iter()
-                    .map(|m| TaskOption { value: m.id.into(), label: m.label.into(), sub: m.harness.into() })
+                    .map(|m| TaskOption {
+                        value: m.id.into(),
+                        label: m.label.into(),
+                        sub: m.harness.into(),
+                    })
                     .collect()
             }
             "stores" | "content" => f.options = vec![], // the app lists them (the core's stores, GET /api/content)
@@ -362,7 +441,11 @@ pub fn template_by_name(name: &str) -> Result<TaskTemplate> {
         .find(|t| t.name == name)
         .ok_or_else(|| anyhow!("no template {} in tasks/", jarvis_go::fmt::go_quote(name)))?;
     if !t.error.is_empty() {
-        return Err(anyhow!("template {} is broken: {}", jarvis_go::fmt::go_quote(name), t.error));
+        return Err(anyhow!(
+            "template {} is broken: {}",
+            jarvis_go::fmt::go_quote(name),
+            t.error
+        ));
     }
     Ok(with_options(&t))
 }
@@ -384,7 +467,13 @@ pub fn check_params(t: &TaskTemplate, input: &Map<String, Value>) -> Result<Map<
         "content" => crate::content::content_name_ok(v),
         _ => f.options.iter().any(|o| o.value == v),
     };
-    let values = |f: &TaskField| f.options.iter().map(|o| o.value.clone()).collect::<Vec<_>>().join(", ");
+    let values = |f: &TaskField| {
+        f.options
+            .iter()
+            .map(|o| o.value.clone())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     let store_field = |f: &TaskField| f.options_from == "stores" || f.options_from == "content";
     let q = jarvis_go::fmt::go_quote;
     for f in &t.fields {
@@ -394,7 +483,10 @@ pub fn check_params(t: &TaskTemplate, input: &Map<String, Value>) -> Result<Map<
         }
         match f.type_.as_str() {
             "checkbox" => {
-                out.insert(f.name.clone(), json!(v == json!(true) || v == json!("true")));
+                out.insert(
+                    f.name.clone(),
+                    json!(v == json!(true) || v == json!("true")),
+                );
                 continue;
             }
             "multiselect" => {
@@ -412,9 +504,18 @@ pub fn check_params(t: &TaskTemplate, input: &Map<String, Value>) -> Result<Map<
                     }
                     if !allowed(f, &e) {
                         if store_field(f) {
-                            return Err(bad(format!("“{}”: {} is not a store name", f.label, q(&e))));
+                            return Err(bad(format!(
+                                "“{}”: {} is not a store name",
+                                f.label,
+                                q(&e)
+                            )));
                         }
-                        return Err(bad(format!("“{}”: {} is not one of {}", f.label, q(&e), values(f))));
+                        return Err(bad(format!(
+                            "“{}”: {} is not one of {}",
+                            f.label,
+                            q(&e),
+                            values(f)
+                        )));
                     }
                     seen.insert(e.clone());
                     clean.push(e);
@@ -431,7 +532,14 @@ pub fn check_params(t: &TaskTemplate, input: &Map<String, Value>) -> Result<Map<
             if f.required {
                 return Err(bad(format!("“{}” is required", f.label)));
             }
-            out.insert(f.name.clone(), if f.type_ == "number" { Value::Null } else { json!("") });
+            out.insert(
+                f.name.clone(),
+                if f.type_ == "number" {
+                    Value::Null
+                } else {
+                    json!("")
+                },
+            );
             continue;
         }
         match f.type_.as_str() {
@@ -467,14 +575,21 @@ pub fn line_content(t: &TaskTemplate, params: &Map<String, Value>) -> Vec<String
     picked_in(t, params, "content", &[])
 }
 
-fn picked_in(t: &TaskTemplate, params: &Map<String, Value>, source: &str, fixed: &[String]) -> Vec<String> {
+fn picked_in(
+    t: &TaskTemplate,
+    params: &Map<String, Value>,
+    source: &str,
+    fixed: &[String],
+) -> Vec<String> {
     let mut set: BTreeSet<String> = fixed.iter().cloned().collect();
     for f in t.fields.iter().filter(|f| f.options_from == source) {
         match params.get(&f.name) {
             Some(Value::String(v)) if !v.is_empty() => {
                 set.insert(v.clone());
             }
-            Some(Value::Array(v)) => set.extend(v.iter().filter_map(Value::as_str).map(str::to_string)),
+            Some(Value::Array(v)) => {
+                set.extend(v.iter().filter_map(Value::as_str).map(str::to_string))
+            }
             _ => {}
         }
     }
@@ -623,14 +738,22 @@ pub fn instance_by_session<'a>(d: &'a Persisted, sid: &str) -> Option<&'a TaskIn
     if sid.is_empty() {
         return None;
     }
-    d.tasks.as_ref()?.instances.values().find(|i| i.session == sid)
+    d.tasks
+        .as_ref()?
+        .instances
+        .values()
+        .find(|i| i.session == sid)
 }
 
 fn instance_by_session_mut<'a>(d: &'a mut Persisted, sid: &str) -> Option<&'a mut TaskInstance> {
     if sid.is_empty() {
         return None;
     }
-    d.tasks.as_mut()?.instances.values_mut().find(|i| i.session == sid)
+    d.tasks
+        .as_mut()?
+        .instances
+        .values_mut()
+        .find(|i| i.session == sid)
 }
 
 impl TaskInstance {
@@ -644,12 +767,20 @@ impl TaskInstance {
 
     /// the queued runs' ids, oldest first
     pub fn queued(&self) -> Vec<String> {
-        self.runs.iter().rev().filter(|r| r.phase == "queued").map(|r| r.id.clone()).collect()
+        self.runs
+            .iter()
+            .rev()
+            .filter(|r| r.phase == "queued")
+            .map(|r| r.id.clone())
+            .collect()
     }
 }
 
 pub fn finished(phase: &str) -> bool {
-    matches!(phase, "succeeded" | "failed" | "timedout" | "stopped" | "lost")
+    matches!(
+        phase,
+        "succeeded" | "failed" | "timedout" | "stopped" | "lost"
+    )
 }
 
 /// a run's log and output are objects task-runs/<run>.log and .output (objstore.rs)
@@ -692,7 +823,9 @@ pub fn run_view(x: &TaskRun, inst: Option<&TaskInstance>) -> Value {
 fn instance_state(i: &TaskInstance, s: Option<&Session>) -> (String, String) {
     match s {
         None => ("gone".into(), i.session_error.clone()),
-        Some(s) if s.state == "approval" && s.cert.is_none() => ("approval".into(), "waiting for the phone".into()),
+        Some(s) if s.state == "approval" && s.cert.is_none() => {
+            ("approval".into(), "waiting for the phone".into())
+        }
         Some(_) if !i.active.is_empty() => ("running".into(), String::new()),
         Some(s) if s.state == "paused" => ("ready".into(), s.error.clone()),
         Some(s) if s.state == "failed" => ("failed".into(), s.error.clone()),
@@ -736,13 +869,22 @@ pub fn instance_view(i: &TaskInstance, d: &Persisted) -> Value {
         v.insert("activeRun".into(), run_view(a, Some(i)));
     }
     v.insert("queued".into(), json!(i.queued().len()));
-    let n = d.tasks.as_ref().map_or(0, |t| t.schedules.values().filter(|sc| sc.instance == i.id).count());
+    let n = d.tasks.as_ref().map_or(0, |t| {
+        t.schedules
+            .values()
+            .filter(|sc| sc.instance == i.id)
+            .count()
+    });
     v.insert("schedules".into(), json!(n));
     Value::Object(v)
 }
 
 pub fn schedule_view_t(s: &TaskSchedule, now: GoTime) -> Value {
-    let next = if s.enabled { next_slot(s, now).map_or(Value::Null, |t| json!(t)) } else { Value::Null };
+    let next = if s.enabled {
+        next_slot(s, now).map_or(Value::Null, |t| json!(t))
+    } else {
+        Value::Null
+    };
     json!({"id": s.id, "instance": s.instance, "time": s.time, "tz": s.tz, "enabled": s.enabled,
         "since": s.since, "createdAt": s.created_at, "nextAt": next})
 }
@@ -759,7 +901,10 @@ fn slot_parts(s: &TaskSchedule) -> Result<(i8, i8, jiff::tz::TimeZone)> {
     }
     match jiff::tz::TimeZone::get(&s.tz) {
         Ok(tz) if !s.tz.is_empty() && s.tz != "Local" => Ok((hh, mm, tz)),
-        _ => Err(bad(format!("unknown time zone {}", jarvis_go::fmt::go_quote(&s.tz)))),
+        _ => Err(bad(format!(
+            "unknown time zone {}",
+            jarvis_go::fmt::go_quote(&s.tz)
+        ))),
     }
 }
 
@@ -889,7 +1034,8 @@ fn read_json<T: serde::de::DeserializeOwned + Default>(b: &[u8]) -> Result<T> {
     match it.next() {
         None => Ok(T::default()),
         Some(Err(e)) => Err(bad(format!("bad JSON: {e}"))),
-        Some(Ok(v)) => jarvis_go::unmarshal(jarvis_go::marshal(&v).as_bytes()).map_err(|e| bad(format!("bad JSON: {e}"))),
+        Some(Ok(v)) => jarvis_go::unmarshal(jarvis_go::marshal(&v).as_bytes())
+            .map_err(|e| bad(format!("bad JSON: {e}"))),
     }
 }
 
@@ -936,7 +1082,9 @@ pub fn task_env(r: &Arc<Router>, s: &Session, e: &mut BTreeMap<String, String>) 
     }
     let add = r.st.do_(|d| {
         let mut add = BTreeMap::new();
-        let Some(i) = instance_by_session(d, &s.id) else { return add };
+        let Some(i) = instance_by_session(d, &s.id) else {
+            return add;
+        };
         add.insert("TASK_INSTANCE".to_string(), i.id.clone());
         add.insert("TASK_NAME".to_string(), i.name.clone());
         add.insert("TASK_PARAMS".to_string(), jarvis_go::marshal(&i.params));
@@ -955,10 +1103,23 @@ pub fn task_env(r: &Arc<Router>, s: &Session, e: &mut BTreeMap<String, String>) 
 
 #[derive(Debug, Clone)]
 enum TaskAct {
-    Fire { instance: String, schedule: String, slot: i64 },
-    Resume { instance: String, session: String, run: String, upgrade: bool },
-    Pause { session: String },
-    Destroy { session: String },
+    Fire {
+        instance: String,
+        schedule: String,
+        slot: i64,
+    },
+    Resume {
+        instance: String,
+        session: String,
+        run: String,
+        upgrade: bool,
+    },
+    Pause {
+        session: String,
+    },
+    Destroy {
+        session: String,
+    },
 }
 
 static TASK_TICKING: Mutex<()> = Mutex::new(());
@@ -976,16 +1137,25 @@ impl Router {
             return Err(bad("a name is required"));
         }
         if !i.hide.is_empty() {
-            return Err(bad("hidden values are Jarvis 1's; in Jarvis 4 secrets go in a store the task picks"));
+            return Err(bad(
+                "hidden values are Jarvis 1's; in Jarvis 4 secrets go in a store the task picks",
+            ));
         }
         let t = template_by_name(&i.template).map_err(|e| bad(format!("{e:#}")))?;
         let params = check_params(&t, &i.params.clone().unwrap_or_default())?;
-        let size = if i.size.is_empty() { t.size.clone() } else { i.size.clone() };
+        let size = if i.size.is_empty() {
+            t.size.clone()
+        } else {
+            i.size.clone()
+        };
         if !valid_size(&size) {
             return Err(bad("size must be small, medium or large"));
         }
         // claude -p runs on a Claude account
-        let account = self.accounts().resolve(&i.account, !t.prompt.is_empty()).map_err(|e| bad(format!("{e:#}")))?;
+        let account = self
+            .accounts()
+            .resolve(&i.account, !t.prompt.is_empty())
+            .map_err(|e| bad(format!("{e:#}")))?;
         let mut inst = TaskInstance {
             id: crate::util::rand_id()[..8].to_string(),
             template: t.name.clone(),
@@ -1001,11 +1171,12 @@ impl Router {
         if !i.request_id.is_empty() {
             let dup = self.st.do_(|d| {
                 let ts = d.tasks.as_ref()?;
-                let x = ts
-                    .instances
-                    .values()
-                    .filter(|x| !x.session.is_empty() && d.sessions.get(&x.session).is_some_and(|s| s.request_id == i.request_id))
-                    .next_back()?;
+                let x = ts.instances.values().rfind(|x| {
+                    !x.session.is_empty()
+                        && d.sessions
+                            .get(&x.session)
+                            .is_some_and(|s| s.request_id == i.request_id)
+                })?;
                 Some(instance_view(x, d))
             });
             if let Some(v) = dup {
@@ -1029,7 +1200,11 @@ impl Router {
 
     /// the instance's session line (the phone approves it as a new session)
     fn new_task_line(self: &Arc<Self>, inst: &mut TaskInstance, request_id: &str) -> Result<()> {
-        let tc = TaskConfig { instance: inst.id.clone(), name: inst.name.clone(), params: Some(inst.params.clone()) };
+        let tc = TaskConfig {
+            instance: inst.id.clone(),
+            name: inst.name.clone(),
+            params: Some(inst.params.clone()),
+        };
         let sid = (ops().create)(
             self,
             NewSession {
@@ -1057,11 +1232,18 @@ impl Router {
     /// the instance, its runs and schedules; the old line goes once the new one exists.
     pub fn update_task(self: &Arc<Self>, id: &str, i: InstanceIn) -> Result<Value> {
         if !i.hide.is_empty() {
-            return Err(bad("hidden values are Jarvis 1's; in Jarvis 4 secrets go in a store the task picks"));
+            return Err(bad(
+                "hidden values are Jarvis 1's; in Jarvis 4 secrets go in a store the task picks",
+            ));
         }
         let (tmpl, cur) = self
             .st
-            .do_(|d| d.tasks.as_ref().and_then(|t| t.instances.get(id)).map(|x| (x.template.clone(), x.params.clone())))
+            .do_(|d| {
+                d.tasks
+                    .as_ref()
+                    .and_then(|t| t.instances.get(id))
+                    .map(|x| (x.template.clone(), x.params.clone()))
+            })
             .ok_or_else(|| not_found(format!("no such task instance: {id}")))?;
         let t = template_by_name(&tmpl).map_err(|e| bad(format!("{e:#}")))?;
         let params = check_params(&t, i.params.as_ref().unwrap_or(&cur))?;
@@ -1071,12 +1253,17 @@ impl Router {
         let (stores, content) = (line_stores(&t, &params), line_content(&t, &params));
         let new_name = i.name.trim().to_string();
         let relined: Option<TaskInstance> = self.st.do_(|d| {
-            let x = tasks_of(d).instances.get(id).ok_or_else(|| not_found(format!("no such task instance: {id}")))?;
+            let x = tasks_of(d)
+                .instances
+                .get(id)
+                .ok_or_else(|| not_found(format!("no such task instance: {id}")))?;
             if content == x.content && stores == x.stores {
                 return Ok(None);
             }
             if !x.active.is_empty() {
-                return Err(conflict("a run is in progress: change the task's stores once it has finished".into()));
+                return Err(conflict(
+                    "a run is in progress: change the task's stores once it has finished".into(),
+                ));
             }
             let mut c = x.clone();
             c.stores = stores.clone();
@@ -1102,7 +1289,9 @@ impl Router {
         self.st.do_(|d| {
             let old_live = !old.is_empty() && d.sessions.contains_key(&old);
             let ts = tasks_of(d);
-            let Some(x) = ts.instances.get_mut(id) else { return Err(not_found(format!("no such task instance: {id}"))) };
+            let Some(x) = ts.instances.get_mut(id) else {
+                return Err(not_found(format!("no such task instance: {id}")));
+            };
             if let Some(c) = &relined {
                 x.stores = c.stores.clone();
                 x.content = c.content.clone();
@@ -1129,7 +1318,12 @@ impl Router {
             {
                 s.size = i.size.clone(); // unsigned: the next start takes it
             }
-            let x = d.tasks.as_ref().and_then(|t| t.instances.get(id)).cloned().unwrap_or_default();
+            let x = d
+                .tasks
+                .as_ref()
+                .and_then(|t| t.instances.get(id))
+                .cloned()
+                .unwrap_or_default();
             Ok(instance_view(&x, d))
         })
     }
@@ -1139,7 +1333,9 @@ impl Router {
     pub fn delete_task(self: &Arc<Self>, id: &str) -> Result<()> {
         let (inst, approval) = self.st.do_(|d| {
             let s = {
-                let Some(inst) = d.tasks.as_ref().and_then(|t| t.instances.get(id)) else { return (None, String::new()) };
+                let Some(inst) = d.tasks.as_ref().and_then(|t| t.instances.get(id)) else {
+                    return (None, String::new());
+                };
                 d.sessions.get(&inst.session).cloned()
             };
             let mut approval = String::new();
@@ -1199,7 +1395,10 @@ impl Router {
                 && s.state != "failed"
                 && !(destroying && s.state == "destroying")
             {
-                return Err(conflict(format!("the task's session is {}; only a gone or failed one is replaced", s.state)));
+                return Err(conflict(format!(
+                    "the task's session is {}; only a gone or failed one is replaced",
+                    s.state
+                )));
             }
             Ok((i.clone(), s.map(|s| s.id.clone()).unwrap_or_default()))
         })?;
@@ -1223,7 +1422,12 @@ impl Router {
             if !found {
                 return Value::Null;
             }
-            let x = d.tasks.as_ref().and_then(|t| t.instances.get(id)).cloned().unwrap_or_default();
+            let x = d
+                .tasks
+                .as_ref()
+                .and_then(|t| t.instances.get(id))
+                .cloned()
+                .unwrap_or_default();
             instance_view(&x, d)
         }))
     }
@@ -1231,7 +1435,14 @@ impl Router {
     /// queue a run; the tick starts it when the line is paused (now, for an idle line). A line that waits for the
     /// phone keeps the run queued until it is approved; a line that is gone or being destroyed gets its new line filed
     /// for the phone (reapprove) and the run waits for it.
-    pub fn start_run(self: &Arc<Self>, id: &str, trigger: &str, schedule: &str, slot: Option<GoTime>, upgrade: bool) -> Result<TaskRun> {
+    pub fn start_run(
+        self: &Arc<Self>,
+        id: &str,
+        trigger: &str,
+        schedule: &str,
+        slot: Option<GoTime>,
+        upgrade: bool,
+    ) -> Result<TaskRun> {
         let mut run = TaskRun {
             id: format!("r{}", crate::util::rand_id()),
             instance: id.into(),
@@ -1250,18 +1461,27 @@ impl Router {
                 .and_then(|t| t.instances.get(id))
                 .ok_or_else(|| not_found(format!("no such task instance: {id}")))?;
             if i.queued().len() >= TASK_MAX_QUEUED {
-                return Err(conflict(format!("{TASK_MAX_QUEUED} runs are already queued: wait for them, or stop one")));
+                return Err(conflict(format!(
+                    "{TASK_MAX_QUEUED} runs are already queued: wait for them, or stop one"
+                )));
             }
             let s = d.sessions.get(&i.session);
             Ok((s.is_none_or(|s| s.state == "destroying"), s.is_some()))
         })?;
         if reline {
-            self.reapprove_opt(id, destroying)
-                .map_err(|e| anyhow!("the task's line is gone and a new one couldn't be filed: {e:#}"))?;
-            crate::logf!("[tasks] {id}: its line was gone: a new one waits for the phone; run {} waits for it", run.id);
+            self.reapprove_opt(id, destroying).map_err(|e| {
+                anyhow!("the task's line is gone and a new one couldn't be filed: {e:#}")
+            })?;
+            crate::logf!(
+                "[tasks] {id}: its line was gone: a new one waits for the phone; run {} waits for it",
+                run.id
+            );
         }
         run = self.st.do_(|d| {
-            let i = tasks_of(d).instances.get_mut(id).ok_or_else(|| not_found(format!("no such task instance: {id}")))?;
+            let i = tasks_of(d)
+                .instances
+                .get_mut(id)
+                .ok_or_else(|| not_found(format!("no such task instance: {id}")))?;
             let mut run = run.clone();
             run.template = i.template.clone();
             i.runs.insert(0, run.clone());
@@ -1304,12 +1524,21 @@ impl Router {
             .st
             .do_(|d| {
                 let ts = d.tasks.as_ref()?;
-                ts.instances.values().filter_map(|i| i.run(run_id).map(|x| run_view(x, Some(i)))).next_back()
+                ts.instances
+                    .values()
+                    .filter_map(|i| i.run(run_id).map(|x| run_view(x, Some(i))))
+                    .next_back()
             })
             .ok_or_else(|| not_found(format!("no such run: {run_id}")))?;
-        let logb = self.obj_get_bytes(&run_key(run_id, ".log")).unwrap_or_default();
-        let out = self.obj_get_bytes(&run_key(run_id, ".output")).unwrap_or_default();
-        Ok(json!({"run": run, "log": String::from_utf8_lossy(&logb), "output": String::from_utf8_lossy(&out)}))
+        let logb = self
+            .obj_get_bytes(&run_key(run_id, ".log"))
+            .unwrap_or_default();
+        let out = self
+            .obj_get_bytes(&run_key(run_id, ".output"))
+            .unwrap_or_default();
+        Ok(
+            json!({"run": run, "log": String::from_utf8_lossy(&logb), "output": String::from_utf8_lossy(&out)}),
+        )
     }
 
     fn save_schedule(&self, id: &str, b: &Map<String, Value>) -> Result<Value> {
@@ -1318,14 +1547,21 @@ impl Router {
         self.st.do_(|d| {
             let ts = tasks_of(d);
             let mut s = if !id.is_empty() {
-                ts.schedules.get(id).cloned().ok_or_else(|| not_found(format!("no such schedule: {id}")))?
+                ts.schedules
+                    .get(id)
+                    .cloned()
+                    .ok_or_else(|| not_found(format!("no such schedule: {id}")))?
             } else {
                 TaskSchedule {
                     id: new_id.clone(),
                     tz: "Europe/London".into(),
                     enabled: true,
                     created_at: now.utc(),
-                    instance: b.get("instance").and_then(Value::as_str).unwrap_or("").into(),
+                    instance: b
+                        .get("instance")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .into(),
                     ..Default::default()
                 }
             };
@@ -1335,7 +1571,11 @@ impl Router {
             if let Some(t) = b.get("time").filter(|t| !t.is_null()) {
                 s.time = sprint(t);
             }
-            if let Some(tz) = b.get("tz").and_then(Value::as_str).filter(|t| !t.is_empty()) {
+            if let Some(tz) = b
+                .get("tz")
+                .and_then(Value::as_str)
+                .filter(|t| !t.is_empty())
+            {
                 s.tz = tz.into();
             }
             if let Some(e) = b.get("enabled").and_then(Value::as_bool) {
@@ -1366,11 +1606,16 @@ impl Router {
         }
         let (sid, done, pruned) = self.st.do_(|d| {
             let sid = d.machines.get(machine).cloned().unwrap_or_default();
-            let Some(s) = d.sessions.get(&sid).filter(|s| s.machine_id == machine && is_task_harness(&s.harness)) else {
+            let Some(s) = d
+                .sessions
+                .get(&sid)
+                .filter(|s| s.machine_id == machine && is_task_harness(&s.harness))
+            else {
                 return Err(TaskErr(403, "this machine isn't a running task line".into()).into());
             };
             let image = s.image.clone();
-            let x = instance_by_session_mut(d, &sid).ok_or_else(|| not_found("no task instance for this session".into()))?;
+            let x = instance_by_session_mut(d, &sid)
+                .ok_or_else(|| not_found("no task instance for this session".into()))?;
             x.pause_wanted = true;
             let now = GoTime::now().utc();
             if x.ready_at.is_none() {
@@ -1380,14 +1625,20 @@ impl Router {
                 return Ok((sid, None, vec![])); // a boot with no run, or a run stopped meanwhile: just pause
             }
             let inst_view = x.clone();
-            let Some(r) = x.run_mut(&i.run) else { return Ok((sid, None, vec![])) };
+            let Some(r) = x.run_mut(&i.run) else {
+                return Ok((sid, None, vec![]));
+            };
             r.exit_code = Some(i.exit_code);
             r.machine = machine.into();
             r.image = image;
             if !i.started_at.is_zero() {
                 r.ran_at = Some(i.started_at.utc());
             }
-            r.finished_at = Some(if i.finished_at.is_zero() { now } else { i.finished_at.utc() });
+            r.finished_at = Some(if i.finished_at.is_zero() {
+                now
+            } else {
+                i.finished_at.utc()
+            });
             if !i.error.is_empty() {
                 r.phase = "failed".into();
                 r.reason = i.error.clone();
@@ -1416,7 +1667,8 @@ impl Router {
                 crate::logf!("[tasks] run {}: its log: {e:#}", done.id);
             }
             if !i.output.is_empty()
-                && let Err(e) = self.obj_put_bytes(&run_key(&done.id, ".output"), i.output.as_bytes())
+                && let Err(e) =
+                    self.obj_put_bytes(&run_key(&done.id, ".output"), i.output.as_bytes())
             {
                 crate::logf!("[tasks] run {}: its output: {e:#}", done.id);
             }
@@ -1474,13 +1726,17 @@ impl Router {
     /// schedules fire, runs advance with their line's state, queued runs start, finished lines pause, deleted
     /// instances' lines go. Decisions under the state lock, actions outside it.
     pub fn tasks_tick(self: &Arc<Self>, now: GoTime) {
-        let Ok(_g) = TASK_TICKING.try_lock() else { return };
+        let Ok(_g) = TASK_TICKING.try_lock() else {
+            return;
+        };
         let now_ms = ms(now);
         // the lines' busy marks and the templates' timeouts, read before the state's lock (a re-run of the closure
         // reads them again neither from the database nor the disk)
         let (sids, templates) = self.st.do_(|d| {
             let t = d.tasks.as_ref();
-            let mut sids: BTreeSet<String> = t.map(|t| t.doomed.iter().cloned().collect()).unwrap_or_default();
+            let mut sids: BTreeSet<String> = t
+                .map(|t| t.doomed.iter().cloned().collect())
+                .unwrap_or_default();
             let mut templates = BTreeSet::new();
             for i in t.into_iter().flat_map(|t| t.instances.values()) {
                 sids.insert(i.session.clone());
@@ -1488,9 +1744,19 @@ impl Router {
             }
             (sids, templates)
         });
-        let busy: BTreeSet<String> = sids.into_iter().filter(|s| !s.is_empty() && self.busy(s)).collect();
-        let timeouts: BTreeMap<String, i64> =
-            templates.into_iter().map(|t| (t.clone(), template_by_name(&t).map_or(600, |x| x.timeout_seconds))).collect();
+        let busy: BTreeSet<String> = sids
+            .into_iter()
+            .filter(|s| !s.is_empty() && self.busy(s))
+            .collect();
+        let timeouts: BTreeMap<String, i64> = templates
+            .into_iter()
+            .map(|t| {
+                (
+                    t.clone(),
+                    template_by_name(&t).map_or(600, |x| x.timeout_seconds),
+                )
+            })
+            .collect();
         let (acts, ended) = self.st.do_(|d| {
             let mut acts = vec![];
             let mut ended: Vec<(TaskInstance, TaskRun)> = vec![];
@@ -1630,13 +1896,25 @@ impl Router {
             (acts, ended)
         });
         for (inst, run) in &ended {
-            crate::logf!("[tasks] {}: run {} {}: {}", inst.id, run.id, run.phase, run.reason);
+            crate::logf!(
+                "[tasks] {}: run {} {}: {}",
+                inst.id,
+                run.id,
+                run.phase,
+                run.reason
+            );
             self.notify_run(inst, run);
         }
         for a in acts {
             self.task_act(a);
         }
-        let pruned = self.st.do_(|d| tasks_of(d).instances.values_mut().flat_map(prune_runs).collect::<Vec<_>>());
+        let pruned = self.st.do_(|d| {
+            tasks_of(d)
+                .instances
+                .values_mut()
+                .flat_map(prune_runs)
+                .collect::<Vec<_>>()
+        });
         for p in pruned {
             self.remove_run_files(&p);
         }
@@ -1644,17 +1922,37 @@ impl Router {
 
     fn task_act(self: &Arc<Self>, a: TaskAct) {
         match a {
-            TaskAct::Fire { instance, schedule, slot } => {
-                if let Err(e) = self.start_run(&instance, "schedule", &schedule, Some(from_ms(slot).utc()), false) {
+            TaskAct::Fire {
+                instance,
+                schedule,
+                slot,
+            } => {
+                if let Err(e) = self.start_run(
+                    &instance,
+                    "schedule",
+                    &schedule,
+                    Some(from_ms(slot).utc()),
+                    false,
+                ) {
                     let name = self
                         .st
-                        .do_(|d| d.tasks.as_ref().and_then(|t| t.instances.get(&instance)).map(|i| i.name.clone()))
+                        .do_(|d| {
+                            d.tasks
+                                .as_ref()
+                                .and_then(|t| t.instances.get(&instance))
+                                .map(|i| i.name.clone())
+                        })
                         .unwrap_or_else(|| instance.clone());
                     crate::logf!("[tasks] schedule {schedule} could not start: {e:#}");
                     self.dm(&format!("Scheduled task “{name}” could not start: {e:#}"));
                 }
             }
-            TaskAct::Resume { instance, session, run, upgrade } => {
+            TaskAct::Resume {
+                instance,
+                session,
+                run,
+                upgrade,
+            } => {
                 let err = match (ops().resume)(self, &session, upgrade) {
                     Ok(()) => {
                         crate::logf!("[tasks] {instance}: run {run} starting (session {session})");
@@ -1740,14 +2038,19 @@ pub fn register_tasks(reg: &mut Registrar) {
             Ok(v) => write_json(w, 200, &v),
         }
     });
-    reg.app("DELETE /api/tasks/instances/{id}", |r, w, req| match r.delete_task(&req.path_value("id")) {
-        Err(e) => task_write_err(w, &e),
-        Ok(()) => write_json(w, 200, &json!({"ok": true})),
+    reg.app("DELETE /api/tasks/instances/{id}", |r, w, req| {
+        match r.delete_task(&req.path_value("id")) {
+            Err(e) => task_write_err(w, &e),
+            Ok(()) => write_json(w, 200, &json!({"ok": true})),
+        }
     });
-    reg.app("POST /api/tasks/instances/{id}/approve", |r, w, req| match r.reapprove(&req.path_value("id")) {
-        Err(e) => task_write_err(w, &e),
-        Ok(v) => write_json(w, 200, &v),
-    });
+    reg.app(
+        "POST /api/tasks/instances/{id}/approve",
+        |r, w, req| match r.reapprove(&req.path_value("id")) {
+            Err(e) => task_write_err(w, &e),
+            Ok(v) => write_json(w, 200, &v),
+        },
+    );
     reg.app("POST /api/tasks/instances/{id}/run", |r, w, req| {
         #[derive(Deserialize, Default)]
         #[serde(default)]
@@ -1755,30 +2058,44 @@ pub fn register_tasks(reg: &mut Registrar) {
             upgrade: bool,
         }
         let b = req.read_body(1 << 20);
-        let res = read_json::<In>(&b).and_then(|i| r.start_run(&req.path_value("id"), "manual", "", None, i.upgrade));
+        let res = read_json::<In>(&b)
+            .and_then(|i| r.start_run(&req.path_value("id"), "manual", "", None, i.upgrade));
         match res {
             Err(e) => task_write_err(w, &e),
-            Ok(run) => write_json(w, 200, &json!({"name": run.id, "run": run_view(&run, None)})),
+            Ok(run) => write_json(
+                w,
+                200,
+                &json!({"name": run.id, "run": run_view(&run, None)}),
+            ),
         }
     });
     reg.app("GET /api/tasks/instances/{id}/runs", |r, w, req| {
         let id = req.path_value("id");
         let runs = r.st.do_(|d| {
             let i = d.tasks.as_ref()?.instances.get(&id)?;
-            Some(i.runs.iter().map(|x| run_view(x, Some(i))).collect::<Vec<_>>())
+            Some(
+                i.runs
+                    .iter()
+                    .map(|x| run_view(x, Some(i)))
+                    .collect::<Vec<_>>(),
+            )
         });
         match runs {
             None => task_write_err(w, &not_found(format!("no such task instance: {id}"))),
             Some(runs) => write_json(w, 200, &json!({"runs": runs})),
         }
     });
-    reg.app("GET /api/tasks/runs/{id}", |r, w, req| match r.run_detail(&req.path_value("id")) {
-        Err(e) => task_write_err(w, &e),
-        Ok(v) => write_json(w, 200, &v),
+    reg.app("GET /api/tasks/runs/{id}", |r, w, req| {
+        match r.run_detail(&req.path_value("id")) {
+            Err(e) => task_write_err(w, &e),
+            Ok(v) => write_json(w, 200, &v),
+        }
     });
-    reg.app("POST /api/tasks/runs/{id}/stop", |r, w, req| match r.stop_run(&req.path_value("id")) {
-        Err(e) => task_write_err(w, &e),
-        Ok(()) => write_json(w, 200, &json!({"ok": true})),
+    reg.app("POST /api/tasks/runs/{id}/stop", |r, w, req| {
+        match r.stop_run(&req.path_value("id")) {
+            Err(e) => task_write_err(w, &e),
+            Ok(()) => write_json(w, 200, &json!({"ok": true})),
+        }
     });
     reg.app("POST /api/tasks/schedules", |r, w, req| {
         let b = req.read_body(1 << 20);
@@ -1795,7 +2112,9 @@ pub fn register_tasks(reg: &mut Registrar) {
     });
     reg.app("PUT /api/tasks/schedules/{id}", |r, w, req| {
         let b = req.read_body(1 << 20);
-        match read_json::<Map<String, Value>>(&b).and_then(|m| r.save_schedule(&req.path_value("id"), &m)) {
+        match read_json::<Map<String, Value>>(&b)
+            .and_then(|m| r.save_schedule(&req.path_value("id"), &m))
+        {
             Err(e) => task_write_err(w, &e),
             Ok(v) => write_json(w, 200, &v),
         }

@@ -31,11 +31,13 @@ pub struct GhRun {
     pub conclusion: String,
 }
 
-static OWNER_RUN_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"^github-run:([0-9]{1,20})$").unwrap_or_else(|e| panic!("{e}")));
+static OWNER_RUN_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^github-run:([0-9]{1,20})$").unwrap_or_else(|e| panic!("{e}"))
+});
 
 /// a finished run never changes: looked up once
-static OWNER_RUNS: LazyLock<Mutex<BTreeMap<String, GhRun>>> = LazyLock::new(|| Mutex::new(BTreeMap::new()));
+static OWNER_RUNS: LazyLock<Mutex<BTreeMap<String, GhRun>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 type RunFn = fn(&str) -> Result<GhRun>;
 
@@ -48,7 +50,10 @@ pub fn github_run(id: &str) -> Result<GhRun> {
         return f(id);
     }
     let mut req = crate::repos::github_client()
-        .get(format!("{}/repos/{OWNER_REPO}/actions/runs/{id}", crate::repos::github_api()))
+        .get(format!(
+            "{}/repos/{OWNER_REPO}/actions/runs/{id}",
+            crate::repos::github_api()
+        ))
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28")
         .header("User-Agent", "jarvis2-router/1");
@@ -75,7 +80,10 @@ pub fn resolve_aws_owner(tag: &str) -> AwsOwner {
         return AwsOwner::default();
     }
     let Some(m) = OWNER_RUN_RE.captures(tag) else {
-        return AwsOwner { text: format!("owner tag {tag} (a kind the router doesn't know)"), live: false };
+        return AwsOwner {
+            text: format!("owner tag {tag} (a kind the router doesn't know)"),
+            live: false,
+        };
     };
     let id = m[1].to_string();
     let cached = OWNER_RUNS.lock().ok().and_then(|g| g.get(&id).cloned());
@@ -83,7 +91,10 @@ pub fn resolve_aws_owner(tag: &str) -> AwsOwner {
         Some(r) => r,
         None => match github_run(&id) {
             Err(e) => {
-                return AwsOwner { text: format!("workflow run {id} (not checked: {e:#})"), live: false };
+                return AwsOwner {
+                    text: format!("workflow run {id} (not checked: {e:#})"),
+                    live: false,
+                };
             }
             Ok(r) => {
                 if r.status == "completed"
@@ -97,7 +108,10 @@ pub fn resolve_aws_owner(tag: &str) -> AwsOwner {
     };
     let name = format!("workflow {}", run.name).trim().to_string();
     if run.status == "completed" {
-        return AwsOwner { text: format!("left by {name}, run {id} ({})", run.conclusion), live: false };
+        return AwsOwner {
+            text: format!("left by {name}, run {id} ({})", run.conclusion),
+            live: false,
+        };
     }
     AwsOwner {
         text: format!("{name}, run {id} ({})", run.status.replace('_', " ")),

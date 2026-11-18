@@ -10,8 +10,18 @@ use std::time::Instant;
 
 impl Router {
     pub fn setup_services(self: &Arc<Self>, w: &mut W, req: &mut Req) {
-        let uri = if req.raw_query.is_empty() { req.path.clone() } else { format!("{}?{}", req.path, req.raw_query) };
-        if let Err(e) = self.check_setup_sig(&req.method, &uri, &req.header("X-Setup-Time"), &req.header("X-Setup-Sig"), b"") {
+        let uri = if req.raw_query.is_empty() {
+            req.path.clone()
+        } else {
+            format!("{}?{}", req.path, req.raw_query)
+        };
+        if let Err(e) = self.check_setup_sig(
+            &req.method,
+            &uri,
+            &req.header("X-Setup-Time"),
+            &req.header("X-Setup-Sig"),
+            b"",
+        ) {
             return write_json(w, 401, &json!({"error": format!("{e:#}")}));
         }
         let t0 = Instant::now();
@@ -28,7 +38,10 @@ impl Router {
             }
             Ok(res) => {
                 watch.insert("exit".into(), json!(res.exit));
-                watch.insert("stdout".into(), json!(crate::util::trim_to(&res.stdout, 200)));
+                watch.insert(
+                    "stdout".into(),
+                    json!(crate::util::trim_to(&res.stdout, 200)),
+                );
                 watch.insert("timedOut".into(), json!(res.timed_out));
             }
         }

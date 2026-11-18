@@ -47,7 +47,10 @@ impl Router {
         match res {
             Ok(Some(h)) if h == router_id() && t0.elapsed() < LEASE_FOR - LEASE_SAFE => {
                 let was = leads();
-                LEAD_UNTIL.store(start + (LEASE_FOR - LEASE_SAFE).as_nanos() as i64, Ordering::SeqCst);
+                LEAD_UNTIL.store(
+                    start + (LEASE_FOR - LEASE_SAFE).as_nanos() as i64,
+                    Ordering::SeqCst,
+                );
                 if !was {
                     crate::logf!("leader: this replica ({}) runs the scheduler", router_id());
                 }

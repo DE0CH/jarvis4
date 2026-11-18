@@ -29,15 +29,23 @@ use std::time::{Duration, Instant};
 const SNAP_MOVE_EVERY: Duration = Duration::from_millis(100);
 
 /// machine → when this replica last wrote its progress
-static SNAP_MOVE_AT: LazyLock<Mutex<BTreeMap<String, Instant>>> = LazyLock::new(|| Mutex::new(BTreeMap::new()));
+static SNAP_MOVE_AT: LazyLock<Mutex<BTreeMap<String, Instant>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 fn silent_after() -> time::Duration {
     time::Duration::seconds(crate::flows::SILENT_AFTER_SECS.load(Ordering::Relaxed))
 }
 
 impl Router {
-    pub fn sw_exec(&self, sql: &str, params: &[&(dyn postgres::types::ToSql + Sync)]) -> Result<()> {
-        let db = self.st.db().ok_or_else(|| anyhow!("snapshot waits: no database"))?;
+    pub fn sw_exec(
+        &self,
+        sql: &str,
+        params: &[&(dyn postgres::types::ToSql + Sync)],
+    ) -> Result<()> {
+        let db = self
+            .st
+            .db()
+            .ok_or_else(|| anyhow!("snapshot waits: no database"))?;
         db.conn()?.execute(sql, params)?;
         Ok(())
     }
@@ -54,26 +62,37 @@ impl Router {
     }
 
     pub fn snapshot_arrived(&self, machine: &str) {
-        let _ = self.sw_exec("UPDATE snapshot_waits SET done = true WHERE machine_id = $1", &[&machine]);
+        let _ = self.sw_exec(
+            "UPDATE snapshot_waits SET done = true WHERE machine_id = $1",
+            &[&machine],
+        );
         let _ = self.sw_exec("SELECT pg_notify('mq', $1)", &[&format!("w:{machine}")]);
     }
 
     /// the wait ended without the snapshot (a late one still lands as the machine's snapshot, which the next pause
     /// finds), so later progress reports aren't shown any more
     pub fn stop_awaiting(&self, machine: &str, tok: &str) {
-        let _ = self.sw_exec("DELETE FROM snapshot_waits WHERE machine_id = $1 AND token = $2", &[&machine, &tok]);
+        let _ = self.sw_exec(
+            "DELETE FROM snapshot_waits WHERE machine_id = $1 AND token = $2",
+            &[&machine, &tok],
+        );
     }
 
     /// a sign of progress on the machine's awaited snapshot (no-op when none is awaited)
     pub fn snapshot_moved(&self, machine: &str) {
         {
             let mut g = SNAP_MOVE_AT.lock().unwrap_or_else(|e| e.into_inner());
-            if g.get(machine).is_some_and(|t| t.elapsed() < SNAP_MOVE_EVERY) {
+            if g.get(machine)
+                .is_some_and(|t| t.elapsed() < SNAP_MOVE_EVERY)
+            {
                 return;
             }
             g.insert(machine.to_string(), Instant::now());
         }
-        let _ = self.sw_exec("UPDATE snapshot_waits SET moved_at = now() WHERE machine_id = $1", &[&machine]);
+        let _ = self.sw_exec(
+            "UPDATE snapshot_waits SET moved_at = now() WHERE machine_id = $1",
+            &[&machine],
+        );
     }
 
     /// a progress report; it counts as progress only when its numbers moved
@@ -91,7 +110,10 @@ impl Router {
         let row = db
             .conn()
             .ok()?
-            .query_opt("SELECT moved_at, done FROM snapshot_waits WHERE machine_id = $1", &[&machine])
+            .query_opt(
+                "SELECT moved_at, done FROM snapshot_waits WHERE machine_id = $1",
+                &[&machine],
+            )
             .ok()??;
         let moved: time::OffsetDateTime = row.get(0);
         Some((GoTime(Some(moved)), row.get(1)))
@@ -99,7 +121,8 @@ impl Router {
 
     /// how long the awaited snapshot has shown no progress
     pub fn snapshot_quiet(&self, machine: &str) -> time::Duration {
-        self.snap_wait_row(machine).map_or(time::Duration::ZERO, |(m, _)| m.since())
+        self.snap_wait_row(machine)
+            .map_or(time::Duration::ZERO, |(m, _)| m.since())
     }
 
     pub fn snapshot_awaited(&self, machine: &str) -> bool {
@@ -167,7 +190,11 @@ pub struct MovedReader<R: Read> {
 
 impl<R: Read> MovedReader<R> {
     pub fn new(r: R, router: Arc<Router>, machine: &str) -> MovedReader<R> {
-        MovedReader { r, router, machine: machine.to_string() }
+        MovedReader {
+            r,
+            router,
+            machine: machine.to_string(),
+        }
     }
 }
 

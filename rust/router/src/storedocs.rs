@@ -28,7 +28,10 @@
 
 use crate::core::{CoreError, Doc};
 use crate::http::{Registrar, write_err};
-use crate::inbox::{ApiCall, BadRequest, Caller, Forbidden, Origin, REQUEST_KIND_UNLOCK, RequestParams, write_request_err};
+use crate::inbox::{
+    ApiCall, BadRequest, Caller, Forbidden, Origin, REQUEST_KIND_UNLOCK, RequestParams,
+    write_request_err,
+};
 use crate::nethttp::{W, write_error, write_json};
 use crate::router::Router;
 use anyhow::{Result, anyhow};
@@ -97,8 +100,9 @@ pub struct StoreDoc {
     pub keys: BTreeMap<String, String>,
 }
 
-static KEY_NAME_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$").unwrap_or_else(|_| unreachable!()));
+static KEY_NAME_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$").unwrap_or_else(|_| unreachable!())
+});
 
 pub fn key_name_ok(k: &str) -> bool {
     KEY_NAME_RE.is_match(k)
@@ -114,13 +118,18 @@ pub fn clean_doc(s: &str) -> Result<String> {
     let out = crate::inbox::plain_lines(&s.replace('\n', " "))?;
     let n = out.chars().count();
     if n > DOC_MAX {
-        return Err(anyhow!("explanation longer than {DOC_MAX} characters ({n})"));
+        return Err(anyhow!(
+            "explanation longer than {DOC_MAX} characters ({n})"
+        ));
     }
     Ok(out)
 }
 
 pub fn store_name_ok(n: &str) -> bool {
-    !n.is_empty() && n.len() <= 64 && n.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+    !n.is_empty()
+        && n.len() <= 64
+        && n.bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
 }
 
 /// one row of the core's signed list
@@ -149,7 +158,9 @@ pub fn cert_line(c: Option<&Doc>) -> String {
     struct X {
         line: String,
     }
-    c.and_then(|c| c.decode::<X>().ok()).map(|x| x.line).unwrap_or_default()
+    c.and_then(|c| c.decode::<X>().ok())
+        .map(|x| x.line)
+        .unwrap_or_default()
 }
 
 pub fn cert_nonce(c: Option<&Doc>) -> String {
@@ -158,7 +169,9 @@ pub fn cert_nonce(c: Option<&Doc>) -> String {
     struct X {
         nonce: String,
     }
-    c.and_then(|c| c.decode::<X>().ok()).map(|x| x.nonce).unwrap_or_default()
+    c.and_then(|c| c.decode::<X>().ok())
+        .map(|x| x.nonce)
+        .unwrap_or_default()
 }
 
 /// a writer's request (core.WriteKeyInput's sealed parts, the backup and the explanation)
@@ -216,7 +229,11 @@ impl Router {
     pub fn read_store_docs(&self) -> BTreeMap<String, StoreDoc> {
         self.st
             .read_doc("store-docs.json")
-            .and_then(|b| jarvis_go::unmarshal::<Option<BTreeMap<String, StoreDoc>>>(&b).ok().flatten())
+            .and_then(|b| {
+                jarvis_go::unmarshal::<Option<BTreeMap<String, StoreDoc>>>(&b)
+                    .ok()
+                    .flatten()
+            })
             .unwrap_or_default()
     }
 
@@ -226,9 +243,17 @@ impl Router {
     }
 
     /// a store's about text (None = unchanged) and explanations of its keys ("" removes one)
-    pub fn set_store_docs(&self, store: &str, about: Option<&str>, keys: &BTreeMap<String, String>) -> Result<()> {
+    pub fn set_store_docs(
+        &self,
+        store: &str,
+        about: Option<&str>,
+        keys: &BTreeMap<String, String>,
+    ) -> Result<()> {
         if !store_name_ok(store) {
-            return Err(anyhow!("bad store name {}", jarvis_go::fmt::go_quote(store)));
+            return Err(anyhow!(
+                "bad store name {}",
+                jarvis_go::fmt::go_quote(store)
+            ));
         }
         let mut clean = BTreeMap::new();
         for (k, v) in keys {
@@ -237,7 +262,10 @@ impl Router {
             }
             clean.insert(k.clone(), clean_doc(v).map_err(|e| anyhow!("{k}: {e:#}"))?);
         }
-        let ab = about.map(clean_doc).transpose().map_err(|e| anyhow!("about: {e:#}"))?;
+        let ab = about
+            .map(clean_doc)
+            .transpose()
+            .map_err(|e| anyhow!("about: {e:#}"))?;
         let _g = STORE_DOCS_MU.lock().unwrap_or_else(|e| e.into_inner());
         let mut m = self.read_store_docs();
         let d = m.entry(store.to_string()).or_default();
@@ -251,19 +279,29 @@ impl Router {
                 d.keys.insert(k, v);
             }
         }
-        self.st.write_doc("store-docs.json", jarvis_go::fmt::marshal_indent1(&m).as_bytes())
+        self.st.write_doc(
+            "store-docs.json",
+            jarvis_go::fmt::marshal_indent1(&m).as_bytes(),
+        )
     }
 
     /// the core's signed list with each store's keys, who wrote them and what they are for
     pub fn store_list(&self) -> Result<(Vec<StoreRow>, Doc)> {
-        let d = self.store_core().call("/stores", &json!({"nonce": format!("store-keys-{}", crate::util::rand_id())}))?;
+        let d = self.store_core().call(
+            "/stores",
+            &json!({"nonce": format!("store-keys-{}", crate::util::rand_id())}),
+        )?;
         #[derive(Deserialize, Default)]
         #[serde(default)]
         struct List {
             kind: String,
             stores: Vec<CoreStoreRow>,
         }
-        let list = d.decode::<List>().ok().filter(|l| l.kind == "stores").ok_or_else(|| anyhow!("the core's store list isn't readable"))?;
+        let list = d
+            .decode::<List>()
+            .ok()
+            .filter(|l| l.kind == "stores")
+            .ok_or_else(|| anyhow!("the core's store list isn't readable"))?;
         let docs = self.store_docs();
         let lines: BTreeMap<String, (String, String)> = self.st.do_(|d| {
             let mut lines = BTreeMap::new(); // line → session id, label
@@ -276,7 +314,9 @@ impl Router {
             for rec in &d.records {
                 let l = cert_line(rec.session.cert.as_ref());
                 if !l.is_empty() {
-                    lines.entry(l).or_insert_with(|| (rec.session.id.clone(), rec.session.label.clone()));
+                    lines
+                        .entry(l)
+                        .or_insert_with(|| (rec.session.id.clone(), rec.session.label.clone()));
                 }
             }
             lines
@@ -334,8 +374,18 @@ impl Router {
         let sc = self.store_core();
         let b = match sc.raw("GET", "/identity", None) {
             Ok((200, b)) => b,
-            Ok((st, _)) => return Err(anyhow!("the {}'s identity isn't readable (HTTP {st}, <nil>)", sc.who())),
-            Err(e) => return Err(anyhow!("the {}'s identity isn't readable (HTTP 0, {e:#})", sc.who())),
+            Ok((st, _)) => {
+                return Err(anyhow!(
+                    "the {}'s identity isn't readable (HTTP {st}, <nil>)",
+                    sc.who()
+                ));
+            }
+            Err(e) => {
+                return Err(anyhow!(
+                    "the {}'s identity isn't readable (HTTP 0, {e:#})",
+                    sc.who()
+                ));
+            }
         };
         #[derive(Deserialize, Default)]
         #[serde(default)]
@@ -369,37 +419,63 @@ impl Router {
     }
 
     /// one key written by a session's machine (writer "machine") or the setup session (writer "setup")
-    pub fn write_key(&self, writer: &str, machine: &str, store: &str, key: &str, i: KeyWriteIn) -> Result<Value> {
+    pub fn write_key(
+        &self,
+        writer: &str,
+        machine: &str,
+        store: &str,
+        key: &str,
+        i: KeyWriteIn,
+    ) -> Result<Value> {
         let bad = |m: String| -> anyhow::Error { BadRequest(m).into() };
         if !store_name_ok(store) || !key_name_ok(key) {
-            return Err(bad("store: lower-case letters, digits and -; key: letters, digits and _".into()));
+            return Err(bad(
+                "store: lower-case letters, digits and -; key: letters, digits and _".into(),
+            ));
         }
         // the core's own store never; the deploy-key token store only by the setup session (the core refuses a
         // machine's write there too: its keys otherwise come only from a phone-approved deploy-key call)
-        if store == crate::policy::FLY_STORE || (store == crate::flows::DEPLOY_KEY_TOKEN_STORE && writer != "setup") {
+        if store == crate::policy::FLY_STORE
+            || (store == crate::flows::DEPLOY_KEY_TOKEN_STORE && writer != "setup")
+        {
             return Err(Forbidden(format!(
                 "store {store} isn't written this way: the core's Fly token goes through `infra/setup.py backup-core`, the deploy-key token through `infra/setup.py write {store}` from the setup session"
             ))
             .into());
         }
         let expl = clean_doc(&i.explanation).map_err(|e| bad(format!("{e:#}")))?;
-        let documented = self.store_docs().get(store).and_then(|d| d.keys.get(key)).is_some_and(|k| !k.is_empty());
+        let documented = self
+            .store_docs()
+            .get(store)
+            .and_then(|d| d.keys.get(key))
+            .is_some_and(|k| !k.is_empty());
         if !i.delete && expl.is_empty() && !documented {
-            return Err(bad(format!("{key} has no explanation yet: say what the key is for (explanation)")));
+            return Err(bad(format!(
+                "{key} has no explanation yet: say what the key is for (explanation)"
+            )));
         }
         if i.sig.is_empty() {
-            return Err(bad("sig: the writer's signature over core.WriterText".into()));
+            return Err(bad(
+                "sig: the writer's signature over core.WriterText".into()
+            ));
         }
         let mut sealed = Value::Null;
         if !i.delete {
             match (&i.wrapped, &i.backup) {
-                (Some(_), Some(bk)) if !i.data.is_empty() && !bk.e.is_empty() && !bk.data.is_empty() => {
+                (Some(_), Some(bk))
+                    if !i.data.is_empty() && !bk.e.is_empty() && !bk.data.is_empty() =>
+                {
                     if i.backup_sha256 != backup_sha(&bk.e, &bk.data) {
                         return Err(bad("backupSha256 isn't the backup's".into()));
                     }
                     sealed = json!(bk);
                 }
-                _ => return Err(bad("a write carries wrapped, data and its backup (sealed to the master key)".into())),
+                _ => {
+                    return Err(bad(
+                        "a write carries wrapped, data and its backup (sealed to the master key)"
+                            .into(),
+                    ));
+                }
             }
         } else if !i.backup_sha256.is_empty() {
             return Err(bad("a delete has no backup".into()));
@@ -414,13 +490,19 @@ impl Router {
         }
         if writer == "machine" {
             let (cert, grant) = self.st.do_(|d| {
-                let Some(s) = d.machines.get(machine).and_then(|sid| d.sessions.get(sid)) else { return (None, None) };
+                let Some(s) = d.machines.get(machine).and_then(|sid| d.sessions.get(sid)) else {
+                    return (None, None);
+                };
                 if s.machine_id != machine || s.state != "started" {
                     return (None, None);
                 }
                 if let Some(k) = &s.kernel {
                     // a kernel line (kernelline.rs): secrets checks the grant its machine holds
-                    let g = k.grant.as_ref().filter(|_| k.machine_cert.is_some()).map(|g| json!(g));
+                    let g = k
+                        .grant
+                        .as_ref()
+                        .filter(|_| k.machine_cert.is_some())
+                        .map(|g| json!(g));
                     return (None, g);
                 }
                 (s.cert.clone(), None)
@@ -457,7 +539,11 @@ impl Router {
         });
         self.record_key_write(store, key, entry, Some(&receipt));
         if !expl.is_empty()
-            && let Err(e) = self.set_store_docs(store, None, &BTreeMap::from([(key.to_string(), expl.clone())]))
+            && let Err(e) = self.set_store_docs(
+                store,
+                None,
+                &BTreeMap::from([(key.to_string(), expl.clone())]),
+            )
         {
             crate::logf!("store {store}: the explanation of {key} wasn't kept: {e:#}");
         }
@@ -472,7 +558,13 @@ impl Router {
         let sids: Vec<String> = self.st.do_(|d| {
             d.sessions
                 .values()
-                .filter(|s| s.state == "started" && !s.machine_id.is_empty() && s.stores.as_ref().is_some_and(|st| st.iter().any(|x| x == store)))
+                .filter(|s| {
+                    s.state == "started"
+                        && !s.machine_id.is_empty()
+                        && s.stores
+                            .as_ref()
+                            .is_some_and(|st| st.iter().any(|x| x == store))
+                })
                 .map(|s| s.id.clone())
                 .collect()
         });
@@ -483,26 +575,44 @@ impl Router {
     /// the unlock requests that bring sessions their stores as they are now (filed by the router)
     pub fn file_refresh(&self, sids: &[String], why: &str) {
         let o = Origin {
-            caller: Caller { kind: "router".into(), ..Default::default() },
-            call: ApiCall { method: "POST".into(), path: "/router/refresh".into(), ..Default::default() },
+            caller: Caller {
+                kind: "router".into(),
+                ..Default::default()
+            },
+            call: ApiCall {
+                method: "POST".into(),
+                path: "/router/refresh".into(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         match sids.len() {
             0 => {}
             1 => {
-                if let Err(e) =
-                    self.file_request(REQUEST_KIND_UNLOCK, RequestParams { session: sids[0].clone(), ..Default::default() }, why, o)
-                {
+                if let Err(e) = self.file_request(
+                    REQUEST_KIND_UNLOCK,
+                    RequestParams {
+                        session: sids[0].clone(),
+                        ..Default::default()
+                    },
+                    why,
+                    o,
+                ) {
                     crate::logf!("refresh {}: {e:#}", sids[0]);
                 }
             }
             _ => {
-                let Some(me) = self.me.get().and_then(std::sync::Weak::upgrade) else { return };
+                let Some(me) = self.me.get().and_then(std::sync::Weak::upgrade) else {
+                    return;
+                };
                 for part in sids.chunks(crate::batches::BATCH_MAX_ITEMS) {
-                    let items: Vec<Value> =
-                        part.iter().map(|sid| json!({"intent": "unlock", "session": sid, "explanation": why})).collect();
+                    let items: Vec<Value> = part
+                        .iter()
+                        .map(|sid| json!({"intent": "unlock", "session": sid, "explanation": why}))
+                        .collect();
                     let body = jarvis_go::marshal(&json!({"summary": why, "items": items}));
-                    let (code, out) = me.file_batch(&o.caller, "POST", "/router/refresh", body.as_bytes(), None);
+                    let (code, out) =
+                        me.file_batch(&o.caller, "POST", "/router/refresh", body.as_bytes(), None);
                     if code != 200 {
                         crate::logf!(
                             "refresh {}: {code} {}",
@@ -525,15 +635,24 @@ impl Router {
             #[serde(rename = "for")]
             for_: String,
         }
-        let Ok(a) = jarvis_go::unmarshal::<Doc>(answer) else { return };
-        let Ok(x) = jarvis_go::unmarshal::<X>(a.payload.as_bytes()) else { return };
+        let Ok(a) = jarvis_go::unmarshal::<Doc>(answer) else {
+            return;
+        };
+        let Ok(x) = jarvis_go::unmarshal::<X>(a.payload.as_bytes()) else {
+            return;
+        };
         if x.kind != "unlocked" || x.for_.is_empty() {
             return;
         }
         let machine = self.st.do_(|d| {
             d.sessions
                 .values()
-                .filter(|s| s.state == "started" && !s.machine_id.is_empty() && s.booted == s.machine_id && cert_nonce(s.cert.as_ref()) == x.for_)
+                .filter(|s| {
+                    s.state == "started"
+                        && !s.machine_id.is_empty()
+                        && s.booted == s.machine_id
+                        && cert_nonce(s.cert.as_ref()) == x.for_
+                })
                 .map(|s| s.machine_id.clone())
                 .next_back()
                 .unwrap_or_default()
@@ -554,7 +673,15 @@ struct DocsIn {
     keys: BTreeMap<String, String>,
 }
 
-fn write_key_route(r: &Arc<Router>, w: &mut W, writer: &str, machine: &str, store: &str, key: &str, body: &[u8]) {
+fn write_key_route(
+    r: &Arc<Router>,
+    w: &mut W,
+    writer: &str,
+    machine: &str,
+    store: &str,
+    key: &str,
+    body: &[u8],
+) {
     let i: KeyWriteIn = match jarvis_go::unmarshal(body) {
         Ok(i) => i,
         Err(e) => return write_error(w, 400, &format!("bad JSON: {e}")),
@@ -592,14 +719,41 @@ pub fn register_store_docs(reg: &mut Registrar) {
     // every session may see every store's names (not only its own): it needs them to know which store to ask for
     reg.m("GET /m/stores", |r, w, _, _, _| r.serve_store_list(w));
     reg.m("GET /m/store-key", |r, w, _, _, _| store_key_route(r, w));
-    reg.m("POST /m/stores/{store}/keys/{key}", |r, w, req, machine, body| {
-        write_key_route(r, w, "machine", machine, &req.path_value("store"), &req.path_value("key"), body)
+    reg.m(
+        "POST /m/stores/{store}/keys/{key}",
+        |r, w, req, machine, body| {
+            write_key_route(
+                r,
+                w,
+                "machine",
+                machine,
+                &req.path_value("store"),
+                &req.path_value("key"),
+                body,
+            )
+        },
+    );
+    reg.setup_signed("GET /setup/stores/keys", 1 << 20, |r, w, _, _| {
+        r.serve_store_list(w)
     });
-    reg.setup_signed("GET /setup/stores/keys", 1 << 20, |r, w, _, _| r.serve_store_list(w));
-    reg.setup_signed("GET /setup/store-key", 1 << 20, |r, w, _, _| store_key_route(r, w));
-    reg.setup_signed("POST /setup/stores/{store}/keys/{key}", 1 << 20, |r, w, req, b| {
-        write_key_route(r, w, "setup", "", &req.path_value("store"), &req.path_value("key"), b)
+    reg.setup_signed("GET /setup/store-key", 1 << 20, |r, w, _, _| {
+        store_key_route(r, w)
     });
+    reg.setup_signed(
+        "POST /setup/stores/{store}/keys/{key}",
+        1 << 20,
+        |r, w, req, b| {
+            write_key_route(
+                r,
+                w,
+                "setup",
+                "",
+                &req.path_value("store"),
+                &req.path_value("key"),
+                b,
+            )
+        },
+    );
     reg.setup_signed("POST /setup/store-docs", 1 << 20, |r, w, _, b| {
         let i: DocsIn = match jarvis_go::unmarshal(b) {
             Ok(i) => i,

@@ -17,18 +17,28 @@ impl Router {
     pub fn db_status(&self) -> DBStatus {
         let mut st = match self.st.db() {
             Some(db) => db.status(),
-            None => DBStatus { error: "no database".into(), ..Default::default() },
+            None => DBStatus {
+                error: "no database".into(),
+                ..Default::default()
+            },
         };
         if let Some((err, since)) = self.st.store_error() {
             st.ok = false;
-            st.error = format!("record writes failing since {}: {err}", since.utc().rfc3339());
+            st.error = format!(
+                "record writes failing since {}: {err}",
+                since.utc().rfc3339()
+            );
         }
         st
     }
 
     /// /healthz on a router with no core
     fn kernel_healthz(&self, w: &mut W, db_ok: bool, db_text: &str) {
-        let h = self.kernel_health_now.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let h = self
+            .kernel_health_now
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         match h {
             None => write_json(
                 w,
@@ -45,7 +55,11 @@ impl Router {
                 503,
                 &json!({"ok": false, "router": "serving", "kernel": "healthy", "db": db_text}),
             ),
-            Some(_) => write_json(w, 200, &json!({"ok": true, "router": "serving", "kernel": "healthy", "db": db_text})),
+            Some(_) => write_json(
+                w,
+                200,
+                &json!({"ok": true, "router": "serving", "kernel": "healthy", "db": db_text}),
+            ),
         }
     }
 }

@@ -20,10 +20,11 @@ pub fn carry_doc(machine: &str) -> String {
 
 /// one carry read-modify-write per machine at a time (a pull and a forward can race); one lock per machine for the
 /// process's life
-static CARRY_LOCKS: LazyLock<Mutex<BTreeMap<String, &'static Mutex<()>>>> = LazyLock::new(|| Mutex::new(BTreeMap::new()));
+static CARRY_LOCKS: LazyLock<Mutex<BTreeMap<String, &'static Mutex<()>>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 pub fn carry_lock(machine: &str) -> MutexGuard<'static, ()> {
-    let m: &'static Mutex<()> = *CARRY_LOCKS
+    let m: &'static Mutex<()> = CARRY_LOCKS
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .entry(machine.to_string())
@@ -83,7 +84,9 @@ impl Router {
 
     /// a pull went through; keep the new blob for this machine (the predecessor's is spent)
     pub fn pulled(&self, machine: &str, cert: &Doc, answer: &Doc) {
-        let Ok(a) = answer.decode::<CarryField>() else { return };
+        let Ok(a) = answer.decode::<CarryField>() else {
+            return;
+        };
         if a.carry.is_empty() {
             return; // a core without carried secrets
         }
@@ -117,14 +120,22 @@ impl Router {
         if blob.is_empty() {
             return;
         }
-        match self.core.call("/carry/forward", &json!({"carry": blob, "cert": cert})) {
+        match self
+            .core
+            .call("/carry/forward", &json!({"carry": blob, "cert": cert}))
+        {
             Err(e) => {
-                if !e.downcast_ref::<CoreError>().is_some_and(|c| c.status == 404) {
+                if !e
+                    .downcast_ref::<CoreError>()
+                    .is_some_and(|c| c.status == 404)
+                {
                     crate::logf!("carry forward {from} → {to}: {e:#}");
                 }
             }
             Ok(d) => {
-                let Ok(a) = d.decode::<CarryField>() else { return };
+                let Ok(a) = d.decode::<CarryField>() else {
+                    return;
+                };
                 if a.carry.is_empty() {
                     return;
                 }

@@ -23,8 +23,12 @@ pub fn aws_read_endpoint(region: &str) -> String {
 
 /// the router has its read-only AWS key
 pub fn aws_read_on() -> bool {
-    !std::env::var("AWS_READ_ACCESS_KEY_ID").unwrap_or_default().is_empty()
-        && !std::env::var("AWS_READ_SECRET_ACCESS_KEY").unwrap_or_default().is_empty()
+    !std::env::var("AWS_READ_ACCESS_KEY_ID")
+        .unwrap_or_default()
+        .is_empty()
+        && !std::env::var("AWS_READ_SECRET_ACCESS_KEY")
+            .unwrap_or_default()
+            .is_empty()
 }
 
 /// EC2's refusal (its error code, e.g. UnauthorizedOperation, InvalidInstanceID.NotFound)
@@ -44,11 +48,16 @@ impl std::fmt::Display for Ec2ReadError {
 impl std::error::Error for Ec2ReadError {}
 
 /// one EC2 Query API action in region with the read-only key, SigV4-signed → its XML answer
-pub fn ec2_read<T: serde::de::DeserializeOwned>(region: &str, params: &[(&str, &str)]) -> Result<T> {
+pub fn ec2_read<T: serde::de::DeserializeOwned>(
+    region: &str,
+    params: &[(&str, &str)],
+) -> Result<T> {
     let id = std::env::var("AWS_READ_ACCESS_KEY_ID").unwrap_or_default();
     let secret = std::env::var("AWS_READ_SECRET_ACCESS_KEY").unwrap_or_default();
     if id.is_empty() || secret.is_empty() {
-        return Err(anyhow!("the router has no AWS read key (AWS_READ_ACCESS_KEY_ID)"));
+        return Err(anyhow!(
+            "the router has no AWS read key (AWS_READ_ACCESS_KEY_ID)"
+        ));
     }
     let mut p: Vec<(&str, &str)> = params.to_vec();
     p.push(("Version", "2016-11-15"));
@@ -60,7 +69,10 @@ pub fn ec2_read<T: serde::de::DeserializeOwned>(region: &str, params: &[(&str, &
     let headers = crate::awsbudget::aws_sign_v4(
         "POST",
         &url,
-        &[("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")],
+        &[(
+            "Content-Type",
+            "application/x-www-form-urlencoded; charset=utf-8",
+        )],
         body.as_bytes(),
         &id,
         &secret,
@@ -101,7 +113,12 @@ pub fn ec2_read<T: serde::de::DeserializeOwned>(region: &str, params: &[(&str, &
         }
         let e: Resp = quick_xml::de::from_reader(&b[..]).unwrap_or_default();
         let first = e.errors.error.into_iter().next().unwrap_or_default();
-        return Err(Ec2ReadError { status, code: first.code, msg: first.message }.into());
+        return Err(Ec2ReadError {
+            status,
+            code: first.code,
+            msg: first.message,
+        }
+        .into());
     }
     Ok(quick_xml::de::from_reader(&b[..])?)
 }
@@ -196,11 +213,15 @@ pub fn aws_describe(id: &str) -> Result<Option<AwsInstanceView>> {
         }
     }
     for region in regions {
-        let out: DescribeOut = match ec2_read(&region, &[("Action", "DescribeInstances"), ("InstanceId.1", id)]) {
+        let out: DescribeOut = match ec2_read(
+            &region,
+            &[("Action", "DescribeInstances"), ("InstanceId.1", id)],
+        ) {
             Ok(o) => o,
             Err(e)
                 if e.downcast_ref::<Ec2ReadError>().is_some_and(|x| {
-                    x.code == "InvalidInstanceID.NotFound" || x.code == "InvalidInstanceID.Malformed"
+                    x.code == "InvalidInstanceID.NotFound"
+                        || x.code == "InvalidInstanceID.Malformed"
                 }) =>
             {
                 continue;
@@ -237,7 +258,14 @@ pub fn aws_console(region: &str, id: &str) -> Result<String> {
     struct Out {
         output: String,
     }
-    let out: Out = ec2_read(region, &[("Action", "GetConsoleOutput"), ("InstanceId", id), ("Latest", "true")])?;
+    let out: Out = ec2_read(
+        region,
+        &[
+            ("Action", "GetConsoleOutput"),
+            ("InstanceId", id),
+            ("Latest", "true"),
+        ],
+    )?;
     let b = base64::engine::general_purpose::STANDARD
         .decode(out.output.trim())
         .map_err(|e| anyhow!("GetConsoleOutput: {e}"))?;

@@ -127,12 +127,22 @@ impl CoreClient {
     }
 
     /// raw without the line-state hook (the hook's own calls)
-    pub fn raw_no_hook(&self, method: &str, path: &str, body: Option<&[u8]>) -> Result<(u16, Vec<u8>)> {
+    pub fn raw_no_hook(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+    ) -> Result<(u16, Vec<u8>)> {
         let (s, b, _) = self.raw_seq(method, path, body)?;
         Ok((s, b))
     }
 
-    fn raw_seq(&self, method: &str, path: &str, body: Option<&[u8]>) -> Result<(u16, Vec<u8>, i64)> {
+    fn raw_seq(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+    ) -> Result<(u16, Vec<u8>, i64)> {
         let release = self.gate.as_ref().map(|g| g());
         let url = format!("{}{path}", self.url().trim_end_matches('/'));
         let m = reqwest::Method::from_bytes(method.as_bytes())?;
@@ -162,7 +172,11 @@ impl CoreClient {
 
     /// what errors call the client's server
     pub fn who(&self) -> &str {
-        if self.name.is_empty() { "core" } else { &self.name }
+        if self.name.is_empty() {
+            "core"
+        } else {
+            &self.name
+        }
     }
 
     /// POST a JSON body, expect a signed document
@@ -171,7 +185,11 @@ impl CoreClient {
     }
 
     /// call, with what came beside the signed document
-    pub fn call_answer<T: Serialize + ?Sized>(&self, path: &str, input: &T) -> Result<(Doc, Answer)> {
+    pub fn call_answer<T: Serialize + ?Sized>(
+        &self,
+        path: &str,
+        input: &T,
+    ) -> Result<(Doc, Answer)> {
         let body = jarvis_go::marshal(input);
         let (status, b) = self
             .raw("POST", path, Some(body.as_bytes()))

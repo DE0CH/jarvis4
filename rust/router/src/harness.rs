@@ -42,12 +42,36 @@ const fn m(id: &'static str, label: &'static str, harness: &'static str) -> Mode
 pub const MODEL_CATALOG: &[ModelChoice] = &[
     m("claude-opus-5-5", "Opus 5.5", "claude"),
     m("claude-fable-5-2", "Fable 5.2", "claude"),
-    m("openrouter/z-ai/glm-5.3", "GLM 5.3 — $0.90 / $2.82", "opencode"),
-    m("openrouter/moonshotai/kimi-k3", "Kimi K3 — $1.70 / $8.50", "opencode"),
-    m("openrouter/deepseek/deepseek-v4-pro-0813", "DeepSeek V4 Pro — $0.66 / $1.98", "opencode"),
-    m("openrouter/deepseek/deepseek-v4.1-flash", "DeepSeek V4.1 Flash — $0.15 / $0.60", "opencode"),
-    m("openrouter/qwen/qwen3-coder-next", "Qwen3 Coder Next — $0.12 / $0.80", "opencode"),
-    m("openrouter/minimax/minimax-m3", "MiniMax M3 — $0.30 / $1.20", "opencode"),
+    m(
+        "openrouter/z-ai/glm-5.3",
+        "GLM 5.3 — $0.90 / $2.82",
+        "opencode",
+    ),
+    m(
+        "openrouter/moonshotai/kimi-k3",
+        "Kimi K3 — $1.70 / $8.50",
+        "opencode",
+    ),
+    m(
+        "openrouter/deepseek/deepseek-v4-pro-0813",
+        "DeepSeek V4 Pro — $0.66 / $1.98",
+        "opencode",
+    ),
+    m(
+        "openrouter/deepseek/deepseek-v4.1-flash",
+        "DeepSeek V4.1 Flash — $0.15 / $0.60",
+        "opencode",
+    ),
+    m(
+        "openrouter/qwen/qwen3-coder-next",
+        "Qwen3 Coder Next — $0.12 / $0.80",
+        "opencode",
+    ),
+    m(
+        "openrouter/minimax/minimax-m3",
+        "MiniMax M3 — $0.30 / $1.20",
+        "opencode",
+    ),
     m("openclaw/claude-opus-5-5", "Opus 5.5", "openclaw"),
     m("openclaw/claude-fable-5-2", "Fable 5.2", "openclaw"),
     m("paseo/claude-opus-5-5", "Opus 5.5", "paseo-claude"),
@@ -55,20 +79,52 @@ pub const MODEL_CATALOG: &[ModelChoice] = &[
     m("aviary/claude-opus-5-5", "Opus 5.5", "aviary"),
     m("aviary/claude-fable-5-2", "Fable 5.2", "aviary"),
     m("aviary/z-ai/glm-5.3", "GLM 5.3 — $1.40 / $4.40", "aviary"),
-    m("aviary/deepseek/deepseek-v4.1-flash-1017", "DeepSeek V4.1 Flash — $0.30 / $1.20", "aviary"),
-    m("aviary/moonshotai/kimi-k3.1-pro", "Kimi K3.1 Pro — $2.00 / $10.00", "aviary"),
-    m("dsh/deepseek/deepseek-v4-pro-0813", "DeepSeek V4 Pro — $0.66 / $1.98", "dsh"),
-    m("dsh/deepseek/deepseek-v4.1-flash-1017", "DeepSeek V4.1 Flash — $0.15 / $0.60", "dsh"),
+    m(
+        "aviary/deepseek/deepseek-v4.1-flash-1017",
+        "DeepSeek V4.1 Flash — $0.30 / $1.20",
+        "aviary",
+    ),
+    m(
+        "aviary/moonshotai/kimi-k3.1-pro",
+        "Kimi K3.1 Pro — $2.00 / $10.00",
+        "aviary",
+    ),
+    m(
+        "dsh/deepseek/deepseek-v4-pro-0813",
+        "DeepSeek V4 Pro — $0.66 / $1.98",
+        "dsh",
+    ),
+    m(
+        "dsh/deepseek/deepseek-v4.1-flash-1017",
+        "DeepSeek V4.1 Flash — $0.15 / $0.60",
+        "dsh",
+    ),
 ];
 
 /// the first model of each harness is its default: Opus 5.5 for the Claude ones (Deyao, 2026-11-17)
 pub const HARNESS_INFO: &[(&str, &str, &str)] = &[
     ("claude", "Claude Code", "Claude subscription · Claude app"),
     ("opencode", "OpenCode · OpenRouter", "Paseo app + web UI"),
-    ("openclaw", "claw-code · OpenClaw", "Claude subscription · OpenClaw app + Control UI"),
-    ("paseo-claude", "Claude Code · Paseo", "Claude subscription · Paseo app + web UI"),
-    ("aviary", "Claude Code · aviary", "Claude subscription or OpenRouter · chat.deyaochen.com"),
-    ("dsh", "DeepSeek Harness · OpenRouter", "DeepSeek V4 on DeepSeek's endpoint · web UI"),
+    (
+        "openclaw",
+        "claw-code · OpenClaw",
+        "Claude subscription · OpenClaw app + Control UI",
+    ),
+    (
+        "paseo-claude",
+        "Claude Code · Paseo",
+        "Claude subscription · Paseo app + web UI",
+    ),
+    (
+        "aviary",
+        "Claude Code · aviary",
+        "Claude subscription or OpenRouter · chat.deyaochen.com",
+    ),
+    (
+        "dsh",
+        "DeepSeek Harness · OpenRouter",
+        "DeepSeek V4 on DeepSeek's endpoint · web UI",
+    ),
 ];
 
 /// a Paseo daemon fronts the session (its app pairs with the daemon, its web UI is the session's tunnel origin):
@@ -85,7 +141,11 @@ pub fn proxy_login_harness(h: &str) -> bool {
 }
 
 pub fn default_model(harness: &str) -> &'static str {
-    MODEL_CATALOG.iter().find(|m| m.harness == harness).map(|m| m.id).unwrap_or("")
+    MODEL_CATALOG
+        .iter()
+        .find(|m| m.harness == harness)
+        .map(|m| m.id)
+        .unwrap_or("")
 }
 
 /// the model a new session of this harness runs. Empty, or another harness's model (the iPhone shell picks the
@@ -109,7 +169,11 @@ impl Router {
     /// the harness of a new session that names none, and the one New session opens on: aviary (Deyao, 2026-11-13)
     /// where the policy offers it, else Claude Code
     pub fn default_harness(&self) -> &'static str {
-        if self.policy.harnesses.contains_key("aviary") { "aviary" } else { "claude" }
+        if self.policy.harnesses.contains_key("aviary") {
+            "aviary"
+        } else {
+            "claude"
+        }
     }
 }
 
@@ -117,7 +181,8 @@ impl Router {
 pub fn register_harnesses(reg: &mut Registrar) {
     reg.app("GET /api/models", |r, w, req| {
         let h = req.query("harness");
-        let offered = |name: &str| r.policy.harnesses.is_empty() || r.policy.harnesses.contains_key(name);
+        let offered =
+            |name: &str| r.policy.harnesses.is_empty() || r.policy.harnesses.contains_key(name);
         let out: Vec<&ModelChoice> = MODEL_CATALOG
             .iter()
             .filter(|m| offered(m.harness)) // a harness the policy doesn't offer
@@ -131,7 +196,11 @@ pub fn register_harnesses(reg: &mut Registrar) {
                 harnesses.insert(*name, json!({"label": label, "detail": detail}));
             }
         }
-        let def = if h.is_empty() { default_model(r.default_harness()) } else { default_model(&h) };
+        let def = if h.is_empty() {
+            default_model(r.default_harness())
+        } else {
+            default_model(&h)
+        };
         write_json(
             w,
             200,

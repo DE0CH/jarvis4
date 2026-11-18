@@ -90,7 +90,10 @@ impl NextCores {
     }
 
     fn final_state(&self) -> Option<Vec<u8>> {
-        self.final_state.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.final_state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     fn set_final(&self, f: Option<Vec<u8>>) {
@@ -132,10 +135,21 @@ pub fn core_view(c: &CoreClient) -> Result<CoreInfo> {
     let id: Id = jarvis_go::unmarshal(&b)?;
     let st: St = id.state.decode().unwrap_or_default();
     if st.master.as_str().unwrap_or("").is_empty() {
-        return Ok(CoreInfo { key: id.signing_key, ..Default::default() });
+        return Ok(CoreInfo {
+            key: id.signing_key,
+            ..Default::default()
+        });
     }
-    let serving = if st.serving.is_empty() { "serving".into() } else { st.serving }; // a core from before continuity
-    Ok(CoreInfo { serving, key: id.signing_key, line_seq: st.line_seq })
+    let serving = if st.serving.is_empty() {
+        "serving".into()
+    } else {
+        st.serving
+    }; // a core from before continuity
+    Ok(CoreInfo {
+        serving,
+        key: id.signing_key,
+        line_seq: st.line_seq,
+    })
 }
 
 /// what c's signed state says it does — "serving", "standby" (Recovered alongside, waiting for a takeover),
@@ -146,7 +160,8 @@ pub fn core_serving(c: &CoreClient) -> Result<(String, String)> {
 }
 
 /// how often the flip's drain looks at the next core again (ms; tests shorten it)
-pub static DRAIN_WATCH_EVERY_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(30_000);
+pub static DRAIN_WATCH_EVERY_MS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(30_000);
 
 /// why the next core is no longer the standby it was before the drain ("" = it still is). A core release restarts it
 /// empty (the outage of 2026-10-22: CI pinned a new core into the standby while the flip drained), a wipe or a Recover
@@ -154,21 +169,31 @@ pub static DRAIN_WATCH_EVERY_MS: std::sync::atomic::AtomicU64 = std::sync::atomi
 pub fn standby_gone(c: &CoreClient, key: &str) -> String {
     match core_view(c) {
         Err(e) => format!("the next core doesn't answer: {e:#}"),
-        Ok(v) if v.serving != "standby" => format!("the next core is {} now, no longer a standby", or_empty_core(&v.serving)),
-        Ok(v) if v.key != key => "the next core has another signing key now (Recovered again, with another kit?)".into(),
+        Ok(v) if v.serving != "standby" => format!(
+            "the next core is {} now, no longer a standby",
+            or_empty_core(&v.serving)
+        ),
+        Ok(v) if v.key != key => {
+            "the next core has another signing key now (Recovered again, with another kit?)".into()
+        }
         Ok(_) => String::new(),
     }
 }
 
 pub fn or_empty_core(s: &str) -> String {
-    if s.is_empty() { "empty".into() } else { s.into() }
+    if s.is_empty() {
+        "empty".into()
+    } else {
+        s.into()
+    }
 }
 
 impl Router {
     /// tests and main (the URL and the handoff)
     pub fn set_next_core(&self, url: &str, h: Option<Arc<dyn CoreHandoff>>) {
         if !url.is_empty() {
-            *self.next.next.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(CoreClient::new(url)));
+            *self.next.next.write().unwrap_or_else(|e| e.into_inner()) =
+                Some(Arc::new(CoreClient::new(url)));
         }
         if let Some(h) = h {
             *self.next.handoff.write().unwrap_or_else(|e| e.into_inner()) = h;
@@ -177,7 +202,9 @@ impl Router {
 
     /// at start, talk to the core the state says serves (a flip before a restart)
     pub fn apply_active_core(&self) {
-        let Some(next) = self.next.client() else { return };
+        let Some(next) = self.next.client() else {
+            return;
+        };
         let active = self.st.do_(|d| d.active_core.clone());
         if !active.is_empty() && active == next.url() {
             let cur = self.core.url();
@@ -197,12 +224,18 @@ impl Router {
 
     /// relay to the core the request names
     pub fn relay_for(&self, w: &mut W, req: &Req, method: &str, path: &str, body: Option<&[u8]>) {
-        let Some(c) = self.core_for(req) else { return write_error(w, 404, "there is no next core") };
+        let Some(c) = self.core_for(req) else {
+            return write_error(w, 404, "there is no next core");
+        };
         if Arc::ptr_eq(&c, &self.core) {
             return self.relay(w, method, path, body);
         }
         match c.raw(method, path, body) {
-            Err(_) => write_json(w, 503, &json!({"error": "the next core isn't running", "coreDown": true})),
+            Err(_) => write_json(
+                w,
+                503,
+                &json!({"error": "the next core isn't running", "coreDown": true}),
+            ),
             Ok((status, b)) => {
                 w.set_header("Content-Type", "application/json");
                 w.write_header(status);
@@ -238,7 +271,9 @@ impl Router {
     pub fn flip_core(&self, drain_max: Duration) -> Result<()> {
         let n = &self.next;
         let _g = n.flip_mu.lock().unwrap_or_else(|e| e.into_inner());
-        let next = n.client().ok_or_else(|| anyhow!("there is no next core (NEXT_CORE_URL)"))?;
+        let next = n
+            .client()
+            .ok_or_else(|| anyhow!("there is no next core (NEXT_CORE_URL)"))?;
         let nv = core_view(&next).map_err(|e| anyhow!("the next core: {e:#}"))?;
         if nv.serving == "serving" {
             return self.finish_flip(&next, &nv);
@@ -255,10 +290,18 @@ impl Router {
         let stop = Ctx::background();
         let gone: Arc<Mutex<String>> = Arc::default();
         let watcher = {
-            let (abort, stop, gone, next, key) = (abort.clone(), stop.clone(), gone.clone(), next.clone(), nv.key.clone());
+            let (abort, stop, gone, next, key) = (
+                abort.clone(),
+                stop.clone(),
+                gone.clone(),
+                next.clone(),
+                nv.key.clone(),
+            );
             std::thread::spawn(move || {
                 loop {
-                    let every = Duration::from_millis(DRAIN_WATCH_EVERY_MS.load(std::sync::atomic::Ordering::Relaxed));
+                    let every = Duration::from_millis(
+                        DRAIN_WATCH_EVERY_MS.load(std::sync::atomic::Ordering::Relaxed),
+                    );
                     if !stop.sleep(every) {
                         return;
                     }
@@ -289,7 +332,9 @@ impl Router {
         let final_state = match n.final_state() {
             Some(f) => f,
             None => {
-                let f = handoff.finalize(&self.core).map_err(|e| anyhow!("finalizing the serving core: {e:#}"))?;
+                let f = handoff
+                    .finalize(&self.core)
+                    .map_err(|e| anyhow!("finalizing the serving core: {e:#}"))?;
                 n.set_final(Some(f.clone()));
                 let _ = self.st.write_doc("core-final.json", &f); // kept beside the records (statedb.rs), for a retry
                 f
@@ -298,9 +343,13 @@ impl Router {
         if let Err(e) = handoff.adopt(&next, &final_state) {
             // the old core is handed-off for good and can't serve: nothing serves until a takeover goes through (the
             // final state is kept for the retry; POST /handoff on the old core repeats it too)
-            crate::logf!("[flip] THE NEXT CORE REFUSED THE TAKEOVER: NO CORE SERVES (retry the flip): {e:#}");
+            crate::logf!(
+                "[flip] THE NEXT CORE REFUSED THE TAKEOVER: NO CORE SERVES (retry the flip): {e:#}"
+            );
             self.dm(&format!("Jarvis 4: the core flip failed half way — the old core is handed off and the next one refused the takeover, so no core serves. Retry: POST /setup/core/flip. {e:#}"));
-            bail!("the next core refused the takeover (the old one is handed off: retry the flip): {e:#}");
+            bail!(
+                "the next core refused the takeover (the old one is handed off: retry the flip): {e:#}"
+            );
         }
         self.switch_cores(&next);
         Ok(())
@@ -320,7 +369,9 @@ impl Router {
             );
         }
         if nv.key != cv.key {
-            bail!("the next core serves with another signing key than the handed-off one (another kit): nothing changed");
+            bail!(
+                "the next core serves with another signing key than the handed-off one (another kit): nothing changed"
+            );
         }
         if let Some(f) = self.next.final_state() {
             #[derive(Deserialize, Default)]
@@ -343,7 +394,9 @@ impl Router {
                 );
             }
         }
-        crate::logf!("[flip] the next core took the final state over by its own Recover: finishing the flip");
+        crate::logf!(
+            "[flip] the next core took the final state over by its own Recover: finishing the flip"
+        );
         self.switch_cores(next);
         Ok(())
     }
@@ -370,11 +423,15 @@ impl Router {
     }
 
     pub fn next_core_tick(&self, drain_max: Duration) {
-        let Some(next) = self.next.client() else { return };
+        let Some(next) = self.next.client() else {
+            return;
+        };
         if std::env::var("FLIP_AUTO").unwrap_or_default() != "1" {
             return;
         }
-        let Ok((serving, _)) = core_serving(&next) else { return };
+        let Ok((serving, _)) = core_serving(&next) else {
+            return;
+        };
         if serving == "serving" {
             // a takeover by the next core's own Recover: finished only while the current core is handed off
             match core_serving(&self.core) {
@@ -407,10 +464,16 @@ impl Router {
         };
         let mut out = Map::new();
         out.insert("current".into(), Value::Object(view(&self.core)));
-        out.insert("activeCore".into(), json!(self.st.do_(|d| d.active_core.clone())));
+        out.insert(
+            "activeCore".into(),
+            json!(self.st.do_(|d| d.active_core.clone())),
+        );
         if let Some(n) = self.next.client() {
             let mut nx = view(&n);
-            nx.insert("finalPending".into(), json!(self.next.final_state().is_some()));
+            nx.insert(
+                "finalPending".into(),
+                json!(self.next.final_state().is_some()),
+            );
             out.insert("next".into(), Value::Object(nx));
         }
         Value::Object(out)
@@ -421,7 +484,9 @@ impl Router {
 /// it, every call for it with X-Jarvis2-Core: next
 pub fn nextcore_state_hook(r: &Arc<Router>, out: &mut Map<String, Value>) {
     let Some(n) = r.next.client() else { return };
-    let Some(core) = out.get_mut("core").and_then(Value::as_object_mut) else { return };
+    let Some(core) = out.get_mut("core").and_then(Value::as_object_mut) else {
+        return;
+    };
     let mut nx = Map::new();
     nx.insert("up".into(), json!(false));
     if let Ok((serving, key)) = core_serving(&n) {
@@ -435,7 +500,9 @@ pub fn nextcore_state_hook(r: &Arc<Router>, out: &mut Map<String, Value>) {
 /// the flip route
 pub fn register_next_core(reg: &mut Registrar) {
     reg.setup_signed("POST /setup/core/flip", 1 << 16, |r, w, _, _| {
-        let max: u64 = crate::router::env("DRAIN_SECONDS", "1740").parse().unwrap_or(0);
+        let max: u64 = crate::router::env("DRAIN_SECONDS", "1740")
+            .parse()
+            .unwrap_or(0);
         if let Err(e) = r.flip_core(Duration::from_secs(max)) {
             return write_error(w, 409, &format!("{e:#}"));
         }

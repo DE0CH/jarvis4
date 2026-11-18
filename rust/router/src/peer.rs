@@ -7,7 +7,10 @@ pub const PEER_MAX_TEXT: usize = 16000;
 
 /// harnesses that take prompts through /usr/local/bin/harness-send rather than a claude host
 pub fn harness_send(h: &str) -> bool {
-    matches!(h, "opencode" | "openclaw" | "paseo-claude" | "aviary" | "dsh")
+    matches!(
+        h,
+        "opencode" | "openclaw" | "paseo-claude" | "aviary" | "dsh"
+    )
 }
 
 /// CRLF → LF, trimmed, capped
@@ -24,7 +27,14 @@ pub fn is_grant_refusal(err: Option<&anyhow::Error>) -> bool {
     if !m.contains("the machine refused or failed") {
         return false;
     }
-    ["allow list", "sensitive store", "phone grant", "grant is", "standing rule", "not signed by the phone"]
-        .iter()
-        .any(|k| m.contains(k))
+    [
+        "allow list",
+        "sensitive store",
+        "phone grant",
+        "grant is",
+        "standing rule",
+        "not signed by the phone",
+    ]
+    .iter()
+    .any(|k| m.contains(k))
 }

@@ -13,11 +13,11 @@
 //! actions run outside it. A command the machine refuses (no grant) is recorded as the session's needsGrant and not
 //! retried for grant_retry.
 
-pub use crate::registry::{Refusal, Registry};
 use crate::flows::NewSession;
 use crate::grants::ExecResult;
 use crate::http::Registrar;
 use crate::nethttp::write_json;
+pub use crate::registry::{Refusal, Registry};
 use crate::router::Router;
 use crate::state::{Persisted, Session};
 use anyhow::Result;
@@ -224,7 +224,10 @@ pub fn live_view(s: &Session, v: &mut Map<String, Value>) {
     }
     crate::memory::mem_view(s, v); // memory.rs: memAlert, memory
     let Some(g) = &l.reg else { return };
-    if s.state != "started" || s.machine_id.is_empty() || l.last_report.since() > DEFAULT_PILOT.stale_report {
+    if s.state != "started"
+        || s.machine_id.is_empty()
+        || l.last_report.since() > DEFAULT_PILOT.stale_report
+    {
         return;
     }
     for (k, x) in [
@@ -268,8 +271,12 @@ pub fn register_autopilot(reg: &mut Registrar) {
         let reg = crate::registry::parse_registry(&i.raw);
         let app_title = clean_app_title(&i.app_title);
         r.st.do_(|d| {
-            let Some(sid) = d.machines.get(machine).cloned() else { return };
-            let Some(s) = d.sessions.get_mut(&sid) else { return };
+            let Some(sid) = d.machines.get(machine).cloned() else {
+                return;
+            };
+            let Some(s) = d.sessions.get_mut(&sid) else {
+                return;
+            };
             if s.machine_id != machine {
                 return;
             }
@@ -290,7 +297,10 @@ pub fn register_autopilot(reg: &mut Registrar) {
                 if !g.ai_title.is_empty() {
                     s.title = g.ai_title.clone();
                 }
-                if !g.name_source.is_empty() && g.name_source != "derived" && !g.live_name.is_empty() {
+                if !g.name_source.is_empty()
+                    && g.name_source != "derived"
+                    && !g.live_name.is_empty()
+                {
                     s.user_title = g.live_name.clone(); // Deyao named it himself
                 }
             }
@@ -320,37 +330,46 @@ pub fn register_autopilot(reg: &mut Registrar) {
         write_json(w, 200, &json!({"ok": true}));
     });
     for field in ["autoPause", "notifyIdle"] {
-        let path = if field == "autoPause" { "auto-pause" } else { "notify-idle" };
-        reg.app(&format!("POST /api/sessions/{{id}}/{path}"), move |r, w, req| {
-            #[derive(Deserialize, Default)]
-            #[serde(default)]
-            struct In {
-                on: Option<bool>,
-                /// Jarvis 1's name
-                enabled: Option<bool>,
-            }
-            let i: In = crate::http::decode_body(req, 1 << 16);
-            let on = i.on.or(i.enabled).unwrap_or(true);
-            let id = req.path_value("id");
-            let found = r.st.do_(|d| {
-                let Some(s) = d.sessions.get_mut(&id) else { return false };
-                let l = s.live.get_or_insert_with(Default::default);
-                if field == "autoPause" {
-                    l.auto_pause_off = !on;
-                    l.idle_since = GoTime::default();
-                } else {
-                    l.notify_idle_off = !on;
+        let path = if field == "autoPause" {
+            "auto-pause"
+        } else {
+            "notify-idle"
+        };
+        reg.app(
+            &format!("POST /api/sessions/{{id}}/{path}"),
+            move |r, w, req| {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct In {
+                    on: Option<bool>,
+                    /// Jarvis 1's name
+                    enabled: Option<bool>,
                 }
-                true
-            });
-            if !found {
-                crate::nethttp::write_error(w, 404, "no such session");
-                return;
-            }
-            let mut out = json!({"ok": true});
-            out[field] = json!(on_off(!on));
-            write_json(w, 200, &out);
-        });
+                let i: In = crate::http::decode_body(req, 1 << 16);
+                let on = i.on.or(i.enabled).unwrap_or(true);
+                let id = req.path_value("id");
+                let found = r.st.do_(|d| {
+                    let Some(s) = d.sessions.get_mut(&id) else {
+                        return false;
+                    };
+                    let l = s.live.get_or_insert_with(Default::default);
+                    if field == "autoPause" {
+                        l.auto_pause_off = !on;
+                        l.idle_since = GoTime::default();
+                    } else {
+                        l.notify_idle_off = !on;
+                    }
+                    true
+                });
+                if !found {
+                    crate::nethttp::write_error(w, 404, "no such session");
+                    return;
+                }
+                let mut out = json!({"ok": true});
+                out[field] = json!(on_off(!on));
+                write_json(w, 200, &out);
+            },
+        );
     }
 }
 
@@ -428,7 +447,9 @@ pub fn plan_tick(
     for id in ids {
         let will_wake = crate::schedule::will_wake(d, &id);
         let vetoed = veto(d, &id);
-        let Some(s) = d.sessions.get_mut(&id) else { continue };
+        let Some(s) = d.sessions.get_mut(&id) else {
+            continue;
+        };
         let task = crate::tasks::is_task_harness(&s.harness);
         let l = s.live.get_or_insert_with(Default::default);
         if s.state != "started" || s.machine_id.is_empty() {
@@ -486,13 +507,27 @@ pub fn plan_tick(
             && g.status == "idle"
         {
             ops.continue_after_start = false;
-            out.push(PilotAction { kind: "continue".into(), session: id.clone(), name: name.clone(), ..Default::default() });
+            out.push(PilotAction {
+                kind: "continue".into(),
+                session: id.clone(),
+                name: name.clone(),
+                ..Default::default()
+            });
         }
 
         // one-shot: the prompt is done → destroy
-        if l.one_shot && g.is_some_and(|g| g.one_shot_done) && !in_flight(&l.one_shot_firing_at, &now) && !operating {
+        if l.one_shot
+            && g.is_some_and(|g| g.one_shot_done)
+            && !in_flight(&l.one_shot_firing_at, &now)
+            && !operating
+        {
             l.one_shot_firing_at = now;
-            out.push(PilotAction { kind: "destroy".into(), session: id.clone(), name, ..Default::default() });
+            out.push(PilotAction {
+                kind: "destroy".into(),
+                session: id.clone(),
+                name,
+                ..Default::default()
+            });
             continue;
         }
 
@@ -552,9 +587,17 @@ pub fn plan_tick(
             } else if g.status != "waiting" {
                 l.dialog_checked_at = 0;
                 l.dialog_reported = false;
-            } else if !l.dialog_reported && l.dialog_checked_at != g.status_updated_at && l.may_exec("status", &now) {
+            } else if !l.dialog_reported
+                && l.dialog_checked_at != g.status_updated_at
+                && l.may_exec("status", &now)
+            {
                 l.dialog_checked_at = g.status_updated_at;
-                out.push(PilotAction { kind: "dialog".into(), session: id.clone(), name: name.clone(), ..Default::default() });
+                out.push(PilotAction {
+                    kind: "dialog".into(),
+                    session: id.clone(),
+                    name: name.clone(),
+                    ..Default::default()
+                });
             }
         }
 
@@ -571,12 +614,14 @@ pub fn plan_tick(
         {
             let u = &g.auth_failed;
             if !u.is_empty()
-                && l
-                    .login_repaired
+                && l.login_repaired
                     .as_ref()
                     .is_none_or(|m| m.uuid != *u && now.sub(&m.at) >= c.repair_every)
             {
-                l.login_repaired = Some(RepairMark { uuid: u.clone(), at: now });
+                l.login_repaired = Some(RepairMark {
+                    uuid: u.clone(),
+                    at: now,
+                });
                 l.login_busy_at = now;
                 out.push(PilotAction {
                     kind: "login".into(),
@@ -592,12 +637,26 @@ pub fn plan_tick(
         match g {
             Some(g) if g.status == "waiting" && !operating => match &mut l.waiting {
                 Some(wt) if wt.status_at == g.status_updated_at => {
-                    if !wt.cancelled && now.sub(&wt.at) >= c.waiting_cancel && l.grant_retry.get("status").is_none_or(|t| !now.before(t)) {
+                    if !wt.cancelled
+                        && now.sub(&wt.at) >= c.waiting_cancel
+                        && l.grant_retry.get("status").is_none_or(|t| !now.before(t))
+                    {
                         wt.cancelled = true;
-                        out.push(PilotAction { kind: "escape".into(), session: id.clone(), name: name.clone(), ..Default::default() });
+                        out.push(PilotAction {
+                            kind: "escape".into(),
+                            session: id.clone(),
+                            name: name.clone(),
+                            ..Default::default()
+                        });
                     }
                 }
-                _ => l.waiting = Some(WaitEpisode { at: now, status_at: g.status_updated_at, cancelled: false }),
+                _ => {
+                    l.waiting = Some(WaitEpisode {
+                        at: now,
+                        status_at: g.status_updated_at,
+                        cancelled: false,
+                    })
+                }
             },
             _ => {
                 l.waiting = None;
@@ -621,7 +680,12 @@ pub fn plan_tick(
             l.idle_status_at = g.status_updated_at;
         }
         if now.sub(&l.idle_since) >= idle_pause_for(l, Some(g), c) && !operating {
-            out.push(PilotAction { kind: "pause".into(), session: id.clone(), name, ..Default::default() });
+            out.push(PilotAction {
+                kind: "pause".into(),
+                session: id.clone(),
+                name,
+                ..Default::default()
+            });
         }
     }
     out
@@ -631,7 +695,9 @@ pub fn attention_text(kind: &str, name: &str) -> String {
     match kind {
         "waiting" => format!("🟠 Session “{name}” needs you — Claude is waiting for your input."),
         "idle" => format!("🟢 Session “{name}” is idle — Claude finished and is waiting."),
-        _ => format!("🔴 Session “{name}” isn't running a live Claude session — it may have died or need a re-login."),
+        _ => format!(
+            "🔴 Session “{name}” isn't running a live Claude session — it may have died or need a re-login."
+        ),
     }
 }
 
@@ -651,9 +717,19 @@ pub fn fresh_refusals(ev: &[Refusal], since: i64) -> Vec<Refusal> {
 /// lib/downgrade.js message — a fallback (the model actually changed) wins
 pub fn downgrade_text(name: &str, ev: &[Refusal]) -> String {
     let cat = |e: &Refusal| {
-        if e.category.is_empty() { String::new() } else { format!(" ({})", e.category) }
+        if e.category.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", e.category)
+        }
     };
-    let or = |a: &str, b: &str| if a.is_empty() { b.to_string() } else { a.to_string() };
+    let or = |a: &str, b: &str| {
+        if a.is_empty() {
+            b.to_string()
+        } else {
+            a.to_string()
+        }
+    };
     for e in ev.iter().rev() {
         if e.kind == "fallback" {
             return format!(
@@ -664,7 +740,9 @@ pub fn downgrade_text(name: &str, ev: &[Refusal]) -> String {
             );
         }
     }
-    let Some(e) = ev.last() else { return String::new() };
+    let Some(e) = ev.last() else {
+        return String::new();
+    };
     format!(
         "🟡 Session “{name}”: {}'s safeguards flagged a message{} and the turn stopped (no fallback model).",
         or(&e.model, "the model"),
@@ -672,15 +750,18 @@ pub fn downgrade_text(name: &str, ev: &[Refusal]) -> String {
     )
 }
 
-static ANSI_SEQ: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"\x1b\[[0-9;?]*[A-Za-z]").unwrap_or_else(|e| panic!("{e}")));
+static ANSI_SEQ: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\x1b\[[0-9;?]*[A-Za-z]").unwrap_or_else(|e| panic!("{e}"))
+});
 
 pub fn strip_ansi(s: &str) -> String {
     ANSI_SEQ.replace_all(s, "").into_owned()
 }
 
 pub fn prompt_on_screen(screen: &str) -> bool {
-    strip_ansi(screen).to_lowercase().contains("safeguards flagged")
+    strip_ansi(screen)
+        .to_lowercase()
+        .contains("safeguards flagged")
 }
 
 /// how the harness check's error begins (Resume reads it: harness_retry_upgrade)
@@ -690,7 +771,9 @@ pub const HARNESS_STUCK_PREFIX: &str = "the harness didn't come up";
 pub fn harness_stuck_text(wait: TD, screen: &str) -> String {
     let mut msg = format!(
         "{HARNESS_STUCK_PREFIX} within {} of boot (Claude Code never reported a live Remote Control host)",
-        crate::flows::wait_text(std::time::Duration::from_secs(wait.whole_seconds().max(0) as u64))
+        crate::flows::wait_text(std::time::Duration::from_secs(
+            wait.whole_seconds().max(0) as u64
+        ))
     );
     let mut lines: Vec<String> = strip_ansi(screen)
         .split('\n')
@@ -727,18 +810,22 @@ pub fn harness_retry_upgrade(s: &Session, newest: &str) -> bool {
 impl Router {
     pub fn start_autopilot(self: &Arc<Self>) {
         let r = self.clone();
-        std::thread::spawn(move || loop {
-            std::thread::sleep(PILOT_TICK);
-            if crate::leaderlease::leads() {
-                r.autopilot_tick();
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(PILOT_TICK);
+                if crate::leaderlease::leads() {
+                    r.autopilot_tick();
+                }
             }
         });
     }
 
     pub fn autopilot_tick(self: &Arc<Self>) {
-        let running = self
-            .st
-            .do_(|d| d.sessions.values().any(|s| s.state == "started" && !s.machine_id.is_empty()));
+        let running = self.st.do_(|d| {
+            d.sessions
+                .values()
+                .any(|s| s.state == "started" && !s.machine_id.is_empty())
+        });
         if !running {
             return;
         }
@@ -746,11 +833,20 @@ impl Router {
         let r = self.clone();
         let acts = self.st.do_(|d| {
             let now = GoTime::now();
-            let mut acts = plan_tick(d, now, &stored_exp, &DEFAULT_PILOT, &|id| r.busy(id), &|d, id| {
-                crate::schedule::auto_pause_veto(d, id)
-            });
+            let mut acts = plan_tick(
+                d,
+                now,
+                &stored_exp,
+                &DEFAULT_PILOT,
+                &|id| r.busy(id),
+                &|d, id| crate::schedule::auto_pause_veto(d, id),
+            );
             for t in crate::memory::mem_silent_tick(d, now) {
-                acts.push(PilotAction { kind: "dm".into(), text: t, ..Default::default() }); // memory.rs
+                acts.push(PilotAction {
+                    kind: "dm".into(),
+                    text: t,
+                    ..Default::default()
+                }); // memory.rs
             }
             acts
         });
@@ -761,11 +857,19 @@ impl Router {
 
     /// fail the session (the machine stays until a Resume finishes its pause, or a Destroy), log it, DM once
     fn harness_stuck(self: &Arc<Self>, mut a: PilotAction) {
-        let screen = self.latest_screen(&a.session).map(|s| s.0.screen).unwrap_or_default();
+        let screen = self
+            .latest_screen(&a.session)
+            .map(|s| s.0.screen)
+            .unwrap_or_default();
         a.text = harness_stuck_text(DEFAULT_PILOT.harness_up, &screen);
         let failed = self.st.do_(|d| {
-            let Some(s) = d.sessions.get_mut(&a.session) else { return false };
-            if s.state != "started" || s.machine_id != a.machine || s.live.as_ref().is_some_and(|l| l.host_up == a.machine) {
+            let Some(s) = d.sessions.get_mut(&a.session) else {
+                return false;
+            };
+            if s.state != "started"
+                || s.machine_id != a.machine
+                || s.live.as_ref().is_some_and(|l| l.host_up == a.machine)
+            {
                 return false;
             }
             s.state = "failed".into();
@@ -781,7 +885,10 @@ impl Router {
         h.machine(&a.machine);
         h.note(&a.machine, &a.text);
         h.end("failed", &a.text);
-        self.dm(&format!("🔴 Session “{}” didn't come up: {}", a.name, a.text));
+        self.dm(&format!(
+            "🔴 Session “{}” didn't come up: {}",
+            a.name, a.text
+        ));
     }
 
     fn clear_live(&self, session: &str, f: impl Fn(&mut Liveness)) {
@@ -811,13 +918,25 @@ impl Router {
                     self.clear_live(&a.session, |l| l.one_shot_firing_at = GoTime::default()); // the next tick looks
                     return;
                 }
-                crate::logf!("[oneshot] {} ({}) finished its prompt; destroying", a.session, a.name);
+                crate::logf!(
+                    "[oneshot] {} ({}) finished its prompt; destroying",
+                    a.session,
+                    a.name
+                );
             }
             "escape" => {
                 let r = self.clone();
                 std::thread::spawn(move || {
-                    if let Err(e) = r.exec_as(&a.session, "status", "tmux send-keys -t claude Escape", std::time::Duration::from_secs(20)) {
-                        crate::logf!("[autopause] {}: cancelling the stale prompt failed: {e:#}", a.session);
+                    if let Err(e) = r.exec_as(
+                        &a.session,
+                        "status",
+                        "tmux send-keys -t claude Escape",
+                        std::time::Duration::from_secs(20),
+                    ) {
+                        crate::logf!(
+                            "[autopause] {}: cancelling the stale prompt failed: {e:#}",
+                            a.session
+                        );
                         r.clear_live(&a.session, |l| {
                             if let Some(w) = l.waiting.as_mut() {
                                 w.cancelled = false;
@@ -829,7 +948,9 @@ impl Router {
                         "[autopause] {} ({}): cancelled a prompt unanswered for {}",
                         a.session,
                         a.name,
-                        jarvis_go::fmt::duration_string(std::time::Duration::from_secs(DEFAULT_PILOT.waiting_cancel.whole_seconds() as u64))
+                        jarvis_go::fmt::duration_string(std::time::Duration::from_secs(
+                            DEFAULT_PILOT.waiting_cancel.whole_seconds() as u64
+                        ))
                     );
                 });
             }
@@ -840,7 +961,12 @@ impl Router {
                     // grant
                     let screen = match r.pushed_screen(&a.session) {
                         Some(s) => s.screen,
-                        None => match r.exec_as(&a.session, "status", "tmux capture-pane -p -t claude", std::time::Duration::from_secs(20)) {
+                        None => match r.exec_as(
+                            &a.session,
+                            "status",
+                            "tmux capture-pane -p -t claude",
+                            std::time::Duration::from_secs(20),
+                        ) {
                             Err(_) => return,
                             Ok(res) => res.stdout,
                         },
@@ -858,9 +984,24 @@ impl Router {
             "continue" => {
                 let r = self.clone();
                 std::thread::spawn(move || {
-                    match r.deliver_canned(&a.session, crate::vouch::Delivery { kind: "continue".into(), ..Default::default() }, "continue") {
-                        Err(e) => crate::logf!("[account] {} ({}): \"continue\" after the start on its new Claude account failed: {e:#}", a.session, a.name),
-                        Ok(()) => crate::logf!("[account] {} ({}): \"continue\" delivered after the start on its new Claude account", a.session, a.name),
+                    match r.deliver_canned(
+                        &a.session,
+                        crate::vouch::Delivery {
+                            kind: "continue".into(),
+                            ..Default::default()
+                        },
+                        "continue",
+                    ) {
+                        Err(e) => crate::logf!(
+                            "[account] {} ({}): \"continue\" after the start on its new Claude account failed: {e:#}",
+                            a.session,
+                            a.name
+                        ),
+                        Ok(()) => crate::logf!(
+                            "[account] {} ({}): \"continue\" delivered after the start on its new Claude account",
+                            a.session,
+                            a.name
+                        ),
                     }
                 });
             }
@@ -876,7 +1017,13 @@ impl Router {
     }
 
     /// exec, recording a refusal as the session's needsGrant (and backing off) and clearing it on success
-    pub fn exec_as(self: &Arc<Self>, session: &str, holder: &str, cmd: &str, timeout: std::time::Duration) -> Result<ExecResult> {
+    pub fn exec_as(
+        self: &Arc<Self>,
+        session: &str,
+        holder: &str,
+        cmd: &str,
+        timeout: std::time::Duration,
+    ) -> Result<ExecResult> {
         let res = self.exec(session, holder, cmd, timeout);
         match &res {
             Err(e) => self.note_refusal(session, holder, e),
@@ -897,8 +1044,10 @@ impl Router {
             return;
         }
         self.clear_live(session, |l| {
-            l.grant_retry
-                .insert(holder.to_string(), GoTime::now().add(DEFAULT_PILOT.grant_retry));
+            l.grant_retry.insert(
+                holder.to_string(),
+                GoTime::now().add(DEFAULT_PILOT.grant_retry),
+            );
             l.needs_grant = holder.to_string();
         });
     }

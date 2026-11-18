@@ -15,7 +15,10 @@ pub fn mark_start() {
 
 pub fn process_status() -> Map<String, Value> {
     let mut v = Map::new();
-    v.insert("uptimeS".into(), json!(PROC_START.elapsed().as_secs() as i64));
+    v.insert(
+        "uptimeS".into(),
+        json!(PROC_START.elapsed().as_secs() as i64),
+    );
     let text = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
     for l in text.lines() {
         let (k, val, ok) = jarvis_go::fmt::cut(l, ":");
@@ -30,7 +33,10 @@ pub fn process_status() -> Map<String, Value> {
             continue;
         }
         let n: i64 = val.trim().trim_end_matches(" kB").parse().unwrap_or(0);
-        v.insert(name.into(), json!(if name == "threads" { n } else { n >> 10 }));
+        v.insert(
+            name.into(),
+            json!(if name == "threads" { n } else { n >> 10 }),
+        );
     }
     v
 }

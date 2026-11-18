@@ -130,13 +130,20 @@ impl Router {
 
     /// a text built into the session image ("continue"), as a delivery the core attests: the router picks when, never
     /// what
-    pub fn deliver_canned(&self, session: &str, d: crate::types::Delivery, _text: &str) -> anyhow::Result<()> {
+    pub fn deliver_canned(
+        &self,
+        session: &str,
+        d: crate::types::Delivery,
+        _text: &str,
+    ) -> anyhow::Result<()> {
         self.arc().deliver_vouched(session, d)
     }
 
     /// the core answers and was set up (Reset or Recover): its state names a master key
     pub fn core_set_up(&self) -> bool {
-        let Ok((200, b)) = self.core.raw("GET", "/identity", None) else { return false };
+        let Ok((200, b)) = self.core.raw("GET", "/identity", None) else {
+            return false;
+        };
         #[derive(Deserialize, Default)]
         #[serde(default)]
         struct StateDoc {
@@ -152,7 +159,10 @@ impl Router {
         struct St {
             master: String,
         }
-        let Ok(id) = jarvis_go::unmarshal::<Id>(&b) else { return false };
-        jarvis_go::unmarshal::<St>(id.state.payload.as_bytes()).is_ok_and(|st| !st.master.is_empty())
+        let Ok(id) = jarvis_go::unmarshal::<Id>(&b) else {
+            return false;
+        };
+        jarvis_go::unmarshal::<St>(id.state.payload.as_bytes())
+            .is_ok_and(|st| !st.master.is_empty())
     }
 }

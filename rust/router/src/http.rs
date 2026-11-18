@@ -18,6 +18,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub type AppFn = Arc<dyn Fn(&mut W, &mut Req) + Send + Sync>;
+/// a machine route whose body arrives as a file (its path)
+pub type StreamFn = Arc<dyn Fn(&mut W, &mut Req, &str, &std::path::Path) + Send + Sync>;
 pub type MachineFn = Arc<dyn Fn(&mut W, &mut Req, &str, &[u8]) + Send + Sync>;
 
 /// a response that carries why: the status a refusal maps to (writeErr)
@@ -116,7 +118,14 @@ impl Router {
     }
 
     /// one call relayed to c (the core, or secrets for the stores on a box with no core), its answer unchanged
-    pub fn relay_to(&self, w: &mut W, c: &CoreClient, method: &str, path: &str, body: Option<&[u8]>) {
+    pub fn relay_to(
+        &self,
+        w: &mut W,
+        c: &CoreClient,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+    ) {
         match c.raw(method, path, body) {
             Err(e) => {
                 // no core to talk to (its pod is restarting, e.g. after a wipe): a state, not a fault
@@ -137,7 +146,14 @@ impl Router {
 
     /// a setup call is signed by the setup key over "<METHOD> <path> <unix time> <sha256hex body>", within two
     /// minutes, each signature once
-    pub fn check_setup_sig(&self, method: &str, path: &str, t: &str, sig: &str, body: &[u8]) -> Result<()> {
+    pub fn check_setup_sig(
+        &self,
+        method: &str,
+        path: &str,
+        t: &str,
+        sig: &str,
+        body: &[u8],
+    ) -> Result<()> {
         if self.cfg.no_access && self.cfg.setup_key.is_empty() {
             return Ok(()); // CI without a setup key
         }
@@ -183,8 +199,7 @@ impl Router {
         let r = self.clone();
         Arc::new(move |w, req| {
             if !r.cfg.no_access
-                && r
-                    .access()
+                && r.access()
                     .verify(&req.header("Cf-Access-Jwt-Assertion"), &r.cfg.setup_aud)
                     .is_err()
             {
@@ -201,7 +216,11 @@ impl Router {
     pub fn require_machine(self: &Arc<Self>, f: MachineFn) -> AppFn {
         let r = self.clone();
         Arc::new(move |w, req| {
-            let (machine, t, sig) = (req.header("X-Machine"), req.header("X-Time"), req.header("X-Sig"));
+            let (machine, t, sig) = (
+                req.header("X-Machine"),
+                req.header("X-Time"),
+                req.header("X-Sig"),
+            );
             if !time_ok(&t) {
                 write_json(w, 401, &json!({"error": "X-Time too far off"}));
                 return;
@@ -224,9 +243,14 @@ impl Router {
             let with_query = format!("{} {}?{} {t} {sum}", req.method, req.path, req.raw_query);
             if key.is_empty()
                 || !(verify_p256(&key, msg.as_bytes(), &sig)
-                    || (!req.raw_query.is_empty() && verify_p256(&key, with_query.as_bytes(), &sig)))
+                    || (!req.raw_query.is_empty()
+                        && verify_p256(&key, with_query.as_bytes(), &sig)))
             {
-                write_json(w, 401, &json!({"error": "not signed by a machine the core started"}));
+                write_json(
+                    w,
+                    401,
+                    &json!({"error": "not signed by a machine the core started"}),
+                );
                 return;
             }
             f(w, req, &machine, &body)
@@ -235,13 +259,14 @@ impl Router {
 
     /// require_machine for a large body — streamed to a temp file on the volume while it is hashed, then the signature
     /// (over that hash) checked; f gets the file's path and must move or remove it
-    pub fn require_machine_stream(
-        self: &Arc<Self>,
-        f: Arc<dyn Fn(&mut W, &mut Req, &str, &std::path::Path) + Send + Sync>,
-    ) -> AppFn {
+    pub fn require_machine_stream(self: &Arc<Self>, f: StreamFn) -> AppFn {
         let r = self.clone();
         Arc::new(move |w, req| {
-            let (machine, t, sig) = (req.header("X-Machine"), req.header("X-Time"), req.header("X-Sig"));
+            let (machine, t, sig) = (
+                req.header("X-Machine"),
+                req.header("X-Time"),
+                req.header("X-Sig"),
+            );
             if !time_ok(&t) {
                 write_json(w, 401, &json!({"error": "X-Time too far off"}));
                 return;
@@ -254,7 +279,11 @@ impl Router {
             });
             if key.is_empty() {
                 // before reading a byte: only a machine the core started may write to the volume
-                write_json(w, 401, &json!({"error": "not signed by a machine the core started"}));
+                write_json(
+                    w,
+                    401,
+                    &json!({"error": "not signed by a machine the core started"}),
+                );
                 return;
             }
             let scratch = std::path::Path::new(&r.cfg.data_dir).join("tmp");
@@ -281,7 +310,10 @@ impl Router {
                     n += k as u64;
                 }
                 if n > crate::snapstore::SNAPSHOT_MAX {
-                    return Err(anyhow!("body over {} bytes", crate::snapstore::SNAPSHOT_MAX));
+                    return Err(anyhow!(
+                        "body over {} bytes",
+                        crate::snapstore::SNAPSHOT_MAX
+                    ));
                 }
                 Ok(hex::encode(h.finalize()))
             })();
@@ -296,7 +328,11 @@ impl Router {
             let msg = format!("{} {} {t} {sum}", req.method, req.path);
             if !verify_p256(&key, msg.as_bytes(), &sig) {
                 let _ = std::fs::remove_file(&tmp);
-                write_json(w, 401, &json!({"error": "not signed by a machine the core started"}));
+                write_json(
+                    w,
+                    401,
+                    &json!({"error": "not signed by a machine the core started"}),
+                );
                 return;
             }
             f(w, req, &machine, &tmp)
@@ -333,7 +369,11 @@ pub fn verify_p256(pub_raw: &str, payload: &[u8], sig_b64: &str) -> bool {
 
 /// what the session list shows of a session
 pub fn session_view(s: &Session, d: &Persisted) -> Map<String, Value> {
-    let name = if s.label.is_empty() { &s.title } else { &s.label };
+    let name = if s.label.is_empty() {
+        &s.title
+    } else {
+        &s.label
+    };
     let stores = s.stores.clone();
     let mut v: Map<String, Value> = json!({
         "serverTitle": s.app_title, "userTitle": s.user_title, "title": crate::titles::session_title(s), "liveSync": s.live_sync,
@@ -362,7 +402,11 @@ pub fn session_view(s: &Session, d: &Persisted) -> Map<String, Value> {
 }
 
 pub fn null_if_empty(s: &str) -> Value {
-    if s.is_empty() { Value::Null } else { Value::String(s.to_string()) }
+    if s.is_empty() {
+        Value::Null
+    } else {
+        Value::String(s.to_string())
+    }
 }
 
 // ---- Cloudflare Access: the router checks the JWT itself too -------------------------------------------------
@@ -418,7 +462,9 @@ impl AccessKeys {
         g.0.clear();
         g.1 = crate::util::unix_now();
         for k in set.keys {
-            let (Ok(n), Ok(e)) = (b64url(&k.n), b64url(&k.e)) else { continue };
+            let (Ok(n), Ok(e)) = (b64url(&k.n), b64url(&k.e)) else {
+                continue;
+            };
             if let Ok(pk) = rsa::RsaPublicKey::new(
                 rsa::BigUint::from_bytes_be(&n),
                 rsa::BigUint::from_bytes_be(&e),
@@ -426,7 +472,9 @@ impl AccessKeys {
                 g.0.insert(k.kid, pk);
             }
         }
-        g.0.get(kid).cloned().ok_or_else(|| anyhow!("unknown Access key"))
+        g.0.get(kid)
+            .cloned()
+            .ok_or_else(|| anyhow!("unknown Access key"))
     }
 
     pub fn verify(&self, tok: &str, aud: &str) -> Result<AccessClaims> {
@@ -434,7 +482,8 @@ impl AccessKeys {
         if parts.len() != 3 {
             return Err(anyhow!("no Access token"));
         }
-        let (Ok(hb), Ok(pb), Ok(sig)) = (b64url(parts[0]), b64url(parts[1]), b64url(parts[2])) else {
+        let (Ok(hb), Ok(pb), Ok(sig)) = (b64url(parts[0]), b64url(parts[1]), b64url(parts[2]))
+        else {
             return Err(anyhow!("bad token"));
         };
         #[derive(Deserialize, Default)]
@@ -481,7 +530,11 @@ pub struct Registrar {
 
 impl Registrar {
     /// an app route: Deyao's Access login
-    pub fn app(&mut self, pattern: &str, f: impl Fn(&Arc<Router>, &mut W, &mut Req) + Send + Sync + 'static) {
+    pub fn app(
+        &mut self,
+        pattern: &str,
+        f: impl Fn(&Arc<Router>, &mut W, &mut Req) + Send + Sync + 'static,
+    ) {
         self.app_patterns.insert(pattern.to_string(), true);
         let r = self.r.clone();
         let h = self.r.require_deyao(Arc::new(move |w, req| f(&r, w, req)));
@@ -489,7 +542,11 @@ impl Registrar {
     }
 
     /// a machine route: signed by a machine the core started
-    pub fn m(&mut self, pattern: &str, f: impl Fn(&Arc<Router>, &mut W, &mut Req, &str, &[u8]) + Send + Sync + 'static) {
+    pub fn m(
+        &mut self,
+        pattern: &str,
+        f: impl Fn(&Arc<Router>, &mut W, &mut Req, &str, &[u8]) + Send + Sync + 'static,
+    ) {
         let r = self.r.clone();
         let h = self
             .r
@@ -503,13 +560,22 @@ impl Registrar {
     }
 
     /// a public route with its own gate, given the router
-    pub fn public_fn(&mut self, pattern: &str, f: impl Fn(&Arc<Router>, &mut W, &mut Req) + Send + Sync + 'static) {
+    pub fn public_fn(
+        &mut self,
+        pattern: &str,
+        f: impl Fn(&Arc<Router>, &mut W, &mut Req) + Send + Sync + 'static,
+    ) {
         let r = self.r.clone();
-        self.public.handle(pattern, Arc::new(move |w, req| f(&r, w, req)));
+        self.public
+            .handle(pattern, Arc::new(move |w, req| f(&r, w, req)));
     }
 
     /// a setup route: the setup session's Access token
-    pub fn setup_route(&mut self, pattern: &str, f: impl Fn(&Arc<Router>, &mut W, &mut Req) + Send + Sync + 'static) {
+    pub fn setup_route(
+        &mut self,
+        pattern: &str,
+        f: impl Fn(&Arc<Router>, &mut W, &mut Req) + Send + Sync + 'static,
+    ) {
         let r = self.r.clone();
         let h = self.r.require_setup(Arc::new(move |w, req| f(&r, w, req)));
         self.public.handle(pattern, h);
@@ -525,7 +591,13 @@ impl Registrar {
     ) {
         self.setup_route(pattern, move |r, w, req| {
             let b = req.read_body(max);
-            if let Err(e) = r.check_setup_sig(&req.method, &req.path, &req.header("X-Setup-Time"), &req.header("X-Setup-Sig"), &b) {
+            if let Err(e) = r.check_setup_sig(
+                &req.method,
+                &req.path,
+                &req.header("X-Setup-Time"),
+                &req.header("X-Setup-Sig"),
+                &b,
+            ) {
                 crate::nethttp::write_error(w, 401, &format!("{e:#}"));
                 return;
             }
@@ -627,7 +699,11 @@ impl Registrar {
         self.setup_relay("GET /setup/identity", "GET", "/identity");
         self.setup_relay("POST /setup/stores", "POST", "/stores");
         self.setup_relay("POST /setup/stores/create", "POST", "/stores/create");
-        self.setup_relay("POST /setup/stores/mark-sensitive", "POST", "/stores/mark-sensitive");
+        self.setup_relay(
+            "POST /setup/stores/mark-sensitive",
+            "POST",
+            "/stores/mark-sensitive",
+        );
         // the core's Fly token, sealed to the core (after a Reset; a Recover brings it from the backups)
         self.setup_relay("POST /setup/fly-token", "POST", "/fly-token");
         // the kernel's spawner: its identity, and the Fly token sealed to it (infra/setup.py kernel-fly-token)
@@ -646,12 +722,20 @@ impl Registrar {
         });
         self.spawner_relay("POST /setup/kernel/spawner/fly-token", "/fly-token");
         // the spawner's AWS key, sealed to it the same way (infra/setup.py kernel-aws-credentials)
-        self.spawner_relay("POST /setup/kernel/spawner/aws-credentials", "/aws-credentials");
+        self.spawner_relay(
+            "POST /setup/kernel/spawner/aws-credentials",
+            "/aws-credentials",
+        );
         // the fabric hermit's tokens for the spawner's fabric runner (infra/setup.py kernel-fabric-credentials)
-        self.spawner_relay("POST /setup/kernel/spawner/fabric-credentials", "/fabric-credentials");
+        self.spawner_relay(
+            "POST /setup/kernel/spawner/fabric-credentials",
+            "/fabric-credentials",
+        );
 
         // ---- setting the core up: Reset and Recover (the app, with the master key) -----------------------------
-        self.app("GET /api/core/identity", |r, w, req| r.relay_for(w, req, "GET", "/identity", None));
+        self.app("GET /api/core/identity", |r, w, req| {
+            r.relay_for(w, req, "GET", "/identity", None)
+        });
         // the claim also carries the app's device-key countersignature: the core ignores it; the router keeps it for
         // the setup session (claimdevice.rs), which trusts a new master key only with it
         self.app("POST /api/core/claim", |r, w, req| {
@@ -664,7 +748,11 @@ impl Registrar {
             match c.raw("POST", "/claim", Some(&b)) {
                 Err(e) => {
                     crate::logf!("core POST /claim: {e:#}");
-                    write_json(w, 503, &json!({"error": "the core isn't running", "coreDown": true}));
+                    write_json(
+                        w,
+                        503,
+                        &json!({"error": "the core isn't running", "coreDown": true}),
+                    );
                 }
                 Ok((status, out)) => {
                     if status == 200 {
@@ -677,19 +765,31 @@ impl Registrar {
             }
         });
         self.setup_route("GET /setup/core-cert", |r, w, req| {
-            if let Err(e) = r.check_setup_sig(&req.method, &req.path, &req.header("X-Setup-Time"), &req.header("X-Setup-Sig"), b"") {
+            if let Err(e) = r.check_setup_sig(
+                &req.method,
+                &req.path,
+                &req.header("X-Setup-Time"),
+                &req.header("X-Setup-Sig"),
+                b"",
+            ) {
                 crate::nethttp::write_error(w, 401, &format!("{e:#}"));
                 return;
             }
             match r.core_cert() {
-                None => crate::nethttp::write_error(w, 404, "no claim kept for the running core (empty, or claimed elsewhere)"),
+                None => crate::nethttp::write_error(
+                    w,
+                    404,
+                    "no claim kept for the running core (empty, or claimed elsewhere)",
+                ),
                 Some(b) => {
                     w.set_header("Content-Type", "application/json");
                     w.write(&b);
                 }
             }
         });
-        self.setup_route("GET /setup/claim-device", |r, w, _| write_json(w, 200, &r.claim_devices()));
+        self.setup_route("GET /setup/claim-device", |r, w, _| {
+            write_json(w, 200, &r.claim_devices())
+        });
         // claim and wipe: signed by the master key and checked by the core, so any of Deyao's logins may relay them
         self.app("POST /api/core/wipe", |r, w, req| {
             let b = req.read_body(16 << 20);
@@ -705,7 +805,9 @@ impl Registrar {
         let web_build = std::fs::read(std::path::Path::new(&r.cfg.web_dir).join("index.html"))
             .map(|b| hex::encode(Sha256::digest(&b))[..12].to_string())
             .unwrap_or_default();
-        self.app("GET /api/build", move |_, w, _| write_json(w, 200, &json!({"build": web_build})));
+        self.app("GET /api/build", move |_, w, _| {
+            write_json(w, 200, &json!({"build": web_build}))
+        });
 
         // ---- sign-in -----------------------------------------------------------------------------------
         self.app("GET /api/auth/start", |_, w, req| {
@@ -734,15 +836,26 @@ impl Registrar {
                 core_info["agreementKey"] = json!(k.get("agreementKey"));
             }
             let (mut sessions, mut approvals) = r.st.do_(|d| {
-                let ss: Vec<(GoTime, Map<String, Value>)> =
-                    d.sessions.values().map(|s| (s.created, session_view(s, d))).collect();
+                let ss: Vec<(GoTime, Map<String, Value>)> = d
+                    .sessions
+                    .values()
+                    .map(|s| (s.created, session_view(s, d)))
+                    .collect();
                 let aa: Vec<Approval> = d.approvals.values().cloned().collect();
                 (ss, aa)
             });
-            sessions.sort_by(|a, b| b.0.cmp(&a.0));
-            approvals.sort_by(|a, b| a.created.cmp(&b.created));
+            sessions.sort_by_key(|a| std::cmp::Reverse(a.0));
+            approvals.sort_by_key(|a| a.created);
             let mut out: Map<String, Value> = Map::new();
-            out.insert("sessions".into(), Value::Array(sessions.into_iter().map(|(_, v)| Value::Object(v)).collect()));
+            out.insert(
+                "sessions".into(),
+                Value::Array(
+                    sessions
+                        .into_iter()
+                        .map(|(_, v)| Value::Object(v))
+                        .collect(),
+                ),
+            );
             out.insert("approvals".into(), json!(approvals));
             out.insert("core".into(), core_info);
             for h in crate::features::state_hooks() {
@@ -751,8 +864,10 @@ impl Registrar {
             write_json(w, 200, &out);
         });
         self.app("GET /api/sizes", |_, w, _| {
-            let sizes: Vec<Value> =
-                ["small", "medium", "large"].iter().map(|s| json!({"id": s, "label": crate::sizes::size_label(s)})).collect();
+            let sizes: Vec<Value> = ["small", "medium", "large"]
+                .iter()
+                .map(|s| json!({"id": s, "label": crate::sizes::size_label(s)}))
+                .collect();
             write_json(w, 200, &json!({"sizes": sizes}));
         });
         self.app("GET /api/regions", |r, w, _| {
@@ -764,8 +879,12 @@ impl Registrar {
                 .iter()
                 .map(|g| json!({"id": g.id, "label": g.label}))
                 .collect();
-            write_json(w, 200, &json!({"regions": regions, "default": r.cfg.region, "runners": runners,
-                "defaultRunner": crate::awsrunner::default_runner()}));
+            write_json(
+                w,
+                200,
+                &json!({"regions": regions, "default": r.cfg.region, "runners": runners,
+                "defaultRunner": crate::awsrunner::default_runner()}),
+            );
         });
         self.app("GET /api/records", |r, w, _| {
             let recs: Vec<Record> = r.st.do_(|d| d.records.clone());
@@ -787,7 +906,13 @@ impl Registrar {
                 until: GoTime,
             }
             let i: In = decode_body(req, 1 << 16);
-            match r.draft_grant(&req.path_value("id"), &i.holder, &i.kind, i.minutes, i.until) {
+            match r.draft_grant(
+                &req.path_value("id"),
+                &i.holder,
+                &i.kind,
+                i.minutes,
+                i.until,
+            ) {
                 Err(e) => write_err(w, &e),
                 Ok(text) => write_json(w, 200, &json!({"text": text})),
             }
@@ -803,8 +928,13 @@ impl Registrar {
         // stores from it (the router can't forge it)
         self.app("GET /api/sessions/{id}/cert", |r, w, req| {
             let id = req.path_value("id");
-            match r.st.do_(|d| d.sessions.get(&id).and_then(|s| s.cert.clone())) {
-                None => crate::nethttp::write_error(w, 404, "the session has no certified machine yet"),
+            match r
+                .st
+                .do_(|d| d.sessions.get(&id).and_then(|s| s.cert.clone()))
+            {
+                None => {
+                    crate::nethttp::write_error(w, 404, "the session has no certified machine yet")
+                }
                 Some(c) => write_json(w, 200, &c),
             }
         });
@@ -829,9 +959,11 @@ impl Registrar {
                 Ok(res) => write_json(w, 200, &res),
             }
         });
-        self.app("GET /api/sessions/{id}/terminal", |r, w, req| match r.term_snapshot(&req.path_value("id")) {
-            Err(e) => write_err(w, &e),
-            Ok(s) => write_json(w, 200, &s),
+        self.app("GET /api/sessions/{id}/terminal", |r, w, req| {
+            match r.term_snapshot(&req.path_value("id")) {
+                Err(e) => write_err(w, &e),
+                Ok(s) => write_json(w, 200, &s),
+            }
         });
         crate::termpage::register_term_page(self); // the terminal as a web page (the iPhone app shows it in a web view)
         self.app("POST /api/sessions/{id}/terminal", |r, w, req| {
@@ -894,7 +1026,6 @@ impl Registrar {
                     method: "POST".into(),
                     path: "/api/sessions".into(),
                     args: args.as_object().cloned().unwrap_or_default(),
-                    ..Default::default()
                 },
                 via_call: crate::apicalls::via_call(req),
                 ..Default::default()
@@ -908,9 +1039,11 @@ impl Registrar {
                 }
             }
         });
-        self.app("POST /api/sessions/{id}/pause", |r, w, req| match r.pause(&req.path_value("id")) {
-            Err(e) => write_err(w, &e),
-            Ok(()) => write_json(w, 200, &json!({"ok": true})),
+        self.app("POST /api/sessions/{id}/pause", |r, w, req| {
+            match r.pause(&req.path_value("id")) {
+                Err(e) => write_err(w, &e),
+                Ok(()) => write_json(w, 200, &json!({"ok": true})),
+            }
         });
         self.app("POST /api/sessions/{id}/resume", |r, w, req| {
             #[derive(Deserialize, Default)]
@@ -942,8 +1075,10 @@ impl Registrar {
                     call: crate::inbox::ApiCall {
                         method: "POST".into(),
                         path: req.path.clone(),
-                        args: json!({"upgrade": i.upgrade}).as_object().cloned().unwrap_or_default(),
-                        ..Default::default()
+                        args: json!({"upgrade": i.upgrade})
+                            .as_object()
+                            .cloned()
+                            .unwrap_or_default(),
                     },
                     via_call: crate::apicalls::via_call(req),
                     ..Default::default()
@@ -965,7 +1100,7 @@ impl Registrar {
         // ---- approvals -----------------------------------------------------------------------------------
         self.app("GET /api/approvals", |r, w, _| {
             let mut out: Vec<Approval> = r.st.do_(|d| d.approvals.values().cloned().collect());
-            out.sort_by(|a, b| a.created.cmp(&b.created));
+            out.sort_by_key(|a| a.created);
             write_json(w, 200, &json!({"approvals": out}));
         });
         self.app("POST /api/approvals/{id}/respond", |r, w, req| {
@@ -986,7 +1121,15 @@ impl Registrar {
         });
 
         // ---- the core, relayed unchanged ------------------------------------------------------------------
-        for p in ["stores", "stores/create", "stores/mark-sensitive", "unlock/begin", "lock", "unlocked", "store-key"] {
+        for p in [
+            "stores",
+            "stores/create",
+            "stores/mark-sensitive",
+            "unlock/begin",
+            "lock",
+            "unlocked",
+            "store-key",
+        ] {
             let path = format!("/{p}");
             self.app(&format!("POST /api/core{path}"), move |r, w, req| {
                 let b = req.read_body(1 << 20);
@@ -1003,7 +1146,11 @@ impl Registrar {
             match c.raw("POST", "/unlock/finish", Some(&b)) {
                 Err(e) => {
                     crate::logf!("core POST /unlock/finish: {e:#}");
-                    write_json(w, 503, &json!({"error": "the core isn't running", "coreDown": true}));
+                    write_json(
+                        w,
+                        503,
+                        &json!({"error": "the core isn't running", "coreDown": true}),
+                    );
                 }
                 Ok((status, out)) => {
                     if status == 200 {
@@ -1017,9 +1164,11 @@ impl Registrar {
         });
 
         // ---- machines --------------------------------------------------------------------------------------
-        self.m("GET /m/kernel/boot", |r, w, _, machine, _| match r.kernel_boot(machine) {
-            Err(e) => crate::nethttp::write_error(w, 404, &format!("{e:#}")),
-            Ok(out) => write_json(w, 200, &out),
+        self.m("GET /m/kernel/boot", |r, w, _, machine, _| {
+            match r.kernel_boot(machine) {
+                Err(e) => crate::nethttp::write_error(w, 404, &format!("{e:#}")),
+                Ok(out) => write_json(w, 200, &out),
+            }
         });
         self.m("GET /m/cert", |r, w, _, machine, _| {
             let (cert, pred) = r.st.do_(|d| {
@@ -1072,7 +1221,10 @@ impl Registrar {
             if !req.header("X-Snapshot-None").is_empty() {
                 let _ = std::fs::remove_file(tmp);
                 // a machine still booting has nothing to snapshot: the waiting pause or destroy goes on at once
-                crate::logf!("machine {machine}: nothing to snapshot ({})", req.header("X-Snapshot-None"));
+                crate::logf!(
+                    "machine {machine}: nothing to snapshot ({})",
+                    req.header("X-Snapshot-None")
+                );
                 r.snapshot_arrived(machine);
                 write_json(w, 200, &json!({"ok": true}));
                 return;
@@ -1129,9 +1281,10 @@ impl Registrar {
             };
             // carry.rs: the line's carried secrets go with the pull; a pull that goes through answers the next blob
             let release = crate::carry::carry_lock(machine);
-            let res = r
-                .core
-                .call("/pull-secrets", &json!({"cert": cert, "carry": r.carry_for_pull(machine, &cert)}));
+            let res = r.core.call(
+                "/pull-secrets",
+                &json!({"cert": cert, "carry": r.carry_for_pull(machine, &cert)}),
+            );
             if let Ok(d) = &res {
                 r.pulled(machine, &cert, d);
                 crate::vouch::mark_pulled(machine); // vouch.rs: a pause waits briefly for such a machine's boot
@@ -1149,7 +1302,11 @@ impl Registrar {
         self.m("GET /m/commands", |r, w, _, machine, _| {
             // mq.rs: the machine's oldest untaken row, waiting up to 50 s for one
             let empty: Vec<Value> = vec![];
-            match r.mq_next(&crate::ctx::Ctx::background(), machine, Duration::from_secs(50)) {
+            match r.mq_next(
+                &crate::ctx::Ctx::background(),
+                machine,
+                Duration::from_secs(50),
+            ) {
                 Err(_) if w.gone() => {} // the machine went (or this replica stops)
                 Err(e) => write_err(w, &e),
                 Ok(None) => write_json(w, 200, &json!({"commands": empty, "execs": empty})),
@@ -1158,12 +1315,18 @@ impl Registrar {
                     write_json(w, 200, &json!({"commands": [c], "execs": empty}));
                 }
                 Ok(Some(it)) if it.kind == "exec" => {
-                    let e: crate::grants::ExecItem = jarvis_go::unmarshal(&it.body).unwrap_or_default();
+                    let e: crate::grants::ExecItem =
+                        jarvis_go::unmarshal(&it.body).unwrap_or_default();
                     write_json(w, 200, &json!({"commands": empty, "execs": [e]}));
                 }
                 Ok(Some(it)) => {
-                    let d: crate::vouch::Delivery = jarvis_go::unmarshal(&it.body).unwrap_or_default();
-                    write_json(w, 200, &json!({"commands": empty, "execs": empty, "deliveries": [d]}));
+                    let d: crate::vouch::Delivery =
+                        jarvis_go::unmarshal(&it.body).unwrap_or_default();
+                    write_json(
+                        w,
+                        200,
+                        &json!({"commands": empty, "execs": empty, "deliveries": [d]}),
+                    );
                 }
             }
         });
@@ -1172,9 +1335,11 @@ impl Registrar {
             r.exec_result(res);
             write_json(w, 200, &json!({"ok": true}));
         });
-        self.m("GET /m/holders", |r, w, _, _, _| match r.holder_public_keys() {
-            Err(e) => write_err(w, &e),
-            Ok(p) => write_json(w, 200, &p),
+        self.m("GET /m/holders", |r, w, _, _, _| {
+            match r.holder_public_keys() {
+                Err(e) => write_err(w, &e),
+                Ok(p) => write_json(w, 200, &p),
+            }
         });
         self.m("POST /m/kernel/downgrade", |r, w, _, machine, body| {
             #[derive(Deserialize, Default)]
@@ -1217,7 +1382,12 @@ impl Registrar {
                 new_signing_key: String,
             }
             let i: In = jarvis_go::unmarshal(body).unwrap_or_default();
-            match r.downgrade_begin(machine, &i.stores, &i.new_encryption_key, &i.new_signing_key) {
+            match r.downgrade_begin(
+                machine,
+                &i.stores,
+                &i.new_encryption_key,
+                &i.new_signing_key,
+            ) {
                 Err(e) => write_err(w, &e),
                 Ok(ch) => write_json(w, 200, &json!({"challenge": ch})),
             }
@@ -1238,7 +1408,9 @@ impl Registrar {
 
         // ---- the web page ------------------------------------------------------------------------------------
         let web_dir = r.cfg.web_dir.clone();
-        let h = r.require_deyao(Arc::new(move |w, req| crate::util::serve_web(w, req, &web_dir)));
+        let h = r.require_deyao(Arc::new(move |w, req| {
+            crate::util::serve_web(w, req, &web_dir)
+        }));
         self.public.handle("GET /", h);
     }
 }

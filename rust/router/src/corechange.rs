@@ -15,7 +15,8 @@ use std::time::Duration;
 pub const CORE_CHANGE_EVERY: Duration = Duration::from_secs(30);
 
 /// a destroy that failed is tried again 10 minutes later, not every tick
-static OLD_CORE_TRIED: LazyLock<Mutex<BTreeMap<String, GoTime>>> = LazyLock::new(|| Mutex::new(BTreeMap::new()));
+static OLD_CORE_TRIED: LazyLock<Mutex<BTreeMap<String, GoTime>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 impl Router {
     pub fn core_change_loop(self: &Arc<Self>) {
@@ -39,8 +40,16 @@ impl Router {
             signing_key: String,
             state: Doc,
         }
-        let Ok(id) = jarvis_go::unmarshal::<Id>(&b) else { return String::new() };
-        if id.signing_key.is_empty() || !crate::http::verify_p256(&id.signing_key, id.state.payload.as_bytes(), &id.state.sig) {
+        let Ok(id) = jarvis_go::unmarshal::<Id>(&b) else {
+            return String::new();
+        };
+        if id.signing_key.is_empty()
+            || !crate::http::verify_p256(
+                &id.signing_key,
+                id.state.payload.as_bytes(),
+                &id.state.sig,
+            )
+        {
             return String::new();
         }
         // an empty core shows only the keys it was started with; nothing is decided before it is set up
@@ -91,7 +100,9 @@ impl Router {
         // takes its line over; only the rest go
         let mut keep = vec![];
         for id in gone {
-            let cert = self.st.do_(|d| d.sessions.get(&id).and_then(|s| s.cert.clone()));
+            let cert = self
+                .st
+                .do_(|d| d.sessions.get(&id).and_then(|s| s.cert.clone()));
             if self.claim_of_signer(cert.as_ref()).is_some() {
                 let r = self.clone();
                 std::thread::spawn(move || r.adopt_paused(&id));
@@ -108,7 +119,9 @@ impl Router {
         for id in keep {
             let recent = {
                 let mut g = OLD_CORE_TRIED.lock().unwrap_or_else(|e| e.into_inner());
-                let recent = g.get(&id).is_some_and(|t| t.since() < time::Duration::minutes(10));
+                let recent = g
+                    .get(&id)
+                    .is_some_and(|t| t.since() < time::Duration::minutes(10));
                 if !recent {
                     g.insert(id.clone(), GoTime::now());
                 }
@@ -119,7 +132,9 @@ impl Router {
             }
             match self.destroy_opts(&id, Default::default()) {
                 Err(e) => crate::logf!("session {id} (an earlier core's): destroy: {e:#}"),
-                Ok(()) => crate::logf!("session {id} (an earlier core's): destroying; Restore it from Previous as a new line"),
+                Ok(()) => crate::logf!(
+                    "session {id} (an earlier core's): destroying; Restore it from Previous as a new line"
+                ),
             }
         }
     }

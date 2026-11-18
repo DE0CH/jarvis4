@@ -5,7 +5,6 @@
 //! adds (tables, nullable columns); what the old code needs is dropped one release later. GET /healthz and
 //! /setup/status report what status says.
 
-use crate::logf;
 use anyhow::{Context, Result, anyhow, bail};
 use postgres::{Client, NoTls};
 use r2d2::{Pool, PooledConnection};
@@ -141,7 +140,10 @@ fn parse_url(url: &str) -> Result<(postgres::Config, bool)> {
             match kv.split_once('=') {
                 Some(("sslmode", m)) => {
                     tls = matches!(m, "require" | "verify-ca" | "verify-full");
-                    if !matches!(m, "disable" | "allow" | "prefer" | "require" | "verify-ca" | "verify-full") {
+                    if !matches!(
+                        m,
+                        "disable" | "allow" | "prefer" | "require" | "verify-ca" | "verify-full"
+                    ) {
                         bail!("DATABASE_URL: sslmode {m:?} is invalid");
                     }
                 }
@@ -154,9 +156,7 @@ fn parse_url(url: &str) -> Result<(postgres::Config, bool)> {
             format!("{base}?{}", kept.join("&"))
         };
     }
-    let cfg: postgres::Config = cleaned
-        .parse()
-        .map_err(|e| anyhow!("DATABASE_URL: {e}"))?;
+    let cfg: postgres::Config = cleaned.parse().map_err(|e| anyhow!("DATABASE_URL: {e}"))?;
     Ok((cfg, tls))
 }
 
@@ -224,7 +224,10 @@ impl DB {
 		applied_at timestamptz NOT NULL DEFAULT now())",
             )?;
             let have: i32 = c
-                .query_one("SELECT coalesce(max(version), 0) FROM schema_migrations", &[])?
+                .query_one(
+                    "SELECT coalesce(max(version), 0) FROM schema_migrations",
+                    &[],
+                )?
                 .get(0);
             if have as usize > ms.len() {
                 bail!(
@@ -242,7 +245,8 @@ impl DB {
                         )
                     })
                     .with_context(|| format!("migration {}", m.name))?;
-                tx.commit().with_context(|| format!("migration {}", m.name))?;
+                tx.commit()
+                    .with_context(|| format!("migration {}", m.name))?;
                 logf!("db: applied migration {}", m.name);
             }
             Ok(())
@@ -330,7 +334,10 @@ pub fn open_db_wait(url: &str) -> DB {
                 );
                 return db;
             }
-            Err(e) => logf!("db: {e:#} (again in {})", jarvis_go::fmt::duration_string(wait)),
+            Err(e) => logf!(
+                "db: {e:#} (again in {})",
+                jarvis_go::fmt::duration_string(wait)
+            ),
         }
         std::thread::sleep(wait);
         wait = (wait * 2).min(Duration::from_secs(30));

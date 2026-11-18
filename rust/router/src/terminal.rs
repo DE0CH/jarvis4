@@ -29,13 +29,15 @@ pub const SCREEN_FRESH: Duration = Duration::from_secs(45);
 
 /// allowed tmux key names for term_input (anything else is refused)
 const TMUX_KEYS: &[&str] = &[
-    "Enter", "Escape", "Tab", "BTab", "BSpace", "Up", "Down", "Left", "Right", "C-c", "C-d", "C-j", "C-o", "C-r", "C-u", "PageUp",
-    "PageDown",
+    "Enter", "Escape", "Tab", "BTab", "BSpace", "Up", "Down", "Left", "Right", "C-c", "C-d", "C-j",
+    "C-o", "C-r", "C-u", "PageUp", "PageDown",
 ];
 
 /// when a pane age old was pushed (RFC 3339, UTC)
 fn pushed_at(age: Duration) -> String {
-    GoTime::from_unix_nanos(GoTime::now().unix_nanos() - age.as_nanos() as i128).utc().rfc3339()
+    GoTime::from_unix_nanos(GoTime::now().unix_nanos() - age.as_nanos() as i128)
+        .utc()
+        .rfc3339()
 }
 
 impl Router {
@@ -52,7 +54,12 @@ impl Router {
 
     /// the last pane the session's running machine pushed, however old
     pub fn latest_screen(&self, session: &str) -> Option<(TermSnap, Duration)> {
-        let machine = self.st.do_(|d| d.sessions.get(session).map(|s| s.machine_id.clone()).unwrap_or_default());
+        let machine = self.st.do_(|d| {
+            d.sessions
+                .get(session)
+                .map(|s| s.machine_id.clone())
+                .unwrap_or_default()
+        });
         if machine.is_empty() {
             return None;
         }
@@ -76,7 +83,10 @@ impl Router {
             while !text.is_char_boundary(n) {
                 n -= 1;
             }
-            cmd.push(format!("tmux send-keys -t claude -l -- {}", shq(&text[..n])));
+            cmd.push(format!(
+                "tmux send-keys -t claude -l -- {}",
+                shq(&text[..n])
+            ));
         }
         for k in keys {
             if !TMUX_KEYS.contains(&k.as_str()) {
@@ -87,7 +97,12 @@ impl Router {
         if cmd.is_empty() {
             return Ok(());
         }
-        self.exec(session, "terminal", &cmd.join(" && "), Duration::from_secs(15))?;
+        self.exec(
+            session,
+            "terminal",
+            &cmd.join(" && "),
+            Duration::from_secs(15),
+        )?;
         Ok(())
     }
 
@@ -95,7 +110,12 @@ impl Router {
         if !(20..=400).contains(&cols) || !(5..=200).contains(&rows) {
             bail!("bad size");
         }
-        self.exec(session, "terminal", &format!("tmux resize-window -t claude -x {cols} -y {rows}"), Duration::from_secs(15))?;
+        self.exec(
+            session,
+            "terminal",
+            &format!("tmux resize-window -t claude -x {cols} -y {rows}"),
+            Duration::from_secs(15),
+        )?;
         Ok(())
     }
 }

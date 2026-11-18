@@ -103,7 +103,10 @@ fn reason_of(e: &anyhow::Error) -> Option<&KernelError> {
 }
 
 fn new_source() -> Object {
-    Object(format!("source-{}", hex::encode(crate::util::rand_bytes(16))))
+    Object(format!(
+        "source-{}",
+        hex::encode(crate::util::rand_bytes(16))
+    ))
 }
 
 fn sink() -> Object {
@@ -117,7 +120,11 @@ fn peek(d: &SDoc) -> Option<Cert> {
 /// a source's settings, the guard's to read (rust/machine/src/kernelboot.rs): the harness, the permission mode (fixed
 /// for the line's life, D3) and the session's config as the old core's cert carried it
 pub fn kernel_settings(s: &Session, config: &str) -> Result<String> {
-    let cfg: Value = if config.is_empty() { json!({}) } else { serde_json::from_str(config)? };
+    let cfg: Value = if config.is_empty() {
+        json!({})
+    } else {
+        serde_json::from_str(config)?
+    };
     Ok(jarvis_go::marshal(
         &json!({"v": 1, "harness": s.harness, "permissionMode": crate::flows::norm_mode(&s.permission_mode), "config": cfg}),
     ))
@@ -125,7 +132,12 @@ pub fn kernel_settings(s: &Session, config: &str) -> Result<String> {
 
 /// what a line's grant allows: its stores, for its session
 pub fn kernel_pair(s: &Session) -> Pair {
-    let allowed: Vec<String> = s.stores.iter().flatten().map(|st| format!("store:{st}")).collect();
+    let allowed: Vec<String> = s
+        .stores
+        .iter()
+        .flatten()
+        .map(|st| format!("store:{st}"))
+        .collect();
     Pair::new(Set::only(allowed), vec![format!("session:{}", s.id)])
 }
 
@@ -158,12 +170,18 @@ pub fn kernel_object(s: Option<&Session>, machine: &str, fallback: &str) -> Obje
 }
 
 pub fn must_succ(d: &SDoc) -> Object {
-    peek(d).map(|c| c.succ).unwrap_or_else(|| Object(String::new()))
+    peek(d)
+        .map(|c| c.succ)
+        .unwrap_or_else(|| Object(String::new()))
 }
 
 /// where a machine runs, by its id (an EC2 instance's is i-…)
 pub fn runner_name(machine: &str) -> &'static str {
-    if crate::awsrunner::is_aws_machine(machine) { "AWS" } else { "Fly" }
+    if crate::awsrunner::is_aws_machine(machine) {
+        "AWS"
+    } else {
+        "Fly"
+    }
 }
 
 /// whether a spawn goes on waiting for its machine's keys after the spawner's answer err. It waits while the machine is
@@ -172,7 +190,9 @@ pub fn runner_name(machine: &str) -> &'static str {
 /// "booting" for the whole 10 minutes, 2026-11-17). The spawner says it as "machine X is destroyed, not started" under
 /// REASON_NOT_STARTED (kernel/spawner/spawner.go Init).
 pub fn init_waits(err: &anyhow::Error) -> bool {
-    let Some(ke) = reason_of(err) else { return false };
+    let Some(ke) = reason_of(err) else {
+        return false;
+    };
     match ke.reason.as_str() {
         REASON_NOT_STARTED => !ke.msg.contains(" is destroyed, not started"),
         REASON_FLY | REASON_AWS => true,
@@ -183,13 +203,19 @@ pub fn init_waits(err: &anyhow::Error) -> bool {
 impl Session {
     /// the session has a certified line: a core cert, or a kernel source the phone signed
     pub fn has_line(&self) -> bool {
-        self.cert.is_some() || self.kernel.as_ref().is_some_and(|k| k.source_cert.is_some())
+        self.cert.is_some()
+            || self
+                .kernel
+                .as_ref()
+                .is_some_and(|k| k.source_cert.is_some())
     }
 }
 
 impl Router {
     fn kernel_client(&self) -> Result<&Arc<crate::kernel::KernelClient>> {
-        self.kernel.as_ref().ok_or_else(|| anyhow!("this box runs no kernel"))
+        self.kernel
+            .as_ref()
+            .ok_or_else(|| anyhow!("this box runs no kernel"))
     }
 
     /// new sessions start on the kernel (it is reachable and the root's grant is here)
@@ -198,7 +224,13 @@ impl Router {
     }
 
     /// the cert the phone signs for a new source of the line (sink → source) with this image and snapshot ("" = none)
-    pub fn kernel_source_draft(&self, s: &Session, config: &str, image: &str, snapshot: &str) -> Result<SDoc> {
+    pub fn kernel_source_draft(
+        &self,
+        s: &Session,
+        config: &str,
+        image: &str,
+        snapshot: &str,
+    ) -> Result<SDoc> {
         let settings = kernel_settings(s, config)?;
         let c = Cert {
             kind: "succession".into(),
@@ -214,7 +246,10 @@ impl Router {
             signer: jarvis_doc::by::IPHONE.into(),
             issued_at: jarvis_doc::now(),
         };
-        Ok(SDoc { payload: cert_payload(&c)?, sig: String::new() })
+        Ok(SDoc {
+            payload: cert_payload(&c)?,
+            sig: String::new(),
+        })
     }
 
     /// the new session's Inbox approval (the phone signs the draft's payload)
@@ -236,7 +271,10 @@ impl Router {
             kind: KERNEL_APPROVAL_KIND.into(),
             session: s.id.clone(),
             label: s.label.clone(),
-            challenge: Some(Doc { payload: draft.payload, sig: String::new() }),
+            challenge: Some(Doc {
+                payload: draft.payload,
+                sig: String::new(),
+            }),
             options: opts.clone(),
             origin: input.origin.clone(),
             explanation: input.explanation.clone(),
@@ -251,10 +289,18 @@ impl Router {
     }
 
     /// the phone's signature over the draft → the source, then a spawn
-    pub fn respond_kernel(self: &Arc<Self>, a: &Approval, signature: &str) -> Result<(Doc, String)> {
+    pub fn respond_kernel(
+        self: &Arc<Self>,
+        a: &Approval,
+        signature: &str,
+    ) -> Result<(Doc, String)> {
         let k = self.kernel_client()?.clone();
         let cert = SDoc {
-            payload: a.challenge.as_ref().map(|c| c.payload.clone()).unwrap_or_default(),
+            payload: a
+                .challenge
+                .as_ref()
+                .map(|c| c.payload.clone())
+                .unwrap_or_default(),
             sig: signature.into(),
         };
         // the start is a job (jobs.rs "starting"): a replica that dies after the source is kept leaves it to another,
@@ -278,7 +324,10 @@ impl Router {
         };
         let c = peek(&cert);
         let _ = self.kernel_burn(&a.session); // a resume on another image: the source it replaces ends (no-op for a new line)
-        let nzd = Doc { payload: nz.payload.clone(), sig: nz.sig.clone() };
+        let nzd = Doc {
+            payload: nz.payload.clone(),
+            sig: nz.sig.clone(),
+        };
         self.st.do_(|d| {
             d.approvals.remove(&a.id);
             if let Some(s) = d.sessions.get_mut(&a.session) {
@@ -312,20 +361,29 @@ impl Router {
 
     /// a machine from the line's source; the session runs on it once the grant is on it
     pub fn kernel_spawn(self: &Arc<Self>, sid: &str) {
-        let s = self.st.do_(|d| d.sessions.get(sid).cloned()).unwrap_or_default();
-        let op = self.lc_current(sid).unwrap_or_else(|| self.lc_begin(sid, "boot"));
+        let s = self
+            .st
+            .do_(|d| d.sessions.get(sid).cloned())
+            .unwrap_or_default();
+        let op = self
+            .lc_current(sid)
+            .unwrap_or_else(|| self.lc_begin(sid, "boot"));
         op.set_handed();
         let fail = |msg: &str| {
             self.set_state(sid, "failed", msg);
             op.note("", msg);
             op.end_joined("failed", msg);
         };
-        let Some(k) = self.kernel.clone() else { return fail("start: this box runs no kernel") };
+        let Some(k) = self.kernel.clone() else {
+            return fail("start: this box runs no kernel");
+        };
         let l = match s.kernel.clone() {
             Some(l) if l.source_cert.is_some() && l.source_nz.is_some() && l.grant.is_some() => l,
             _ => return fail("start: the line has no source"),
         };
-        let (Some(source_cert), Some(source_nz), Some(grant)) = (l.source_cert.clone(), l.source_nz.clone(), l.grant.clone()) else {
+        let (Some(source_cert), Some(source_nz), Some(grant)) =
+            (l.source_cert.clone(), l.source_nz.clone(), l.grant.clone())
+        else {
             return fail("start: the line has no source");
         };
         let source = l.source.clone().unwrap_or_else(|| Object(String::new()));
@@ -335,8 +393,16 @@ impl Router {
             Err(e) => return fail(&format!("start: {e:#}")),
             Ok(id) => id,
         };
-        let size = if s.size.is_empty() { "medium".to_string() } else { s.size.clone() };
-        let gb = if s.disk_gb == 0 { crate::disk::DEFAULT_DISK } else { s.disk_gb };
+        let size = if s.size.is_empty() {
+            "medium".to_string()
+        } else {
+            s.size.clone()
+        };
+        let gb = if s.disk_gb == 0 {
+            crate::disk::DEFAULT_DISK
+        } else {
+            s.disk_gb
+        };
         let runner = self.runner_of(&s);
         let region = self.spawn_region(&s);
         let mut wg = None;
@@ -380,7 +446,8 @@ impl Router {
                         volume: String,
                         env: BTreeMap<String, String>,
                     }
-                    let created: Created = jarvis_go::unmarshal(d.payload.as_bytes()).unwrap_or_default();
+                    let created: Created =
+                        jarvis_go::unmarshal(d.payload.as_bytes()).unwrap_or_default();
                     id = created.id.clone();
                     vol = created.volume;
                     if fabric.is_some() {
@@ -401,12 +468,16 @@ impl Router {
                         }
                     };
                     if reason == REASON_NO_AWS_KEY {
-                        dm_once("🔴 Jarvis 4 needs you — the kernel's spawner has no AWS key (it restarted), so no AWS session starts. Settings → Kernel → Recover gives it the key again (or the setup session: infra/setup.py kernel-aws-credentials).");
+                        dm_once(
+                            "🔴 Jarvis 4 needs you — the kernel's spawner has no AWS key (it restarted), so no AWS session starts. Settings → Kernel → Recover gives it the key again (or the setup session: infra/setup.py kernel-aws-credentials).",
+                        );
                     }
                     if reason == REASON_NO_FLY_TOKEN {
                         // a restarted spawner: its token comes again with the app's Recover of the kernel, or from the
                         // setup session
-                        dm_once("🔴 Jarvis 4 needs you — the kernel's spawner has no Fly token (it restarted), so no kernel session starts. Settings → Kernel → Recover gives it the token again (or the setup session: infra/setup.py kernel-fly-token).");
+                        dm_once(
+                            "🔴 Jarvis 4 needs you — the kernel's spawner has no Fly token (it restarted), so no kernel session starts. Settings → Kernel → Recover gives it the token again (or the setup session: infra/setup.py kernel-fly-token).",
+                        );
                     }
                     // Fly's host for the volume was full (the spawner deleted that volume: a new spawn is a new volume,
                     // on another host), Fly failed, or the answer was lost (the machine it made, if any, is found and
@@ -417,11 +488,18 @@ impl Router {
                         crate::logf!("[kernel] spawn for {sid}: {e:#}");
                         return fail(&format!("start: {}", crate::flows::FLY_LIMIT_TEXT));
                     }
-                    let again = ke.is_none() || matches!(reason, REASON_HOST_FULL | REASON_FLY | REASON_AWS);
+                    let again = ke.is_none()
+                        || matches!(reason, REASON_HOST_FULL | REASON_FLY | REASON_AWS);
                     if !again || try_ >= KERNEL_SPAWN_TRIES {
                         return fail(&format!("start: {e:#}"));
                     }
-                    op.note("", &format!("the spawn failed ({e:#}): try {} of {KERNEL_SPAWN_TRIES}", try_ + 1));
+                    op.note(
+                        "",
+                        &format!(
+                            "the spawn failed ({e:#}): try {} of {KERNEL_SPAWN_TRIES}",
+                            try_ + 1
+                        ),
+                    );
                     std::thread::sleep(KERNEL_INIT_STEP);
                     (id, vol) = self.kernel_adopt(&op, &source);
                 }
@@ -433,15 +511,24 @@ impl Router {
         if crate::awsrunner::is_aws_machine(&id) {
             op.note(&id, &format!("the spawner launched EC2 instance {id} ({region}); waiting for its keys (the machine writes them to the instance's serial console once the session image runs)"));
         } else {
-            op.note(&id, &format!("the spawner made Fly machine {id}; waiting for its keys"));
+            op.note(
+                &id,
+                &format!("the spawner made Fly machine {id}; waiting for its keys"),
+            );
         }
-        let pred = peek(&source_cert).map(|sc| self.kernel_pred(&s, &sc)).unwrap_or_default();
+        let pred = peek(&source_cert)
+            .map(|sc| self.kernel_pred(&s, &sc))
+            .unwrap_or_default();
         self.st.do_(|d| {
             d.machines.insert(id.clone(), sid.to_string());
             let mut st = Started {
                 id: id.clone(),
                 kernel_pred: pred.clone(),
-                volume: Some(Volume { id: vol.clone(), size_gb: gb, path: "/data".into() }),
+                volume: Some(Volume {
+                    id: vol.clone(),
+                    size_gb: gb,
+                    path: "/data".into(),
+                }),
                 ..Default::default()
             };
             if wg.is_some()
@@ -449,7 +536,11 @@ impl Router {
                 && let Some(w) = x.wg.take()
             {
                 // the gateways list it from now on; the private key stays only in the instance
-                st.wg = Some(crate::awsrunner::AwsWg { private_key: String::new(), public_key: w.public_key, address: w.address });
+                st.wg = Some(crate::awsrunner::AwsWg {
+                    private_key: String::new(),
+                    public_key: w.public_key,
+                    address: w.address,
+                });
             }
             d.started.insert(id.clone(), st);
         });
@@ -478,17 +569,22 @@ impl Router {
         let res = (|| -> Result<()> {
             let mnz = k.notarize(&mcert)?;
             let g = k.move_(&grant, &mcert, &mnz)?;
-            let mc = peek(&mcert).and_then(|c| c.machine).unwrap_or_else(|| jarvis_doc::Machine {
-                signing_key: String::new(),
-                encryption_key: String::new(),
-                image: String::new(),
-            });
+            let mc = peek(&mcert)
+                .and_then(|c| c.machine)
+                .unwrap_or_else(|| jarvis_doc::Machine {
+                    signing_key: String::new(),
+                    encryption_key: String::new(),
+                    image: String::new(),
+                });
             self.st.do_(|d| {
                 if let Some(st) = d.started.get_mut(&id) {
                     st.image = mc.image.clone();
                     st.signing_key = mc.signing_key.clone();
                     st.encryption_key = mc.encryption_key.clone();
-                    st.kernel_cert = Some(Doc { payload: mcert.payload.clone(), sig: mcert.sig.clone() });
+                    st.kernel_cert = Some(Doc {
+                        payload: mcert.payload.clone(),
+                        sig: mcert.sig.clone(),
+                    });
                 }
                 if let Some(x) = d.sessions.get_mut(sid)
                     && let Some(kl) = x.kernel.as_mut()
@@ -523,8 +619,16 @@ impl Router {
     /// hash is the archived snapshot's: its first machine, and every one after it until a machine of the line leaves a
     /// snapshot (the earlier ones never got past boot); snapshot_for then serves the archive's copy (restore.rs).
     pub fn kernel_pred(&self, s: &Session, sc: &Cert) -> String {
-        let pred = if sc.pred.kind() == Some(Kind::Machine) { sc.pred.machine_id().to_string() } else { String::new() };
-        let sum = sc.source.as_ref().map(|x| x.snapshot.clone()).unwrap_or_default();
+        let pred = if sc.pred.kind() == Some(Kind::Machine) {
+            sc.pred.machine_id().to_string()
+        } else {
+            String::new()
+        };
+        let sum = sc
+            .source
+            .as_ref()
+            .map(|x| x.snapshot.clone())
+            .unwrap_or_default();
         if sum.is_empty() || (pred.is_empty() && s.restore_cert.is_some()) {
             return pred;
         }
@@ -551,26 +655,40 @@ impl Router {
     /// anything but unknown-machine) is adopted; every other one is destroyed through the spawner. Only one machine of
     /// a source can take the line either way: the notarizer refuses a source's second successor.
     pub fn kernel_adopt(&self, op: &LcHandle, source: &Object) -> (String, String) {
-        let Some(k) = &self.kernel else { return (String::new(), String::new()) };
+        let Some(k) = &self.kernel else {
+            return (String::new(), String::new());
+        };
         let mut cands: Vec<(String, String)> = vec![];
         match crate::machines::list_fly_machines() {
-            Err(e) => crate::logf!("[kernel] {}: no look on Fly for an earlier spawn's machine ({e:#})", source.0),
+            Err(e) => crate::logf!(
+                "[kernel] {}: no look on Fly for an earlier spawn's machine ({e:#})",
+                source.0
+            ),
             Ok(ms) => {
                 for m in ms {
-                    if m.config.metadata.get(SOURCE_META).map(String::as_str) != Some(source.0.as_str())
+                    if m.config.metadata.get(SOURCE_META).map(String::as_str)
+                        != Some(source.0.as_str())
                         || m.state == "destroyed"
                         || m.state == "destroying"
                     {
                         continue;
                     }
-                    let vol = m.config.mounts.first().map(|x| x.volume.clone()).unwrap_or_default();
+                    let vol = m
+                        .config
+                        .mounts
+                        .first()
+                        .map(|x| x.volume.clone())
+                        .unwrap_or_default();
                     cands.push((m.id, vol));
                 }
             }
         }
         // awsrunner.rs: tagged with their source as Fly machines carry it in their metadata
         match crate::awsrunner::list_aws_machines() {
-            Err(e) => crate::logf!("[kernel] {}: no look on AWS for an earlier spawn's machine ({e:#})", source.0),
+            Err(e) => crate::logf!(
+                "[kernel] {}: no look on AWS for an earlier spawn's machine ({e:#})",
+                source.0
+            ),
             Ok(ins) => {
                 for i in ins {
                     if i.source == source.0 && i.state != "destroyed" && i.state != "destroying" {
@@ -583,7 +701,11 @@ impl Router {
         for (mid, mvol) in cands {
             if id.is_empty() {
                 let res = k.doc("spawner", "/init", &json!({"id": mid}));
-                let unknown = res.as_ref().err().and_then(reason_of).is_some_and(|ke| ke.reason == REASON_UNKNOWN);
+                let unknown = res
+                    .as_ref()
+                    .err()
+                    .and_then(reason_of)
+                    .is_some_and(|ke| ke.reason == REASON_UNKNOWN);
                 if !unknown {
                     op.note(&mid, &format!("machine {mid} from {} (an earlier spawn whose answer was lost) is the line's", source.0));
                     id = mid;
@@ -693,9 +815,20 @@ impl Router {
     /// here, so the grant isn't moved (nothing takes it from the source, which the burn ends): a grant signed by a mover
     /// that has since restarted (new keys) no longer opens, and must not block a destroy; a repeat after the
     /// notarization went through finds the source already defined, which is the same outcome
-    pub fn kernel_kill(&self, sid: &str, machine: &str, required: bool, destroying: bool) -> Result<String> {
+    pub fn kernel_kill(
+        &self,
+        sid: &str,
+        machine: &str,
+        required: bool,
+        destroying: bool,
+    ) -> Result<String> {
         let k = self.kernel_client()?;
-        let key = self.st.do_(|d| d.started.get(machine).map(|st| st.signing_key.clone()).unwrap_or_default());
+        let key = self.st.do_(|d| {
+            d.started
+                .get(machine)
+                .map(|st| st.signing_key.clone())
+                .unwrap_or_default()
+        });
         let s = self.snap(machine);
         let mut snapshot = None;
         match &s {
@@ -720,11 +853,17 @@ impl Router {
         let Some(c) = peek(&d) else {
             return Ok(String::new()); // a machine never up: a kill record, nothing goes on from it
         };
-        let snap = c.source.as_ref().map(|x| x.snapshot.clone()).unwrap_or_default();
+        let snap = c
+            .source
+            .as_ref()
+            .map(|x| x.snapshot.clone())
+            .unwrap_or_default();
         let nz = match k.notarize(&d) {
             Ok(nz) => Some(nz),
             // an earlier try of this destroy notarized it (the spawner's kill cert, and its source id, are kept)
-            Err(e) if destroying && reason_of(&e).is_some_and(|ke| ke.reason == REASON_DEFINED) => None,
+            Err(e) if destroying && reason_of(&e).is_some_and(|ke| ke.reason == REASON_DEFINED) => {
+                None
+            }
             Err(e) => return Err(anyhow!("the kill's cert: {e:#}")),
         };
         if destroying {
@@ -748,7 +887,12 @@ impl Router {
         let nz = nz.unwrap_or_default();
         let cur = self
             .st
-            .do_(|dd| dd.sessions.get(sid).and_then(|x| x.kernel.as_ref()).and_then(|l| l.grant.clone()))
+            .do_(|dd| {
+                dd.sessions
+                    .get(sid)
+                    .and_then(|x| x.kernel.as_ref())
+                    .and_then(|l| l.grant.clone())
+            })
             .ok_or_else(|| anyhow!("the line has no grant"))?;
         let g = k
             .move_(&cur, &d, &nz)
@@ -773,8 +917,15 @@ impl Router {
 
     /// the line's source ends, (source, sink) by the gullible signer, notarized
     pub fn kernel_burn(&self, sid: &str) -> Result<()> {
-        let l = self.st.do_(|d| d.sessions.get(sid).and_then(|x| x.kernel.clone()));
-        let Some(l) = l.filter(|l| !l.burned && l.source.as_ref().is_some_and(|s| s.kind() == Some(Kind::Source))) else {
+        let l = self
+            .st
+            .do_(|d| d.sessions.get(sid).and_then(|x| x.kernel.clone()));
+        let Some(l) = l.filter(|l| {
+            !l.burned
+                && l.source
+                    .as_ref()
+                    .is_some_and(|s| s.kind() == Some(Kind::Source))
+        }) else {
             return Ok(());
         };
         let k = self.kernel_client()?;
@@ -819,14 +970,25 @@ impl Router {
         // secrets' signed statements the machine reads the phone's key and the stores' sensitivity from (its phone
         // grants and message approvals, as a core cert's phone and sensitive fields)
         let (ks, _) = k.keys()?;
-        let sl = k.doc("secrets", "/stores", &json!({"nonce": crate::util::rand_id()}))?;
+        let sl = k.doc(
+            "secrets",
+            "/stores",
+            &json!({"nonce": crate::util::rand_id()}),
+        )?;
         out.insert("keys".into(), json!(ks));
         out.insert("stores".into(), json!(sl));
         // the serving copy's roster: the machine checks everything against it (its Fly config's may be an earlier one's)
         if let Some(d) = self.current_roster() {
             out.insert("roster".into(), json!(d));
         }
-        for role in ["notary", "notarizer", "mover", "merger", "spawner", "secrets"] {
+        for role in [
+            "notary",
+            "notarizer",
+            "mover",
+            "merger",
+            "spawner",
+            "secrets",
+        ] {
             out.insert(role.into(), json!(k.identity(role)?));
         }
         Ok(Value::Object(out))
@@ -840,9 +1002,17 @@ impl Router {
             .ok_or_else(|| anyhow!("no kernel line for this machine"))?;
         let k = self.kernel_client()?;
         match k.doc("secrets", "/pull", &serde_json::to_value(&grant)?) {
-            Ok(d) => Ok(Doc { payload: d.payload, sig: d.sig }),
+            Ok(d) => Ok(Doc {
+                payload: d.payload,
+                sig: d.sig,
+            }),
             Err(e) => match kernel_error(&e) {
-                Some(ke) => Err(CoreError { status: ke.status, body: vec![], msg: ke.msg.clone() }.into()),
+                Some(ke) => Err(CoreError {
+                    status: ke.status,
+                    body: vec![],
+                    msg: ke.msg.clone(),
+                }
+                .into()),
                 None => Err(e),
             },
         }
@@ -866,11 +1036,20 @@ impl Router {
         let (booted, src) = self.st.do_(|d| {
             d.sessions
                 .get(id)
-                .map(|x| (x.booted == machine, x.kernel.as_ref().and_then(|k| k.source_cert.clone())))
+                .map(|x| {
+                    (
+                        x.booted == machine,
+                        x.kernel.as_ref().and_then(|k| k.source_cert.clone()),
+                    )
+                })
                 .unwrap_or((false, None))
         });
-        let Some(src) = src.filter(|_| !booted) else { return false };
-        let Some(source) = peek(&src).and_then(|c| c.source) else { return false };
+        let Some(src) = src.filter(|_| !booted) else {
+            return false;
+        };
+        let Some(source) = peek(&src).and_then(|c| c.source) else {
+            return false;
+        };
         if source.snapshot.is_empty() {
             return true;
         }
@@ -890,7 +1069,11 @@ impl Router {
         serr: Option<&anyhow::Error>,
         ok: &mut bool,
     ) -> bool {
-        self.lc_note(id, machine, "asked the kernel's spawner to kill the machine into the line's next source");
+        self.lc_note(
+            id,
+            machine,
+            "asked the kernel's spawner to kill the machine into the line's next source",
+        );
         let required = !destroying && serr.is_none() && !self.never_booted_state_kept(id, machine);
         let snap = match self.kernel_kill(id, machine, required, destroying) {
             Err(e) => {
@@ -901,7 +1084,9 @@ impl Router {
             Ok(s) => s,
         };
         self.st.do_(|d| {
-            let Some(s) = d.sessions.get_mut(id) else { return };
+            let Some(s) = d.sessions.get_mut(id) else {
+                return;
+            };
             s.snapshot_failed.clear();
             if snap.is_empty() && s.booted == machine {
                 let why = serr.map_or("it sent none".to_string(), |e| format!("{e:#}"));
@@ -910,7 +1095,14 @@ impl Router {
                 s.no_snapshot.clear();
             }
         });
-        self.lc_note(id, machine, &format!("the spawner confirmed the machine destroyed on {}", runner_name(machine)));
+        self.lc_note(
+            id,
+            machine,
+            &format!(
+                "the spawner confirmed the machine destroyed on {}",
+                runner_name(machine)
+            ),
+        );
         *ok = true;
         true
     }
@@ -918,7 +1110,13 @@ impl Router {
     /// a kernel line's resume. A machine still there (a pause cut off) is paused first; then a spawn from the line's
     /// source, or, on another image (D8), the phone signs a new source with that image and the same settings and
     /// snapshot. A line whose first source the phone never signed gets its approval again.
-    pub fn kernel_resume(self: &Arc<Self>, s: Session, upgrade: bool, unlock: OnceFn, op: LcHandle) -> Result<()> {
+    pub fn kernel_resume(
+        self: &Arc<Self>,
+        s: Session,
+        upgrade: bool,
+        unlock: OnceFn,
+        op: LcHandle,
+    ) -> Result<()> {
         let id = s.id.clone();
         self.set_state(&id, "resuming", "");
         let r = self.clone();
@@ -999,15 +1197,26 @@ impl Router {
                     kind: KERNEL_APPROVAL_KIND.into(),
                     session: id.clone(),
                     label: s.label.clone(),
-                    challenge: Some(Doc { payload: draft.payload, sig: String::new() }),
+                    challenge: Some(Doc {
+                        payload: draft.payload,
+                        sig: String::new(),
+                    }),
                     options: BTreeMap::from([
-                        ("permissionMode".to_string(), crate::flows::norm_mode(&s.permission_mode).to_string()),
+                        (
+                            "permissionMode".to_string(),
+                            crate::flows::norm_mode(&s.permission_mode).to_string(),
+                        ),
                         ("image".to_string(), img.clone()),
                     ]),
                     again: l.source_cert.is_none(),
                     ..Default::default()
                 });
-                op.note("", &format!("waiting for Deyao's approval in the Inbox: a new source on image {img}"));
+                op.note(
+                    "",
+                    &format!(
+                        "waiting for Deyao's approval in the Inbox: a new source on image {img}"
+                    ),
+                );
                 return;
             }
             r.kernel_spawn(&id);
@@ -1025,10 +1234,20 @@ impl Router {
     /// initialising / started on the new machine  → nothing left but waiting for it to boot
     /// ```
     pub fn kernel_continue(self: &Arc<Self>, sid: &str, unlock: OnceFn) {
-        let s = self.st.do_(|d| d.sessions.get(sid).cloned()).unwrap_or_default();
+        let s = self
+            .st
+            .do_(|d| d.sessions.get(sid).cloned())
+            .unwrap_or_default();
         let op = self.lc_begin(sid, "boot");
-        op.note("", "carried on by another router replica: its holder stopped");
-        let Some(kl) = s.kernel.clone().filter(|k| k.source_cert.is_some() || s.state == "resuming") else {
+        op.note(
+            "",
+            "carried on by another router replica: its holder stopped",
+        );
+        let Some(kl) = s
+            .kernel
+            .clone()
+            .filter(|k| k.source_cert.is_some() || s.state == "resuming")
+        else {
             unlock.call();
             op.end_joined("failed", "nothing to carry on");
             self.cut_off_session(sid);
@@ -1060,7 +1279,12 @@ impl Router {
 
     /// kernel_object for a running machine, by its session
     pub fn machine_object(&self, machine: &str) -> Object {
-        let s = self.st.do_(|d| d.machines.get(machine).and_then(|sid| d.sessions.get(sid)).cloned());
+        let s = self.st.do_(|d| {
+            d.machines
+                .get(machine)
+                .and_then(|sid| d.sessions.get(sid))
+                .cloned()
+        });
         kernel_object(s.as_ref(), machine, &crate::awsrunner::default_runner())
     }
 
@@ -1069,17 +1293,29 @@ impl Router {
     /// KernelInputSubject)
     pub fn attest_input(&self, machine: &str, kind: &str, origin: &str, sum: &str) -> Result<Doc> {
         if !self.is_kernel_machine(machine) {
-            let a = self
-                .core
-                .call("/attest", &json!({"machine": machine, "input": kind, "origin": origin, "sha256": sum}))?;
+            let a = self.core.call(
+                "/attest",
+                &json!({"machine": machine, "input": kind, "origin": origin, "sha256": sum}),
+            )?;
             self.log_inputs(Some(&a));
             return Ok(a);
         }
-        let h = Sha256::digest(format!("jarvis2-input\n{}\n{kind}\n{sum}", self.machine_object(machine).0).as_bytes());
-        let d = self
-            .kernel_client()?
-            .doc("notary", "/challenge", &json!({"subject": hex::encode(h), "about": "input"}))?;
-        Ok(Doc { payload: d.payload, sig: d.sig })
+        let h = Sha256::digest(
+            format!(
+                "jarvis2-input\n{}\n{kind}\n{sum}",
+                self.machine_object(machine).0
+            )
+            .as_bytes(),
+        );
+        let d = self.kernel_client()?.doc(
+            "notary",
+            "/challenge",
+            &json!({"subject": hex::encode(h), "about": "input"}),
+        )?;
+        Ok(Doc {
+            payload: d.payload,
+            sig: d.sig,
+        })
     }
 
     /// the machine keeps only these stores: the identity signer's (M, M, P), M its kernel_object, P the kept stores for
@@ -1103,11 +1339,18 @@ impl Router {
         let k = self.kernel_client()?;
         let allowed: Vec<String> = keep.iter().map(|st| format!("store:{st}")).collect();
         let p = Pair::new(Set::only(allowed), vec![format!("session:{}", s.id)]);
-        let c = k.doc("identity", "/sign", &json!({"machine": self.machine_object(machine), "pair": p}))?;
+        let c = k.doc(
+            "identity",
+            "/sign",
+            &json!({"machine": self.machine_object(machine), "pair": p}),
+        )?;
         let nz = k.notarize(&c)?;
         let g = k.move_(&grant, &c, &nz)?;
         self.st.do_(|d| {
-            if let Some(x) = d.sessions.get_mut(&s.id).filter(|x| x.machine_id == machine)
+            if let Some(x) = d
+                .sessions
+                .get_mut(&s.id)
+                .filter(|x| x.machine_id == machine)
                 && let Some(kl) = x.kernel.as_mut()
             {
                 kl.grant = Some(g.clone());
@@ -1130,18 +1373,31 @@ impl Router {
             .as_ref()
             .filter(|l| l.machine_cert.is_some() && l.source_cert.is_some())
             .ok_or_else(|| anyhow!("this machine isn't a running kernel line"))?;
-        let mc = jarvis_doc::peek_cert(l.machine_cert.as_ref().ok_or_else(|| anyhow!("no machine cert"))?)
-            .map_err(|e| anyhow!("{e}"))?;
-        let sc = jarvis_doc::peek_cert(l.source_cert.as_ref().ok_or_else(|| anyhow!("no source cert"))?)
-            .map_err(|e| anyhow!("{e}"))?;
+        let mc = jarvis_doc::peek_cert(
+            l.machine_cert
+                .as_ref()
+                .ok_or_else(|| anyhow!("no machine cert"))?,
+        )
+        .map_err(|e| anyhow!("{e}"))?;
+        let sc = jarvis_doc::peek_cert(
+            l.source_cert
+                .as_ref()
+                .ok_or_else(|| anyhow!("no source cert"))?,
+        )
+        .map_err(|e| anyhow!("{e}"))?;
         let add = new_source();
-        let mut src = sc.source.ok_or_else(|| anyhow!("the line's source cert names no source"))?;
+        let mut src = sc
+            .source
+            .ok_or_else(|| anyhow!("the line's source cert names no source"))?;
         src.snapshot.clear();
         let c1 = Cert {
             kind: "succession".into(),
             pred: sink(),
             succ: add.clone(),
-            pair: Pair::new(Set::only([format!("store:{store}")]), vec![format!("session:{}", s.id)]),
+            pair: Pair::new(
+                Set::only([format!("store:{store}")]),
+                vec![format!("session:{}", s.id)],
+            ),
             source: Some(src),
             machine: None,
             signer: jarvis_doc::by::IPHONE.into(),
@@ -1163,8 +1419,14 @@ impl Router {
             session: s.id.clone(),
             machine: s.machine_id.clone(),
             label: s.label.clone(),
-            challenge: Some(Doc { payload: p1, sig: String::new() }),
-            earlier: vec![Doc { payload: p2, sig: String::new() }],
+            challenge: Some(Doc {
+                payload: p1,
+                sig: String::new(),
+            }),
+            earlier: vec![Doc {
+                payload: p2,
+                sig: String::new(),
+            }],
             options: BTreeMap::from([("store".to_string(), store.to_string())]),
             origin: Some(o),
             explanation: explanation.into(),
@@ -1176,13 +1438,29 @@ impl Router {
 
     /// the two signatures → the store's grant moved onto the machine and merged with the main grant (both carry exactly
     /// session:<id>), then the machine pulls again
-    pub fn respond_kernel_add(self: &Arc<Self>, a: &Approval, signatures: &str) -> Result<(Doc, String)> {
+    pub fn respond_kernel_add(
+        self: &Arc<Self>,
+        a: &Approval,
+        signatures: &str,
+    ) -> Result<(Doc, String)> {
         let sigs: Vec<&str> = signatures.split_whitespace().collect();
         if sigs.len() != 2 || a.earlier.len() != 1 {
-            return Err(anyhow!("an add-store on a kernel line takes two signatures (one per line)"));
+            return Err(anyhow!(
+                "an add-store on a kernel line takes two signatures (one per line)"
+            ));
         }
-        let c1 = SDoc { payload: a.challenge.as_ref().map(|c| c.payload.clone()).unwrap_or_default(), sig: sigs[0].into() };
-        let c2 = SDoc { payload: a.earlier[0].payload.clone(), sig: sigs[1].into() };
+        let c1 = SDoc {
+            payload: a
+                .challenge
+                .as_ref()
+                .map(|c| c.payload.clone())
+                .unwrap_or_default(),
+            sig: sigs[0].into(),
+        };
+        let c2 = SDoc {
+            payload: a.earlier[0].payload.clone(),
+            sig: sigs[1].into(),
+        };
         let (root, main) = self.st.do_(|d| {
             let main = d
                 .sessions
@@ -1202,12 +1480,24 @@ impl Router {
         let g = k.move_(&g, &c2, &nz2)?;
         let mid = k.identity("merger")?;
         let md = k.doc("merger", "/merge", &json!({"a": main, "b": g}))?;
-        let merged = Signed { grant: md.clone(), by: "merger".into(), signer: Some(mid), keys: None, secrets: None };
+        let merged = Signed {
+            grant: md.clone(),
+            by: "merger".into(),
+            signer: Some(mid),
+            keys: None,
+            secrets: None,
+        };
         let store = a.options.get("store").cloned().unwrap_or_default();
-        let nz2d = Doc { payload: nz2.payload.clone(), sig: nz2.sig.clone() };
+        let nz2d = Doc {
+            payload: nz2.payload.clone(),
+            sig: nz2.sig.clone(),
+        };
         self.st.do_(|d| {
             d.approvals.remove(&a.id);
-            if let Some(s) = d.sessions.get_mut(&a.session).filter(|s| s.machine_id == a.machine)
+            if let Some(s) = d
+                .sessions
+                .get_mut(&a.session)
+                .filter(|s| s.machine_id == a.machine)
                 && let Some(kl) = s.kernel.as_mut()
             {
                 kl.grant = Some(merged.clone());
@@ -1218,16 +1508,38 @@ impl Router {
                 }
             }
             if let Some(o) = &a.origin {
-                crate::outcomes::note_outcome(d, Some(o), "add-store", &a.session, crate::outcomes::OUTCOME_APPROVED, 0, Some(&nz2d));
+                crate::outcomes::note_outcome(
+                    d,
+                    Some(o),
+                    "add-store",
+                    &a.session,
+                    crate::outcomes::OUTCOME_APPROVED,
+                    0,
+                    Some(&nz2d),
+                );
             }
         });
         self.send(&a.machine, "refresh-secrets");
-        Ok((Doc { payload: md.payload, sig: md.sig }, a.session.clone()))
+        Ok((
+            Doc {
+                payload: md.payload,
+                sig: md.sig,
+            },
+            a.session.clone(),
+        ))
     }
 
     /// secrets' (or the spawner's) own API, relayed as is: every answer is signed by the component, which the app
     /// checks
-    fn kernel_relay(&self, w: &mut W, role: &str, method: &str, path: &str, body: Option<&Value>, kernel_errors: bool) {
+    fn kernel_relay(
+        &self,
+        w: &mut W,
+        role: &str,
+        method: &str,
+        path: &str,
+        body: Option<&Value>,
+        kernel_errors: bool,
+    ) {
         let Some(k) = &self.kernel else {
             return write_json(w, 503, &json!({"error": "this box runs no kernel yet"}));
         };
@@ -1315,8 +1627,15 @@ pub fn register_kernel(reg: &mut Registrar) {
             return write_json(w, 400, &json!({"error": "{grant}"}));
         };
         let g: Option<jarvis_doc::Grant> = jarvis_sig::strict_json(i.grant.payload.as_bytes()).ok();
-        let Some(k) = r.kernel.clone().filter(|_| g.as_ref().is_some_and(|g| g.machine.0 == SINK && Pair::top().leq(&g.pair))) else {
-            return write_json(w, 400, &json!({"error": "not the root's ⊤ on the sink (or no kernel here)"}));
+        let Some(k) = r.kernel.clone().filter(|_| {
+            g.as_ref()
+                .is_some_and(|g| g.machine.0 == SINK && Pair::top().leq(&g.pair))
+        }) else {
+            return write_json(
+                w,
+                400,
+                &json!({"error": "not the root's ⊤ on the sink (or no kernel here)"}),
+            );
         };
         // checked the way the mover will check it: signed by the root key secrets names
         let (ks, _) = match k.keys() {
@@ -1329,12 +1648,24 @@ pub fn register_kernel(reg: &mut Registrar) {
             #[serde(alias = "Root")]
             root: String,
         }
-        let root = jarvis_go::unmarshal::<K>(ks.payload.as_bytes()).unwrap_or_default().root;
+        let root = jarvis_go::unmarshal::<K>(ks.payload.as_bytes())
+            .unwrap_or_default()
+            .root;
         if !jarvis_sig::verify(&root, i.grant.payload.as_bytes(), &i.grant.sig) {
-            return write_json(w, 403, &json!({"error": "not signed by the root key secrets holds"}));
+            return write_json(
+                w,
+                403,
+                &json!({"error": "not signed by the root key secrets holds"}),
+            );
         }
         // the mover gets secrets' current statement with every move
-        let s = Signed { grant: i.grant, by: "root".into(), signer: None, keys: None, secrets: None };
+        let s = Signed {
+            grant: i.grant,
+            by: "root".into(),
+            signer: None,
+            keys: None,
+            secrets: None,
+        };
         r.st.do_(|d| d.kernel_root = Some(s.clone()));
         write_json(w, 200, &json!({"ok": true}));
     });
@@ -1347,7 +1678,11 @@ pub fn register_kernel(reg: &mut Registrar) {
         let b = req.read_body(1 << 16);
         let parsed = serde_json::from_slice::<Value>(&b);
         let (Some(k), Ok(body)) = (&r.kernel, parsed) else {
-            return write_json(w, 400, &json!({"error": "{sealed}, on a box with a kernel"}));
+            return write_json(
+                w,
+                400,
+                &json!({"error": "{sealed}, on a box with a kernel"}),
+            );
         };
         match k.call("spawner", "POST", "/fly-token", Some(&body)) {
             Err(e) => match kernel_error(&e) {

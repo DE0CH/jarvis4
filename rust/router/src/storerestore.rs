@@ -26,7 +26,6 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
 
-
 pub const REQUEST_KIND_RESTORE: &str = "restore";
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -84,14 +83,26 @@ impl Router {
             anyhow!("the router has no backup credential (BACKUP_READ_ACCESS_KEY): nothing is restored without its backups")
         })?;
         let sc = self.store_core();
-        let (status, raw) =
-            sc.raw("POST", "/stores/restore/finish", Some(body)).map_err(|e| anyhow!("{} /stores/restore/finish: {e:#}", sc.who()))?;
+        let (status, raw) = sc
+            .raw("POST", "/stores/restore/finish", Some(body))
+            .map_err(|e| anyhow!("{} /stores/restore/finish: {e:#}", sc.who()))?;
         if status != 200 {
-            return Err(CoreError { status, body: raw, msg: "core: the restore was refused".into() }.into());
+            return Err(CoreError {
+                status,
+                body: raw,
+                msg: "core: the restore was refused".into(),
+            }
+            .into());
         }
         let ap: RestoreApproved = jarvis_go::unmarshal(&raw).unwrap_or_default();
-        let (receipt, rc) = match ap.receipt.as_ref().map(|r| (r, r.decode::<RestoreReceipt>())) {
-            Some((r, Ok(rc))) if rc.kind == "store-restore-approved" && rc.pending == i.pending => (r.clone(), rc),
+        let (receipt, rc) = match ap
+            .receipt
+            .as_ref()
+            .map(|r| (r, r.decode::<RestoreReceipt>()))
+        {
+            Some((r, Ok(rc))) if rc.kind == "store-restore-approved" && rc.pending == i.pending => {
+                (r.clone(), rc)
+            }
             _ => return Err(anyhow!("the core's restore answer isn't readable")),
         };
         let ident = match sc.raw("GET", "/identity", None) {
@@ -101,7 +112,9 @@ impl Router {
         };
         let ident: Value = serde_json::from_slice(&ident).unwrap_or(Value::Null);
         let docs = {
-            let _g = crate::storedocs::STORE_DOCS_MU.lock().unwrap_or_else(|e| e.into_inner());
+            let _g = crate::storedocs::STORE_DOCS_MU
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             self.read_store_docs().remove(&rc.store).unwrap_or_default()
         };
         let now = GoTime::now().utc().rfc3339();
@@ -110,16 +123,28 @@ impl Router {
             obj.insert("store".into(), json!(rc.store));
             obj.insert("key".into(), json!(key));
             obj.insert("core".into(), ident.clone());
-            obj.insert("explanation".into(), json!(docs.keys.get(key).cloned().unwrap_or_default()));
+            obj.insert(
+                "explanation".into(),
+                json!(docs.keys.get(key).cloned().unwrap_or_default()),
+            );
             obj.insert("at".into(), json!(now));
-            obj.insert("writer".into(), json!({"by": "restore", "receipt": receipt}));
-            b.put(&format!("keys/{}/{key}.json", rc.store), jarvis_go::marshal(&obj).as_bytes())
+            obj.insert(
+                "writer".into(),
+                json!({"by": "restore", "receipt": receipt}),
+            );
+            b.put(
+                &format!("keys/{}/{key}.json", rc.store),
+                jarvis_go::marshal(&obj).as_bytes(),
+            )
         };
         let obj = |v: Value| v.as_object().cloned().unwrap_or_default();
         // the backups first: the core changes the store only once they are in the bucket
         for x in &rc.put {
             match ap.backups.get(&x.key) {
-                Some(bk) if bk.sha256 == x.backup_sha256 && backup_sha(&bk.e, &bk.data) == x.backup_sha256 => {
+                Some(bk)
+                    if bk.sha256 == x.backup_sha256
+                        && backup_sha(&bk.e, &bk.data) == x.backup_sha256 =>
+                {
                     put(
                         &x.key,
                         obj(json!({"deleted": false, "sealed": {"e": bk.e, "data": bk.data}, "backupSha256": x.backup_sha256,
@@ -127,7 +152,12 @@ impl Router {
                     )
                     .map_err(|e| anyhow!("the backups weren't written, so nothing was restored: {e:#}"))?;
                 }
-                _ => return Err(anyhow!("the core's backup of {} doesn't match its receipt: nothing restored", x.key)),
+                _ => {
+                    return Err(anyhow!(
+                        "the core's backup of {} doesn't match its receipt: nothing restored",
+                        x.key
+                    ));
+                }
             }
         }
         for k in &rc.remove {
@@ -219,4 +249,3 @@ pub fn register_restore(reg: &mut Registrar) {
         r.relay_to(w, &c, "POST", "/stores/versions", Some(b));
     });
 }
-

@@ -56,12 +56,18 @@ pub type JobEnd = Arc<dyn Fn(&str, &str) + Send + Sync>;
 
 impl Router {
     fn pool(&self) -> Result<&DB> {
-        self.st.db().ok_or_else(|| anyhow!("the router has no database"))
+        self.st
+            .db()
+            .ok_or_else(|| anyhow!("the router has no database"))
     }
 
     /// the session's running job, held by this replica (Busy when another runs)
     pub fn job_start(&self, session: &str, kind: &str, args: Value) -> Result<String> {
-        let a = if args.is_null() { "{}".to_string() } else { jarvis_go::marshal(&args) };
+        let a = if args.is_null() {
+            "{}".to_string()
+        } else {
+            jarvis_go::marshal(&args)
+        };
         let id = crate::util::rand_id();
         let mut c = self.pool()?.conn()?;
         let res = c.execute(
@@ -209,8 +215,15 @@ impl Router {
     /// a job another replica held when it died
     pub fn carry_on(self: &Arc<Self>, j: &JobRow) {
         let end = self.job_hold(&j.id);
-        let s = self.st.do_(|d| d.sessions.get(&j.session).cloned()).unwrap_or_default();
-        crate::logf!("jobs: carrying on {} of session {} (its holder stopped renewing)", j.kind, j.session);
+        let s = self
+            .st
+            .do_(|d| d.sessions.get(&j.session).cloned())
+            .unwrap_or_default();
+        crate::logf!(
+            "jobs: carrying on {} of session {} (its holder stopped renewing)",
+            j.kind,
+            j.session
+        );
         let unlock = self.job_unlock(&j.session, &j.kind, end.clone());
         // what lock_args kept for the job: {restart} | {mode} | {store, harness, continue} | {force}
         #[derive(Deserialize, Default)]
@@ -254,10 +267,22 @@ impl Router {
             std::thread::spawn(move || {
                 let _u = crate::flows::scopeguard(move || unlock.call());
                 let Some(to) = r.accounts().hub(&a.store) else {
-                    r.ops.phase(&wj, "failed", Some(&anyhow!("no Claude account {}", a.store)));
+                    r.ops.phase(
+                        &wj,
+                        "failed",
+                        Some(&anyhow!("no Claude account {}", a.store)),
+                    );
                     return;
                 };
-                match r.run_account_switch(&wj, &sid, &m, &a.harness, Registry::default(), &to, a.continue_) {
+                match r.run_account_switch(
+                    &wj,
+                    &sid,
+                    &m,
+                    &a.harness,
+                    Registry::default(),
+                    &to,
+                    a.continue_,
+                ) {
                     Err(e) => r.ops.phase(&wj, "failed", Some(&e)),
                     Ok(()) => r.ops.phase(&wj, "done", None),
                 }
@@ -265,8 +290,14 @@ impl Router {
         } else if j.kind == "destroying" && s.state == "destroying" {
             let op = self.lc_begin(&j.session, "destroy");
             op.machine(&s.machine_id);
-            op.note("", "carried on by another router replica: its holder stopped (the destroy runs again)");
-            let o = DestroyOpts { force: a.force, ..Default::default() };
+            op.note(
+                "",
+                "carried on by another router replica: its holder stopped (the destroy runs again)",
+            );
+            let o = DestroyOpts {
+                force: a.force,
+                ..Default::default()
+            };
             std::thread::spawn(move || r.destroy_run(&sid, s, o, unlock, op));
         } else {
             self.cut_off_session(&j.session);

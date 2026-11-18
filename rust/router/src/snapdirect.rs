@@ -41,7 +41,11 @@ pub const DIRECT_MAX_PARTS: i64 = 10000;
 fn direct<'a>(r: &'a Router, w: &mut W) -> Option<&'a dyn ObjDirect> {
     let d = r.objects.direct();
     if d.is_none() {
-        write_json(w, 404, &json!({"error": "no bucket the machines can reach: stream the snapshot through the router"}));
+        write_json(
+            w,
+            404,
+            &json!({"error": "no bucket the machines can reach: stream the snapshot through the router"}),
+        );
     }
     d
 }
@@ -126,9 +130,20 @@ pub fn register_snap_direct(reg: &mut Registrar) {
     });
     reg.m("POST /m/snapshot-upload/parts", |r, w, _, machine, body| {
         let i = match jarvis_go::unmarshal::<UploadIn>(body) {
-            Ok(i) if !i.upload.is_empty() && i.from >= 1 && (1..=64).contains(&i.count) && i.from + i.count - 1 <= DIRECT_MAX_PARTS => i,
+            Ok(i)
+                if !i.upload.is_empty()
+                    && i.from >= 1
+                    && (1..=64).contains(&i.count)
+                    && i.from + i.count - 1 <= DIRECT_MAX_PARTS =>
+            {
+                i
+            }
             _ => {
-                return write_json(w, 400, &json!({"error": "{upload, from ≥ 1, count 1..64}, parts up to 10000"}));
+                return write_json(
+                    w,
+                    400,
+                    &json!({"error": "{upload, from ≥ 1, count 1..64}, parts up to 10000"}),
+                );
             }
         };
         let Some(d) = direct(r, w) else { return };
@@ -194,7 +209,10 @@ pub fn register_snap_direct(reg: &mut Registrar) {
         }
     });
     reg.m("POST /m/snapshot-upload/abort", |r, w, _, machine, body| {
-        let Some(i) = jarvis_go::unmarshal::<UploadIn>(body).ok().filter(|i| !i.upload.is_empty()) else {
+        let Some(i) = jarvis_go::unmarshal::<UploadIn>(body)
+            .ok()
+            .filter(|i| !i.upload.is_empty())
+        else {
             return write_json(w, 400, &json!({"error": "{upload}"}));
         };
         let Some(d) = direct(r, w) else { return };

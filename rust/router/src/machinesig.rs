@@ -40,7 +40,11 @@ pub struct SigOwner {
 
 impl Router {
     /// the machine's session id, harness and state when sig is its machine's over the request, else a reason
-    pub fn check_machine_signature(&self, m: &MachineSigRequest, now: GoTime) -> Result<SigOwner, String> {
+    pub fn check_machine_signature(
+        &self,
+        m: &MachineSigRequest,
+        now: GoTime,
+    ) -> Result<SigOwner, String> {
         if m.machine.is_empty()
             || !SIG_METHOD_RE.is_match(&m.method)
             || !m.path.starts_with('/')
@@ -52,18 +56,33 @@ impl Router {
         }
         let skew = crate::http::MACHINE_TIME_SKEW.load(std::sync::atomic::Ordering::Relaxed);
         match m.time.parse::<i64>() {
-            Ok(ts) if (now.unix_nanos() - ts as i128 * 1_000_000_000).abs() <= skew as i128 * 1_000_000_000 => {}
+            Ok(ts)
+                if (now.unix_nanos() - ts as i128 * 1_000_000_000).abs()
+                    <= skew as i128 * 1_000_000_000 => {}
             _ => return Err("time too far off".into()),
         }
         let (key, owner) = self.st.read(|d| {
-            let key = d.started.get(&m.machine).map(|s| s.signing_key.clone()).unwrap_or_default();
+            let key = d
+                .started
+                .get(&m.machine)
+                .map(|s| s.signing_key.clone())
+                .unwrap_or_default();
             let sid = d.machines.get(&m.machine).cloned().unwrap_or_default();
-            let owner = d.sessions.get(&sid).map(|s| SigOwner { session: sid.clone(), harness: s.harness.clone(), state: s.state.clone() });
+            let owner = d.sessions.get(&sid).map(|s| SigOwner {
+                session: sid.clone(),
+                harness: s.harness.clone(),
+                state: s.state.clone(),
+            });
             (key, owner)
         });
         let payload = format!("{} {} {} {}", m.method, m.path, m.time, m.body_sha256);
         match owner {
-            Some(o) if !key.is_empty() && crate::http::verify_p256(&key, payload.as_bytes(), &m.sig) => Ok(o),
+            Some(o)
+                if !key.is_empty()
+                    && crate::http::verify_p256(&key, payload.as_bytes(), &m.sig) =>
+            {
+                Ok(o)
+            }
             _ => Err("not signed by a running session's machine".into()),
         }
     }
@@ -71,18 +90,27 @@ impl Router {
     pub fn verify_machine_signature(&self, w: &mut W, req: &mut Req) {
         let b = req.read_body(64 << 10);
         // Go's json.Decoder: the first value, whatever follows it
-        let m: MachineSigRequest = match serde_json::Deserializer::from_slice(&b).into_iter().next() {
+        let m: MachineSigRequest = match serde_json::Deserializer::from_slice(&b).into_iter().next()
+        {
             Some(Ok(m)) => m,
             _ => return write_error(w, 400, "not JSON"),
         };
         match self.check_machine_signature(&m, GoTime::now()) {
             Err(why) => {
-                let status = if why.starts_with("malformed") { 400 } else { 403 };
+                let status = if why.starts_with("malformed") {
+                    400
+                } else {
+                    403
+                };
                 write_error(w, status, &why);
             }
             Ok(o) => {
                 w.set_header("Cache-Control", "no-store");
-                write_json(w, 200, &json!({"session": o.session, "harness": o.harness, "state": o.state}));
+                write_json(
+                    w,
+                    200,
+                    &json!({"session": o.session, "harness": o.harness, "state": o.state}),
+                );
             }
         }
     }

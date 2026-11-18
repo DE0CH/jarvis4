@@ -37,7 +37,9 @@ pub fn known_fly_app(app: &str) -> &'static str {
 /// monthly cost of its started machines added); their machines are expected, so not flagged as unexplained
 pub fn jarvis_own_app(app: &str) -> &'static str {
     match app {
-        "jarvis2-log-shipper" => "Jarvis 4's log shipper: sends the session machines' logs to Grafana Cloud",
+        "jarvis2-log-shipper" => {
+            "Jarvis 4's log shipper: sends the session machines' logs to Grafana Cloud"
+        }
         _ => "",
     }
 }
@@ -101,9 +103,18 @@ pub struct FlyOrgView {
 
 /// why a machine stands out, or "". Both Jarvises destroy a machine on pause, so a stopped one is left over: it keeps
 /// its disk (billed) and counts toward the org's machine cap.
-pub fn attention_of(state: &str, created: &str, own: bool, session_id: &str, app: &str, now: GoTime) -> String {
+pub fn attention_of(
+    state: &str,
+    created: &str,
+    own: bool,
+    session_id: &str,
+    app: &str,
+    now: GoTime,
+) -> String {
     match state {
-        "stopped" | "suspended" => return "Stopped: keeps its disk (billed) and counts toward Fly's machine cap".into(),
+        "stopped" | "suspended" => {
+            return "Stopped: keeps its disk (billed) and counts toward Fly's machine cap".into();
+        }
         "failed" => return "Failed".into(),
         "created" | "starting" | "replacing" => {
             if let Some(t) = GoTime::parse(created)
@@ -165,7 +176,10 @@ pub fn fly_org_tokens() -> (BTreeMap<String, String>, Option<String>) {
     }
     let (mut m, err) = match serde_json::from_str::<BTreeMap<String, String>>(&raw) {
         Ok(m) => (m, None),
-        Err(_) => (BTreeMap::new(), Some("FLY_ORG_READ_TOKENS is not valid JSON".to_string())),
+        Err(_) => (
+            BTreeMap::new(),
+            Some("FLY_ORG_READ_TOKENS is not valid JSON".to_string()),
+        ),
     };
     if let Ok(t) = std::env::var("FLY_PERSONAL_READ_TOKEN")
         && !t.is_empty()
@@ -176,7 +190,8 @@ pub fn fly_org_tokens() -> (BTreeMap<String, String>, Option<String>) {
 }
 
 /// the Machines API (tests point it at a fake)
-pub static FLY_API_BASE: LazyLock<RwLock<String>> = LazyLock::new(|| RwLock::new("https://api.machines.dev".into()));
+pub static FLY_API_BASE: LazyLock<RwLock<String>> =
+    LazyLock::new(|| RwLock::new("https://api.machines.dev".into()));
 
 static FLY_ORG_HTTP: LazyLock<reqwest::blocking::Client> = LazyLock::new(|| {
     reqwest::blocking::Client::builder()
@@ -190,8 +205,14 @@ pub fn fly_get<T: serde::de::DeserializeOwned>(token: &str, path: &str) -> Resul
     if !auth.starts_with("FlyV1 ") && !auth.starts_with("Bearer ") {
         auth = format!("Bearer {auth}");
     }
-    let base = FLY_API_BASE.read().unwrap_or_else(|e| e.into_inner()).clone();
-    let resp = FLY_ORG_HTTP.get(format!("{base}{path}")).header("Authorization", auth).send()?;
+    let base = FLY_API_BASE
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    let resp = FLY_ORG_HTTP
+        .get(format!("{base}{path}"))
+        .header("Authorization", auth)
+        .send()?;
     let st = resp.status().as_u16();
     if st != 200 {
         let b = crate::util::read_limited(resp, 200).unwrap_or_default();
@@ -211,8 +232,18 @@ fn now_text(now: GoTime) -> String {
 
 /// one org read directly. own (jarvis4-sessions, in the router's own org) is filled by the caller with
 /// machines_view's session-aware list.
-pub fn scan_fly_org(org: &str, token: &str, own: Option<&(dyn Fn() -> Vec<MachineView> + Sync)>, now: GoTime) -> FlyOrgView {
-    let mut o = FlyOrgView { org: org.into(), via: "fly".into(), checked_at: now_text(now), ..Default::default() };
+pub fn scan_fly_org(
+    org: &str,
+    token: &str,
+    own: Option<&(dyn Fn() -> Vec<MachineView> + Sync)>,
+    now: GoTime,
+) -> FlyOrgView {
+    let mut o = FlyOrgView {
+        org: org.into(),
+        via: "fly".into(),
+        checked_at: now_text(now),
+        ..Default::default()
+    };
     #[derive(Deserialize, Default)]
     #[serde(default)]
     struct App {
@@ -224,7 +255,10 @@ pub fn scan_fly_org(org: &str, token: &str, own: Option<&(dyn Fn() -> Vec<Machin
     struct Apps {
         apps: Vec<App>,
     }
-    let apps: Apps = match fly_get(token, &format!("/v1/apps?org_slug={}", jarvis_go::fmt::query_escape(org))) {
+    let apps: Apps = match fly_get(
+        token,
+        &format!("/v1/apps?org_slug={}", jarvis_go::fmt::query_escape(org)),
+    ) {
         Err(e) => {
             o.error = format!("{e:#}");
             return o;
@@ -251,13 +285,14 @@ pub fn scan_fly_org(org: &str, token: &str, own: Option<&(dyn Fn() -> Vec<Machin
                             av.machines = own();
                         }
                         _ => {
-                            let ms: Vec<FlyMachineDetail> = match fly_get(token, &format!("/v1/apps/{esc}/machines")) {
-                                Err(e) => {
-                                    av.error = format!("{e:#}");
-                                    vec![]
-                                }
-                                Ok(ms) => ms,
-                            };
+                            let ms: Vec<FlyMachineDetail> =
+                                match fly_get(token, &format!("/v1/apps/{esc}/machines")) {
+                                    Err(e) => {
+                                        av.error = format!("{e:#}");
+                                        vec![]
+                                    }
+                                    Ok(ms) => ms,
+                                };
                             av.machines = ms
                                 .iter()
                                 .filter(|m| m.state != "destroyed")
@@ -278,14 +313,20 @@ pub fn scan_fly_org(org: &str, token: &str, own: Option<&(dyn Fn() -> Vec<Machin
                         }
                         Ok(vs) => {
                             // deleted ones (pending_destroy) are not billed: not leaks
-                            av.volumes = vs.iter().filter(|v| !volume_gone(&v.state)).map(volume_view_of).collect();
+                            av.volumes = vs
+                                .iter()
+                                .filter(|v| !volume_gone(&v.state))
+                                .map(volume_view_of)
+                                .collect();
                         }
                     }
                     av
                 })
             })
             .collect();
-        hs.into_iter().map(|h| h.join().unwrap_or_default()).collect()
+        hs.into_iter()
+            .map(|h| h.join().unwrap_or_default())
+            .collect()
     });
     sort_apps(&mut out);
     o.apps = out;
@@ -303,7 +344,11 @@ pub fn fly_attention_count(orgs: &[FlyOrgView]) -> usize {
         n += usize::from(!o.error.is_empty());
         for a in &o.apps {
             n += usize::from(!a.error.is_empty());
-            n += a.machines.iter().filter(|m| !m.attention.is_empty()).count();
+            n += a
+                .machines
+                .iter()
+                .filter(|m| !m.attention.is_empty())
+                .count();
             n += a.volumes.iter().filter(|v| !v.attention.is_empty()).count();
         }
     }
@@ -314,7 +359,11 @@ impl Router {
     /// every org, the router's own first, then the read-only ones by name (personal among them), and personal with an
     /// error when the router has no token for it. own_ms: jarvis4-sessions as the caller just listed it
     /// (FLY_READ_TOKEN). → (the orgs, the configuration's error or "")
-    pub fn fly_orgs_overview(&self, own_ms: &[FlyMachineDetail], now: GoTime) -> (Vec<FlyOrgView>, String) {
+    pub fn fly_orgs_overview(
+        &self,
+        own_ms: &[FlyMachineDetail],
+        now: GoTime,
+    ) -> (Vec<FlyOrgView>, String) {
         let (toks, err) = fly_org_tokens();
         let own = || self.machines_view(own_ms, now);
         let names: Vec<&String> = toks.keys().filter(|o| *o != OWN_FLY_ORG).collect();

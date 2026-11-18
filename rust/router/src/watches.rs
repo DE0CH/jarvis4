@@ -16,8 +16,8 @@ use crate::http::Registrar;
 use crate::nethttp::{Req, W, write_error, write_json};
 use crate::router::{Router, bad};
 use crate::schedule::{
-    SCHEDULE_MAX_ATTEMPT, SCHEDULE_NAME_RE, Schedule, clean_prompt, iso, number, sched, sched_claim, sched_failed, sched_forget,
-    sched_release,
+    SCHEDULE_MAX_ATTEMPT, SCHEDULE_NAME_RE, Schedule, clean_prompt, iso, number, sched,
+    sched_claim, sched_failed, sched_forget, sched_release,
 };
 use crate::sessionapi::{no_session, schedule_err};
 use crate::state::Persisted;
@@ -92,20 +92,31 @@ pub fn normalize_watch(b: &Map<String, Value>, now: GoTime) -> Result<Watch> {
     if !SCHEDULE_NAME_RE.is_match(&name) {
         return Err(bad("name must be 1-40 chars of letters, digits, _ or -"));
     }
-    let script = b.get("script").and_then(Value::as_str).unwrap_or("").replace("\r\n", "\n").replace('\r', "\n");
+    let script = b
+        .get("script")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
     if script.trim().is_empty() {
-        return Err(bad("script is required (the check; exit 0 = condition met, 3 = give up, else not yet)"));
+        return Err(bad(
+            "script is required (the check; exit 0 = condition met, 3 = give up, else not yet)",
+        ));
     }
     if script.len() > WATCH_MAX_SCRIPT {
         return Err(bad(format!("script longer than {WATCH_MAX_SCRIPT} bytes")));
     }
     let prompt = clean_prompt(b.get("prompt"));
     if prompt.is_empty() {
-        return Err(bad("prompt is required — what the session should do when the condition is met"));
+        return Err(bad(
+            "prompt is required — what the session should do when the condition is met",
+        ));
     }
     let fail = clean_prompt(b.get("failPrompt"));
     if prompt.chars().count() > WATCH_MAX_PROMPT || fail.chars().count() > WATCH_MAX_PROMPT {
-        return Err(bad(format!("prompt or failPrompt longer than {WATCH_MAX_PROMPT} characters")));
+        return Err(bad(format!(
+            "prompt or failPrompt longer than {WATCH_MAX_PROMPT} characters"
+        )));
     }
     let mut interval = WATCH_DEFAULT_INTERVAL;
     if let Some(v) = b.get("interval").filter(|v| !v.is_null()) {
@@ -114,7 +125,9 @@ pub fn normalize_watch(b: &Map<String, Value>, now: GoTime) -> Result<Watch> {
     }
     let mut max_s = WATCH_DEFAULT_SECONDS;
     if let Some(v) = b.get("maxSeconds").filter(|v| !v.is_null()) {
-        let f = number(v).filter(|f| *f > 0.0).ok_or_else(|| bad("maxSeconds must be a positive number"))?;
+        let f = number(v)
+            .filter(|f| *f > 0.0)
+            .ok_or_else(|| bad("maxSeconds must be a positive number"))?;
         max_s = f.round().min(WATCH_MAX_SECONDS) as i64;
     }
     let ms = (now.unix_nanos() / 1_000_000) as i64;
@@ -140,13 +153,18 @@ pub fn watch_view(w: &Watch) -> Value {
 }
 
 pub fn sorted_watches(s: Option<&Schedule>) -> Vec<Watch> {
-    let mut out: Vec<Watch> = s.map(|s| s.watches.values().cloned().collect()).unwrap_or_default();
+    let mut out: Vec<Watch> = s
+        .map(|s| s.watches.values().cloned().collect())
+        .unwrap_or_default();
     out.sort_by_key(|w| w.armed_at);
     out
 }
 
 pub fn watches_view_of(d: &Persisted, sid: &str) -> Vec<Value> {
-    sorted_watches(d.schedules.get(sid)).iter().map(watch_view).collect()
+    sorted_watches(d.schedules.get(sid))
+        .iter()
+        .map(watch_view)
+        .collect()
 }
 
 // ---- running the checks --------------------------------------------------------------------------------------
@@ -162,15 +180,21 @@ pub struct CheckResult {
 }
 
 pub fn watch_runner_url() -> String {
-    crate::router::env("WATCH_URL", "http://10.77.0.3:30095").trim_end_matches('/').to_string()
+    crate::router::env("WATCH_URL", "http://10.77.0.3:30095")
+        .trim_end_matches('/')
+        .to_string()
 }
 
 pub type CheckFn = fn(&Watch) -> Result<CheckResult>;
 
 /// the real check: the watch runner runs it
 fn run_check_live(w: &Watch) -> Result<CheckResult> {
-    let c = reqwest::blocking::Client::builder().timeout(Duration::from_secs(WATCH_CHECK_TIMEOUT + 45)).build()?;
-    let body = jarvis_go::marshal(&json!({"script": w.script, "name": w.name, "timeout": WATCH_CHECK_TIMEOUT}));
+    let c = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(WATCH_CHECK_TIMEOUT + 45))
+        .build()?;
+    let body = jarvis_go::marshal(
+        &json!({"script": w.script, "name": w.name, "timeout": WATCH_CHECK_TIMEOUT}),
+    );
     let resp = c
         .post(format!("{}/run", watch_runner_url()))
         .header("Content-Type", "application/json")
@@ -180,7 +204,10 @@ fn run_check_live(w: &Watch) -> Result<CheckResult> {
     let st = resp.status().as_u16();
     let b = crate::util::read_limited(resp, 1 << 20).unwrap_or_default();
     if st != 200 {
-        return Err(anyhow!("the watch runner answered {st}: {}", crate::util::trim_to(&String::from_utf8_lossy(&b), 200)));
+        return Err(anyhow!(
+            "the watch runner answered {st}: {}",
+            crate::util::trim_to(&String::from_utf8_lossy(&b), 200)
+        ));
     }
     jarvis_go::unmarshal(&b).map_err(|e| anyhow!("the watch runner's answer: {e}"))
 }
@@ -257,12 +284,16 @@ impl Router {
     /// each due check runs (one at a time per watch); each met or given-up watch is delivered. → the threads started
     /// (tests wait for them)
     pub fn watch_tick(self: &Arc<Self>, now: GoTime) -> Vec<std::thread::JoinHandle<()>> {
-        let Ok(_g) = WATCH_TICKING.try_lock() else { return vec![] };
+        let Ok(_g) = WATCH_TICKING.try_lock() else {
+            return vec![];
+        };
         let now_ms = (now.unix_nanos() / 1_000_000) as i64;
         let items: Vec<(String, String, i64, bool)> = self.st.do_(|d| {
             let mut items = vec![];
             for (sid, s) in &d.schedules {
-                let Some(ss) = d.sessions.get(sid) else { continue };
+                let Some(ss) = d.sessions.get(sid) else {
+                    continue;
+                };
                 if ss.state == "destroyed" || ss.state == "destroying" {
                     continue;
                 }
@@ -297,11 +328,22 @@ impl Router {
 
     /// a copy of the armed watch, if it is still the one armed at armed_at
     pub fn watch_of(&self, sid: &str, name: &str, armed_at: i64) -> Option<Watch> {
-        self.st.do_(|d| d.schedules.get(sid).and_then(|s| s.watches.get(name)).filter(|w| w.armed_at == armed_at).cloned())
+        self.st.do_(|d| {
+            d.schedules
+                .get(sid)
+                .and_then(|s| s.watches.get(name))
+                .filter(|w| w.armed_at == armed_at)
+                .cloned()
+        })
     }
 
     pub fn check_watch(self: &Arc<Self>, sid: &str, name: &str, armed_at: i64, key: &str) {
-        let Some(w) = self.watch_of(sid, name, armed_at).filter(|w| w.outcome.is_empty()) else { return };
+        let Some(w) = self
+            .watch_of(sid, name, armed_at)
+            .filter(|w| w.outcome.is_empty())
+        else {
+            return;
+        };
         let res = run_check_hook(&w);
         let now = now_ms();
         let outcome = match &res {
@@ -311,7 +353,12 @@ impl Router {
             _ => "",
         };
         self.st.do_(|d| {
-            let Some(cur) = d.schedules.get_mut(sid).and_then(|s| s.watches.get_mut(name)).filter(|w| w.armed_at == armed_at) else {
+            let Some(cur) = d
+                .schedules
+                .get_mut(sid)
+                .and_then(|s| s.watches.get_mut(name))
+                .filter(|w| w.armed_at == armed_at)
+            else {
                 return; // cancelled or replaced meanwhile
             };
             cur.runs += 1;
@@ -335,7 +382,11 @@ impl Router {
         });
         match &res {
             _ if !outcome.is_empty() => {
-                crate::logf!("[watch] {sid} {} {outcome} after {} checks", jarvis_go::fmt::go_quote(name), w.runs + 1);
+                crate::logf!(
+                    "[watch] {sid} {} {outcome} after {} checks",
+                    jarvis_go::fmt::go_quote(name),
+                    w.runs + 1
+                );
                 self.deliver_watch(sid, name, armed_at, key); // now rather than at the next tick
             }
             Err(e) => crate::logf!("[watch] {sid} {}: {e:#}", jarvis_go::fmt::go_quote(name)),
@@ -351,14 +402,27 @@ impl Router {
     }
 
     pub fn deliver_watch(self: &Arc<Self>, sid: &str, name: &str, armed_at: i64, key: &str) {
-        let Some(w) = self.watch_of(sid, name, armed_at).filter(|w| !w.outcome.is_empty()) else { return };
-        let kind = if w.outcome == "gave-up" { "watch-fail" } else { "watch" };
+        let Some(w) = self
+            .watch_of(sid, name, armed_at)
+            .filter(|w| !w.outcome.is_empty())
+        else {
+            return;
+        };
+        let kind = if w.outcome == "gave-up" {
+            "watch-fail"
+        } else {
+            "watch"
+        };
         let res = match &w.signed {
             None => Err(anyhow!(crate::vouch::NOT_VOUCHED)),
             Some(s) => crate::schedule::deliver_vouched_hook(
                 self,
                 sid,
-                Delivery { kind: kind.into(), request: Some(s.clone()), ..Default::default() },
+                Delivery {
+                    kind: kind.into(),
+                    request: Some(s.clone()),
+                    ..Default::default()
+                },
             ),
         };
         let clear = || {
@@ -373,7 +437,10 @@ impl Router {
         let err = match res {
             Ok(()) => {
                 sched_forget(key);
-                crate::logf!("[watch] {sid} {} delivered ({kind})", jarvis_go::fmt::go_quote(name));
+                crate::logf!(
+                    "[watch] {sid} {} delivered ({kind})",
+                    jarvis_go::fmt::go_quote(name)
+                );
                 clear();
                 return;
             }
@@ -383,10 +450,18 @@ impl Router {
             return;
         }
         let drop = sched_failed(key);
-        crate::logf!("[watch] {sid} {} delivery failed (drop={drop}): {err:#}", jarvis_go::fmt::go_quote(name));
+        crate::logf!(
+            "[watch] {sid} {} delivery failed (drop={drop}): {err:#}",
+            jarvis_go::fmt::go_quote(name)
+        );
         let known = crate::flows::known_error(&err);
         self.st.do_(|d| {
-            if let Some(x) = d.schedules.get_mut(sid).and_then(|s| s.watches.get_mut(name)).filter(|x| x.armed_at == armed_at) {
+            if let Some(x) = d
+                .schedules
+                .get_mut(sid)
+                .and_then(|s| s.watches.get_mut(name))
+                .filter(|x| x.armed_at == armed_at)
+            {
                 x.last_error = format!("delivery: {known}");
             }
         });
@@ -424,7 +499,11 @@ impl Router {
 // ---- routes ------------------------------------------------------------------------------------------------
 
 /// a route of the session's own machine: f gets its session id (the path's {id} must be it)
-fn own(reg: &mut Registrar, pattern: &str, f: impl Fn(&Arc<Router>, &mut W, &mut Req, &str, &[u8]) + Send + Sync + 'static) {
+fn own(
+    reg: &mut Registrar,
+    pattern: &str,
+    f: impl Fn(&Arc<Router>, &mut W, &mut Req, &str, &[u8]) + Send + Sync + 'static,
+) {
     reg.m(pattern, move |r, w, req, machine, body| {
         let sid = match r.machine_session(machine) {
             Ok(s) => s,
@@ -439,7 +518,9 @@ fn own(reg: &mut Registrar, pattern: &str, f: impl Fn(&Arc<Router>, &mut W, &mut
 }
 
 pub fn register_watches(reg: &mut Registrar) {
-    reg.app("GET /api/sessions/{id}/watches", |r, w, req| r.get_watches(w, &req.path_value("id")));
+    reg.app("GET /api/sessions/{id}/watches", |r, w, req| {
+        r.get_watches(w, &req.path_value("id"))
+    });
     reg.app("DELETE /api/sessions/{id}/watches/{name}", |r, w, req| {
         r.delete_watch(w, &req.path_value("id"), &req.path_value("name"))
     });
@@ -451,16 +532,34 @@ pub fn register_watches(reg: &mut Registrar) {
             "a watch is armed by the session itself (scripts/schedule-watch.sh): only its own signed request can be delivered into it",
         )
     });
-    own(reg, "GET /m/api/sessions/{id}/watches", |r, w, _, sid, _| r.get_watches(w, sid));
-    own(reg, "POST /m/api/sessions/{id}/watches", |r, w, req, sid, b| {
-        let res = crate::sessionapi::decode_map(b).and_then(|m| normalize_watch(&m, GoTime::now())).and_then(|mut wt| {
-            wt.signed = Some(crate::vouch::signed_request_of(req, &req.header("X-Machine"), b));
-            r.arm_watch(sid, &wt).map(|()| wt)
-        });
-        match res {
-            Err(e) => schedule_err(w, &e),
-            Ok(wt) => write_json(w, 200, &json!({"ok": true, "watch": watch_view(&wt)})),
-        }
-    });
-    own(reg, "DELETE /m/api/sessions/{id}/watches/{name}", |r, w, req, sid, _| r.delete_watch(w, sid, &req.path_value("name")));
+    own(
+        reg,
+        "GET /m/api/sessions/{id}/watches",
+        |r, w, _, sid, _| r.get_watches(w, sid),
+    );
+    own(
+        reg,
+        "POST /m/api/sessions/{id}/watches",
+        |r, w, req, sid, b| {
+            let res = crate::sessionapi::decode_map(b)
+                .and_then(|m| normalize_watch(&m, GoTime::now()))
+                .and_then(|mut wt| {
+                    wt.signed = Some(crate::vouch::signed_request_of(
+                        req,
+                        &req.header("X-Machine"),
+                        b,
+                    ));
+                    r.arm_watch(sid, &wt).map(|()| wt)
+                });
+            match res {
+                Err(e) => schedule_err(w, &e),
+                Ok(wt) => write_json(w, 200, &json!({"ok": true, "watch": watch_view(&wt)})),
+            }
+        },
+    );
+    own(
+        reg,
+        "DELETE /m/api/sessions/{id}/watches/{name}",
+        |r, w, req, sid, _| r.delete_watch(w, sid, &req.path_value("name")),
+    );
 }
