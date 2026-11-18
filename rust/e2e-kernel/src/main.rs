@@ -730,6 +730,8 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
             kv("FABRIC_HERMIT_MAGPIE_TOKEN", &fabric_tokens.0),
             kv("FABRIC_MACHINE_ADDR", &FABRIC_LISTENER),
             kv("FABRIC_SESSION_IMAGE", &fabric_image_ref),
+            // a session the run did not name a runner for (one hermit-jarvis proposes for a chat) starts here too
+            "DEFAULT_RUNNER=fabric".into(),
         ]);
     }
     let uid = nix::unistd::Uid::current().to_string();
