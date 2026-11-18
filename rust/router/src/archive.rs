@@ -212,6 +212,11 @@ pub fn sha256hex(p: &std::path::Path) -> Result<String> {
 }
 
 impl Router {
+    /// RECORDS_OFF=1, or this router's own switch (tests)
+    pub fn records_off(&self) -> bool {
+        records_off() || self.records_off.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub fn box_(&self) -> Option<Arc<StorageBox>> {
         if let Some(b) = self
             .box_override
@@ -277,7 +282,7 @@ impl Router {
     /// the session's archive onto the Storage Box (archivetar.rs): its latest snapshot with every live copy it doesn't
     /// hold, or the live copies alone. None when there is nothing to archive or records are off.
     pub fn archive(self: &Arc<Self>, id: &str) -> Result<Option<ArchiveInfo>> {
-        if records_off() {
+        if self.records_off() {
             return Ok(None);
         }
         let Some(b) = self.box_() else {

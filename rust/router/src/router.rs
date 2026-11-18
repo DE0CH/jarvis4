@@ -140,6 +140,8 @@ pub struct Router {
     pub next: crate::nextcore::NextCores,
     /// archive.rs: the Storage Box this router uses instead of the env's (tests: Some(None) = none)
     pub box_override: RwLock<Option<Option<Arc<crate::storagebox::StorageBox>>>>,
+    /// archive.rs: this router keeps no records on the Storage Box, as RECORDS_OFF=1 (tests)
+    pub records_off: std::sync::atomic::AtomicBool,
     /// discord.rs: this router's DMs go here instead of the bot (tests)
     pub dm_hook: RwLock<Option<crate::discord::DmHook>>,
     pub muxes: OnceLock<(Arc<Mux>, Arc<Mux>)>,
@@ -193,6 +195,7 @@ impl Router {
             next: crate::nextcore::NextCores::from_env(),
             box_override: RwLock::new(None),
             dm_hook: RwLock::new(None),
+            records_off: std::sync::atomic::AtomicBool::new(false),
             muxes: OnceLock::new(),
             app_patterns: OnceLock::new(),
             sup: Default::default(),

@@ -100,7 +100,7 @@ impl Router {
         let mut stored = false;
         let mut werr: Option<anyhow::Error> = None;
         if let Some(b) = self.box_()
-            && !crate::archive::records_off()
+            && !self.records_off()
         {
             let dir = live_dir(&sid);
             let known = LIVE_DIRS

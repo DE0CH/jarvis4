@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 /// how often a waiter looks again without a notification, in ms (tests shorten it)
 pub static MQ_RECHECK_MS: AtomicU64 = AtomicU64::new(2000);
 
-fn mq_recheck() -> Duration {
+pub fn mq_recheck() -> Duration {
     Duration::from_millis(MQ_RECHECK_MS.load(Ordering::Relaxed))
 }
 

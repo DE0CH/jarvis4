@@ -38,7 +38,7 @@ fn new_seal_key(raw: &[u8]) -> Result<SealKey> {
     })
 }
 
-fn key_from(v: &str) -> Result<SealKey> {
+pub fn key_from(v: &str) -> Result<SealKey> {
     let raw = base64::engine::general_purpose::STANDARD
         .decode(v.trim())
         .map_err(|_| anyhow!("seal key: not base64"))?;

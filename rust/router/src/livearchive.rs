@@ -13,7 +13,7 @@
 //!     the dir goes only once it is empty. Anything else (no archive, a failed one, a file that came or changed since)
 //!     stays, and the record says so (Record.live_kept). There is no other path that deletes .live copies.
 
-use crate::archive::{ArchiveInfo, records_off};
+use crate::archive::ArchiveInfo;
 use crate::livesync::live_dir;
 use crate::router::Router;
 use crate::storagebox::StorageBox;
@@ -154,7 +154,7 @@ impl Router {
         let Some(b) = self.box_() else {
             return String::new();
         };
-        if records_off() {
+        if self.records_off() {
             return String::new();
         }
         let dir = live_dir(sid);

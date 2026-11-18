@@ -903,3 +903,45 @@ impl Rig {
         }
     }
 }
+
+// ---- the machines' queue, played by the test ----------------------------------------------------------------
+
+/// the machine's oldest untaken row of this kind (the tests play the machine for one kind at a time)
+pub fn mq_take_kind(r: &Router, machine: &str, kind: &str) -> Option<String> {
+    let mut c = r.st.db()?.conn().ok()?;
+    let row = c
+        .query_opt(
+            "UPDATE machine_queue SET taken_at = now() WHERE id = (SELECT id FROM machine_queue
+		WHERE machine_id = $1 AND kind = $2 AND taken_at IS NULL ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING body::text",
+            &[&machine, &kind],
+        )
+        .ok()??;
+    Some(row.get(0))
+}
+
+pub fn mq_wait_kind(
+    r: &Router,
+    machine: &str,
+    kind: &str,
+    wait: std::time::Duration,
+) -> Option<String> {
+    let end = std::time::Instant::now() + wait;
+    loop {
+        if let Some(b) = mq_take_kind(r, machine, kind) {
+            return Some(b);
+        }
+        if std::time::Instant::now() > end {
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
+/// the machine's next supervisor command, if one waits now
+pub fn take_cmd(r: &Router, machine: &str) -> Option<String> {
+    mq_take_kind(r, machine, "command").and_then(|b| serde_json::from_str(&b).ok())
+}
+
+pub fn wait_cmd(r: &Router, machine: &str, wait: std::time::Duration) -> Option<String> {
+    mq_wait_kind(r, machine, "command", wait).and_then(|b| serde_json::from_str(&b).ok())
+}
