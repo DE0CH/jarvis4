@@ -80,15 +80,29 @@ func TestSizeBlocksMatch(t *testing.T) {
 		return s[i:j]
 	}
 	ours := block("sizes.go")
-	for _, p := range []string{filepath.Join("..", "core", "fly.go"), filepath.Join("..", "machine", "deliver.go")} {
-		if block(p) != ours {
-			t.Fatalf("%s's sizes block differs from router/sizes.go's", p)
+	if block(filepath.Join("..", "core", "fly.go")) != ours {
+		t.Fatal("core/fly.go's sizes block differs from router/sizes.go's")
+	}
+	// the machine is Rust (rust/machine/src/deliver.rs): the same named sizes, the doubling past large and the text
+	rs, err := os.ReadFile(filepath.Join("..", "rust", "machine", "src", "deliver.rs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, need := range []string{`("small", 2), ("medium", 4), ("large", 8)`, "(16..=1 << 20).contains(&n) || n & (n - 1) != 0",
+		`format!("{size} ({gb} GB)")`, `format!("{} GB", size_mem_gb(size))`} {
+		if !strings.Contains(string(rs), need) {
+			t.Fatalf("rust/machine/src/deliver.rs's sizes differ from router/sizes.go's (no %s)", need)
 		}
+	}
+	if namedSizes["small"] != 2 || namedSizes["medium"] != 4 || namedSizes["large"] != 8 || len(namedSizes) != 3 {
+		t.Fatal("router/sizes.go's named sizes changed: change rust/machine/src/deliver.rs's NAMED_SIZES and this test with them")
 	}
 	// the kernel's spawner makes guests only (no Upgrade): its block is router/sizes.go's without the parts it doesn't
 	// use, each part it has the same
 	kernel := block(filepath.Join("..", "kernel", "spawner", "fly.go"))
-	for _, part := range strings.Split(kernel, "\n\n") {
+	// past its header line, which names where the other copies live (a kernel change needs Deyao's release)
+	_, kernelBody, _ := strings.Cut(kernel, "\n")
+	for _, part := range strings.Split(kernelBody, "\n\n") {
 		if !strings.Contains(ours, part) {
 			t.Fatalf("kernel/spawner/fly.go's sizes block has a part router/sizes.go's lacks:\n%s", part)
 		}

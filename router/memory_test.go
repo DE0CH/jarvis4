@@ -151,15 +151,27 @@ func TestMemoryReportViewAndUpgradeRefusals(t *testing.T) {
 
 // the "upgraded" text is built on both sides; the core attests the router's bytes and the machine refuses others
 func TestUpgradedTextMatchesMachine(t *testing.T) {
-	src, err := os.ReadFile(filepath.Join("..", "machine", "deliver.go"))
+	// the machine is Rust (rust/machine/src/deliver.rs upgraded_text): the same string literals in order, its {} for
+	// the router's %s
+	src, err := os.ReadFile(filepath.Join("..", "rust", "machine", "src", "deliver.rs"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := regexp.MustCompile(`(?s)func upgradedText\(from, to string\) \(string, error\) \{.*?return (fmt\.Sprintf.*?), nil\n\}`).FindSubmatch(src)
+	literals := func(body []byte) string {
+		var b strings.Builder
+		for _, m := range regexp.MustCompile(`"((?:[^"\\]|\\.)*)"`).FindAllSubmatch(body, -1) {
+			b.Write(m[1])
+		}
+		return strings.ReplaceAll(b.String(), "{}", "%s")
+	}
+	body := regexp.MustCompile(`(?s)pub fn upgraded_text\(from: &str, to: &str\) -> Result<String> \{.*?Ok\((.*?)\)\n\}`).FindSubmatch(src)
 	mine, _ := os.ReadFile("memory.go")
 	ours := regexp.MustCompile(`(?s)func upgradedText\(from, to string\) string \{\n\treturn (fmt\.Sprintf.*?)\n\}`).FindSubmatch(mine)
-	if body == nil || ours == nil || string(body[1]) != string(ours[1]) {
-		t.Fatal("router/memory.go upgradedText and rust/machine/src/deliver.rs upgraded_text differ")
+	if body == nil || ours == nil {
+		t.Fatal("upgradedText or upgraded_text not found")
+	}
+	if l, r := literals(body[1]), strings.ReplaceAll(literals(ours[1]), `"`, ""); l != r || !strings.Contains(l, "ran out of memory") {
+		t.Fatalf("router/memory.go upgradedText and rust/machine/src/deliver.rs upgraded_text differ:\n%s\n%s", r, l)
 	}
 	if _, _, err := attested(Delivery{Kind: "upgraded", From: "medium", To: "evil"}); err == nil {
 		t.Fatal("a size outside the three must be refused")
