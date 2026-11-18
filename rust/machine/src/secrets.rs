@@ -323,6 +323,17 @@ fn handle_secrets(c: &Client, conn: UnixStream) {
     let resp = answer_secrets(c, &req, pid, uid, &format!("pid {pid} {comm}"));
     let mut w = &conn;
     let _ = w.write_all(format!("{}\n", gojson::marshal(&resp)).as_bytes());
+    close_read(&conn);
+}
+
+/// End a one-request connection after its answer: shut the write half (the client reads its end of file), then read
+/// what the client still sends until it closes. read_one stops at the end of the JSON value, so the request's newline
+/// is still unread, and a unix socket closed with unread input resets the client's read: session-secret got
+/// ConnectionResetError after the whole answer.
+pub fn close_read(conn: &UnixStream) {
+    let _ = conn.shutdown(std::net::Shutdown::Write);
+    let _ = conn.set_read_timeout(Some(Duration::from_secs(5)));
+    let _ = std::io::copy(&mut conn.take(1 << 16), &mut std::io::sink());
 }
 
 /// One request, logged with the key names and the caller, never a value. Two kinds of request, kept strictly apart

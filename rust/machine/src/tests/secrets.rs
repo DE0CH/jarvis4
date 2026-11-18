@@ -51,6 +51,25 @@ fn the_supervisor_serves_secrets_from_ram() {
     }
     let r = ask("names", &[]).unwrap();
     assert_eq!(r.names.join(","), "API_KEY,OTHER");
+    // a client that ends its request with a newline and reads the answer to the end (session-secret, pull-secrets)
+    // gets the answer and then an end of file, never a reset (the newline left unread reset every such client)
+    for req in [
+        "{\"op\":\"names\"}\n",
+        "{\"op\":\"get\",\"keys\":[\"API_KEY\"]}\n",
+    ] {
+        use std::io::{Read, Write};
+        let mut s = std::os::unix::net::UnixStream::connect(crate::paths::secrets_sock()).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        s.write_all(req.as_bytes()).unwrap();
+        let mut b = vec![];
+        s.read_to_end(&mut b)
+            .unwrap_or_else(|e| panic!("reading the answer to {req:?} to the end: {e}"));
+        assert!(
+            String::from_utf8_lossy(&b).starts_with("{\"ok\":true"),
+            "{req:?}: {}",
+            String::from_utf8_lossy(&b)
+        );
+    }
     // named keys: exactly those
     let r = ask("get", &["API_KEY"]).unwrap();
     assert_eq!(r.secrets.len(), 1);
