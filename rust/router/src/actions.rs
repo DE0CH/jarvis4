@@ -127,12 +127,12 @@ pub fn register_actions(reg: &mut Registrar) {
         crate::inbox::write_denied(w, r.deny_request(&req.path_value("id")));
     });
     act(reg, "POST /m/api/actions/sessions", |r, w, req, c, b| {
-        let signed = crate::outcomes::signed_request_of(req, &req.header("X-Machine"), b);
+        let signed = Some(crate::vouch::signed_request_of(req, &req.header("X-Machine"), b));
         let owner = format!("actions-{}", c.session);
         r.propose_session(w, c, &owner, b, signed);
     });
     act(reg, "POST /m/api/actions/requests/batch", |r, w, req, c, b| {
-        let signed = crate::outcomes::signed_request_of(req, &req.header("X-Machine"), b);
+        let signed = Some(crate::vouch::signed_request_of(req, &req.header("X-Machine"), b));
         r.serve_file_batch(w, c, &req.method, &path(req), b, signed);
     });
     act(reg, "POST /m/api/actions/requests/batches/{id}/deny", |r, w, req, _, _| {
@@ -141,13 +141,13 @@ pub fn register_actions(reg: &mut Registrar) {
     for intent in crate::inbox::INTENTS {
         let it = intent.to_string();
         act(reg, &format!("POST /m/api/actions/requests/{intent}"), move |r, w, req, c, b| {
-            let signed = crate::outcomes::signed_request_of(req, &req.header("X-Machine"), b);
+            let signed = Some(crate::vouch::signed_request_of(req, &req.header("X-Machine"), b));
             r.file_intent(w, &req.method, &path(req), &it, c, b, signed);
         });
     }
     // any app API call (apicalls.rs): filed for Deyao's approval; its result read back by the same session
     act(reg, "POST /m/api/actions/requests/call", |r, w, req, c, b| {
-        let signed = crate::outcomes::signed_request_of(req, &req.header("X-Machine"), b);
+        let signed = Some(crate::vouch::signed_request_of(req, &req.header("X-Machine"), b));
         r.file_call(w, c, &path(req), b, signed);
     });
     act(reg, "GET /m/api/actions/requests/call/{id}", |r, w, req, c, _| {

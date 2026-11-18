@@ -17,7 +17,7 @@
 //! 2026-10-20 (no __ACCOUNT__ in its status) restarts its host on the new account instead.
 
 use crate::autopilot::Registry;
-use crate::claudeaccounts::LoginHub;
+use crate::claudelogin::LoginHub;
 use crate::ctx::Ctx;
 use crate::http::{Registrar, decode_body_strict};
 use crate::inbox::{ApiCall, Origin, RequestParams};
@@ -66,18 +66,18 @@ pub fn signal_account_switch() {
 }
 
 /// a ctx cancelled once any session's account changes after gen (the watcher ends with ctx)
-fn cancel_on_switch(ctx: &Ctx, gen: u64) {
+fn cancel_on_switch(ctx: &Ctx, r#gen: u64) {
     let c = ctx.clone();
     std::thread::spawn(move || {
         let mut g = ACCT_SWITCH.0.lock().unwrap_or_else(|e| e.into_inner());
-        while *g == gen && !c.cancelled() {
+        while *g == r#gen && !c.cancelled() {
             g = ACCT_SWITCH
                 .1
                 .wait_timeout(g, Duration::from_secs(1))
                 .map(|(g, _)| g)
                 .unwrap_or_else(|e| e.into_inner().0);
         }
-        if *g != gen {
+        if *g != r#gen {
             c.cancel();
         }
     });
@@ -147,7 +147,7 @@ impl Router {
         have: i64,
         ack: i64,
         wait: Duration,
-    ) -> (crate::claudeaccounts::LoginAnswer, bool) {
+    ) -> (crate::claudelogin::LoginAnswer, bool) {
         let c = ctx.child();
         cancel_on_switch(&c, account_switch_gen());
         let a = h.poll(&c, &format!("m:{machine}"), have, ack, wait);
@@ -200,7 +200,7 @@ impl Router {
             crate::logf!("[account] {id}: Claude account {} → {store}", or_none(&from));
         };
         let stores = s.stores.clone().unwrap_or_default();
-        let in_cert = crate::claudestores::claude_store_in_cert();
+        let in_cert = *crate::claudestores::CLAUDE_STORE_IN_CERT;
         if s.machine_id.is_empty() {
             if s.state != "paused" && s.state != "failed" {
                 return Err(anyhow!(
@@ -308,7 +308,7 @@ impl Router {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn run_account_switch(
+    pub fn run_account_switch(
         self: &Arc<Self>,
         j: &WakeJob,
         id: &str,
@@ -325,7 +325,7 @@ impl Router {
                 before = g;
             }
         }
-        let want = crate::claudeaccounts::account_uuid(&to.current().account);
+        let want = crate::claudelogin::account_uuid(&to.current().account);
         self.ops.phase(j, "taking the login", None);
         let g = self
             .wait_reg(id, machine, ms(&SWAP_LOGIN_WAIT_MS), |g| {
@@ -359,7 +359,7 @@ impl Router {
             return Ok(());
         }
         self.ops.phase(j, "delivering continue", None);
-        self.deliver_canned(id, crate::deliveries::Delivery { kind: "continue".into(), ..Default::default() }, "continue")
+        self.deliver_canned(id, crate::vouch::Delivery { kind: "continue".into(), ..Default::default() }, "continue")
             .map_err(|e| anyhow!("delivering \"continue\": {e:#}"))?;
         crate::logf!("[account] {id}: \"continue\" delivered");
         Ok(())

@@ -77,17 +77,9 @@ impl std::fmt::Display for Busy {
 
 impl std::error::Error for Busy {}
 
-/// a caller's mistake, said as such (400; schedule.go's badRequest)
-#[derive(Debug)]
-pub struct BadReq(pub String);
 
-impl std::fmt::Display for BadReq {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for BadReq {}
+/// a caller asked for something wrong (400): Go's badRequest, one type with inbox.rs's
+pub use crate::inbox::BadRequest as BadReq;
 
 pub fn bad(msg: impl Into<String>) -> anyhow::Error {
     BadReq(msg.into()).into()
@@ -216,6 +208,11 @@ impl Router {
         *r.core.on_line_seq.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(move |s| lk2.seen(s)));
         let _ = r.lines.set(lk);
         r
+    }
+
+    /// this router as an Arc (every Router is made by Router::new, which keeps its own weak reference)
+    pub fn arc(&self) -> Arc<Router> {
+        self.me.get().and_then(std::sync::Weak::upgrade).unwrap_or_else(|| unreachable!("a Router made outside Router::new"))
     }
 
     pub fn lines(&self) -> Option<&Arc<LineKeeper>> {

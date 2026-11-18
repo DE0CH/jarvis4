@@ -414,7 +414,7 @@ impl Router {
         };
         for fid in x.followups {
             let mut f = CallFollowup { id: fid.clone(), ..Default::default() };
-            if let Some(it) = self.inbox_item(&fid) {
+            if let Some(it) = self.arc().inbox_item(&fid) {
                 f.open = true;
                 f.item = Some(it);
             }

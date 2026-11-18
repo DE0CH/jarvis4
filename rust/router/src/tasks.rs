@@ -215,7 +215,7 @@ pub fn parse_template(name: &str, spec: &[u8], files: &[String]) -> Result<TaskT
         return Err(format!("prompt file {} is not in the template dir", jarvis_go::fmt::go_quote(&t.prompt)));
     }
     for st in s.stores {
-        if !TASK_STORE_RE.is_match(&st) || st == crate::claudestores::FLY_STORE {
+        if !TASK_STORE_RE.is_match(&st) || st == crate::policy::FLY_STORE {
             return Err(format!("bad store name {}", jarvis_go::fmt::go_quote(&st)));
         }
         t.stores.push(st);
@@ -380,7 +380,7 @@ pub fn check_params(t: &TaskTemplate, input: &Map<String, Value>) -> Result<Map<
     let mut out = Map::new();
     let empty = |v: &Value| v.is_null() || v.as_str() == Some("");
     let allowed = |f: &TaskField, v: &str| match f.options_from.as_str() {
-        "stores" => TASK_STORE_RE.is_match(v) && v != crate::claudestores::FLY_STORE,
+        "stores" => TASK_STORE_RE.is_match(v) && v != crate::policy::FLY_STORE,
         "content" => crate::content::content_name_ok(v),
         _ => f.options.iter().any(|o| o.value == v),
     };

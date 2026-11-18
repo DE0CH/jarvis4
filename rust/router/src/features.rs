@@ -131,7 +131,7 @@ impl Router {
     /// a text built into the session image ("continue"), as a delivery the core attests: the router picks when, never
     /// what
     pub fn deliver_canned(&self, session: &str, d: crate::types::Delivery, _text: &str) -> anyhow::Result<()> {
-        self.deliver_vouched(session, d)
+        self.arc().deliver_vouched(session, d)
     }
 
     /// the core answers and was set up (Reset or Recover): its state names a master key

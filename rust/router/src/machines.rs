@@ -267,7 +267,7 @@ pub fn register_machines(reg: &mut Registrar) {
             w,
             200,
             &json!({"app": SESSIONS_APP, "org": crate::flyorgs::OWN_FLY_ORG, "machines": r.machines_view(&ms, now), "orgs": orgs,
-                "runners": runners, "attention": crate::flyorgs::fly_attention_count(&orgs) + runner_attention,
+                "runners": runners, "attention": crate::flyorgs::fly_attention_count(&orgs) as i64 + runner_attention,
                 "configError": config_err, "checkedAt": now.utc()}),
         );
     });

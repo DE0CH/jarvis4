@@ -173,7 +173,7 @@ struct Hub {
     f: LoginFile,
     /// bumped (and the condvar woken) on every change (pair, phase, acks)
     ver: u64,
-    gen: i64,
+    r#gen: i64,
     preparing: bool,
     acks: BTreeMap<String, i64>,
     seen: BTreeMap<String, GoTime>,
@@ -361,7 +361,7 @@ impl LoginHub {
         let mut g = self.lock();
         loop {
             g.seen.insert(who.to_string(), GoTime::now());
-            if g.preparing && ack == g.gen && g.acks.get(who).copied().unwrap_or(0) != ack {
+            if g.preparing && ack == g.r#gen && g.acks.get(who).copied().unwrap_or(0) != ack {
                 g.acks.insert(who.to_string(), ack);
                 self.broadcast(&mut g);
             }
@@ -371,10 +371,10 @@ impl LoginHub {
                 credentials: if newer { for_machine(&g.f.credentials) } else { String::new() },
                 account: g.f.account.clone(),
                 expires_at: exp,
-                gen: g.gen,
+                r#gen: g.r#gen,
                 preparing: g.preparing,
             };
-            let ready = newer || (g.preparing && ack != g.gen) || (!g.preparing && ack != 0);
+            let ready = newer || (g.preparing && ack != g.r#gen) || (!g.preparing && ack != 0);
             if ready || wait.is_zero() {
                 return a;
             }
@@ -426,8 +426,8 @@ impl LoginHub {
             }
         }
         // 1. prepare: every participant takes its CLI's refresh lock and acknowledges
-        g.gen += 1;
-        let gen = g.gen;
+        g.r#gen += 1;
+        let r#gen = g.r#gen;
         g.preparing = true;
         let want: Vec<String> = g
             .seen
@@ -437,7 +437,7 @@ impl LoginHub {
             .collect();
         self.broadcast(&mut g);
         drop(g);
-        let acked = self.wait_acks(gen, &want, LOGIN_ACK_WAIT);
+        let acked = self.wait_acks(r#gen, &want, LOGIN_ACK_WAIT);
 
         // 2. refresh, and keep the answer before anything else (the old refresh token is dead from here on)
         let res = oauth_refresh(&creds);
@@ -496,13 +496,13 @@ impl LoginHub {
     }
 
     /// until every participant in want acknowledged gen, or d passed; returns how many did
-    fn wait_acks(&self, gen: i64, want: &[String], d: Duration) -> usize {
+    fn wait_acks(&self, r#gen: i64, want: &[String], d: Duration) -> usize {
         let end = Instant::now() + d;
         let mut g = self.lock();
         loop {
             let n = want
                 .iter()
-                .filter(|w| g.acks.get(*w).copied() == Some(gen))
+                .filter(|w| g.acks.get(*w).copied() == Some(r#gen))
                 .count();
             let now = Instant::now();
             if n == want.len() || now >= end {
@@ -1091,7 +1091,7 @@ pub struct LoginAnswer {
     pub account: String,
     #[serde(rename = "expiresAt")]
     pub expires_at: i64,
-    pub gen: i64,
+    pub r#gen: i64,
     pub preparing: bool,
 }
 

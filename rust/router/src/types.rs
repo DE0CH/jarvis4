@@ -1,0 +1,31 @@
+//! The types the state's records are made of, from the files that own them (Go had them all in package main).
+
+pub use crate::apicalls::CallResult;
+pub use crate::archive::{ArchiveInfo, RestoreMark};
+pub use crate::autopilot::Liveness;
+pub use crate::awsrunner::AwsWg;
+pub use crate::batches::Batch;
+pub use crate::bbbudget::BBBudgetState;
+pub use crate::budget::BudgetState;
+pub use crate::claimdevice::MasterCert;
+pub use crate::core::Doc;
+pub use crate::devices::Device;
+pub use crate::fabricrunner::FabricLine;
+pub use crate::grants::StoredGrant;
+pub use crate::inbox::{InboxRequest, Origin};
+pub use crate::kernelflip::KernelFlip;
+pub use crate::kernelline::KernelLine;
+pub use crate::leases::LeaseState;
+pub use crate::livesync::LiveSync;
+pub use crate::lostmachine::LostMachine;
+pub use crate::messages::{MessageRule, PendingMessage};
+pub use crate::outcomes::Outcome;
+pub use crate::roster::{RosterCurrent, RosterFiling};
+pub use crate::schedule::Schedule;
+pub use crate::sessionops::SessionOps;
+pub use crate::snapsafe::Volume;
+pub use crate::state::Session;
+pub use crate::tasks::TaskState;
+pub use crate::uploads::Upload;
+pub use crate::vouch::{Delivery, TaskConfig};
+pub use jarvis_doc::gv::Signed as GvSigned;

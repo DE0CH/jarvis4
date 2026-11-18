@@ -49,7 +49,7 @@ pub struct Caller {
 }
 
 /// the endpoint the caller called and its arguments (the parsed ones, without the explanation)
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ApiCall {
     pub method: String,
@@ -58,7 +58,7 @@ pub struct ApiCall {
     pub args: Map<String, Value>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Origin {
     pub caller: Caller,
@@ -474,33 +474,6 @@ pub fn write_denied(w: &mut W, err: Result<()>) {
     }
 }
 
-/// a caller asked for something wrong (400; router.rs `bad`)
-pub use crate::router::BadReq as BadRequest;
-
-/// the caller may not do this (403)
-#[derive(Debug, Clone)]
-pub struct Forbidden(pub String);
-
-impl std::fmt::Display for Forbidden {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for Forbidden {}
-
-/// a caller over its limit of waiting asks (429)
-#[derive(Debug, Clone)]
-pub struct TooMany(pub String);
-
-impl std::fmt::Display for TooMany {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for TooMany {}
-
 pub fn write_request_err(w: &mut W, err: &anyhow::Error) {
     if let Some(t) = err.downcast_ref::<TooMany>() {
         crate::nethttp::write_error(w, 429, &t.0);
@@ -647,10 +620,10 @@ impl Router {
                 Ok(out)
             }
             crate::storerestore::REQUEST_KIND_RESTORE => {
-                if p.store == crate::claudestores::FLY_STORE {
+                if p.store == crate::policy::FLY_STORE {
                     return Err(anyhow!(
                         "store {} (the core's Fly token) is never restored: write it again with infra/setup.py backup-core",
-                        crate::claudestores::FLY_STORE
+                        crate::policy::FLY_STORE
                     ));
                 }
                 if !crate::storedocs::store_name_ok(&p.store) {
@@ -1081,7 +1054,7 @@ pub fn register_inbox(reg: &mut Registrar) {
         write_json(w, 200, &json!({"requests": items, "batches": r.inbox_batches(Some(&c))}));
     });
     own(reg, "POST /m/api/requests/batch", move |r, w, req, sid, b| {
-        let signed = crate::outcomes::signed_request_of(req, &req.header("X-Machine"), b);
+        let signed = Some(crate::vouch::signed_request_of(req, &req.header("X-Machine"), b));
         let p = req.path.strip_prefix("/m").unwrap_or(&req.path).to_string();
         r.serve_file_batch(w, mine(sid), &req.method.clone(), &p, b, signed);
     });
@@ -1090,7 +1063,7 @@ pub fn register_inbox(reg: &mut Registrar) {
     });
     for it in INTENTS {
         own(reg, &format!("POST /m/api/requests/{it}"), move |r, w, req, sid, b| {
-            let signed = crate::outcomes::signed_request_of(req, &req.header("X-Machine"), b);
+            let signed = Some(crate::vouch::signed_request_of(req, &req.header("X-Machine"), b));
             let p = req.path.strip_prefix("/m").unwrap_or(&req.path).to_string();
             r.file_intent(w, &req.method.clone(), &p, it, mine(sid), b, signed);
         });
@@ -1113,7 +1086,7 @@ pub fn register_inbox(reg: &mut Registrar) {
                 path: "/api/requests/add-store".into(),
                 args: obj(json!({"store": i.store})),
             },
-            signed: crate::outcomes::signed_request_of(req, &req.header("X-Machine"), b),
+            signed: Some(crate::vouch::signed_request_of(req, &req.header("X-Machine"), b)),
             ..Default::default()
         };
         match r.add_store_from(&machine, &i.store, o, &expl, "") {

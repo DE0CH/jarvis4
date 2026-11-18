@@ -469,7 +469,8 @@ pub fn register_archive(reg: &mut Registrar) {
             Ok(rd) => {
                 w.set_header("X-Snapshot-Sig", &s.sig);
                 w.set_header("Content-Type", "application/gzip");
-                crate::util::serve_content(w, req, s.committed_at, rd);
+                let size = rd.size;
+                crate::util::serve_content(w, req, s.committed_at, rd, size);
             }
         }
     });

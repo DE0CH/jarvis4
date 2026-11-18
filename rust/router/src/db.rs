@@ -55,7 +55,6 @@ pub fn migrations() -> Result<Vec<Migration>> {
 }
 
 /// what the pool hands out: a plain or a TLS connection (sslmode=require: encrypted, nothing verified, as libpq)
-#[derive(Clone)]
 pub enum Manager {
     Plain(r2d2_postgres::PostgresConnectionManager<NoTls>),
     Tls(r2d2_postgres::PostgresConnectionManager<tokio_postgres_rustls::MakeRustlsConnect>),

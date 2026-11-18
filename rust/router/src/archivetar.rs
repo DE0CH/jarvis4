@@ -539,7 +539,7 @@ impl Router {
             if let Some(t) = &tail {
                 info.last = crate::tails::snippet(t);
             }
-            meta.insert("line".into(), json!(crate::vouch::cert_field(Some(cert), "line")));
+            meta.insert("line".into(), json!(crate::grants::cert_field(Some(cert), "line")));
             meta.insert("snapshotMachine".into(), json!(machine));
             meta.insert("snapshotAt".into(), json!(info.snapshot_at));
             meta.insert("unresolvedArtifactLinks".into(), json!(lay.unresolved));
@@ -567,7 +567,7 @@ impl Router {
             }
             why.push_str(": this record holds only its live transcript copies, so it can't be restored");
             info.no_snapshot = why.clone();
-            meta.insert("line".into(), json!(crate::vouch::cert_field(s.cert.as_ref(), "line")));
+            meta.insert("line".into(), json!(crate::grants::cert_field(s.cert.as_ref(), "line")));
             meta.insert("snapshot".into(), Value::Null);
             meta.insert("noSnapshot".into(), json!(why));
             man.insert("snapshot".into(), Value::Null);
@@ -592,7 +592,7 @@ impl Router {
                 .and_then(|s| std::fs::metadata(s).ok())
                 .map_or(0, |m| m.len() as i64);
         let up = self.upload_archive(b, &s.id, &p);
-        discord_done(up.as_ref().err()); // the channel goes only once its archive is on the Storage Box
+        discord_done(up.as_ref().err().map(|e| format!("{e:#}"))); // the channel goes only once its archive is on the Storage Box
         let (size, took) = up?;
         info.bytes = size;
         info.upload_seconds = took.as_secs_f64();

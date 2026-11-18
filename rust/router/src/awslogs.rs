@@ -166,7 +166,8 @@ pub fn push_once() -> Result<()> {
                 crate::logf!("[aws-logs] the shipper takes lines again");
             }
             q.failing = false;
-            q.lines.drain(..n.min(q.lines.len()));
+            let k = n.min(q.lines.len());
+            q.lines.drain(..k);
             Ok(())
         }
     }

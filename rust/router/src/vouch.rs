@@ -420,7 +420,7 @@ impl Router {
         };
         if let Some(rb) = s.ops.as_ref().and_then(|ops| ops.rollback.as_ref())
             && !rb.marker.is_empty()
-            && crate::flows::cert_machine(s.cert.as_ref()) == rb.pred
+            && crate::sessionops::cert_machine(s.cert.as_ref()) == rb.pred
         {
             o.rollback = rb.marker.clone();
         }
@@ -632,8 +632,10 @@ impl Router {
 
     /// entries from the core's answers, appended (empty ones skipped). With a core that keeps its own log, that log is
     /// read instead.
-    pub fn log_inputs(&self, e: &Doc) {
-        self.log_inputs_all(&[e]);
+    pub fn log_inputs(&self, e: Option<&Doc>) {
+        if let Some(e) = e {
+            self.log_inputs_all(&[e]);
+        }
     }
 
     pub fn log_inputs_all(&self, entries: &[&Doc]) {

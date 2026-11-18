@@ -310,7 +310,7 @@ impl Router {
         if no_store {
             w.set_header("Cache-Control", "no-store");
         }
-        crate::util::serve_content(w, req, &b);
+        crate::util::serve_content(w, req, jarvis_go::GoTime::default(), &b[..], b.len() as i64);
     }
 }
 

@@ -146,7 +146,7 @@ pub fn verify(public: &str, payload: &[u8], sig_b64: &str) -> bool {
 // ---- signed documents -----------------------------------------------------------------------------------------
 
 /// A payload (exact JSON bytes as a string) and its signature
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Doc {
     pub payload: String,

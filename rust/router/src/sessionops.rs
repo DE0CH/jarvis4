@@ -227,7 +227,7 @@ pub fn ops_state_hook(r: &Arc<Router>, out: &mut Map<String, Value>) {
 /// the predecessor's, so a later start (another predecessor) never repeats it.
 pub fn rollback_env(s: &Session, e: &mut BTreeMap<String, String>) {
     let Some(rb) = s.ops.as_ref().and_then(|o| o.rollback.as_ref()).filter(|rb| !rb.marker.is_empty()) else { return };
-    if s.cert.is_none() || crate::flows::cert_machine(s.cert.as_ref()) != rb.pred {
+    if s.cert.is_none() || crate::sessionops::cert_machine(s.cert.as_ref()) != rb.pred {
         return;
     }
     e.insert("JARVIS2_ROLLBACK".into(), rb.marker.clone());
@@ -635,7 +635,7 @@ impl Router {
                 let x = d.sessions.get_mut(&id).filter(|x| x.state == "paused" || x.state == "failed").ok_or_else(|| {
                     anyhow!("the session isn't paused any more (another action started it): restart it again")
                 })?;
-                let pred = crate::flows::cert_machine(x.cert.as_ref());
+                let pred = crate::sessionops::cert_machine(x.cert.as_ref());
                 let ops = x.ops.get_or_insert_with(Default::default);
                 for (k, v) in &patch {
                     match v {
@@ -806,3 +806,18 @@ pub fn register_session_ops(reg: &mut Registrar) {
     crate::repos::register_repos(reg); // repos.rs: repo list, GitHub picker, usage
 }
 
+
+/// the machine a cert names (its machine.id; "" for none)
+pub fn cert_machine(c: Option<&crate::core::Doc>) -> String {
+    #[derive(serde::Deserialize, Default)]
+    #[serde(default)]
+    struct M {
+        id: String,
+    }
+    #[derive(serde::Deserialize, Default)]
+    #[serde(default)]
+    struct X {
+        machine: M,
+    }
+    c.and_then(|c| c.decode::<X>().ok()).map(|x| x.machine.id).unwrap_or_default()
+}

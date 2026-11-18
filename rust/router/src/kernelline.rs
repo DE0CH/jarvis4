@@ -1072,7 +1072,7 @@ impl Router {
             let a = self
                 .core
                 .call("/attest", &json!({"machine": machine, "input": kind, "origin": origin, "sha256": sum}))?;
-            self.log_inputs(&a);
+            self.log_inputs(Some(&a));
             return Ok(a);
         }
         let h = Sha256::digest(format!("jarvis2-input\n{}\n{kind}\n{sum}", self.machine_object(machine).0).as_bytes());

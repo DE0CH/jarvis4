@@ -185,7 +185,7 @@ impl Router {
             struct St {
                 phone: Phone,
             }
-            let id: Id = jarvis_go::unmarshal(&t.identity).map_err(|_| anyhow!("secrets' identity isn't readable"))?;
+            let id: Id = jarvis_go::unmarshal(jarvis_go::marshal(&t["identity"]).as_bytes()).map_err(|_| anyhow!("secrets' identity isn't readable"))?;
             let st: St = id
                 .state
                 .as_ref()
@@ -199,7 +199,7 @@ impl Router {
             #[serde(rename = "storeKey")]
             store_key: String,
         }
-        match t.store_key.as_ref().and_then(|d| d.decode::<Sk>().ok()) {
+        match serde_json::from_value::<Doc>(t["storeKey"].clone()).ok().and_then(|d| d.decode::<Sk>().ok()) {
             Some(sk) if !sk.store_key.is_empty() => Ok(sk.store_key),
             _ => Err(anyhow!("the core answered no store key")),
         }

@@ -722,7 +722,7 @@ impl Registrar {
                 "{redirect}#token={}",
                 url::form_urlencoded::byte_serialize(tok.as_bytes()).collect::<String>()
             );
-            crate::util::redirect(w, &loc, 302);
+            crate::util::redirect(w, req, &loc, 302);
         });
 
         // ---- state ---------------------------------------------------------------------------------------
@@ -751,13 +751,14 @@ impl Registrar {
             write_json(w, 200, &out);
         });
         self.app("GET /api/sizes", |_, w, _| {
-            write_json(w, 200, &json!({"sizes": ["small", "medium", "large"].iter()
-                .map(|s| json!({"id": s, "label": crate::sizes::size_label(s)})).collect::<Vec<_>>()}));
+            let sizes: Vec<Value> =
+                ["small", "medium", "large"].iter().map(|s| json!({"id": s, "label": crate::sizes::size_label(s)})).collect();
+            write_json(w, 200, &json!({"sizes": sizes}));
         });
         self.app("GET /api/regions", |r, w, _| {
             let regions: Vec<Value> = crate::regions::SESSION_REGIONS
                 .iter()
-                .map(|g| json!({"id": g.id, "label": g.label}))
+                .map(|(id, label)| json!({"id": id, "label": label}))
                 .collect();
             let runners: Vec<Value> = crate::awsrunner::session_runners()
                 .iter()
@@ -793,7 +794,7 @@ impl Registrar {
         });
         self.app("POST /api/sessions/{id}/grants", |r, w, req| {
             let i: Doc = decode_body(req, 1 << 16);
-            match r.add_grant(&req.path_value("id"), &i) {
+            match r.add_grant(&req.path_value("id"), Some(&i)) {
                 Err(e) => write_err(w, &e),
                 Ok(g) => write_json(w, 200, &g),
             }
@@ -923,8 +924,8 @@ impl Registrar {
             }
             let i: In = decode_body(req, 1 << 16);
             let id = req.path_value("id");
-            let res = crate::schedule::clean_resume_prompt(&i.prompt).and_then(|p| {
-                r.apply_resume_options(&id, &i.opts)?; // sessionops.rs: size, model, apiProxy
+            let res = crate::sessionapi::clean_resume_prompt(&i.prompt).and_then(|p| {
+                r.apply_resume_options(&id, i.opts.clone())?; // sessionops.rs: size, model, apiProxy
                 Ok(p)
             });
             let prompt = match res {
@@ -1044,19 +1045,20 @@ impl Registrar {
             }
         });
         self.m("GET /m/snapshot", |r, w, req, machine, _| {
-            let (s, signed, why) = r.snapshot_for(machine); // snapdirect.rs
-            let Some(s) = s else {
-                crate::nethttp::write_error(w, 404, &why);
-                return;
+            let (s, signed) = match r.snapshot_for(machine) {
+                // snapdirect.rs
+                Err(why) => return crate::nethttp::write_error(w, 404, &why),
+                Ok(x) => x,
             };
             match r.snap_open(&s) {
-                Err(e) => crate::nethttp::write_error(w, 404, &format!("{why}: {e:#}")),
+                Err(e) => crate::nethttp::write_error(w, 404, &format!(": {e:#}")),
                 Ok(rd) => {
                     if signed {
                         w.set_header("X-Snapshot-Sig", &s.sig);
                     }
                     w.set_header("Content-Type", "application/octet-stream");
-                    crate::util::serve_content(w, req, s.committed_at, rd);
+                    let size = rd.size;
+                    crate::util::serve_content(w, req, s.committed_at, rd, size);
                 }
             }
         });
@@ -1083,7 +1085,7 @@ impl Registrar {
             }
             let res = std::fs::File::open(tmp)
                 .map_err(anyhow::Error::from)
-                .and_then(|f| r.snap_put_whole(machine, f, &sig)); // snapstore.rs: into the bucket, committed
+                .and_then(|mut f| r.snap_put_whole(machine, &mut f, &sig)); // snapstore.rs: into the bucket, committed
             let _ = std::fs::remove_file(tmp);
             match res {
                 Err(e) => write_err(w, &e),
@@ -1147,7 +1149,7 @@ impl Registrar {
         self.m("GET /m/commands", |r, w, _, machine, _| {
             // mq.rs: the machine's oldest untaken row, waiting up to 50 s for one
             let empty: Vec<Value> = vec![];
-            match r.mq_next(w, machine, Duration::from_secs(50)) {
+            match r.mq_next(&crate::ctx::Ctx::background(), machine, Duration::from_secs(50)) {
                 Err(_) if w.gone() => {} // the machine went (or this replica stops)
                 Err(e) => write_err(w, &e),
                 Ok(None) => write_json(w, 200, &json!({"commands": empty, "execs": empty})),
@@ -1160,7 +1162,7 @@ impl Registrar {
                     write_json(w, 200, &json!({"commands": empty, "execs": [e]}));
                 }
                 Ok(Some(it)) => {
-                    let d: crate::deliveries::Delivery = jarvis_go::unmarshal(&it.body).unwrap_or_default();
+                    let d: crate::vouch::Delivery = jarvis_go::unmarshal(&it.body).unwrap_or_default();
                     write_json(w, 200, &json!({"commands": empty, "execs": empty, "deliveries": [d]}));
                 }
             }

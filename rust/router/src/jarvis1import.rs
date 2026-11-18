@@ -352,7 +352,7 @@ impl Router {
     }
 
     /// the prepared manifest (its bytes and sha256) and record, or an error saying what's missing
-    fn prepared_jarvis1(&self, id: &str) -> Result<(Vec<u8>, String, J1Record)> {
+    pub fn prepared_jarvis1(&self, id: &str) -> Result<(Vec<u8>, String, J1Record)> {
         check_id(id)?;
         let mb = self
             .st

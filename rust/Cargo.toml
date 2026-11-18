@@ -2,9 +2,7 @@
 # Each crate replaces its Go part in one cut once it passes that part's tests and the e2e replica.
 [workspace]
 resolver = "3"
-members = ["sig", "doc", "go", "machine", "e2e-kernel"]
-# rust/router: the router being ported (Deyao, 2026-11-18); a member once it builds
-exclude = ["router"]
+members = ["sig", "doc", "go", "machine", "e2e-kernel", "router"]
 
 [workspace.package]
 edition = "2024"

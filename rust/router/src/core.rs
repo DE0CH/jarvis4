@@ -197,7 +197,7 @@ impl CoreClient {
             }
             .into());
         }
-        let d: Doc = match jarvis_go::unmarshal(&b) {
+        let d: Doc = match jarvis_go::unmarshal::<Doc>(&b) {
             Ok(d) if !d.payload.is_empty() => d,
             _ => return Err(anyhow!("{} {path}: not a signed document", self.who())),
         };

@@ -5,6 +5,7 @@
 //! m:<machine> for a new row, a:<ref> for an answer, w:<machine> for a snapshot wait, l:<name> for a login document),
 //! with a short poll beside it so a lost notification only delays.
 
+use fallible_iterator::FallibleIterator as _;
 use crate::ctx::Ctx;
 use crate::router::Router;
 use anyhow::{Result, anyhow};
@@ -126,10 +127,12 @@ pub fn listen_loop(url: &str, done: &AtomicBool, b: &Broker) {
                 if done.load(Ordering::SeqCst) {
                     return Ok(());
                 }
-                let mut n = c.notifications();
-                let mut it = n.timeout_iter(Duration::from_secs(1));
-                while let Some(note) = it.next()? {
-                    b.fire(note.payload());
+                {
+                    let mut n = c.notifications();
+                    let mut it = n.timeout_iter(Duration::from_secs(1));
+                    while let Some(note) = it.next()? {
+                        b.fire(note.payload());
+                    }
                 }
                 if c.is_closed() {
                     return Err(anyhow!("the connection closed"));

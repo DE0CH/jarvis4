@@ -376,7 +376,7 @@ impl Router {
         }
         // the core's own store never; the deploy-key token store only by the setup session (the core refuses a
         // machine's write there too: its keys otherwise come only from a phone-approved deploy-key call)
-        if store == crate::claudestores::FLY_STORE || (store == crate::flows::DEPLOY_KEY_TOKEN_STORE && writer != "setup") {
+        if store == crate::policy::FLY_STORE || (store == crate::flows::DEPLOY_KEY_TOKEN_STORE && writer != "setup") {
             return Err(Forbidden(format!(
                 "store {store} isn't written this way: the core's Fly token goes through `infra/setup.py backup-core`, the deploy-key token through `infra/setup.py write {store}` from the setup session"
             ))

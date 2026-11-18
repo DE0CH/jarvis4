@@ -476,7 +476,7 @@ pub fn schedule_view(d: &Persisted, sid: &str, v: &mut Map<String, Value>) {
     }
     v.insert("wakeups".into(), json!(ws));
     v.insert("crons".into(), json!(cs));
-    v.insert("watches".into(), crate::watches::watches_view_of(d, sid));
+    v.insert("watches".into(), json!(crate::watches::watches_view_of(d, sid)));
 }
 
 // ---- firing state ---------------------------------------------------------------------------------------------
@@ -608,7 +608,7 @@ impl Router {
         self.st.do_(|d| {
             self.live_session(d, sid)?;
             sched(d, sid).wakeups.insert(w.name.clone(), w.clone());
-            Ok(())
+            Ok::<(), anyhow::Error>(())
         })?;
         sched_forget(&format!("{sid}/w/{}", w.name));
         crate::logf!(
@@ -652,7 +652,7 @@ impl Router {
         self.st.do_(|d| {
             self.live_session(d, sid)?;
             sched(d, sid).crons.insert(c.name.clone(), c.clone());
-            Ok(())
+            Ok::<(), anyhow::Error>(())
         })?;
         sched_forget(&format!("{sid}/c/{}", c.name));
         crate::logf!(

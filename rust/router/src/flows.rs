@@ -729,7 +729,7 @@ impl Router {
         let h = match h {
             Some(h) => h,
             None => {
-                input.harness = self.default_harness();
+                input.harness = self.default_harness().to_string();
                 self.policy
                     .harnesses
                     .get(&input.harness)
@@ -763,7 +763,7 @@ impl Router {
         let picked: Vec<String> = input
             .stores
             .iter()
-            .filter(|n| n.as_str() != crate::claudestores::LEGACY_CLAUDE_STORE)
+            .filter(|n| n.as_str() != crate::claudeaccounts::LEGACY_CLAUDE_STORE)
             .cloned()
             .collect();
         let stores = self.with_harness_stores(&picked, &h.stores)?;
@@ -787,7 +787,7 @@ impl Router {
             harness: input.harness.clone(),
             stores: Some(stores),
             repos: input.repos.clone(),
-            content: (!content.is_empty()).then_some(content),
+            content: content.filter(|c| !c.is_empty()),
             claude_account: account,
             request_id: input.request_id.clone(),
             live: Some(crate::autopilot::new_liveness(&input)),
@@ -891,7 +891,7 @@ impl Router {
     pub fn with_harness_stores(&self, chosen: &[String], harness: &[String]) -> Result<Vec<String>> {
         let mut set = std::collections::BTreeSet::new();
         for n in chosen.iter().chain(harness.iter()) {
-            if n == crate::claudestores::FLY_STORE {
+            if n == crate::policy::FLY_STORE {
                 return Err(anyhow!("store {n} holds the core's Fly token and never goes to a session"));
             }
             if n == DEPLOY_KEY_TOKEN_STORE {
@@ -1181,7 +1181,7 @@ impl Router {
         if !s.id.is_empty() && s.state == "paused" {
             return Ok(()); // already what was asked for
         }
-        if s.id.is_empty() || s.machine_id.is_empty() || !crate::kernelline::has_line(&s) {
+        if s.id.is_empty() || s.machine_id.is_empty() || !s.has_line() {
             return Err(anyhow!(
                 "session {id} isn't running (it is {}): nothing to pause",
                 or_state(&s.state)
@@ -1247,7 +1247,9 @@ impl Router {
                 or_state(&s.state)
             ));
         }
-        self.resume_refusal(id)?; // snapsafe.rs: its last machine left no snapshot
+        if let Some(e) = self.resume_refusal(id) {
+            return Err(e); // snapsafe.rs: its last machine left no snapshot
+        }
         let op = self.lc_begin(id, "resume"); // lifecycle.rs
         let mut upgrade = upgrade;
         if !upgrade && crate::autopilot::harness_retry_upgrade(&s, &self.cfg.session_image) {
@@ -1629,7 +1631,7 @@ impl Router {
         let Some(cert) = s.cert.clone().filter(|_| !s.id.is_empty() && s.machine_id == machine) else {
             return Err(anyhow!("this machine isn't a running session"));
         };
-        if store == crate::claudestores::LEGACY_CLAUDE_STORE {
+        if store == crate::claudeaccounts::LEGACY_CLAUDE_STORE {
             // what is asked for is a Claude login: a session with no account gets the default one; one with an
             // account keeps it
             let def = self.accounts().default_store();
@@ -1753,7 +1755,7 @@ impl Router {
         }
         // a machine that has its secrets is seconds from booted: wait for it, or a pause right after a start would
         // leave its successor with no state at all
-        let deadline = Instant::now() + crate::vouch::boot_grace();
+        let deadline = Instant::now() + crate::vouch::BOOT_GRACE;
         while !booted() && crate::vouch::has_pulled(machine) && Instant::now() < deadline {
             std::thread::sleep(Duration::from_secs(1));
         }

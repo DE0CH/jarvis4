@@ -218,7 +218,7 @@ impl Router {
         self.st.do_(|d| {
             self.live_session(d, sid)?;
             sched(d, sid).watches.insert(w.name.clone(), w.clone());
-            Ok(())
+            Ok::<(), anyhow::Error>(())
         })?;
         sched_forget(&format!("{sid}/watch/{}", w.name));
         crate::logf!(
