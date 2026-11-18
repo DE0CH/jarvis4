@@ -491,6 +491,20 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
     if !fabric() && !only_chat() {
         sweep(token);
     }
+    if fabric() {
+        // an earlier run's sandboxes (a run killed before its cleanup) still hold the box's loopback ports on the
+        // host network (127.0.0.1:7171, the machine's session API): this run's machine would bind none of them and its
+        // commands reach the old machine (2026-11-18: time-machine refused, "not signed by a machine the core started")
+        let _ = Command::new("sudo")
+            .args([
+                "-n",
+                "pkill",
+                "-KILL",
+                "-f",
+                "runsc-(sandbox|gofer) .*--root=/tmp/e2e-kernel-",
+            ])
+            .status();
+    }
     for r in ROLES {
         run_ok(
             Command::new("go")
