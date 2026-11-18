@@ -467,6 +467,35 @@ pub struct FakeCore {
     pub srv: TestServer,
 }
 
+/// the fake core's answer to one call (body: the request's, read)
+pub fn fake_core_answer(k: &TestKey, w: &mut W, path: &str, body: &[u8]) {
+    use crate::nethttp::write_json;
+    use serde_json::json;
+    match path {
+        "/key" => write_json(w, 200, &json!({"signingKey": k.public()})),
+        // a set-up core (features.rs core_set_up)
+        "/identity" => write_json(
+            w,
+            200,
+            &json!({"signingKey": k.public(), "state": k.doc(&json!({"kind": "core-state", "master": "m"}))}),
+        ),
+        "/core-cert" => write_json(w, 200, &json!({"statement": "{}", "masterSig": "x"})),
+        // the core's record names the snapshot the kill named (core.rs kill_with_snapshot)
+        "/kill" => {
+            let b: serde_json::Value = serde_json::from_slice(body).unwrap_or_default();
+            let sum = b["snapshot"]["sha256"].as_str().unwrap_or("").to_string();
+            write_json(
+                w,
+                200,
+                &k.doc(
+                    &json!({"kind": "killed", "id": b["machine"], "snapshot": sum, "path": path}),
+                ),
+            );
+        }
+        p => write_json(w, 200, &k.doc(&json!({"kind": "ok", "path": p}))),
+    }
+}
+
 impl FakeCore {
     pub fn new() -> FakeCore {
         let key = Arc::new(TestKey::new());
@@ -476,28 +505,36 @@ impl FakeCore {
             c.lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .push(req.path.clone());
-            use crate::nethttp::write_json;
-            use serde_json::json;
-            match req.path.as_str() {
-                "/key" => write_json(w, 200, &json!({"signingKey": k.public()})),
-                // a set-up core (features.rs core_set_up)
-                "/identity" => write_json(
-                    w,
-                    200,
-                    &json!({"signingKey": k.public(), "state": k.doc(&json!({"kind": "core-state", "master": "m"}))}),
-                ),
-                "/core-cert" => write_json(w, 200, &json!({"statement": "{}", "masterSig": "x"})),
-                // the core's record names the snapshot the kill named (core.rs kill_with_snapshot)
-                "/kill" => {
-                    let b: serde_json::Value =
-                        serde_json::from_slice(&req.read_body(1 << 20)).unwrap_or_default();
-                    let sum = b["snapshot"]["sha256"].as_str().unwrap_or("").to_string();
-                    write_json(w, 200, &k.doc(&json!({"kind": "killed", "id": b["machine"], "snapshot": sum, "path": req.path})));
-                }
-                p => write_json(w, 200, &k.doc(&json!({"kind": "ok", "path": p}))),
-            }
+            let b = req.read_body(16 << 20);
+            fake_core_answer(&k, w, &req.path, &b);
         });
         FakeCore { key, calls, srv }
+    }
+
+    /// a core whose /start answers 502 "no Fly in tests" (sessionops_test.go's startCore), its starts kept
+    pub fn starting() -> (FakeCore, Arc<std::sync::Mutex<Vec<serde_json::Value>>>) {
+        let key = Arc::new(TestKey::new());
+        let calls: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
+        let starts: Arc<std::sync::Mutex<Vec<serde_json::Value>>> = Arc::default();
+        let (k, c, st) = (key.clone(), calls.clone(), starts.clone());
+        let srv = TestServer::handler(move |w, req| {
+            c.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(req.path.clone());
+            let b = req.read_body(16 << 20);
+            if req.path == "/start" {
+                st.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(serde_json::from_slice(&b).unwrap_or_default());
+                return crate::nethttp::write_json(
+                    w,
+                    502,
+                    &serde_json::json!({"error": "no Fly in tests"}),
+                );
+            }
+            fake_core_answer(&k, w, &req.path, &b);
+        });
+        (FakeCore { key, calls, srv }, starts)
     }
 }
 
@@ -1133,4 +1170,47 @@ pub fn inbox_do(
         w.status(),
         serde_json::from_str(&w.body_text()).unwrap_or(serde_json::Value::Null),
     )
+}
+
+/// a rig whose core fails every start (sessionops_test.go's newOpsRig): NoAccess, s1's cert set
+pub struct OpsRig {
+    pub rg: Rig,
+    pub sc: FakeCore,
+    pub starts: Arc<std::sync::Mutex<Vec<serde_json::Value>>>,
+}
+
+impl std::ops::Deref for OpsRig {
+    type Target = Rig;
+    fn deref(&self) -> &Rig {
+        &self.rg
+    }
+}
+
+impl OpsRig {
+    pub fn new() -> OpsRig {
+        let rg = Rig::with(|c| c.no_access = true);
+        let (sc, starts) = FakeCore::starting();
+        rg.t.r.core.set_url(&sc.srv.url);
+        let cert = rg.cert.clone();
+        rg.st.do_(|d| {
+            if let Some(s) = d.sessions.get_mut("s1") {
+                s.cert = Some(cert.clone());
+            }
+        });
+        OpsRig { rg, sc, starts }
+    }
+
+    pub fn last_start(&self) -> Option<serde_json::Value> {
+        self.starts
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .last()
+            .cloned()
+    }
+}
+
+impl Default for OpsRig {
+    fn default() -> Self {
+        OpsRig::new()
+    }
 }

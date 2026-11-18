@@ -3,6 +3,7 @@
 mod apicalls;
 mod archive;
 mod batch2;
+mod batches;
 mod content_drain;
 mod core_mq_sealed;
 mod db;
