@@ -261,8 +261,10 @@ type batchItem struct {
 	// jarvis1-import
 	j1id string
 	j1   J1ImportIn
-	// peer: a message that isn't upward is delivered at once (as POST …/requests/peer does), not filed
+	// peer: a message Deyao delivers signed (upward into a sensitive session, as POST …/requests/peer holds it)
 	note *PeerNote
+	// peer: equal | downward | upward, of a message filed as a peer-message request
+	dir  string
 	expl string
 	args map[string]any
 	// outcomes.go: the batch as the session's machine signed it, and this item's index in it
@@ -280,7 +282,7 @@ type BatchResult struct {
 	Error     string `json:"error,omitempty"`
 	// Own: filed as a request of its own beside the batch (a restore is reviewed on its own page)
 	Own bool `json:"own,omitempty"`
-	// peer: equal | downward | upward; Delivering: not upward, so delivered at once instead of waiting in the batch
+	// peer: equal | downward | upward; Delivering: held for Deyao to deliver signed instead of waiting in the batch
 	Direction  string `json:"direction,omitempty"`
 	Delivering bool   `json:"delivering,omitempty"`
 	To         string `json:"to,omitempty"`
@@ -370,9 +372,9 @@ func (r *Router) checkBatchItem(c Caller, raw json.RawMessage) (*batchItem, erro
 		it.args["intent"] = in.Intent
 		return it, nil
 	case "peer":
-		// a message to another session (peermsg.go), checked as POST …/requests/peer checks it: upward waits in the
-		// batch as a peer-message request (the router's explanation says why it is upward), equal or downward is
-		// delivered at once when the batch is filed
+		// a message to another session (peermsg.go), checked as POST …/requests/peer checks it: it waits in the
+		// batch as a peer-message request (the router's explanation gives the direction), or, upward into a sensitive
+		// session, is held for Deyao to deliver signed
 		if c.Kind != "session" || c.Session == "" {
 			return nil, &forbidden{"only a session sends a peer message"}
 		}
@@ -384,10 +386,12 @@ func (r *Router) checkBatchItem(c Caller, raw json.RawMessage) (*batchItem, erro
 			return nil, err
 		}
 		it.args = map[string]any{"intent": in.Intent, "to": recv.ID}
-		if note, held := heldPeerNote(peerNote(&from, &recv, text), &recv); held || note.Direction != "upward" {
-			it.note = &note // held: the receiver holds a sensitive store, Deyao decides on the message itself (messages.go)
+		note, held := heldPeerNote(peerNote(&from, &recv, text), &recv)
+		if held {
+			it.note = &note // the receiver holds a sensitive store: Deyao decides on the message itself (messages.go)
 			return it, nil
 		}
+		it.dir = note.Direction
 		it.kind, it.p, it.expl = requestKindPeer, RequestParams{Session: recv.ID, Text: text}, peerExplanation(&from, &recv)
 		return it, nil
 	case "jarvis1-import":
@@ -505,7 +509,7 @@ func (r *Router) FileBatch(c Caller, method, path string, body []byte, signed *S
 	})
 	if len(entries) == 0 {
 		for _, x := range results {
-			if (x.Own || x.Delivering) && x.Error == "" { // only requests of their own or messages delivered at once: no batch, but nothing failed
+			if (x.Own || x.Delivering) && x.Error == "" { // only requests of their own or messages held for a signature: no batch, but nothing failed
 				return 200, map[string]any{"items": results}
 			}
 		}
@@ -520,7 +524,7 @@ func (r *Router) fileBatchItem(c Caller, method, path string, b *Batch, it *batc
 	res := BatchResult{Intent: it.intent}
 	o := Origin{Caller: c, Call: APICall{Method: method, Path: path, Args: it.args}, Signed: it.signed, Item: it.index, Batch: b.ID}
 	switch {
-	case it.note != nil: // a peer message that isn't upward: delivered now, as POST …/requests/peer delivers it
+	case it.note != nil: // a peer message Deyao delivers signed: held now, as POST …/requests/peer holds it
 		o.Batch = ""
 		r.goPeerNote(*it.note, o, "")
 		res.Direction, res.Delivering, res.To = it.note.Direction, true, it.note.To
@@ -554,7 +558,7 @@ func (r *Router) fileBatchItem(c Caller, method, path string, b *Batch, it *batc
 		})
 		res.ID = q.ID
 		if it.kind == requestKindPeer {
-			res.Direction, res.To = "upward", it.p.Session
+			res.Direction, res.To = it.dir, it.p.Session
 		}
 		if res.Batch != "" {
 			return res, nil

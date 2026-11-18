@@ -833,7 +833,7 @@ func (r *Router) registerInbox(app appRoute, m machineRoute, public publicRoute)
 	})
 	// approve an API-call request (apicalls.go): the call runs now as Deyao (this request's Access login)
 	app("POST /api/requests/{id}/approve", func(w http.ResponseWriter, req *http.Request) {
-		if r.isPeerRequest(req.PathValue("id")) { // an upward peer message (peermsg.go): one tap delivers it
+		if r.isPeerRequest(req.PathValue("id")) { // a peer message (peermsg.go): one tap delivers it
 			out, err := r.ApprovePeer(req.PathValue("id"))
 			if errors.Is(err, errNoRequest) {
 				writeJSON(w, 404, map[string]string{"error": err.Error()})

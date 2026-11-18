@@ -408,12 +408,22 @@ fn peer_text_checks_the_direction() {
     let mut n: PeerNote = gojson::unmarshal(PEER_NOTE_JSON.as_bytes()).unwrap();
     let d = vec!["default".to_string()];
     let di = vec!["default".to_string(), "infra".to_string()];
+    assert_eq!(gojson::marshal(&n), PEER_NOTE_JSON);
+    // every direction needs Deyao's approval (DECISIONS 272)
+    assert!(
+        peer_text(Some(&n), &d, "auto").is_err(),
+        "equal without approval"
+    );
+    n.approved = true;
     let (text, att) = peer_text(Some(&n), &d, "auto").unwrap();
-    assert_eq!(String::from_utf8_lossy(&att), PEER_NOTE_JSON);
+    assert_eq!(
+        String::from_utf8_lossy(&att),
+        PEER_NOTE_JSON.replace(r#""text""#, r#""approved":true,"text""#)
+    );
     for want in [
         "From: session “A” (sa), verified by Jarvis",
         "its stores: default; its mode: auto",
-        "Direction: equal",
+        "Direction: equal (the sender holds the same stores in the same mode): Deyao approved it in the Inbox",
         "not Deyao's",
         "----\nhi",
     ] {
@@ -421,13 +431,14 @@ fn peer_text_checks_the_direction() {
     }
     assert!(
         peer_text(Some(&n), &di, "auto").is_err(),
-        "a store beyond the sender's, delivered at once"
+        "a store beyond the sender's, called equal"
     );
     assert!(
         peer_text(Some(&n), &d, "bypass").is_err(),
-        "bypass receiver, auto sender, delivered at once"
+        "bypass receiver, auto sender, called equal"
     );
     n.direction = "upward".into();
+    n.approved = false;
     assert!(
         peer_text(Some(&n), &di, "bypass").is_err(),
         "upward without approval"

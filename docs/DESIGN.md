@@ -885,14 +885,16 @@ from its machine key) → the receiving machine's supervisor → its claude.
   `harness-send --queue` and harness-claude.sh types them as keystrokes (as the first prompt) and presses Enter. It
   types only while the host shows no dialog (registry status not `waiting`, no "Esc to cancel" in the pane), so the
   keystrokes never answer a permission ask or a question.
-- **The direction rule.** Equal or downward (the receiver's stores ⊆ the sender's, and the receiver no more
-  permissive) is delivered at once; upward waits for Deyao's one tap in the Inbox (no Face ID, nothing signed). Stores
-  are what the certs name (a repo is its store); grants don't count (they admit router features, not more for the
-  session's Claude). The receiving machine checks the direction against its own cert before delivering. A message
-  can be an item of a batch (intent `peer`): an upward one then waits in the same Inbox entry as the session's other
-  asks; an equal or downward one is delivered as the batch is filed.
-- **Provenance.** The delivery carries the verified sender (id, title), both sides' stores and modes and the
-  direction (and Deyao's approval for upward); the core attests it; the machine wraps the text with all of it from
+- **Every message waits for Deyao (Deyao, 2026-11-18; DECISIONS 273).** Each one is a one-tap Inbox item (no Face
+  ID, nothing signed); upward into a session holding a sensitive store, the message itself waits for his signature
+  ("Message approvals"). Nothing goes in unapproved.
+- **The direction** is shown to Deyao and to the receiver: equal or downward (the receiver's stores ⊆ the sender's,
+  and the receiver no more permissive), else upward. Stores are what the certs name (a repo is its store); grants
+  don't count (they admit router features, not more for the session's Claude). The receiving machine checks the
+  direction against its own cert, and that Deyao approved the message, before delivering. A message can be an item of
+  a batch (intent `peer`): it then waits in the same Inbox entry as the session's other asks.
+- **Provenance.** The delivery carries the verified sender (id, title), both sides' stores and modes, the direction
+  and Deyao's approval; the core attests it; the machine wraps the text with all of it from
   texts in the image, so the receiver sees who really asked and that it isn't Deyao.
 
 ## Inputs to a machine (Deyao, 2026-10-11)
@@ -955,7 +957,8 @@ DECISIONS 210). So an **upward peer message** into such a session (from a sessio
 permissive), and every resume prompt that goes into an already running session (any session: nothing else vouches for
 Deyao's words from the app), waits in the Inbox as a **pending message** (`router/messages.go`, `rust/machine/src/messages.rs`).
 Jarvis's own messages (an Inbox outcome, the watchdog's check-in, a login "continue", a lease or upgrade note), the
-session's own wakeups, cron runs and watches, and equal or downward peer messages go straight in, vouched for by the
+session's own wakeups, cron runs and watches, and equal or downward peer messages (already approved with one tap in
+the Inbox, "Peer messages") go straight in, vouched for by the
 core's attestation as "Inputs to a machine" says (the machine checks a peer message's direction against its own cert):
 
 - **What Deyao sees**: who sends what to whom, plainly ("Message from session “X” to session “Y”"; From: Session “X”

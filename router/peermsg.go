@@ -10,10 +10,12 @@ package main
 //   downward  the receiver holds no store the sender lacks, and bypasses only if the sender does
 //   upward    anything else: the receiver holds a store the sender lacks, or bypasses while the sender doesn't
 //
-// Equal and downward are delivered at once; upward waits in the Inbox as a "peer-message" request that Deyao
-// approves or denies with one tap (no Face ID: nothing is signed, like an API call). Either way the receiving machine
-// gets a core-attested "peer" delivery carrying the verified sender, both sides' stores and modes and the direction;
-// it checks the direction against its own cert and wraps the text with all of it (rust/machine/src/peer.rs). A denial, a lapse
+// Every peer message waits for Deyao (Deyao, 2026-11-18; DECISIONS 272): in the Inbox as a "peer-message" request
+// that he approves or denies with one tap (no Face ID: nothing is signed, like an API call), or, upward into a session
+// holding a sensitive store, as a message he delivers signed (messages.go). The direction is shown to him and to the
+// receiver; it no longer decides whether the message waits. The receiving machine gets a core-attested "peer"
+// delivery carrying the verified sender, both sides' stores and modes, the direction and Deyao's approval; it checks
+// the direction against its own cert and wraps the text with all of it (rust/machine/src/peer.rs). A denial, a lapse
 // or a failed delivery comes back to the sender as its request's outcome (outcomes.go).
 //
 // Repos count through their stores (a repo is its deploy-key store). Grants and standing rules don't count: they let
@@ -45,7 +47,7 @@ type PeerNote struct {
 	ToStores   []string `json:"toStores"`
 	ToMode     string   `json:"toMode"`
 	Direction  string   `json:"direction"`          // equal | downward | upward
-	Approved   bool     `json:"approved,omitempty"` // upward: Deyao approved it in the Inbox
+	Approved   bool     `json:"approved,omitempty"` // Deyao approved it in the Inbox (every delivered note)
 	Text       string   `json:"text"`
 }
 
@@ -127,18 +129,24 @@ func listOrNone(ss []string) string {
 	return clip(strings.Join(ss, ", "), 120)
 }
 
-// peerExplanation: the Inbox item's words, by the router: who wants to tell whom, and why it is upward
+// peerExplanation: the Inbox item's words, by the router: who wants to tell whom, the direction and why
 func peerExplanation(from, to *Session) string {
-	_, extra, modeUp := peerDirection(from, to)
+	dir, extra, modeUp := peerDirection(from, to)
 	why := []string{}
+	switch dir {
+	case "equal":
+		why = append(why, "both hold the same stores in the same mode")
+	case "downward":
+		why = append(why, "the sender holds every store the receiver holds, and the receiver is no more permissive")
+	}
 	if len(extra) > 0 {
 		why = append(why, "the receiver holds "+listOrNone(extra)+", which the sender doesn't")
 	}
 	if modeUp {
 		why = append(why, "the receiver runs in bypass mode and the sender doesn't")
 	}
-	return fmt.Sprintf("Upward: %s.\nSession “%s” (%s; stores %s; %s mode) wants to tell session “%s” (%s; stores %s; %s mode) the message above.",
-		strings.Join(why, "; "), clip(sessionTitle(*from), 80), from.ID, listOrNone(sortedStores(peerStores(from))), modeOf(from),
+	return fmt.Sprintf("%s: %s.\nSession “%s” (%s; stores %s; %s mode) wants to tell session “%s” (%s; stores %s; %s mode) the message above.",
+		strings.ToUpper(dir[:1])+dir[1:], strings.Join(why, "; "), clip(sessionTitle(*from), 80), from.ID, listOrNone(sortedStores(peerStores(from))), modeOf(from),
 		clip(sessionTitle(*to), 80), to.ID, listOrNone(sortedStores(peerStores(to))), modeOf(to))
 }
 
@@ -170,9 +178,9 @@ func (r *Router) peerParties(sender, to, text string) (from, recv Session, clean
 	return from, recv, clean, err
 }
 
-// SendPeer: the sending session's message → delivered at once (equal, downward) or filed in the Inbox (upward). A
-// batch takes the same message as an item (intent "peer", batches.go), so it goes in one Inbox entry with the
-// session's other asks.
+// SendPeer: the sending session's message → filed in the Inbox for Deyao's one tap, or (upward into a sensitive
+// session) held for him to deliver signed. A batch takes the same message as an item (intent "peer", batches.go), so
+// it goes in one Inbox entry with the session's other asks.
 func (r *Router) SendPeer(sender, to, text string, signed *SignedRequest, method, path string) (map[string]any, error) {
 	from, recv, text, err := r.peerParties(sender, to, text)
 	if err != nil {
@@ -186,15 +194,11 @@ func (r *Router) SendPeer(sender, to, text string, signed *SignedRequest, method
 		return map[string]any{"delivering": true, "direction": note.Direction, "to": recv.ID,
 			"waiting": "message", "note": "the receiving session holds a sensitive store: Deyao delivers or denies this message in the Inbox; you hear the outcome"}, nil
 	}
-	if note.Direction != "upward" {
-		r.goPeerNote(note, o, "")
-		return map[string]any{"delivering": true, "direction": note.Direction, "to": recv.ID}, nil
-	}
 	q, dup, err := r.FileRequest(requestKindPeer, RequestParams{Session: recv.ID, Text: text}, peerExplanation(&from, &recv), o)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"id": q.ID, "duplicate": dup, "expires": q.Expires, "direction": "upward", "waiting": "inbox", "to": recv.ID}, nil
+	return map[string]any{"id": q.ID, "duplicate": dup, "expires": q.Expires, "direction": note.Direction, "waiting": "inbox", "to": recv.ID}, nil
 }
 
 // goPeerNote: deliverPeerNote in the background, counted in messageWG with the other message goroutines (a test
@@ -208,7 +212,7 @@ func (r *Router) goPeerNote(note PeerNote, o Origin, ref string) {
 }
 
 // deliverPeerNote: the note into the receiving session (started if paused); a failure is the sender's outcome. ref:
-// the Inbox id an approved upward message had ("" for one delivered at once: the receiver's id names it then).
+// the Inbox id an approved message had ("" for one Deyao delivers signed: the receiver's id names it then).
 func (r *Router) deliverPeerNote(note PeerNote, o Origin, ref string) {
 	err := deliverPeerHook(r, note, o)
 	if ref == "" {
@@ -234,9 +238,9 @@ var deliverPeerHook = func(r *Router, note PeerNote, o Origin) error {
 	return r.deliverVouchedOpts(note.To, Delivery{Kind: "peer", Peer: &note}, true, &o)
 }
 
-// heldPeerNote: an upward message into a session holding a sensitive store isn't filed as an upward peer request:
-// Deyao delivers or denies the message itself, signed (messages.go), so it carries his approval in that signature. An
-// equal or downward one goes straight in, as into any session (DECISIONS 210)
+// heldPeerNote: an upward message into a session holding a sensitive store isn't filed as a peer request: Deyao
+// delivers or denies the message itself, signed (messages.go), so it carries his approval in that signature. Every
+// other message is a peer request (DECISIONS 272)
 func heldPeerNote(note PeerNote, recv *Session) (PeerNote, bool) {
 	if !certSensitive(recv.Cert) || note.Direction != "upward" {
 		return note, false
@@ -254,7 +258,7 @@ func peerAttested(n *PeerNote) ([]byte, string, error) {
 	return b, "session:" + n.From, err
 }
 
-// ApprovePeer: Deyao's one tap on an upward peer message: it is delivered now, with the session's current stores
+// ApprovePeer: Deyao's one tap on a peer message: it is delivered now, with the sessions' current stores
 func (r *Router) ApprovePeer(id string) (map[string]any, error) {
 	var q *InboxRequest
 	var from, to Session
@@ -275,7 +279,7 @@ func (r *Router) ApprovePeer(id string) (map[string]any, error) {
 		return nil, errNoRequest
 	}
 	note := peerNote(&from, &to, q.Params.Text)
-	note.Approved = note.Direction == "upward"
+	note.Approved = true
 	r.goPeerNote(note, q.Origin, q.ID)
 	return map[string]any{"ok": true, "state": "delivering", "direction": note.Direction}, nil
 }

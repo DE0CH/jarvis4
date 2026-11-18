@@ -188,8 +188,10 @@ struct BatchItem {
     ns: Option<NewSession>,
     j1id: String,
     j1: crate::jarvis1import::J1ImportIn,
-    /// peer: a message that isn't upward is delivered at once, not filed
+    /// peer: a message Deyao delivers signed (upward into a sensitive session, as POST …/requests/peer holds it)
     note: Option<crate::peermsg::PeerNote>,
+    /// peer: equal | downward | upward, of a message filed as a peer-message request
+    dir: String,
     expl: String,
     args: Map<String, Value>,
     signed: Option<SignedRequest>,
@@ -213,7 +215,7 @@ pub struct BatchResult {
     /// filed as a request of its own beside the batch (a restore is reviewed on its own page)
     #[serde(skip_serializing_if = "is_false")]
     pub own: bool,
-    /// peer: equal | downward | upward; delivering: not upward, so delivered at once
+    /// peer: equal | downward | upward; delivering: held for Deyao to deliver signed instead of waiting in the batch
     #[serde(skip_serializing_if = "String::is_empty")]
     pub direction: String,
     #[serde(skip_serializing_if = "is_false")]
@@ -418,8 +420,8 @@ impl Router {
                 Ok(it)
             }
             "peer" => {
-                // a message to another session (peermsg.rs): upward waits in the batch as a peer-message request,
-                // equal or downward is delivered at once when the batch is filed
+                // a message to another session (peermsg.rs): it waits in the batch as a peer-message request, or,
+                // upward into a sensitive session, is held for Deyao to deliver signed
                 if c.kind != "session" || c.session.is_empty() {
                     return Err(Forbidden("only a session sends a peer message".into()).into());
                 }
@@ -435,10 +437,11 @@ impl Router {
                     crate::peermsg::peer_note(&from, &recv, &text),
                     &recv,
                 );
-                if held || note.direction != "upward" {
-                    it.note = Some(note); // held: the receiver holds a sensitive store, Deyao decides (messages.rs)
+                if held {
+                    it.note = Some(note); // the receiver holds a sensitive store: Deyao decides (messages.rs)
                     return Ok(it);
                 }
+                it.dir = note.direction;
                 it.kind = crate::peermsg::REQUEST_KIND_PEER.into();
                 it.p = RequestParams {
                     session: recv.id.clone(),
@@ -622,7 +625,7 @@ impl Router {
                 .iter()
                 .any(|x| (x.own || x.delivering) && x.error.is_empty())
             {
-                // only requests of their own or messages delivered at once: no batch, but nothing failed
+                // only requests of their own or messages held for a signature: no batch, but nothing failed
                 return (200, json!({"items": results}));
             }
             return (
@@ -661,7 +664,7 @@ impl Router {
             ..Default::default()
         };
         if let Some(note) = it.note {
-            // a peer message that isn't upward: delivered now, as POST …/requests/peer delivers it
+            // a peer message Deyao delivers signed: held now, as POST …/requests/peer holds it
             o.batch.clear();
             res.direction = note.direction.clone();
             res.delivering = true;
@@ -723,7 +726,7 @@ impl Router {
             res.duplicate = dup;
             res.batch = other.clone();
             if it.kind == crate::peermsg::REQUEST_KIND_PEER {
-                res.direction = "upward".into();
+                res.direction = it.dir.clone();
                 res.to = it.p.session.clone();
             }
             if !other.is_empty() {

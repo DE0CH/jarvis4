@@ -10,11 +10,13 @@
 //! upward    anything else: the receiver holds a store the sender lacks, or bypasses while the sender doesn't
 //! ```
 //!
-//! Equal and downward are delivered at once; upward waits in the Inbox as a "peer-message" request that Deyao approves
-//! or denies with one tap (no Face ID: nothing is signed, like an API call). Either way the receiving machine gets a
-//! core-attested "peer" delivery carrying the verified sender, both sides' stores and modes and the direction; it
-//! checks the direction against its own cert and wraps the text with all of it (rust/machine/src/peer.rs). A denial, a
-//! lapse or a failed delivery comes back to the sender as its request's outcome (outcomes.rs).
+//! Every peer message waits for Deyao (Deyao, 2026-11-18; DECISIONS 272): in the Inbox as a "peer-message" request that
+//! he approves or denies with one tap (no Face ID: nothing is signed, like an API call), or, upward into a session
+//! holding a sensitive store, as a message he delivers signed (messages.rs). The direction is shown to him and to the
+//! receiver; it no longer decides whether the message waits. The receiving machine gets a core-attested "peer"
+//! delivery carrying the verified sender, both sides' stores and modes, the direction and Deyao's approval; it checks
+//! the direction against its own cert and wraps the text with all of it (rust/machine/src/peer.rs). A denial, a lapse
+//! or a failed delivery comes back to the sender as its request's outcome (outcomes.rs).
 //!
 //! Repos count through their stores (a repo is its deploy-key store). Grants and standing rules don't count: they let a
 //! router feature run commands in the session, not the session's Claude do more.
@@ -60,7 +62,7 @@ pub struct PeerNote {
     pub to_mode: String,
     /// equal | downward | upward
     pub direction: String,
-    /// upward: Deyao approved it in the Inbox
+    /// Deyao approved it in the Inbox (every delivered note)
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub approved: bool,
     pub text: String,
@@ -160,10 +162,18 @@ fn list_or_none(ss: &[String]) -> String {
     }
 }
 
-/// the Inbox item's words, by the router: who wants to tell whom, and why it is upward
+/// the Inbox item's words, by the router: who wants to tell whom, the direction and why
 pub fn peer_explanation(from: &Session, to: &Session) -> String {
-    let (_, extra, mode_up) = peer_direction(from, to);
+    let (dir, extra, mode_up) = peer_direction(from, to);
     let mut why = vec![];
+    match dir {
+        "equal" => why.push("both hold the same stores in the same mode".to_string()),
+        "downward" => why.push(
+            "the sender holds every store the receiver holds, and the receiver is no more permissive"
+                .to_string(),
+        ),
+        _ => {}
+    }
     if !extra.is_empty() {
         why.push(format!(
             "the receiver holds {}, which the sender doesn't",
@@ -174,7 +184,9 @@ pub fn peer_explanation(from: &Session, to: &Session) -> String {
         why.push("the receiver runs in bypass mode and the sender doesn't".to_string());
     }
     format!(
-        "Upward: {}.\nSession “{}” ({}; stores {}; {} mode) wants to tell session “{}” ({}; stores {}; {} mode) the message above.",
+        "{}{}: {}.\nSession “{}” ({}; stores {}; {} mode) wants to tell session “{}” ({}; stores {}; {} mode) the message above.",
+        dir[..1].to_uppercase(),
+        &dir[1..],
         why.join("; "),
         clip(&session_title(from), 80),
         from.id,
@@ -187,9 +199,9 @@ pub fn peer_explanation(from: &Session, to: &Session) -> String {
     )
 }
 
-/// an upward message into a session holding a sensitive store isn't filed as an upward peer request: Deyao delivers or
-/// denies the message itself, signed (messages.rs), so it carries his approval in that signature. An equal or downward
-/// one goes straight in, as into any session (DECISIONS 210) → (the note, held)
+/// an upward message into a session holding a sensitive store isn't filed as a peer request: Deyao delivers or denies
+/// the message itself, signed (messages.rs), so it carries his approval in that signature. Every other message is a
+/// peer request (DECISIONS 272) → (the note, held)
 pub fn held_peer_note(mut note: PeerNote, recv: &Session) -> (PeerNote, bool) {
     if !crate::messages::cert_sensitive(recv.cert.as_ref()) || note.direction != "upward" {
         return (note, false);
@@ -247,9 +259,9 @@ impl Router {
         Ok((from, recv, clean))
     }
 
-    /// the sending session's message → delivered at once (equal, downward) or filed in the Inbox (upward). A batch
-    /// takes the same message as an item (intent "peer", batches.rs), so it goes in one Inbox entry with the session's
-    /// other asks.
+    /// the sending session's message → filed in the Inbox for Deyao's one tap, or (upward into a sensitive session)
+    /// held for him to deliver signed. A batch takes the same message as an item (intent "peer", batches.rs), so it
+    /// goes in one Inbox entry with the session's other asks.
     pub fn send_peer(
         self: &Arc<Self>,
         sender: &str,
@@ -284,11 +296,6 @@ impl Router {
                 "note": "the receiving session holds a sensitive store: Deyao delivers or denies this message in the Inbox; you hear the outcome"}),
             );
         }
-        if note.direction != "upward" {
-            let dir = note.direction.clone();
-            self.go_peer_note(note, o, "");
-            return Ok(json!({"delivering": true, "direction": dir, "to": recv.id}));
-        }
         let (q, dup) = self.file_request(
             REQUEST_KIND_PEER,
             RequestParams {
@@ -300,7 +307,7 @@ impl Router {
             o,
         )?;
         Ok(
-            json!({"id": q.id, "duplicate": dup, "expires": q.expires, "direction": "upward", "waiting": "inbox", "to": recv.id}),
+            json!({"id": q.id, "duplicate": dup, "expires": q.expires, "direction": note.direction, "waiting": "inbox", "to": recv.id}),
         )
     }
 
@@ -311,7 +318,7 @@ impl Router {
     }
 
     /// the note into the receiving session (started if paused); a failure is the sender's outcome. ref: the Inbox id
-    /// an approved upward message had ("" for one delivered at once: the receiver's id names it then).
+    /// an approved message had ("" for one Deyao delivers signed: the receiver's id names it then).
     fn deliver_peer_note(self: &Arc<Self>, note: &PeerNote, o: &Origin, r#ref: &str) {
         let res = match DELIVER_PEER_HOOK
             .read()
@@ -380,7 +387,7 @@ impl Router {
         }
     }
 
-    /// Deyao's one tap on an upward peer message: it is delivered now, with the sessions' current stores
+    /// Deyao's one tap on a peer message: it is delivered now, with the sessions' current stores
     pub fn approve_peer(self: &Arc<Self>, id: &str) -> Result<Value> {
         let found = self.st.do_(|d| {
             crate::inbox::prune_requests(d, GoTime::now());
@@ -396,7 +403,7 @@ impl Router {
         });
         let (q, from, to) = found.ok_or_else(crate::apicalls::no_request)?;
         let mut note = peer_note(&from, &to, &q.params.text);
-        note.approved = note.direction == "upward";
+        note.approved = true;
         let dir = note.direction.clone();
         self.go_peer_note(note, q.origin.clone(), &q.id);
         Ok(json!({"ok": true, "state": "delivering", "direction": dir}))

@@ -6,12 +6,12 @@
   jarvis-message SESSION < file
   jarvis-message --wait SESSION "text"  also wait (up to 11 min) for what became of it
 
-Jarvis names this session as the sender (from the machine's key) and checks the direction:
-  equal or downward (the receiver holds no store this session lacks, and runs in no more permissive a mode)
-      → delivered at once, wrapped with this session's id, title, stores and mode;
-  upward (the receiver holds a store this session lacks, or bypasses while this session doesn't)
-      → an Inbox item Deyao approves or denies with one tap; delivered once approved; a denial or lapse comes back
-        to this session like any request's outcome (`jarvis-request outcomes`).
+Jarvis names this session as the sender (from the machine's key) and works out the direction: equal, downward (the
+receiver holds no store this session lacks, and runs in no more permissive a mode) or upward (it holds a store this
+session lacks, or bypasses while this session doesn't). Every message waits for Deyao, whatever its direction: an
+Inbox item he approves or denies with one tap (upward into a session holding a sensitive store: the message itself,
+which he delivers signed). Once approved it is delivered, wrapped with this session's id, title, stores and mode; a
+denial or lapse comes back to this session like any request's outcome (`jarvis-request outcomes`).
 With other asks to file, send it as an item of the same batch instead, so Deyao gets one Inbox entry:
   jarvis-request batch --item-json '{"intent":"peer","to":"SESSION","text":"…"}' --item … --summary "…"
 """

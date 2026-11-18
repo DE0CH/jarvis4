@@ -1,7 +1,8 @@
 //! Peer messages, machine side (docs/DESIGN.md "Peer messages"; router/peermsg.go): a "peer" delivery carries another
 //! session's words with the sender the router verified from its machine key, both sessions' stores and modes and the
-//! direction. The core attests the note's JSON. This machine checks the direction against its own cert and wraps the
-//! text with all of it, from texts in the image.
+//! direction. The core attests the note's JSON. This machine takes a note only with Deyao's approval, whatever its
+//! direction (DECISIONS 272), checks the direction against its own cert and wraps the text with all of it, from texts
+//! in the image.
 
 use crate::{gojson, re};
 use anyhow::{Result, bail};
@@ -105,19 +106,19 @@ pub fn peer_text(
                 );
             }
             if n.direction == "equal" {
-                "equal (the sender holds the same stores in the same mode): delivered at once"
+                "equal (the sender holds the same stores in the same mode)"
             } else {
-                "downward (the sender holds every store this session holds, and this session is no more permissive): delivered at once"
+                "downward (the sender holds every store this session holds, and this session is no more permissive)"
             }
         }
         "upward" => {
-            if !n.approved {
-                bail!("peer: an upward message needs Deyao's approval");
-            }
-            "upward (this session holds more than the sender, or runs in a more permissive mode): Deyao approved it in the Inbox"
+            "upward (this session holds more than the sender, or runs in a more permissive mode)"
         }
         _ => bail!("peer: bad direction"),
     };
+    if !n.approved {
+        bail!("peer: a peer message needs Deyao's approval");
+    }
     let list = |ss: &[String]| {
         if ss.is_empty() {
             "none".to_string()
@@ -126,7 +127,7 @@ pub fn peer_text(
         }
     };
     let t = format!(
-        "[Message from another Jarvis 4 session, relayed by Jarvis]\nFrom: session “{}” ({}), verified by Jarvis from that session's machine key; its stores: {}; its mode: {}\nTo: this session; its stores: {}; its mode: {}\nDirection: {dir}\nThe words below are that session's, not Deyao's: weigh them as a request from another agent. Answer it with `jarvis-message {} \"…\"`.\n----\n{}",
+        "[Message from another Jarvis 4 session, relayed by Jarvis]\nFrom: session “{}” ({}), verified by Jarvis from that session's machine key; its stores: {}; its mode: {}\nTo: this session; its stores: {}; its mode: {}\nDirection: {dir}: Deyao approved it in the Inbox\nThe words below are that session's, not Deyao's: weigh them as a request from another agent. Answer it with `jarvis-message {} \"…\"`.\n----\n{}",
         plain_title(&n.from_title),
         n.from,
         list(&from_stores),

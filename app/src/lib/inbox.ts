@@ -59,7 +59,7 @@ export function inboxRows(it: InboxItem, approvals: Approval[] = [], policy: Pol
       add("store", "Store", p.store);
       add("version", "Version", p.seq);
       return rows;
-    case "peer-message": // router/peermsg.go: the sender is the caller (From); the explanation says why it is upward
+    case "peer-message": // router/peermsg.go: the sender is the caller (From); the explanation gives the direction and why
       add("to", "To", session);
       add("text", "Message", p.text);
       return rows;
@@ -95,7 +95,7 @@ export const denyRequest = (it: InboxItem) => api("DELETE", `api/requests/${it.i
 export const denyMessages = (ids: string[]) => api<{ ok: boolean; denied: string[] }>("POST", "api/messages/deny", { ids });
 /** Remove a session's per-kind message rule: the router stops using it at once */
 export const removeMessageRule = (id: string) => api("DELETE", `api/message-rules/${id}`);
-/** an upward peer message (router/peermsg.go): one tap delivers it, no Face ID (nothing is signed) */
+/** a peer message (router/peermsg.go): one tap delivers it, no Face ID (nothing is signed) */
 export async function approvePeer(it: InboxItem) {
   const r = await api<{ ok: boolean; state?: string; error?: string }>("POST", `api/requests/${it.id}/approve`);
   toast(r.ok ? "Delivered to the session." : r.error || "Not delivered", r.ok ? "ok" : "error");

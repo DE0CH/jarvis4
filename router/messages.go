@@ -131,7 +131,7 @@ func previewOnly(kind string) bool { return kind == "peer" || kind == "request-o
 // needsMessageApproval decides the same): a resume prompt (Deyao's words from the app) always; into a session holding a
 // sensitive store, an UPWARD peer message (words from a session holding less, or less permissive). Jarvis's own
 // messages (Inbox outcomes, "continue", lease and upgrade notes) and the session's own wakeups, crons and
-// watches go straight in, and so does an equal or downward peer message (DECISIONS 210)
+// watches go straight in. Every other peer message was approved in the Inbox before it is sent (DECISIONS 210, 272)
 func (r *Router) needsApproval(sid string, d Delivery) bool {
 	switch d.Kind {
 	case "resume-prompt":
@@ -377,17 +377,18 @@ func peerTwinText(n *PeerNote) (string, bool) {
 	var dir string
 	switch n.Direction {
 	case "equal":
-		dir = "equal (the sender holds the same stores in the same mode): delivered at once"
+		dir = "equal (the sender holds the same stores in the same mode)"
 	case "downward":
-		dir = "downward (the sender holds every store this session holds, and this session is no more permissive): delivered at once"
+		dir = "downward (the sender holds every store this session holds, and this session is no more permissive)"
 	case "upward":
-		if !n.Approved {
-			return "", false
-		}
-		dir = "upward (this session holds more than the sender, or runs in a more permissive mode): Deyao approved it in the Inbox"
+		dir = "upward (this session holds more than the sender, or runs in a more permissive mode)"
 	default:
 		return "", false
 	}
+	if !n.Approved {
+		return "", false
+	}
+	dir += ": Deyao approved it in the Inbox"
 	list := func(ss []string) string {
 		if len(ss) == 0 {
 			return "none"

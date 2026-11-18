@@ -60,21 +60,34 @@ func waitNotes(t *testing.T, got *[]PeerNote, mu *sync.Mutex, n int) []PeerNote 
 	return append([]PeerNote{}, *got...)
 }
 
-// equal and downward go at once, with the verified sender; nothing reaches the Inbox
-func TestPeerEqualAndDownwardAreDeliveredAtOnce(t *testing.T) {
+// equal and downward wait for Deyao too (DECISIONS 272): an Inbox request each, delivered with the verified sender
+// once he approves it
+func TestPeerEqualAndDownwardWaitForDeyao(t *testing.T) {
 	r, m, got, mu := peerRig(t)
 	mh := r.MachineHandler()
 	code, out := m.do(t, mh, "POST", "/m/api/requests/peer", `{"to": "label sSame", "text": "hello"}`)
-	if code != 202 || out["direction"] != "equal" || out["to"] != "sSame" {
+	if code != 200 || out["direction"] != "equal" || out["to"] != "sSame" || out["waiting"] != "inbox" || out["delivering"] != nil {
 		t.Fatalf("%d %v", code, out)
 	}
+	id := out["id"].(string)
+	it, ok := r.InboxItem(id)
+	if !ok || it.Kind != requestKindPeer || it.Params.Text != "hello" || it.Session != "sSame" ||
+		!strings.HasPrefix(it.Explanation, "Equal: both hold the same stores in the same mode.") {
+		t.Fatalf("%+v", it)
+	}
+	time.Sleep(50 * time.Millisecond)
+	mu.Lock()
+	if len(*got) != 0 {
+		t.Fatal("an equal message was delivered before Deyao approved it")
+	}
+	mu.Unlock()
+	if code, out := inboxDo(t, r, "POST", "/api/requests/"+id+"/approve", "", false); code != 200 || out["direction"] != "equal" {
+		t.Fatalf("approve: %d %v", code, out)
+	}
 	n := waitNotes(t, got, mu, 1)[0]
-	if n.From != "sLow" || n.FromTitle != "label sLow" || n.To != "sSame" || n.Direction != "equal" || n.Text != "hello" || n.Approved ||
+	if n.From != "sLow" || n.FromTitle != "label sLow" || n.To != "sSame" || n.Direction != "equal" || n.Text != "hello" || !n.Approved ||
 		strings.Join(n.FromStores, ",") != "default" || n.FromMode != "auto" {
 		t.Fatalf("%+v", n)
-	}
-	if len(r.Inbox()) != 0 {
-		t.Fatal("an equal message went to the Inbox")
 	}
 	// the sender names no one else: the caller is the machine's session, whatever the body says
 	if code, _ := m.do(t, mh, "POST", "/m/api/requests/peer", `{"to": "sLow", "text": "me"}`); code != 400 {
@@ -85,10 +98,17 @@ func TestPeerEqualAndDownwardAreDeliveredAtOnce(t *testing.T) {
 	}
 	// downward: sHigh → sLow
 	h := newTestMachine(r, "mHigh")
-	if code, out := h.do(t, mh, "POST", "/m/api/requests/peer", `{"to": "sLow", "text": "do this"}`); code != 202 || out["direction"] != "downward" {
+	code, out = h.do(t, mh, "POST", "/m/api/requests/peer", `{"to": "sLow", "text": "do this"}`)
+	if code != 200 || out["direction"] != "downward" || out["waiting"] != "inbox" {
 		t.Fatalf("%d %v", code, out)
 	}
-	if n := waitNotes(t, got, mu, 2)[1]; n.From != "sHigh" || n.Direction != "downward" || n.FromMode != "bypass" {
+	if it, _ := r.InboxItem(out["id"].(string)); !strings.HasPrefix(it.Explanation, "Downward: the sender holds every store the receiver holds") {
+		t.Fatalf("%q", it.Explanation)
+	}
+	if code, _ := inboxDo(t, r, "POST", "/api/requests/"+out["id"].(string)+"/approve", "", false); code != 200 {
+		t.Fatalf("approve: %d", code)
+	}
+	if n := waitNotes(t, got, mu, 2)[1]; n.From != "sHigh" || n.Direction != "downward" || n.FromMode != "bypass" || !n.Approved {
 		t.Fatalf("%+v", n)
 	}
 }
@@ -188,8 +208,8 @@ func TestPeerDirectionUsesTheCertStores(t *testing.T) {
 	}
 }
 
-// a peer message as a batch item (intent "peer"): upward waits in the batch with the session's other asks, one Inbox
-// entry; equal or downward is delivered at once, as alone
+// a peer message as a batch item (intent "peer"): every one waits in the batch with the session's other asks, one
+// Inbox entry, whatever its direction
 func TestPeerInABatch(t *testing.T) {
 	r, m, got, mu := peerRig(t)
 	mh := r.MachineHandler()
@@ -206,27 +226,31 @@ func TestPeerInABatch(t *testing.T) {
 	if up["intent"] != "peer" || up["direction"] != "upward" || up["to"] != "sHigh" || up["id"] == nil || up["delivering"] != nil {
 		t.Fatalf("upward item: %v", up)
 	}
-	if eq["intent"] != "peer" || eq["direction"] != "equal" || eq["to"] != "sSame" || eq["delivering"] != true || eq["id"] != nil {
+	if eq["intent"] != "peer" || eq["direction"] != "equal" || eq["to"] != "sSame" || eq["delivering"] != nil || eq["id"] == nil {
 		t.Fatalf("equal item: %v", eq)
 	}
-	// the equal one went at once, the upward one waits
-	if n := waitNotes(t, got, mu, 1); len(n) != 1 || n[0].To != "sSame" || n[0].Direction != "equal" || n[0].Text != "fyi" {
-		t.Fatalf("%+v", n)
+	// both wait
+	time.Sleep(50 * time.Millisecond)
+	mu.Lock()
+	if len(*got) != 0 {
+		t.Fatalf("delivered before Deyao approved: %+v", *got)
 	}
+	mu.Unlock()
 	full, ok := r.InboxBatchFull(bid, nil)
 	if !ok {
 		t.Fatal("no batch")
 	}
 	list := full["items"].([]InboxItem)
-	if len(list) != 2 || list[1].Kind != requestKindPeer || list[1].Params.Text != "run the deploy" || list[1].Session != "sHigh" ||
-		!strings.Contains(list[1].Explanation, "the receiver holds infra, which the sender doesn't") {
+	if len(list) != 3 || list[1].Kind != requestKindPeer || list[1].Params.Text != "run the deploy" || list[1].Session != "sHigh" ||
+		!strings.Contains(list[1].Explanation, "the receiver holds infra, which the sender doesn't") ||
+		list[2].Kind != requestKindPeer || list[2].Params.Text != "fyi" || list[2].Session != "sSame" {
 		t.Fatalf("%+v", list)
 	}
 	id := up["id"].(string)
 	if code, out := inboxDo(t, r, "POST", "/api/requests/"+id+"/approve", "", false); code != 200 || out["ok"] != true {
 		t.Fatalf("approve: %d %v", code, out)
 	}
-	if n := waitNotes(t, got, mu, 2)[1]; n.To != "sHigh" || n.Direction != "upward" || !n.Approved || n.Text != "run the deploy" {
+	if n := waitNotes(t, got, mu, 1)[0]; n.To != "sHigh" || n.Direction != "upward" || !n.Approved || n.Text != "run the deploy" {
 		t.Fatalf("%+v", n)
 	}
 	// the outcome names the batch and the item's index, so the session reads it against its own signed filing
@@ -240,12 +264,18 @@ func TestPeerInABatch(t *testing.T) {
 		return ok
 	})
 
-	// only messages that go at once: no batch, nothing failed
+	if code, _ := inboxDo(t, r, "POST", "/api/requests/"+eq["id"].(string)+"/approve", "", false); code != 200 {
+		t.Fatalf("approve: %d", code)
+	}
+	if n := waitNotes(t, got, mu, 2)[1]; n.To != "sSame" || n.Direction != "equal" || !n.Approved || n.Text != "fyi" {
+		t.Fatalf("%+v", n)
+	}
+
+	// a batch of one equal message: a batch, nothing sent yet
 	code, out = m.do(t, mh, "POST", "/m/api/requests/batch", `{"summary":"one note","items":[{"intent":"peer","to":"sSame","text":"second"}]}`)
-	if code != 200 || out["id"] != nil || out["items"].([]any)[0].(map[string]any)["delivering"] != true {
+	if code != 200 || out["id"] == nil || out["items"].([]any)[0].(map[string]any)["delivering"] != nil {
 		t.Fatalf("%d %v", code, out)
 	}
-	waitNotes(t, got, mu, 3)
 	// checked like the single endpoint: to itself, to nobody, empty, twice the same; nothing is filed or sent
 	for _, items := range []string{
 		`{"intent":"peer","to":"sLow","text":"me"}`,
@@ -264,7 +294,7 @@ func TestPeerInABatch(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	mu.Lock()
 	defer mu.Unlock()
-	if len(*got) != 3 {
-		t.Fatalf("a refused batch sent something: %d", len(*got))
+	if len(*got) != 2 {
+		t.Fatalf("a refused or unapproved batch sent something: %d", len(*got))
 	}
 }

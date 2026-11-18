@@ -418,27 +418,35 @@ func TestJarvisOwnMessagesGoStraightIntoASensitiveSession(t *testing.T) {
 	}
 }
 
-// DECISIONS 210: into a session holding a sensitive store, an equal or downward peer message goes straight in (no
-// Inbox, no signature); only an upward one (from a session holding less) waits for Deyao
+// DECISIONS 210, 272: into a session holding a sensitive store, an equal or downward peer message waits as a one-tap
+// Inbox request (no signature), as into any session; only an upward one (from a session holding less) is held for
+// Deyao to deliver signed
 func TestOnlyAnUpwardPeerMessageIntoASensitiveSessionIsHeld(t *testing.T) {
 	m := newMsgRig(t, "mmsg11", true, previewOK)
-	if out := m.sendPeer(t, "sequal", []string{"claude", "default"}, "same stores"); out["direction"] != "equal" || out["waiting"] != nil {
-		t.Fatal(out)
+	eq := m.sendPeer(t, "sequal", []string{"claude", "default"}, "same stores")
+	if eq["direction"] != "equal" || eq["waiting"] != "inbox" {
+		t.Fatal(eq)
 	}
-	if out := m.sendPeer(t, "sdown", []string{"claude", "default", "infra"}, "more stores"); out["direction"] != "downward" || out["waiting"] != nil {
-		t.Fatal(out)
+	down := m.sendPeer(t, "sdown", []string{"claude", "default", "infra"}, "more stores")
+	if down["direction"] != "downward" || down["waiting"] != "inbox" {
+		t.Fatal(down)
+	}
+	if len(m.deliveries()) != 0 {
+		t.Fatalf("delivered before Deyao approved: %+v", m.deliveries())
+	}
+	for _, out := range []map[string]any{eq, down} {
+		if _, err := m.r.ApprovePeer(out["id"].(string)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	ds := m.waitDeliveries(t, 2)
 	for _, d := range ds {
-		if d.Kind != "peer" || d.Preview || d.Approval != nil || d.Attest == nil || d.Peer.Approved {
-			t.Fatalf("not straight in: %+v", d)
+		if d.Kind != "peer" || d.Preview || d.Approval != nil || d.Attest == nil || !d.Peer.Approved {
+			t.Fatalf("not straight in once approved: %+v", d)
 		}
 	}
 	if len(m.pending()) != 0 {
 		t.Fatalf("held %+v", m.pending())
-	}
-	for _, q := range m.r.Inbox() {
-		t.Fatalf("an Inbox item for an equal/downward message: %+v", q)
 	}
 	if out := m.sendPeer(t, "sup", []string{"claude"}, "fewer stores"); out["direction"] != "upward" || out["waiting"] != "message" {
 		t.Fatal(out)
@@ -452,7 +460,7 @@ func TestOnlyAnUpwardPeerMessageIntoASensitiveSessionIsHeld(t *testing.T) {
 			t.Fatalf("%s: needsApproval %v", dir, got)
 		}
 	}
-	// into a plain session not even an upward one waits for a signature (it is a one-tap upward request instead)
+	// into a plain session not even an upward one waits for a signature (it is a one-tap request instead)
 	m.r.st.Do(func(d *persisted) {
 		d.Sessions["s1"].Cert = &Doc{Payload: `{"kind":"succession-cert","line":"L1","sensitive":false}`}
 	})

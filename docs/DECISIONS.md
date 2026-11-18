@@ -3175,3 +3175,14 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      out of the chat, message and all. The rule is `aviary/src/reconcile.rs` `verdict`, a pure function of the
      router's state; the pass carries it out. *Change*: keep a lapsed one (as Deyao's own New session is kept failed,
      to Start again) if a lapse should not lose the message.
+273. **Every peer message waits for Deyao** (Deyao, 2026-11-18: "ask for approvals all peer messages by default …
+     make me review (i.e. request) all"). Until now only an upward message (into a session holding a store the sender
+     lacks, or bypassing while the sender doesn't) waited; equal and downward ones went straight in (199, 210). Now
+     `SendPeer` and a batch's `peer` item file every message as a one-tap `peer-message` request, whatever its
+     direction; upward into a session holding a sensitive store keeps its signed pending message (203). The direction
+     stays: the Inbox explanation starts with it ("Equal: …", "Downward: …", "Upward: …") and the receiver's wrapper
+     names it. Approval sets `approved` on every note, and the machine (`rust/machine/src/peer.rs`) refuses any note
+     without it, so a router that skipped the Inbox still can't put a message in. A machine on an older image takes an
+     approved equal or downward note as before (it reads `approved` only for upward); its wrapper still says
+     "delivered at once" until the session restarts onto the newest image. No setting turns the old rule back on: the
+     rule is the default and the only one until Deyao asks for an exception.
