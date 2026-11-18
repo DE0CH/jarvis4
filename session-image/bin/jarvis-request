@@ -341,7 +341,7 @@ def main():
         out = call("POST", "/api/requests/batch", {"summary": summary, "items": items})
         stores = [x["store"] for x in items if x.get("intent") == "add-store" and x.get("store")] + \
             [repo_store(x["repo"]) for x in items if x.get("intent") == "repo/add" and x.get("repo") and not x.get("noStore")]
-        print(json.dumps(out))
+        print(json.dumps(out), flush=True)  # before the wait: a detached caller reads it from a file (the phone replica)
         refs = [it.get("id") or it.get("session") for it in out.get("items") or [] if not it.get("delivering")]
         refs = [r for r in refs if r]
         if not out.get("id") or not refs:  # nothing waits: only messages delivered at once (or a restore filed on its own)
@@ -406,7 +406,7 @@ def main():
                          "Nothing was filed.")
     else:
         raise SystemExit(f"jarvis-request: unknown command {kind!r} (jarvis-request --help lists them). Nothing was filed.")
-    print(json.dumps(out))
+    print(json.dumps(out), flush=True)  # before the wait: a detached caller reads it from a file (the phone replica)
     ref = out.get("id") or os.environ.get("JARVIS2_SESSION_ID") or os.environ.get("SESSION_ID") or ""
     if not ref:
         # nothing to wait on: a wait on "" never ends (add-store once waited forever after Deyao approved it)

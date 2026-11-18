@@ -79,4 +79,27 @@ try:
     jr.main(); raise AssertionError("an answer with no id waited")
 except SystemExit as e:
     assert "names no id" in str(e.code), e.code
+
+# the router's answer is on stdout before the wait starts, also when stdout is a file (block-buffered): the phone
+# replica starts jarvis-request detached with its output in a file and answers once the answer's id is there
+# (2026-11-18: only stderr's "Waiting for Deyao's decision" reached the file, the JSON sat in the buffer until the
+# decision, and every replica run failed "the session filed a grant request")
+real_stdout, seen = sys.stdout, []
+def on_wait(refs, since, stores=None):
+    seen.append(open(outf).read())  # the file still open as stdout, as in the detached request
+    return 0
+jr.block = on_wait
+for argv, ans in ((["grant", "status", "--minutes", "5", "--why", "x"], {"ok": True, "id": "q7"}),
+                  (["batch", "--summary", "x", "--item", "grant,holder=archive,minutes=5"], {"id": "b7", "items": [{"id": "q8"}]})):
+    outf = os.path.join(tempfile.mkdtemp(), "out")
+    jr.call = lambda m, p, b=None, ans=ans: ans
+    sys.argv = ["jarvis-request"] + argv
+    sys.stdout = f = open(outf, "w")
+    try:
+        jr.main()
+    except SystemExit:
+        pass
+    sys.stdout = real_stdout
+    f.close()
+    assert f'"id": "{ans["id"]}"' in seen[-1], (argv[0], seen[-1])
 print("ok")
