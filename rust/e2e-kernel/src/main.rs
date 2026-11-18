@@ -122,6 +122,11 @@ impl Cleanup {
                 .flatten()
                 .flatten()
             {
+                // each sandbox's console with the logs (the boot's own account of itself)
+                let _ = fs::copy(
+                    e.path().join("console.log"),
+                    logs.join(format!("console-{}.log", e.file_name().to_string_lossy())),
+                );
                 let _ = Command::new("sudo")
                     .args(["-n", "umount", "-l"])
                     .arg(e.path().join("root"))
