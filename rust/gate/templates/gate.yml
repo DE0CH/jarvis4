@@ -26,7 +26,7 @@ jobs:
         run: |
           set -e
           pin="$(curl -fsSL "$PIN_URL" || true)"
-          sum="${pin%% *}"; url="${pin#* }"
+          read -r sum url <<< "$pin"
           if [ -z "$pin" ] || [ "$sum" = unreleased ]; then
             # before the gate's first release (or before its pin is on main) nothing is decided
             echo "::warning::the gate is not released yet ($PIN_URL is missing or says unreleased)"
@@ -55,7 +55,7 @@ jobs:
         run: |
           set -e
           pin="$(curl -fsSL "$PIN_URL" || true)"
-          sum="${pin%% *}"; url="${pin#* }"
+          read -r sum url <<< "$pin"
           if [ -z "$pin" ] || [ "$sum" = unreleased ]; then
             # before the gate's first release (or before its pin is on main) nothing is decided
             echo "::warning::the gate is not released yet ($PIN_URL is missing or says unreleased)"

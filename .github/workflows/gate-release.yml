@@ -41,7 +41,8 @@ jobs:
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" gate-x86_64-linux --target "$GITHUB_SHA" \
             --title "$tag" --notes "rust/gate at $GITHUB_SHA (sha256 $sum)"
           url="https://github.com/${GITHUB_REPOSITORY}/releases/download/$tag/gate-x86_64-linux"
-          printf '%s  %s\n' "$sum" "$url" > rust/gate/pin.txt
+          # one space: every repo's gate.yml splits the line at its first space
+          printf '%s %s\n' "$sum" "$url" > rust/gate/pin.txt
           git diff --quiet && exit 0
           git config user.name jarvis4-ci && git config user.email jarvis4-ci@users.noreply.github.com
           git add rust/gate/pin.txt
