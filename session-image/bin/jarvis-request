@@ -67,6 +67,8 @@ from time import time_ns
 
 BASE = os.environ.get("JARVIS_URL", "http://127.0.0.1:7171").rstrip("/")
 OUTCOMES = "/run/jarvis/outcomes"  # the checked outcomes the supervisor records (rust/machine/src/outcomes.rs outcomes_dir)
+# aviary's supervisor's local socket, in an aviary session's sandbox (DE0CH/aviary crates/supervisor-api/src/local.rs)
+AGENT_SOCKET = "/run/supervisor/agent.sock"
 # a wrong call says what was wrong in one line instead of printing the manual (--help prints that)
 USAGE = {"add-repo": "add-repo OWNER/NAME [--sensitive] [--no-store]", "grant": "grant HOLDER [--minutes N | --days N]",
          "unlock": "unlock", "new-session": "new-session --label TEXT --prompt-file FILE [...]",
@@ -174,9 +176,64 @@ def outcome_files(ref, since_ns=0):
     return [o for _, o in sorted(out, key=lambda x: x[0])]
 
 
+class PersonWait:
+    """While open, aviary's supervisor hears that this command waits on Deyao (its person wait, `POST
+    /v1/person-waits/KEY` held and called again, `DELETE` at the end): the chat's list shows the conversation as
+    needing him, as for an open question (Deyao, 2026-11-18). Outside an aviary sandbox (no socket) it does nothing;
+    a call that fails is only a missing mark, never the request's failure."""
+
+    def __init__(self, refs, socket_path=None):
+        import re, threading
+        self.path = socket_path or AGENT_SOCKET
+        self.key = re.sub(r"[^A-Za-z0-9._:-]", "-", "inbox-" + "-".join(refs))[:100]
+        self.stop = threading.Event()
+        self.thread = None
+
+    def _call(self, method, query=""):
+        import http.client, socket
+        c = http.client.HTTPConnection("localhost", timeout=40)
+        try:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.settimeout(40)
+            s.connect(self.path)
+            c.sock = s
+            c.request(method, f"/v1/person-waits/{self.key}{query}")
+            c.getresponse().read()
+        except OSError:
+            pass
+        finally:
+            c.close()
+
+    def _hold(self):
+        import time
+        while not self.stop.is_set():
+            began = time.monotonic()
+            self._call("POST", "?waitMs=20000")
+            # a supervisor holds the call 20 s; one without the route answers at once: never faster than that
+            self.stop.wait(max(0.0, 20 - (time.monotonic() - began)))
+
+    def __enter__(self):
+        import threading
+        if os.path.exists(self.path):
+            self.thread = threading.Thread(target=self._hold, daemon=True)
+            self.thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.stop.set()
+        if self.thread:
+            self._call("DELETE")
+
+
 def block(refs, since_ns, stores=(), timeout=None):
     """until every ref has a checked outcome newer than since_ns: print each text once; then the approved stores
-    pulled into the supervisor. Exit code: 0 all approved, 1 any other outcome, 2 the timeout passed"""
+    pulled into the supervisor. Exit code: 0 all approved, 1 any other outcome, 2 the timeout passed. While it
+    waits, aviary's supervisor hears that it waits on Deyao (PersonWait)."""
+    with PersonWait(refs):
+        return _block(refs, since_ns, stores, timeout)
+
+
+def _block(refs, since_ns, stores=(), timeout=None):
     import time
     deadline = time.time() + timeout if timeout else None
     got, shown = {}, set()
