@@ -87,8 +87,8 @@ spec:
             # listener runs because FABRIC_HERMIT_URL is set; the tokens are Secret router-secrets-fabric (router-secrets.py --part router-fabric)
             - { name: FABRIC_HERMIT_URL, value: "http://hermit.jarvis4-fabric.svc.cluster.local" }
             - { name: FABRIC_MACHINE_ADDR, value: ":3128" }
-            - { name: FABRIC_SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session-fabric:sha-c018b323d7bc@sha256:09a4647b0222d67db3877ca97af047790cacc9a49b4cedd764184ac1b499ece7" }
-            - { name: FABRIC_SESSION_IMAGE_SIG, value: "MEUCIQCrneYTbOqYvIUV8SoCmhsHo/sY3RJx8OSqtcSnMv3MwgIgS9DAmRaDZJxyO8i7Qadueg7kHda+XmLlQM4SS7g4/XI=" }
+            - { name: FABRIC_SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session-fabric:sha-e00a569685b5@sha256:3bbf52fe3ef01685bde1e78db49449eba4ef39af206d2748a73feb53bf1f792f" }
+            - { name: FABRIC_SESSION_IMAGE_SIG, value: "MEUCIFjzc/qJoOYNESUKpJ+bWQan1C6XoVVS9364ocOzHUgkAiEAqxVBfcf4YSRMBuvMb2fKlBgRe33qfCfB6dga3VGRG6I=" }
           # SOPS-encrypted to the cluster's age key (k8s/cluster/secrets, infra/router-secrets.py --box cluster).
           # router-secrets-github stays LAST: with a key in several envFrom sources the last one wins
           envFrom: [{ secretRef: { name: router-secrets, optional: true } }, { secretRef: { name: router-secrets-backup, optional: true } }, { secretRef: { name: router-secrets-flyorgs, optional: true } }, { secretRef: { name: router-secrets-flypersonal, optional: true } }, { secretRef: { name: router-secrets-flyvolumes, optional: true } }, { secretRef: { name: router-secrets-browserbase, optional: true } }, { secretRef: { name: router-secrets-devices, optional: true } }, { secretRef: { name: router-secrets-livepush, optional: true } }, { secretRef: { name: router-secrets-runners, optional: true } }, { secretRef: { name: router-db } }, { secretRef: { name: router-secrets-objects } }, { secretRef: { name: router-seal } }, { secretRef: { name: router-secrets-aws, optional: true } }, { secretRef: { name: router-secrets-fabric, optional: true } }, { secretRef: { name: router-secrets-github, optional: true } }]
