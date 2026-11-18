@@ -344,6 +344,17 @@ impl Keeper {
         spec_tx: std::sync::mpsc::Sender<Option<HarnessSpec>>,
     ) -> Result<()> {
         let (r, w) = std::io::pipe()?;
+        // the boot steps run as user claude and reopen their end through /proc/self/fd/3 (boot.rs), which checks the
+        // pipe's own owner: a pipe is its creator's, 0600, so root's end is refused to claude ("no fd 3 from the
+        // keeper", every machine of the Rust machine's first image; Linux and gVisor alike, measured). The write end
+        // becomes claude's before it is handed over.
+        let s = crate::session::session();
+        nix::unistd::fchown(
+            &w,
+            Some(nix::unistd::Uid::from_raw(s.uid)),
+            Some(nix::unistd::Gid::from_raw(s.gid)),
+        )
+        .map_err(|e| anyhow!("the boot steps' pipe to user claude: {e}"))?;
         let mut cmd = unprotected_setsid("/proc/self/exe", &["prepare"]);
         cmd.fd_mappings(vec![FdMapping {
             parent_fd: OwnedFd::from(w),
