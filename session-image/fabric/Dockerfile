@@ -14,4 +14,8 @@ COPY --from=sandbox / /opt/aviary-sandbox/
 COPY --chmod=644 session-image/fabric/aviary-sandbox.config /opt/aviary-sandbox.config
 COPY --chmod=755 session-image/fabric/fabric-entrypoint /usr/local/bin/fabric-entrypoint
 ENV AVIARY_SANDBOX_IMAGE_DIR=/opt/aviary-sandbox
+# the machine gives its harness the image's env as image.env lists it (rust/machine vouch.rs clean_env), written by the
+# session image before this ENV: written again here, or aviary-sandbox never sees the directory and fetches instead
+RUN env | grep -Ev '^(HOSTNAME|HOME|PWD|OLDPWD|SHLVL|_|TERM|USER|LOGNAME|SHELL)=' | sort > /opt/jarvis/image.env \
+ && grep -qx 'AVIARY_SANDBOX_IMAGE_DIR=/opt/aviary-sandbox' /opt/jarvis/image.env
 ENTRYPOINT ["/usr/local/bin/fabric-entrypoint"]
