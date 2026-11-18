@@ -56,7 +56,8 @@ const MACHINES: &str = "127.0.0.1:29081";
 const GATEWAY_HEALTH: &str = "127.0.0.1:29082";
 /// the fabric replica: the fake hermit, and the router's fabric listener (a fabric machine's way to the router)
 const FAKE_HERMIT: &str = "127.0.2.1:29090";
-const FABRIC_LISTENER: &str = "127.0.0.1:29083";
+/// on the fake fabric's bridge (fakehermit.rs `BRIDGE_IP`), where each sandbox's namespace reaches it
+const FABRIC_LISTENER: &str = "10.89.0.1:29083";
 
 fn fabric() -> bool {
     std::env::var("E2E_RUNNER").is_ok_and(|r| r == "fabric")
@@ -97,12 +98,14 @@ struct Net {
 
 fn net() -> Net {
     if fabric() {
-        // the fabric's machines are sandboxes on this box: the router's fabric listener and the front on loopback
+        // the fabric's machines are sandboxes on this box, each in its namespace on the fake fabric's bridge: the
+        // router's fabric listener and the front listen on the bridge's address
+        let front = format!("{}:31085", fakehermit::BRIDGE_IP);
         return Net {
             machine_url: format!("http://{PEER}._peer.internal:8081"),
             machine_addr: MACHINES.into(),
-            chat_url: format!("http://{CHAT_FRONT}"),
-            front_addr: CHAT_FRONT.into(),
+            chat_url: format!("http://{front}"),
+            front_addr: front,
             peers: false,
         };
     }
@@ -178,6 +181,18 @@ impl Cleanup {
             chat::teardown(&self.w, root);
         }
         if fabric() {
+            // the sandboxes' namespaces and their bridge
+            if let Ok(o) = Command::new("ip").args(["netns", "list"]).output() {
+                for ns in String::from_utf8_lossy(&o.stdout)
+                    .split_whitespace()
+                    .filter(|n| n.starts_with("fh-"))
+                {
+                    let _ = Command::new("sudo")
+                        .args(["-n", "ip", "netns", "del", ns])
+                        .status();
+                }
+            }
+            fakehermit::bridge_down();
             // the fake hermit's sandboxes: killed, deleted, their roots unmounted
             let rs = std::env::var("E2E_RUNSC").unwrap_or_else(|_| "/usr/local/bin/runsc".into());
             let root = self.w.join("fh").join("runsc");
@@ -492,6 +507,7 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         sweep(token);
     }
     if fabric() {
+        // (with namespaces of their own since 2026-11-18, but an older run's may still be on the host network)
         // an earlier run's sandboxes (a run killed before its cleanup) still hold the box's loopback ports on the
         // host network (127.0.0.1:7171, the machine's session API): this run's machine would bind none of them and its
         // commands reach the old machine (2026-11-18: time-machine refused, "not signed by a machine the core started")
@@ -504,6 +520,8 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
                 "runsc-(sandbox|gofer) .*--root=/tmp/e2e-kernel-",
             ])
             .status();
+        // the bridge the sandboxes' namespaces hang on (the router's fabric listener and the front listen on it)
+        fakehermit::bridge_up()?;
     }
     for r in ROLES {
         run_ok(
