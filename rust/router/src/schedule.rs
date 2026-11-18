@@ -45,7 +45,7 @@ fn re(s: &str) -> regex::Regex {
     regex::Regex::new(s).unwrap_or_else(|_| unreachable!())
 }
 
-static SCHEDULE_NAME_RE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"^[A-Za-z0-9_-]{1,40}$"));
+pub(crate) static SCHEDULE_NAME_RE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"^[A-Za-z0-9_-]{1,40}$"));
 /// Go's \s: ASCII whitespace only
 static SPACE_RE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"[\t\n\x0C\r ]+"));
 static HHMM_RE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"^(\d{1,2}):(\d{2})$"));
@@ -501,7 +501,7 @@ pub fn sched_forget(key: &str) {
 }
 
 /// the key is free and not backing off → mark it busy
-fn sched_claim(key: &str) -> bool {
+pub(crate) fn sched_claim(key: &str) -> bool {
     let mut g = sched_run();
     if g.busy.contains(key) || g.attempts.get(key).is_some_and(|(_, at)| Instant::now() < *at) {
         return false;
@@ -510,12 +510,12 @@ fn sched_claim(key: &str) -> bool {
     true
 }
 
-fn sched_release(key: &str) {
+pub(crate) fn sched_release(key: &str) {
     sched_run().busy.remove(key);
 }
 
 /// record a failed attempt; true = it has failed SCHEDULE_MAX_ATTEMPT times
-fn sched_failed(key: &str) -> bool {
+pub(crate) fn sched_failed(key: &str) -> bool {
     let mut g = sched_run();
     let a = g.attempts.entry(key.to_string()).or_insert((0, Instant::now()));
     a.0 += 1;
