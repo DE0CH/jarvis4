@@ -75,7 +75,7 @@ pub struct Origin {
     pub via_call: String,
 }
 
-pub use crate::outcomes::SignedRequest;
+pub use crate::vouch::SignedRequest;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]

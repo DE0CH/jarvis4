@@ -858,7 +858,7 @@ impl Router {
             "continue" => {
                 let r = self.clone();
                 std::thread::spawn(move || {
-                    match r.deliver_canned(&a.session, crate::deliveries::Delivery { kind: "continue".into(), ..Default::default() }, "continue") {
+                    match r.deliver_canned(&a.session, crate::vouch::Delivery { kind: "continue".into(), ..Default::default() }, "continue") {
                         Err(e) => crate::logf!("[account] {} ({}): \"continue\" after the start on its new Claude account failed: {e:#}", a.session, a.name),
                         Ok(()) => crate::logf!("[account] {} ({}): \"continue\" delivered after the start on its new Claude account", a.session, a.name),
                     }
