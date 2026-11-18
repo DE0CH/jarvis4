@@ -6,6 +6,7 @@ mod content_drain;
 mod core_mq_sealed;
 mod db;
 mod devices;
+mod live_lastsnap;
 mod machines_claim;
 mod r2_livepush;
 mod screen;
