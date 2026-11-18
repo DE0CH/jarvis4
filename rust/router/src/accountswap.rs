@@ -41,6 +41,11 @@ pub static SWAP_RC_WAIT_MS: AtomicU64 = AtomicU64::new(300_000);
 pub static SWAP_POLL_MS: AtomicU64 = AtomicU64::new(2_000);
 pub const SWAP_KILL_CMD: &str = "tmux kill-session -t claude";
 
+/// how long a switched session's harness may take to come up idle
+pub fn swap_up_wait() -> Duration {
+    ms(&SWAP_UP_WAIT_MS)
+}
+
 fn ms(a: &AtomicU64) -> Duration {
     Duration::from_millis(a.load(Ordering::Relaxed))
 }
