@@ -1,4 +1,4 @@
 {
-  "release": "aviary-86645676f12c",
-  "sandbox": "ghcr.io/de0ch/hermit-sandbox@sha256:adeffac532eb3a66c28a8585abb3ec0b316ff256cfb9d116fda2b45cc8c19690"
+  "release": "aviary-cf496e24c72c",
+  "sandbox": "ghcr.io/de0ch/hermit-sandbox@sha256:4764e5e207432117b2d1e2de9dff04450a69dd8e9a6b7e37b381553471f33671"
 }
