@@ -522,6 +522,7 @@ var callRules = map[string]callRule{
 	"GET /api/sessions/{id}/crons":                callBody,
 	"POST /api/sessions/{id}/crons":               callBody,
 	"PUT /api/sessions/{id}/chat-schedule":        callNo, // hermit-jarvis's report (schedule.go ChatSchedule)
+	"POST /api/remotes/{id}/account":              callNo, // hermit-jarvis: the chat's menu picked an account (a session asks with POST /api/sessions/{id}/account)
 	"DELETE /api/sessions/{id}/crons/{name}":      callBody,
 	"POST /api/sessions/{id}/crons/{name}/run":    callBody,
 	"POST /api/sessions/{id}/destroy":             callBody,

@@ -243,7 +243,7 @@ impl Router {
     }
 
     /// GET /api/remotes?harness=openclaw|opencode|paseo-claude|paseo|aviary|dsh → {sessions: [{id, title, state, model,
-    /// harness, + url, token, webUrl (openclaw) | pairUrl (a Paseo harness) | webUrl (aviary, dsh) — only on a started
+    /// harness, account, + url, token, webUrl (openclaw) | pairUrl (a Paseo harness) | webUrl (aviary, dsh) — only on a started
     /// session whose front end is up, else error}]}. harness=paseo: every session a Paseo daemon fronts (opencode and
     /// paseo-claude), what the Paseo app lists; harness=aviary: what hermit-jarvis lists (paused ones too, and one whose
     /// resume waits for Deyao's approval, as paused; a new one waiting for approval as approval).
@@ -288,6 +288,7 @@ impl Router {
                         o.insert("state".into(), json!(s.state));
                         o.insert("model".into(), json!(s.model));
                         o.insert("harness".into(), json!(s.harness));
+                        o.insert("account".into(), json!(s.claude_account));
                         if s.state != "started" || s.machine_id.is_empty() {
                             return Value::Object(o);
                         }
@@ -333,7 +334,14 @@ impl Router {
                 .collect()
         });
         w.set_header("Cache-Control", "no-store");
-        write_json(w, 200, &json!({"sessions": out}));
+        // `accounts`: the Claude accounts a session's model can run on, for a front end that offers them beside the
+        // models (hermit-jarvis: the chat's model menu, one entry "Opus 5.5 · chendeyao-uk" per account); the other
+        // apps ignore it
+        write_json(
+            w,
+            200,
+            &json!({"sessions": out, "accounts": self.accounts().chat_rows()}),
+        );
     }
 }
 

@@ -162,7 +162,26 @@ AWS eu-central-1 on demand: m7i.xlarge USD 0.2415/h per host (two sessions), eac
 public IPv4 USD 0.005/h and gp3 disk USD 0.0952 per GB-month while it runs; traffic out of AWS USD 0.09/GB (the
 JuiceFS data written to Hetzner included).
 
-## Next: freeze and the time machine (Deyao, 2026-11-17; not built yet)
+## Freeze and the time machine (Deyao, 2026-11-17)
+
+Built (2026-11-18), switched on per deployment:
+
+| Part | Where |
+|---|---|
+| sandboxd `POST …/pause` and `…/resume` (runsc pause/resume), the eviction (`…/freeze`) of a paused sandbox, a memory check in every create/receive/thaw (paused sandboxes hold theirs) | DE0CH/aviary crates/sandboxd |
+| hermit: the freeze task pauses in place (row `frozen`, host kept); the repacking evicts (`fabric/packing.rs` `place`, `evictions`; `placement.rs` `reclaim`; scaler step 10 `evict_lone_frozen`); a thaw resumes in place or restores from S3 (`Gvisor::thaw`); the janitor wakes a due `until`; a frozen row's release is forced and deletes its image | DE0CH/aviary crates/hermit (`fabric/pausing.rs`, `freezekey.rs`) |
+| magpie: an answer to a question asks hermit for the conversation's sandbox (a use) | DE0CH/aviary 4d38eb57 |
+| router: `POST/GET /m/api/time-machine`, state `frozen`, Resume and every delivery thaw it, `frozenLoop` (hermit thawed it at its time) | router/timemachine.go |
+| hermit-jarvis: a frozen session's sandbox is kept, its chat open, a use thaws it | aviary/src/reconcile.rs, hermit.rs |
+| the `time-machine` command | session-image/tools/src/timemachine.rs |
+| the frozen state on the web page, the iPhone app and the live push | app/, ios/, router/livepush.go |
+| AWS: managed policy `jarvis4-fabric-freeze` on hermit-scaler (STS federation token `hermit-freeze`; Put/Get/Delete on `frozen/*` of the image bucket) | infra/fabric-aws/freeze-policy.json (applied by hand: `aws iam create-policy` + `attach-user-policy`; the user's inline policies are at AWS's 2048-byte limit) |
+| the key | `HERMIT_FREEZE_KEY` in Secret hermit (`FABRIC_HERMIT_FREEZE_KEY` in the infra store) |
+
+A deployment freezes when hermit.json names `fabric.freeze.bucket` and hermit has `HERMIT_FREEZE_KEY`; YYC AI names
+neither. The design below is what was built, with one change: a freeze no longer goes to S3 by itself (lazy eviction).
+
+### The design (2026-11-17)
 
 Two kinds of stopping in hermit's contract (DE0CH/aviary docs/CONTRACTS.md), both optional per deployment:
 

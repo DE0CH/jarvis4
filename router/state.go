@@ -34,24 +34,26 @@ type Session struct {
 	Runner         string      `json:"runner,omitempty"` // awsrunner.go: aws | fabric | fly ("" = DEFAULT_RUNNER)
 	WG             *AWSWG      `json:"wg,omitempty"`     // awsrunner.go: the next AWS machine's WireGuard, until it is up
 	Fabric         *FabricLine `json:"fabric,omitempty"` // fabricrunner.go: its conversation at the fabric hermit, its machine's env
-	Harness        string      `json:"harness"`
-	Stores         []string    `json:"stores"`
-	ClaudeAccount  string      `json:"claudeAccount,omitempty"` // claudeaccounts.go: the Claude account it uses, fixed when made
-	Repos          string      `json:"repos"`
-	Content        []string    `json:"content,omitempty"` // content.go: the content stores the line gets (signed in its config)
-	Image          string      `json:"image"`             // what the current line runs (ref@digest), pinned on resume
-	Cert           *Doc        `json:"-"`                 // the line's latest succession cert
-	RequestID      string      `json:"createRequestId,omitempty"`
-	Title          string      `json:"aiTitle,omitempty"`
-	Status         string      `json:"status,omitempty"`
-	UserTitle      string      `json:"userTitle,omitempty"`      // Deyao's own rename (the transcript's custom title): beats Label
-	AppTitle       string      `json:"serverTitle,omitempty"`    // the Claude app's own title (machine report; Jarvis 1's serverTitle): beats all
-	LiveSync       *LiveSync   `json:"liveSync,omitempty"`       // livesync.go: the transcripts the machine last copied out
-	DiscordChannel string      `json:"discordChannel,omitempty"` // the session's channel (discord.go), LOBSTER_CHANNEL on the machine
-	Live           *Liveness   `json:"live,omitempty"`           // reported status, auto-pause/one-shot settings (autopilot.go)
-	ArchiveFile    string      `json:"archiveFile,omitempty"`    // archivetar.go: fixed by the destroy that archives it
-	RestoreFrom    string      `json:"restoreFrom,omitempty"`    // restore.go: the record this session restores
-	RestoreCert    *Doc        `json:"restoreCert,omitempty"`    // restore.go: that record's signer cert
+	// timemachine.go: its wait in the time machine (state `frozen`), and what ended the last one
+	TimeMachine    *TimeMachine `json:"timeMachine,omitempty"`
+	Harness        string       `json:"harness"`
+	Stores         []string     `json:"stores"`
+	ClaudeAccount  string       `json:"claudeAccount,omitempty"` // claudeaccounts.go: the Claude account it uses, fixed when made
+	Repos          string       `json:"repos"`
+	Content        []string     `json:"content,omitempty"` // content.go: the content stores the line gets (signed in its config)
+	Image          string       `json:"image"`             // what the current line runs (ref@digest), pinned on resume
+	Cert           *Doc         `json:"-"`                 // the line's latest succession cert
+	RequestID      string       `json:"createRequestId,omitempty"`
+	Title          string       `json:"aiTitle,omitempty"`
+	Status         string       `json:"status,omitempty"`
+	UserTitle      string       `json:"userTitle,omitempty"`      // Deyao's own rename (the transcript's custom title): beats Label
+	AppTitle       string       `json:"serverTitle,omitempty"`    // the Claude app's own title (machine report; Jarvis 1's serverTitle): beats all
+	LiveSync       *LiveSync    `json:"liveSync,omitempty"`       // livesync.go: the transcripts the machine last copied out
+	DiscordChannel string       `json:"discordChannel,omitempty"` // the session's channel (discord.go), LOBSTER_CHANNEL on the machine
+	Live           *Liveness    `json:"live,omitempty"`           // reported status, auto-pause/one-shot settings (autopilot.go)
+	ArchiveFile    string       `json:"archiveFile,omitempty"`    // archivetar.go: fixed by the destroy that archives it
+	RestoreFrom    string       `json:"restoreFrom,omitempty"`    // restore.go: the record this session restores
+	RestoreCert    *Doc         `json:"restoreCert,omitempty"`    // restore.go: that record's signer cert
 	// restore.go: the master key's claim of the core that signed RestoreCert (an archive from an earlier core)
 	RestoreCoreCert *MasterCert `json:"restoreCoreCert,omitempty"`
 	ImportFrom      string      `json:"importFrom,omitempty"`   // jarvis1import.go: the paused Jarvis 1 session this line imports

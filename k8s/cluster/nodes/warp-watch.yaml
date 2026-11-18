@@ -1,0 +1,29 @@
+# warp-watch (services/warp-watch): every node's WARP watchdog. A WARP session can turn slow rather than dead (claude-env
+# lessons/99): the chat's magpie lost its bucket and hermit OpenRouter, on and off 05:00-09:00 UTC on 2026-11-18 (a
+# picture's send hung in the chat), while the tunnel stayed up. Every 60 s it times a TLS handshake over IPv4 to the
+# chat's bucket, GitHub and AWS (3 s each) and logs the round (Loki: {namespace="jarvis4-node"} |= "warp-watch");
+# when no target answered two rounds in a row it reconnects the host's WARP (warp-cli disconnect, connect: IPv4 out,
+# the cloudflared tunnel included, pauses a few seconds), at most once in 10 min. Host network, so its handshakes take
+# the host's own path; dnsPolicy Default, so a resolve does not wait on CoreDNS (which forwards through WARP too).
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: { name: warp-watch, namespace: jarvis4-node }
+spec:
+  selector: { matchLabels: { app: warp-watch } }
+  updateStrategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 1 } }
+  template:
+    metadata: { labels: { app: warp-watch } }
+    spec:
+      hostNetwork: true
+      hostPID: true
+      dnsPolicy: Default
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      priorityClassName: system-node-critical
+      tolerations: [{ operator: Exists }]
+      containers:
+        - name: warp-watch
+          image: ghcr.io/de0ch/jarvis4-warp-watch:sha-d1b7b9780e79@sha256:32e601ab5ccbd91166e579d6edc6765a68a0857c94cd1d5d102a8f30f8d2c8d9
+          env: [{ name: NODE_NAME, valueFrom: { fieldRef: { fieldPath: spec.nodeName } } }]
+          resources: { requests: { cpu: 5m, memory: 8Mi }, limits: { memory: 32Mi } }
+          securityContext: { privileged: true }

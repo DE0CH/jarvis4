@@ -102,7 +102,9 @@ export async function downloadContent(store: string, path: string): Promise<void
 }
 
 // ---- the router's shapes (docs/API.md) ----
-export type SessionState = "starting" | "approval" | "initialising" | "started" | "pausing" | "paused" | "resuming" | "destroying" | "failed";
+export type SessionState = "starting" | "approval" | "initialising" | "started" | "frozen" | "pausing" | "paused" | "resuming" | "destroying" | "failed";
+// a fabric session's wait in the time machine (router timemachine.go): state `frozen` while it lasts
+export type TimeMachine = { since: string; until?: string | null; why?: string; back?: string | null };
 export type LeaseEntry = { sid: string; human?: boolean; purpose: string; description: string; describedAt?: number; note?: string; since?: number; expiresAt?: number | null; expiresInSeconds?: number | null };
 export type LeaseWaiter = { position: number; sid: string; purpose: string; description: string; enqueuedAt: number; interrupted?: boolean };
 export type LeaseEvent = { at: number; kind: string; sid: string; purpose?: string; note?: string; interrupted?: string };
@@ -116,6 +118,7 @@ export type Session = {
   created?: string; region?: string; environment?: string; harness?: string; label?: string; model?: string;
   permissionMode?: string; guest?: string; stores?: string[] | null; content?: string[] | null; size?: string; image?: string; pausedAt?: string | null; error?: string | null; title?: string; destroyedAt?: string;
   // live fields (docs/API.md "Sessions"): the machine's report, the autopilot's settings, the schedule
+  timeMachine?: TimeMachine | null;
   aiTitle?: string; liveName?: string; userTitle?: string; serverTitle?: string; liveSync?: { at: string; files: Record<string, number>; stored: boolean; error?: string } | null; bgTasks?: number; needsGrant?: string; pauseInMs?: number;
   modeAfterGrant?: { mode: string; inbox: string; until: string } | null; // a bypass switch waiting on its Inbox grant (router sessionops.go)
   autoPause?: "on" | "off"; notifyIdle?: "on" | "off"; oneShot?: boolean; oneShotDone?: boolean; authFailed?: boolean;

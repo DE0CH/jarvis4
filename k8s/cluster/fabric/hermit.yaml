@@ -21,7 +21,7 @@ spec:
   template:
     metadata:
       labels: { app: hermit }
-      annotations: { jarvis2/secrets-rev-fabric: "381adfc1b6cc" }
+      annotations: { jarvis2/secrets-rev-fabric: "3863e46209c3" }
     spec:
       serviceAccountName: hermit
       enableServiceLinks: false

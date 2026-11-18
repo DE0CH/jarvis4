@@ -808,9 +808,11 @@ Jarvis 4 on the same runner (`ios/ci/replica-stack.sh`):
 - a throwaway box key and setup key (their public halves on the branch `replica-keys-<run>-<attempt>`, which the
   Release build reads them from; the job's GITHUB_TOKEN can push it, never main: the ruleset's `update` rule), the
   backup bucket on rclone's S3 server on the runner;
-- the setup session's part (`ios/ci/replica-setup.sh`, called by the host helper for each message from the test): the
-  stores written with `infra/setup.py` after the Reset, `jarvis-request` run inside the session's machine with
-  `flyctl machine exec`, `setup.py request add-repo/remove-repo`, and the test repo's deploy keys checked on GitHub.
+- the setup session's part (`rust/replica-setup`, built in the job and called by the host helper for each message from
+  the test): the stores written with `infra/setup.py` after the Reset, `jarvis-request` started detached inside the
+  session's machine with `flyctl machine exec` (it blocks until the decision, which the test makes only after the
+  answer; the answer is "ok" once its output holds the router's JSON for the filing), `setup.py request
+  add-repo/remove-repo`, and the test repo's deploy keys checked on GitHub.
 
 `ios/UITests/ReplicaUITests.swift` taps every flow: Reset (the kit read off the page, backgrounded mid-flow), stores (a
 Face ID failure, then unlock and lock), the encrypted backup opened offline with the kit, New session (one page, its

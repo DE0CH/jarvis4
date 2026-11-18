@@ -66,7 +66,7 @@ COPY --chmod=644 session-image/claude-code/managed-settings.json session-image/c
 RUN printf '#!/bin/sh\nexec /usr/local/bin/jarvis-machine init\n' > /usr/local/bin/jarvis2-init \
  && chmod 755 /usr/local/bin/jarvis2-init \
  && ln -s /usr/local/bin/jarvis-machine /usr/local/bin/jarvis \
- && for t in schedule-wakeup schedule-cron retire-session aviary-sandbox; do ln -sfn /usr/local/bin/jarvis-tools /usr/local/bin/$t; done \
+ && for t in schedule-wakeup schedule-cron retire-session time-machine aviary-sandbox; do ln -sfn /usr/local/bin/jarvis-tools /usr/local/bin/$t; done \
  && chmod -R a+rX,go-w /opt/jarvis/tasks
 USER claude
 # what the harness reads as user claude must be readable by it (see /etc/claude-code above): every directory searchable,
@@ -74,7 +74,7 @@ USER claude
 RUN set -e; for d in $(find /etc/claude-code -type d); do [ -r "$d" ] && [ -x "$d" ] || { echo "unreadable dir $d" >&2; exit 1; }; done; \
     for f in $(find /etc/claude-code -type f); do [ -r "$f" ] || { echo "unreadable file $f" >&2; exit 1; }; done; \
     for f in /etc/claude-code/*.json; do python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$f"; done; \
-    for b in jarvis-machine jarvis-request jarvis-message jarvis-channel jarvis-channel-send schedule-wakeup schedule-cron retire-session aviary-sandbox; do [ -x /usr/local/bin/$b ] || { echo "not runnable: $b" >&2; exit 1; }; done; \
+    for b in jarvis-machine jarvis-request jarvis-message jarvis-channel jarvis-channel-send schedule-wakeup schedule-cron retire-session time-machine aviary-sandbox; do [ -x /usr/local/bin/$b ] || { echo "not runnable: $b" >&2; exit 1; }; done; \
     ls /etc/claude-code/managed-settings.d >/dev/null 2>&1 || [ ! -e /etc/claude-code/managed-settings.d ]
 # The entry point runs as root: jarvis-machine boot is the keeper (rust/machine/src/keeper.rs), Fly's main child for the
 # machine's whole life, which the session (user claude) can't signal; it starts the boot steps and the harness as

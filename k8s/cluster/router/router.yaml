@@ -32,7 +32,7 @@ spec:
       securityContext: { fsGroup: 65532 }
       containers:
         - name: router
-          image: ghcr.io/de0ch/jarvis4-router:sha-35331c8c2ae9@sha256:1d0c220342be25128ce23538a017ba1428370251490b3fb9a44c5982a0353429
+          image: ghcr.io/de0ch/jarvis4-router:sha-c018b323d7bc@sha256:ff40603de5ef1f13cf218ffdae3865894e9f73880e295926ca46083b7380014d
           env:
             # the kernel's components (k8s/cluster/kernel): %s is the component's Service name
             - { name: KERNEL_URL, value: "http://%s.jarvis4-kernel.svc.cluster.local:8080" }
@@ -47,9 +47,9 @@ spec:
             # the key backups (storedocs.go): read from Jarvis 2's bucket (BACKUP_BUCKET, the read key may only read
             # there), written to Jarvis 4's own (versioned; the key adds versions only: infra/backup-read-key.py own-bucket)
             - { name: BACKUP_WRITE_BUCKET, value: jarvis4-backup-de0ch }
-            - { name: SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session:sha-35331c8c2ae9@sha256:a68190e4c1bce96b0560012912b8df47d052b8198e22aae5e30b9ccda7e422c0" }
+            - { name: SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session:sha-c018b323d7bc@sha256:d2707c0069beba139f128abeb941b587c8300935aa452d16b388e3bd8da0f453" }
             # the CI key's signature over "jarvis2-session-image <SESSION_IMAGE>" (images.yml, keys/ci.pub): the phone checks it
-            - { name: SESSION_IMAGE_SIG, value: "MEUCIQCuBDY74sKFKM+EAjen3yAmpI1QO5bFpMNfYWOTTnJMCgIgKRfmbP7TZ6nc9QeR6nnc8WLr/BkxZG4+//2C6Wj4ur4=" }
+            - { name: SESSION_IMAGE_SIG, value: "MEQCIEROox/oDWeCN8lBtPKLnSsbBenZ+Ich7v0AjamVRLixAiBnIwSmw+4UPBqTUBoxfy6ZqHndQ4ifB61SueRK/eVD9g==" }
             # every earlier CI-pinned session image with its signature (session-image-sigs.txt here, images.yml)
             - { name: SESSION_IMAGE_SIGS_FILE, value: /sigs/session-image-sigs.txt }
             - { name: FLY_REGION, value: lhr }
@@ -87,8 +87,8 @@ spec:
             # listener runs because FABRIC_HERMIT_URL is set; the tokens are Secret router-secrets-fabric (router-secrets.py --part router-fabric)
             - { name: FABRIC_HERMIT_URL, value: "http://hermit.jarvis4-fabric.svc.cluster.local" }
             - { name: FABRIC_MACHINE_ADDR, value: ":3128" }
-            - { name: FABRIC_SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session-fabric:sha-a9780c792fc7@sha256:585175a7a4944ebcf9f081a0e28a5862146230692407efccc7a091613f63996e" }
-            - { name: FABRIC_SESSION_IMAGE_SIG, value: "MEUCIQDmZGrcW0xLYbO0Mxn54XytwMdKn0s4fkMZqNXEgRTQ4QIgQZycOn81uGzLi2+EXSzCix6Zmn16Afhc+7z29NGA/Nc=" }
+            - { name: FABRIC_SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session-fabric:sha-c018b323d7bc@sha256:09a4647b0222d67db3877ca97af047790cacc9a49b4cedd764184ac1b499ece7" }
+            - { name: FABRIC_SESSION_IMAGE_SIG, value: "MEUCIQCrneYTbOqYvIUV8SoCmhsHo/sY3RJx8OSqtcSnMv3MwgIgS9DAmRaDZJxyO8i7Qadueg7kHda+XmLlQM4SS7g4/XI=" }
           # SOPS-encrypted to the cluster's age key (k8s/cluster/secrets, infra/router-secrets.py --box cluster).
           # router-secrets-github stays LAST: with a key in several envFrom sources the last one wins
           envFrom: [{ secretRef: { name: router-secrets, optional: true } }, { secretRef: { name: router-secrets-backup, optional: true } }, { secretRef: { name: router-secrets-flyorgs, optional: true } }, { secretRef: { name: router-secrets-flypersonal, optional: true } }, { secretRef: { name: router-secrets-flyvolumes, optional: true } }, { secretRef: { name: router-secrets-browserbase, optional: true } }, { secretRef: { name: router-secrets-devices, optional: true } }, { secretRef: { name: router-secrets-livepush, optional: true } }, { secretRef: { name: router-secrets-runners, optional: true } }, { secretRef: { name: router-db } }, { secretRef: { name: router-secrets-objects } }, { secretRef: { name: router-seal } }, { secretRef: { name: router-secrets-aws, optional: true } }, { secretRef: { name: router-secrets-fabric, optional: true } }, { secretRef: { name: router-secrets-github, optional: true } }]
@@ -197,7 +197,7 @@ spec:
       securityContext: { fsGroup: 65532 } # wg.conf is mode 0440: readable through the group
       containers:
         - name: m-gateway
-          image: ghcr.io/de0ch/jarvis4-router:sha-35331c8c2ae9@sha256:1d0c220342be25128ce23538a017ba1428370251490b3fb9a44c5982a0353429
+          image: ghcr.io/de0ch/jarvis4-router:sha-c018b323d7bc@sha256:ff40603de5ef1f13cf218ffdae3865894e9f73880e295926ca46083b7380014d
           args: [m-gateway]
           env:
             - { name: POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }

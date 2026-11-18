@@ -26,7 +26,7 @@ pub enum Action {
 }
 
 /// A duration such as `90s`, `45m`, `1.5h` or `2d`, in whole seconds (rounded).
-fn secs(s: &str) -> Option<u64> {
+pub fn secs(s: &str) -> Option<u64> {
     let s = s.trim().to_ascii_lowercase();
     let unit = match s.chars().last()? {
         's' => 1.0,

@@ -203,6 +203,10 @@ private struct SessionDetailList: View {
         if m.diskGB > 0 { LabeledContent("Next machine's disk", value: "\(m.diskGB) GB") }
         if let c = m.created { LabeledContent("Created", value: Fmt.ago(c)) }
         if m.state == "paused", let pa = m.pausedAt { LabeledContent("Paused", value: Fmt.ago(pa)) }
+        if m.state == "frozen" {
+          if let s = m.frozenSince { LabeledContent("Frozen", value: Fmt.ago(s)) }
+          if let u = m.frozenUntil { LabeledContent("Until", value: Fmt.when(u)) }
+        }
         LabeledContent("Session id") { Text(m.id).font(.footnote.monospaced()).textSelection(.enabled) }
       }
 

@@ -28,6 +28,7 @@ func (r *Router) registerFeatures(app appRoute, m machineRoute, public publicRou
 	r.registerHarnesses(app)                // harness.go: /api/models
 	r.registerRemote(app, m, public)        // remote.go: remote pages, /api/remotes, tunnel proofs
 	r.registerLeases(app, m, public)        // leases.go: shared-device leases (before sessionapi.go's /m/api/ catch-all)
+	r.registerTimeMachine(m)                // timemachine.go: a fabric session waits frozen (before the /m/api/ catch-all)
 	r.registerWatches(app, m)               // watches.go: conditional wakeups
 	r.registerSessionAPI(app, m)            // sessionapi.go: wakeups, crons, /m/api
 	r.registerJarvis1Import(app, m, public) // jarvis1import.go: paused Jarvis 1 sessions as new lines
@@ -76,6 +77,7 @@ func (r *Router) startFeatures() {
 	go r.awsLogLoop()        // awslogs.go: the AWS machines' log lines to the shipper
 	go r.consoleLoop()       // awslogs.go: the AWS instances' serial consoles (the leader)
 	go r.lostLoop()          // lostmachine.go: machines that stopped without Jarvis doing it
+	go r.frozenLoop()        // timemachine.go: a frozen session hermit thawed at its time is running again
 	go r.neverBootedLoop()   // neverbooted.go: a machine that never boots fails its session
 	go r.kernelVolumesLoop() // kernelline.go: a killed kernel machine's volume left, killed again until it is gone
 }

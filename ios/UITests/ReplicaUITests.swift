@@ -4,7 +4,7 @@ import XCTest
 /// iPhone, against a real throwaway Jarvis 4 on the runner (ios/ci/replica-stack.sh: this commit's core and router,
 /// backups) and real Fly sessions, every flow tapped as a person would. Face ID is enrolled on the simulator and each
 /// match or failure is sent by the runner (ios/ci/replica-host.py on 127.0.0.1:18300), which also passes messages to the
-/// setup session's part on the same runner (ios/ci/replica-setup.sh: "reset done" → the stores are written;
+/// setup session's part on the same runner (rust/replica-setup: "reset done" → the stores are written;
 /// "session-file" → the image attached on New session is on the session's machine). A step fails on a blank screen, a
 /// stuck state (a session not running within its time) or a broken transition.
 final class ReplicaUITests: JarvisUITestCase {

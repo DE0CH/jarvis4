@@ -3186,3 +3186,22 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      approved equal or downward note as before (it reads `approved` only for upward); its wrapper still says
      "delivered at once" until the session restarts onto the newest image. No setting turns the old rule back on: the
      rule is the default and the only one until Deyao asks for an exception.
+274. **The chat's model menu picks the Claude account too** (Deyao, 2026-11-18: "make me able to choose the account for
+     claude, in the same selector as model, basically opus 5.5 dot chendeyao000 or opus 5.5 dot chendeyao-uk"; asked
+     which selector: the chat's model menu, not New session). hermit-jarvis's menu offers each Claude model once per
+     signed-in account (`GET /api/remotes` `accounts`, the default first): id `claude-opus-5-5+chendeyao-uk`, label
+     "Opus 5.5 · chendeyao-uk"; OpenRouter models as they were. The account rides in the model id, so aviary, pigeon,
+     magpie and the app are unchanged (the dogfood: nothing of Jarvis's in YYC AI's builds); Claude Code 2.1.325 sends
+     the same body for `claude-opus-5-5+x` as for `claude-opus-5-5` but for the id (thinking, effort, betas, max_tokens:
+     checked against a stand-in). `+`, not `@`, which is a version in Vertex ids. The machine's aviary-gateway takes the
+     account off before Anthropic sees the id and, when the session isn't known to be on it, asks hermit-jarvis (`POST
+     /jarvis/account`), which switches the session through the router (`POST /api/remotes/:id/account`, the app's
+     switch) only when the conversation's pick in magpie names that account: the pick is Deyao's, so a sandbox can't
+     get another account's login by naming it. The call waits until the machine's credentials change (the router's
+     long poll: seconds). An account the session was found on stands 60 s, so a switch made in the Jarvis 4 app is
+     undone by the chat's pick at the next call after that: the pick owns the account as it owns the model (2026-11-16).
+     A gateway from before says nothing in its boot (`accounts`), gets the file's menu and runs as before; but the
+     chat's menu is one for every session, so picking an account entry in a session on an older image fails at
+     Anthropic (an unknown model) until it restarts onto the newest image. A conversation from before keeps its plain
+     pick and runs on its session's account; the menu shows the default entry for it until Deyao picks. *Change*: if
+     the Jarvis 4 app's switch should win over the chat's pick, make the gateway trust a found account for good.

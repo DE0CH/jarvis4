@@ -2,9 +2,10 @@
 //! the routes the spawner's fabric runner and the router call (kernel/spawner/fabric.go, router/fabricrunner.go) and
 //! runs each sandbox with the real runsc of the fork on this box, from the fabric image unpacked here, in the bundle
 //! sandboxd writes (aviary crates/sandboxd/src/runsc.rs: its flags, capabilities, rlimits, mounts, the FUSE device),
-//! so a fabric machine boots here as on a host. Two differences, both outside what a boot exercises: the network is the
-//! box's (`--network=host`: the sandbox reaches the router's fabric listener on 127.0.0.1, where on the fabric the
-//! gateway leads there), and no cgroup limits.
+//! so a fabric machine boots here as on a host. Each sandbox has a network namespace of its own on the run's bridge
+//! (`fhbr0`, 10.89.0.1/24, NATed to the box's uplink: `bridge_up`), as sandboxd gives each its own: two machines never
+//! share a port (2026-11-18: a second session's gateway found 3128 taken on the box's loopback). The router's fabric
+//! listener and the e2e front listen on the bridge's address, where on the fabric the gateway leads. No cgroup limits.
 //!
 //!   GET    /v1/sandbox-token-keys                    caller tools: the Ed25519 key its sandbox tokens are signed with
 //!   PUT    /v1/conversations/{cid}/sandbox {person}  caller magpie: the conversation's sandbox, started if none
@@ -12,6 +13,8 @@
 //!   GET    /v1/admin/sandboxes/{id}/log              admin: its console
 //!   POST   /v1/admin/sandboxes/{id}/release          admin: killed and deleted
 //!   DELETE /v1/workspaces/{cid}                      caller magpie: its sandbox released, its folders removed
+//!   POST   /v1/conversations/{cid}/sandbox/freeze {until}  caller magpie: paused in place (runsc pause) until then
+//!   POST   /v1/conversations/{cid}/sandbox/thaw     caller magpie: a frozen one resumed (runsc resume)
 //!   GET    /v1/sandbox-tokens/{id}                   caller gateway: the sandbox's liveness (hermit-jarvis, aviary/src/fabric.rs)
 //!   GET    /v1/sandbox/self                          caller gateway, `aviary-sandbox-id`: its descriptor's control hashes
 //!
@@ -57,10 +60,14 @@ struct Sbx {
     name: String,
     person: String,
     state: &'static str,
+    /// each freeze's number: a thaw at `until` acts only on the freeze that set it
+    frozen_gen: u64,
 }
 
 struct St {
     cfg: Cfg,
+    /// the next sandbox's address on the bridge (10.89.0.<n>)
+    next_ip: u8,
     key: Ed25519KeyPair,
     rng: SystemRandom,
     by_cid: HashMap<String, Sbx>,
@@ -68,7 +75,7 @@ struct St {
 
 const RUNSC_FLAGS: [&str; 8] = [
     "--platform=systrap",
-    "--network=host",
+    "--network=sandbox",
     "--overlay2=none",
     "--host-uds=none",
     "--host-fifo=none",
@@ -210,7 +217,8 @@ fn bundle(cfg: &Cfg, s: &Sbx, root: &Path, dirs: &Path, proxy: &str) -> serde_js
             bind("/workspace", cfg.work.join("ws").join(&s.cid)),
             bind("/home/claude", cfg.work.join("home").join(&s.cid)),
         ],
-        "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}],
+        "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"},
+                {"type": "network", "path": format!("/var/run/netns/{}", netns_of(s))}],
             "devices": [{"path": "/dev/fuse", "type": "c", "major": 10, "minor": 229, "fileMode": 438, "uid": 0, "gid": 0}]}
     })
 }
@@ -231,15 +239,19 @@ fn start(st: &Arc<Mutex<St>>, s: Sbx) {
     let st = st.clone();
     std::thread::spawn(move || {
         let r = (|| -> Result<()> {
-            let (cfg_work, rootfs, proxy) = {
-                let g = st.lock().unwrap_or_else(|e| e.into_inner());
+            let (cfg_work, rootfs, proxy, ip) = {
+                let mut g = st.lock().unwrap_or_else(|e| e.into_inner());
                 let tok = token(&g, &s)?;
+                let ip = g.next_ip;
+                g.next_ip = g.next_ip.wrapping_add(1).max(10);
                 (
                     g.cfg.work.clone(),
                     g.cfg.rootfs.clone(),
                     format!("http://sbx:{tok}@{}", g.cfg.proxy_at),
+                    ip,
                 )
             };
+            netns_up(&s, ip)?;
             let dirs = cfg_work.join("sbx").join(&s.name);
             let root = dirs.join("root");
             for d in ["upper", "ovl", "root", "tmp", "docker"] {
@@ -306,6 +318,209 @@ fn start(st: &Arc<Mutex<St>>, s: Sbx) {
     });
 }
 
+/// Unix seconds of an RFC 3339 UTC time (`2026-11-18T12:34:56.789Z`), as the router writes `until`.
+fn unix_of(t: &str) -> Option<i64> {
+    let (date, rest) = t.split_once('T')?;
+    let mut d = date.split('-').map(|x| x.parse::<i64>().ok());
+    let (y, m, day) = (d.next()??, d.next()??, d.next()??);
+    let hms = rest.trim_end_matches('Z');
+    let hms = hms.split(['.', '+']).next()?;
+    let mut h = hms.split(':').map(|x| x.parse::<i64>().ok());
+    let (hh, mm, ss) = (h.next()??, h.next()??, h.next()??);
+    // days from the civil date (Howard Hinnant's algorithm)
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Some((era * 146_097 + doe - 719_468) * 86_400 + hh * 3600 + mm * 60 + ss)
+}
+
+/// Paused in place, as the fabric hermit freezes (aviary hermit `fabric/pausing.rs`); thawed at `until` by itself
+fn freeze(
+    st: &Arc<Mutex<St>>,
+    cid: &str,
+    until: Option<i64>,
+) -> Result<serde_json::Value, (u16, &'static str)> {
+    let (s, mut pause) = {
+        let g = st.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(s) = g.by_cid.get(cid).cloned() else {
+            return Err((404, "no_sandbox"));
+        };
+        if s.state != "ready" {
+            return Err((409, "sandbox_busy"));
+        }
+        let c = runsc(&g.cfg, &["pause", &s.name]);
+        (s, c)
+    };
+    if !pause.status().is_ok_and(|x| x.success()) {
+        return Err((502, "pause_failed"));
+    }
+    let out = {
+        let mut g = st.lock().unwrap_or_else(|e| e.into_inner());
+        let x = g
+            .by_cid
+            .get_mut(cid)
+            .filter(|x| x.id == s.id)
+            .ok_or((404, "no_sandbox"))?;
+        x.state = "frozen";
+        x.frozen_gen += 1;
+        let gen_ = x.frozen_gen;
+        let snap = x.clone();
+        if let Some(u) = until {
+            let (st2, cid2) = (st.clone(), cid.to_owned());
+            std::thread::spawn(move || {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(0));
+                std::thread::sleep(std::time::Duration::from_secs(
+                    u64::try_from((u - now).max(0)).unwrap_or(0),
+                ));
+                let still = st2
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .by_cid
+                    .get(&cid2)
+                    .is_some_and(|x| x.state == "frozen" && x.frozen_gen == gen_);
+                if still {
+                    eprintln!("fake-hermit: {cid2} until passed: thawing");
+                    let _ = thaw(&st2, &cid2);
+                }
+            });
+        }
+        sandbox_json(&g, &snap)
+    };
+    Ok(out)
+}
+
+fn thaw(st: &Arc<Mutex<St>>, cid: &str) -> Result<serde_json::Value, (u16, &'static str)> {
+    let (s, mut resume) = {
+        let g = st.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(s) = g.by_cid.get(cid).cloned() else {
+            return Err((404, "no_sandbox"));
+        };
+        if s.state != "frozen" {
+            return Ok(sandbox_json(&g, &s));
+        }
+        let c = runsc(&g.cfg, &["resume", &s.name]);
+        (s, c)
+    };
+    if !resume.status().is_ok_and(|x| x.success()) {
+        return Err((502, "resume_failed"));
+    }
+    let mut g = st.lock().unwrap_or_else(|e| e.into_inner());
+    let x = g
+        .by_cid
+        .get_mut(cid)
+        .filter(|x| x.id == s.id)
+        .ok_or((404, "no_sandbox"))?;
+    x.state = "ready";
+    let snap = x.clone();
+    Ok(sandbox_json(&g, &snap))
+}
+
+/// The bridge the sandboxes' namespaces hang on, at `BRIDGE_IP`/24, NATed out (`e2e-kernel` makes it before the router
+/// listens on its address; `bridge_down` removes it).
+pub const BRIDGE: &str = "fhbr0";
+pub const BRIDGE_IP: &str = "10.89.0.1";
+
+/// The bridge, forwarding and the NAT out.
+///
+/// # Errors
+/// A command failing.
+pub fn bridge_up() -> Result<()> {
+    bridge_down();
+    sudo(&["ip", "link", "add", BRIDGE, "type", "bridge"])?;
+    sudo(&[
+        "ip",
+        "addr",
+        "add",
+        &format!("{BRIDGE_IP}/24"),
+        "dev",
+        BRIDGE,
+    ])?;
+    sudo(&["ip", "link", "set", BRIDGE, "up"])?;
+    sudo(&["sysctl", "-q", "-w", "net.ipv4.ip_forward=1"])?;
+    sudo(&[
+        "iptables",
+        "-t",
+        "nat",
+        "-A",
+        "POSTROUTING",
+        "-s",
+        "10.89.0.0/24",
+        "!",
+        "-o",
+        BRIDGE,
+        "-j",
+        "MASQUERADE",
+    ])?;
+    Ok(())
+}
+
+/// What `bridge_up` made, gone (a missing piece is fine).
+pub fn bridge_down() {
+    let q = |a: &[&str]| {
+        let _ = Command::new("sudo")
+            .arg("-n")
+            .args(a)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    };
+    q(&[
+        "iptables",
+        "-t",
+        "nat",
+        "-D",
+        "POSTROUTING",
+        "-s",
+        "10.89.0.0/24",
+        "!",
+        "-o",
+        BRIDGE,
+        "-j",
+        "MASQUERADE",
+    ]);
+    q(&["ip", "link", "del", BRIDGE]);
+}
+
+fn netns_of(s: &Sbx) -> String {
+    format!("fh-{}", &s.name[4..])
+}
+
+/// The sandbox's own network namespace on the bridge, at 10.89.0.`ip`, its default route the bridge.
+fn netns_up(s: &Sbx, ip: u8) -> Result<()> {
+    let (ns, host_if, sb_if) = (netns_of(s), format!("fhv{ip}"), format!("fhs{ip}"));
+    let _ = Command::new("sudo")
+        .args(["-n", "ip", "netns", "del", &ns])
+        .status();
+    sudo(&["ip", "netns", "add", &ns])?;
+    sudo(&[
+        "ip", "link", "add", &host_if, "type", "veth", "peer", "name", &sb_if,
+    ])?;
+    sudo(&["ip", "link", "set", &sb_if, "netns", &ns])?;
+    sudo(&["ip", "link", "set", &host_if, "master", BRIDGE, "up"])?;
+    let inns = |a: &[&str]| -> Result<()> {
+        let mut v = vec!["ip", "netns", "exec", ns.as_str()];
+        v.extend_from_slice(a);
+        sudo(&v)
+    };
+    inns(&["ip", "link", "set", &sb_if, "name", "eth0"])?;
+    inns(&[
+        "ip",
+        "addr",
+        "add",
+        &format!("10.89.0.{ip}/24"),
+        "dev",
+        "eth0",
+    ])?;
+    inns(&["ip", "link", "set", "eth0", "up"])?;
+    inns(&["ip", "link", "set", "lo", "up"])?;
+    inns(&["ip", "route", "add", "default", "via", BRIDGE_IP])?;
+    Ok(())
+}
+
 fn release(st: &Arc<Mutex<St>>, s: &Sbx) {
     let (work, cmd_kill, cmd_del) = {
         let g = st.lock().unwrap_or_else(|e| e.into_inner());
@@ -327,6 +542,9 @@ fn release(st: &Arc<Mutex<St>>, s: &Sbx) {
             .join("root")
             .to_string_lossy(),
     ]);
+    let _ = Command::new("sudo")
+        .args(["-n", "ip", "netns", "del", &netns_of(s)])
+        .status();
     let mut g = st.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(x) = g.by_cid.get_mut(&s.cid).filter(|x| x.id == s.id) {
         x.state = "gone";
@@ -433,12 +651,28 @@ fn handle(st: &Arc<Mutex<St>>, q: &Req) -> (u16, serde_json::Value) {
                 cid: (*cid).to_owned(),
                 person,
                 state: "starting",
+                frozen_gen: 0,
             };
             g.by_cid.insert((*cid).to_owned(), s.clone());
             let out = sandbox_json(&g, &s);
             drop(g);
             start(st, s);
             (202, out)
+        }
+        ("POST", ["v1", "conversations", cid, "sandbox", "freeze"]) if magpie => {
+            let until = serde_json::from_slice::<serde_json::Value>(&q.body)
+                .ok()
+                .and_then(|v| v["until"].as_str().and_then(unix_of));
+            match freeze(st, cid, until) {
+                Ok(v) => (202, v),
+                Err((c, w)) => err(c, w),
+            }
+        }
+        ("POST", ["v1", "conversations", cid, "sandbox", "thaw"]) if magpie => {
+            match thaw(st, cid) {
+                Ok(v) => (202, v),
+                Err((c, w)) => err(c, w),
+            }
         }
         ("GET", ["v1", "conversations", cid, "sandbox"]) if magpie => {
             let g = st.lock().unwrap_or_else(|e| e.into_inner());
@@ -534,6 +768,7 @@ pub fn serve(cfg: Cfg) -> Result<()> {
         key,
         rng,
         by_cid: HashMap::new(),
+        next_ip: 10,
     }));
     for c in l.incoming() {
         let Ok(mut c) = c else { continue };
@@ -554,6 +789,17 @@ mod tests {
     use super::*;
 
     /// its tokens are what the router's verifyHST reads (router/fabricrunner.go): the layout, the context, the key
+    #[test]
+    fn until_reads_as_the_router_writes_it() {
+        assert_eq!(unix_of("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(
+            unix_of("2026-11-18T12:34:56.123456789Z"),
+            Some(1_795_005_296)
+        );
+        assert_eq!(unix_of("2000-03-01T00:00:01Z"), Some(951_868_801));
+        assert_eq!(unix_of("not a time"), None);
+    }
+
     #[test]
     fn a_token_is_hermits() {
         let rng = SystemRandom::new();
@@ -578,6 +824,7 @@ mod tests {
             key,
             rng,
             by_cid: HashMap::new(),
+            next_ip: 10,
         };
         let s = Sbx {
             id: "01a1ec41-c22f-71e4-9e50-601a78aeffde".into(),
@@ -585,6 +832,7 @@ mod tests {
             name: "sbx-01a1ec41c22f71e4".into(),
             person: "jarvis4@deyaochen.com".into(),
             state: "ready",
+            frozen_gen: 0,
         };
         let t = token(&st, &s).expect("a token");
         let p: Vec<&str> = t.split('.').collect();

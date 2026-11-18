@@ -27,11 +27,11 @@ const (
 
 type liveSession struct {
 	Name      string `json:"name"`
-	State     string `json:"state"` // working | waiting | background | scheduled | idle | booting
+	State     string `json:"state"` // working | waiting | background | frozen | scheduled | idle | booting
 	Jobs      int    `json:"jobs"`
 	Subagents int    `json:"subagents"`
 	Since     int64  `json:"since,omitempty"` // ms: the status's last change (statusUpdatedAt; changes every turn)
-	Next      int64  `json:"next,omitempty"`  // ms: a scheduled session's next wakeup or cron (a watch alone has none)
+	Next      int64  `json:"next,omitempty"`  // ms: a scheduled session's next wakeup or cron (a watch alone has none); a frozen one's until
 }
 
 type liveDocument struct {
@@ -47,7 +47,7 @@ var (
 )
 
 // liveRank: the order on the panel, the dashboard's amber states (waiting, idle; Deyao, 2026-11-17) first
-var liveRank = map[string]int{"waiting": 0, "idle": 1, "working": 2, "background": 3, "scheduled": 4, "booting": 5}
+var liveRank = map[string]int{"waiting": 0, "idle": 1, "working": 2, "background": 3, "frozen": 4, "scheduled": 5, "booting": 6}
 
 // nextWake: the session's earliest wakeup or cron (0: none with a time, e.g. a watch only); callers hold the lock
 func nextWake(d *persisted, sid string) int64 {
@@ -109,6 +109,15 @@ func (r *Router) liveDoc(now time.Time) liveDocument {
 	r.st.Read(func(d *persisted) {
 		for _, s := range d.Sessions {
 			wakes := willWake(d, s.ID)
+			// a fabric session in the time machine (timemachine.go): frozen until its time, or anything that arrives
+			if s.State == "frozen" {
+				x := liveSession{Name: sessionTitle(*s), State: "frozen"}
+				if s.TimeMachine != nil && s.TimeMachine.Until != nil {
+					x.Next = s.TimeMachine.Until.UnixMilli()
+				}
+				rows = append(rows, row{s: x, id: s.ID})
+				continue
+			}
 			if s.State == "paused" && wakes {
 				rows = append(rows, row{s: liveSession{Name: sessionTitle(*s), State: "scheduled", Next: nextWake(d, s.ID)}, id: s.ID})
 				continue

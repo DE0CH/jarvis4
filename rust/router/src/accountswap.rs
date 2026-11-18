@@ -211,9 +211,13 @@ impl Router {
         }
         let from = s.claude_account.clone();
         let obj = |v: Value| v.as_object().cloned().unwrap_or_default();
+        // the account's uuid: the machine's `.jarvis-account` proof of the installed token (rust/machine/src/claudelogin.rs
+        // account_proof), so a caller that waits for the switch on the machine (the aviary gateway, switching just before a
+        // model call) can tell the new account's proof from the old one
+        let uuid = crate::claudelogin::account_uuid(&to.current().account);
         if from == store {
             return Ok(obj(
-                json!({"ok": true, "unchanged": true, "account": store}),
+                json!({"ok": true, "unchanged": true, "account": store, "accountUuid": uuid}),
             ));
         }
         let set_account = || {
@@ -251,7 +255,7 @@ impl Router {
                 }
             });
             return Ok(obj(
-                json!({"ok": true, "nextStart": true, "from": crate::http::null_if_empty(&from), "to": store, "continue": i.continue_}),
+                json!({"ok": true, "nextStart": true, "from": crate::http::null_if_empty(&from), "to": store, "continue": i.continue_, "accountUuid": uuid}),
             ));
         }
         if harness != "claude" && !crate::harness::proxy_login_harness(&harness) {
@@ -272,7 +276,7 @@ impl Router {
         )?;
         let j = self.ops.start_job(id, "account")?;
         let mut out = obj(
-            json!({"started": true, "kind": "account", "from": crate::http::null_if_empty(&from), "to": store}),
+            json!({"started": true, "kind": "account", "from": crate::http::null_if_empty(&from), "to": store, "accountUuid": uuid}),
         );
         if in_cert && !stores.contains(&store) {
             let o = Origin {
@@ -484,7 +488,13 @@ impl Router {
 }
 
 pub fn register_account_switch(reg: &mut Registrar) {
-    reg.app("POST /api/sessions/{id}/account", |r, w, req| {
+    reg.app("POST /api/sessions/{id}/account", account_switch_route);
+}
+
+/// POST /api/sessions/{id}/account (the app) and POST /api/remotes/{id}/account (hermit-jarvis: the chat's model menu,
+/// devices.rs): the switch, answered at once
+pub fn account_switch_route(r: &Arc<Router>, w: &mut crate::nethttp::W, req: &mut Req) {
+    {
         let b = req.read_body(1 << 16);
         let i: AccountSwitchIn = if b.is_empty() {
             Default::default()
@@ -508,7 +518,7 @@ pub fn register_account_switch(reg: &mut Registrar) {
                 write_json(w, code, &out);
             }
         }
-    });
+    }
 }
 
 /// an API-call request's effect in words, for the routes whose path and body alone don't say it plainly; "" for the

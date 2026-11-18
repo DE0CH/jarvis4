@@ -196,12 +196,17 @@ type modelLog struct {
 	root string
 	// the first prompt's message held an image block: its attached screenshot reached the model as an image
 	image bool
+	// the time machine's tool result (a fabric run): "Back after …: <why>"
+	timeMachine string
 	// the wakeup's turn was magpie's schedule firing (<scheduled-message rule="…">): schedule-wakeup in an aviary
 	// sandbox arms a magpie schedule (Deyao, 2026-11-17), not a router wakeup
 	scheduled bool
 }
 
 var models modelLog
+
+// runner: the run's runner (E2E_RUNNER): on the fabric the wakeup's turn also goes into the time machine
+var runner string
 
 // systemText: a request's system prompt as one string (a string, or text blocks).
 func systemText(req map[string]any) string {
@@ -261,11 +266,21 @@ func reply(req map[string]any) (kind string, content []map[string]any) {
 			}
 		}
 		return "answer", []map[string]any{{"type": "text", "text": "E2E-DONE " + token + ": the command printed E2E-OUT-" + token}}
+	case strings.Contains(last, "tool_result") && strings.Contains(last, "Back after"):
+		// the time machine's answer (a fabric run): the session was frozen 20 s and came back at its time
+		models.Lock()
+		models.timeMachine = last
+		models.Unlock()
+		return "wakeup", []map[string]any{{"type": "text", "text": "E2E-WOKE " + token}}
 	case strings.Contains(last, "E2E-WAKEUP "+token):
 		if strings.Contains(last, "scheduled-message rule=") {
 			models.Lock()
 			models.scheduled = true
 			models.Unlock()
+		}
+		if runner == "fabric" { // a fabric session waits in the time machine before it answers
+			return "tool", []map[string]any{{"type": "tool_use", "id": "toolu_e2e_tm_" + token, "name": "Bash",
+				"input": map[string]any{"command": "time-machine 20s", "description": "e2e: wait 20 s frozen"}}}
 		}
 		return "wakeup", []map[string]any{{"type": "text", "text": "E2E-WOKE " + token}}
 	case strings.Contains(last, "E2E-CHAT "+token):
@@ -671,7 +686,7 @@ func main() {
 	json.Unmarshal([]byte(sd.Payload), &sid)
 	// the runner of this run: Fly (rust/e2e-kernel's default), or the fabric (rust/e2e-kernel E2E_RUNNER=fabric, its hermit
 	// the replica's fake one)
-	runner := os.Getenv("E2E_RUNNER")
+	runner = os.Getenv("E2E_RUNNER")
 	if runner == "fabric" {
 		step("the spawner's fabric credentials, sealed to it")
 		cred, _ := json.Marshal(map[string]string{"magpieToken": os.Getenv("E2E_FABRIC_MAGPIE"),
@@ -826,7 +841,28 @@ func main() {
 		return s != nil && s.AiTitle == label
 	})
 	step("the wakeup the tool armed arrives as a later turn")
-	waitFor("the wakeup's answer in magpie", 5*time.Minute, func() bool { return strings.Contains(magpieText(), "E2E-WOKE "+token) })
+	sawFrozen := false
+	waitFor("the wakeup's answer in magpie", 5*time.Minute, func() bool {
+		if s, _ := readSession(created.ID); s != nil && s.State == "frozen" {
+			sawFrozen = true
+		}
+		return strings.Contains(magpieText(), "E2E-WOKE "+token)
+	})
+	if runner == "fabric" {
+		step("the time machine (a fabric session): frozen 20 s, back at its time")
+		models.Lock()
+		tm := models.timeMachine
+		models.Unlock()
+		if !sawFrozen {
+			log.Fatalf("FAIL: the session was never frozen while its time-machine ran (tool result: %.300s)", tm)
+		}
+		if !strings.Contains(tm, "the time") {
+			log.Fatalf("FAIL: the time machine did not come back at its time: %.300s", tm)
+		}
+		if s, _ := readSession(created.ID); s == nil || s.State != "started" {
+			log.Fatalf("FAIL: the session is not running after the time machine: %+v", s)
+		}
+	}
 	models.Lock()
 	if !models.scheduled {
 		models.Unlock()

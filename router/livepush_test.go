@@ -112,3 +112,15 @@ func TestLivePost(t *testing.T) {
 		t.Fatal("a refused push is an error")
 	}
 }
+
+// a fabric session in the time machine is listed frozen, with its until as its next time
+func TestLiveDocFrozen(t *testing.T) {
+	r := newTestRouter(t)
+	addSession(r, "fz", "frozen", "mfz", false)
+	until := time.UnixMilli(5_000_000).UTC()
+	r.st.Do(func(d *persisted) { d.Sessions["fz"].TimeMachine = &TimeMachine{Since: time.Now(), Until: &until} })
+	doc := r.liveDoc(time.Now())
+	if len(doc.Sessions) != 1 || doc.Sessions[0].State != "frozen" || doc.Sessions[0].Next != 5_000_000 {
+		t.Fatalf("%+v", doc.Sessions)
+	}
+}

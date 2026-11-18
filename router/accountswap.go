@@ -169,8 +169,12 @@ func (r *Router) SwitchAccount(req *http.Request, id string, in accountSwitchIn)
 		return nil, bad("the session's harness (%s) takes no Claude account", harness)
 	}
 	from := s.ClaudeAccount
+	// the account's uuid: the machine's `.jarvis-account` proof of the installed token (rust/machine/src/claudelogin.go
+	// account_proof), so a caller that must wait for the switch on the machine (the aviary gateway, switching just
+	// before a model call) can tell the new account's proof from the old one
+	uuid := accountUUID(to.current().Account)
 	if from == store {
-		return map[string]any{"ok": true, "unchanged": true, "account": store}, nil
+		return map[string]any{"ok": true, "unchanged": true, "account": store, "accountUuid": uuid}, nil
 	}
 	setAccount := func() {
 		r.st.Do(func(d *persisted) {
@@ -197,7 +201,7 @@ func (r *Router) SwitchAccount(req *http.Request, id string, in accountSwitchIn)
 				x.Ops.ContinueAfterStart = in.Continue
 			}
 		})
-		return map[string]any{"ok": true, "nextStart": true, "from": nullIfEmpty(from), "to": store, "continue": in.Continue}, nil
+		return map[string]any{"ok": true, "nextStart": true, "from": nullIfEmpty(from), "to": store, "continue": in.Continue, "accountUuid": uuid}, nil
 	}
 	if harness != "claude" && !proxyLoginHarness(harness) {
 		return nil, fmt.Errorf("session is running the %s harness: pause it, switch its account, then resume it", harness)
@@ -214,7 +218,7 @@ func (r *Router) SwitchAccount(req *http.Request, id string, in accountSwitchIn)
 		unlock()
 		return nil, err
 	}
-	out := map[string]any{"started": true, "kind": "account", "from": nullIfEmpty(from), "to": store}
+	out := map[string]any{"started": true, "kind": "account", "from": nullIfEmpty(from), "to": store, "accountUuid": uuid}
 	if claudeStoreInCert && !containsStr(s.Stores, store) {
 		o := Origin{Caller: appCaller(req), Call: APICall{Method: req.Method, Path: req.URL.Path, Args: map[string]any{"account": store}}, ViaCall: viaCall(req)}
 		why := fmt.Sprintf("Session “%s” (%s) now uses the Claude account %s: its cert names the account's store, so this adds %s to it.", sessionTitle(s), id, store, store)
