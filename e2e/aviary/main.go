@@ -23,7 +23,7 @@
 //
 //   - destroy: the source burns, the record stays.
 //
-//     E2E_ROUTER, E2E_SPAWNER, E2E_DATA_DIR, E2E_MASTER_KEY_FILE, E2E_FLY_TOKEN (as e2e/kernel); E2E_FRONT_ADDR (where
+//     E2E_ROUTER, E2E_SPAWNER, E2E_DATA_DIR, E2E_MASTER_KEY_FILE, E2E_FLY_TOKEN, E2E_RUNNER (as e2e/kernel); E2E_FRONT_ADDR (where
 //     the chat peer's m-gateway sends), E2E_HERMIT_GW (hermit-jarvis's gateway listener), E2E_CHAT_URL (the chat peer
 //     as the machines know it), E2E_MAGPIE + E2E_MAGPIE_ADMIN (magpie and its admin token)
 package main
@@ -580,17 +580,31 @@ func main() {
 	}
 	must("POST", router+"/api/kernel/secrets/claim", map[string]any{"statement": string(st), "masterSig": ms, "bundle": sealed}, nil)
 
-	step("the spawner's Fly token, sealed to it")
 	var sd sig.Doc
 	must("GET", os.Getenv("E2E_SPAWNER")+"/identity", nil, &sd)
 	var sid sig.Identity
 	json.Unmarshal([]byte(sd.Payload), &sid)
-	tok, _ := json.Marshal(map[string]string{"FLY_API_TOKEN": os.Getenv("E2E_FLY_TOKEN")})
-	ts, err := sig.SealTo(sid.AgreementKey, tok, "jarvis2/fly-token")
-	if err != nil {
-		log.Fatal(err)
+	// the runner of this run: Fly (infra/e2e-aviary.sh), or the fabric (rust/e2e-kernel E2E_RUNNER=fabric, its hermit
+	// the replica's fake one)
+	runner := os.Getenv("E2E_RUNNER")
+	if runner == "fabric" {
+		step("the spawner's fabric credentials, sealed to it")
+		cred, _ := json.Marshal(map[string]string{"magpieToken": os.Getenv("E2E_FABRIC_MAGPIE"),
+			"adminToken": os.Getenv("E2E_FABRIC_ADMIN"), "admin": "e2e@fabric.invalid", "person": "jarvis4@deyaochen.com"})
+		cs, err := sig.SealTo(sid.AgreementKey, cred, "jarvis4/fabric-credentials")
+		if err != nil {
+			log.Fatal(err)
+		}
+		must("POST", os.Getenv("E2E_SPAWNER")+"/fabric-credentials", map[string]any{"sealed": cs}, nil)
+	} else {
+		step("the spawner's Fly token, sealed to it")
+		tok, _ := json.Marshal(map[string]string{"FLY_API_TOKEN": os.Getenv("E2E_FLY_TOKEN")})
+		ts, err := sig.SealTo(sid.AgreementKey, tok, "jarvis2/fly-token")
+		if err != nil {
+			log.Fatal(err)
+		}
+		must("POST", os.Getenv("E2E_SPAWNER")+"/fly-token", map[string]any{"sealed": ts}, nil)
 	}
-	must("POST", os.Getenv("E2E_SPAWNER")+"/fly-token", map[string]any{"sealed": ts}, nil)
 
 	step("the root grant: ⊤ on the sink, signed by the root key")
 	var draft struct{ Payload string }
@@ -648,9 +662,13 @@ func main() {
 	// 2026-11-17), so the title model's title never replaces it
 	label := "e2e aviary " + token
 	var created struct{ ID string }
-	must("POST", router+"/api/sessions", map[string]any{"label": label, "harness": "aviary", "size": "small",
+	newSession := map[string]any{"label": label, "harness": "aviary", "size": "small",
 		"model": sessionModel(), "prompt": "E2E-RUN " + token,
-		"attachments": map[string]any{"uploadId": uploadID, "files": []map[string]any{{"name": shot, "isImage": true}}}}, &created)
+		"attachments": map[string]any{"uploadId": uploadID, "files": []map[string]any{{"name": shot, "isImage": true}}}}
+	if runner != "" {
+		newSession["runner"] = runner
+	}
+	must("POST", router+"/api/sessions", newSession, &created)
 	var aID, aKind string
 	var challenge sig.Doc
 	waitFor("the approval", time.Minute, func() bool {

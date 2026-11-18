@@ -12,6 +12,8 @@
 //!   GET    /v1/admin/sandboxes/{id}/log              admin: its console
 //!   POST   /v1/admin/sandboxes/{id}/release          admin: killed and deleted
 //!   DELETE /v1/workspaces/{cid}                      caller magpie: its sandbox released, its folders removed
+//!   GET    /v1/sandbox-tokens/{id}                   caller gateway: the sandbox's liveness (hermit-jarvis, aviary/src/fabric.rs)
+//!   GET    /v1/sandbox/self                          caller gateway, `aviary-sandbox-id`: its descriptor's control hashes
 //!
 //! Its sandbox tokens are hermit's (aviary crates/hermit-api/src/token.rs): `hst1.<kid>.<payload>.<sig>`, the payload
 //! `1 | sandbox | conversation | 0.0.0.0 | expiry (u64 BE) | person`, Ed25519 over "hermit-sandbox-token\0" + payload.
@@ -44,6 +46,8 @@ pub struct Cfg {
     pub magpie: String,
     pub admin: String,
     pub tools: String,
+    /// The caller gateway's token (hermit-jarvis's `FABRIC_HERMIT_GATEWAY_TOKEN`); empty: none.
+    pub gateway: String,
 }
 
 #[derive(Clone)]
@@ -333,6 +337,7 @@ struct Req {
     method: String,
     path: String,
     auth: String,
+    sandbox: String,
     body: Vec<u8>,
 }
 
@@ -345,7 +350,7 @@ fn read_req(c: &mut TcpStream) -> Result<Req> {
         it.next().unwrap_or("").to_owned(),
         it.next().unwrap_or("").to_owned(),
     );
-    let (mut len, mut auth) = (0usize, String::new());
+    let (mut len, mut auth, mut sandbox) = (0usize, String::new(), String::new());
     loop {
         let mut h = String::new();
         if r.read_line(&mut h)? == 0 || h == "\r\n" || h == "\n" {
@@ -355,6 +360,7 @@ fn read_req(c: &mut TcpStream) -> Result<Req> {
             match k.trim().to_ascii_lowercase().as_str() {
                 "content-length" => len = v.trim().parse().unwrap_or(0),
                 "authorization" => auth = v.trim().trim_start_matches("Bearer ").to_owned(),
+                "aviary-sandbox-id" => sandbox = v.trim().to_owned(),
                 _ => {}
             }
         }
@@ -365,6 +371,7 @@ fn read_req(c: &mut TcpStream) -> Result<Req> {
         method,
         path: path.split('?').next().unwrap_or("").to_owned(),
         auth,
+        sandbox,
         body,
     })
 }
@@ -389,12 +396,13 @@ fn err(code: u16, what: &str) -> (u16, serde_json::Value) {
 
 fn handle(st: &Arc<Mutex<St>>, q: &Req) -> (u16, serde_json::Value) {
     let parts: Vec<&str> = q.path.trim_matches('/').split('/').collect();
-    let (magpie, admin, tools) = {
+    let (magpie, admin, tools, gateway) = {
         let g = st.lock().unwrap_or_else(|e| e.into_inner());
         (
             q.auth == g.cfg.magpie,
             q.auth == g.cfg.admin,
             q.auth == g.cfg.tools,
+            !g.cfg.gateway.is_empty() && q.auth == g.cfg.gateway,
         )
     };
     match (q.method.as_str(), parts.as_slice()) {
@@ -482,7 +490,33 @@ fn handle(st: &Arc<Mutex<St>>, q: &Req) -> (u16, serde_json::Value) {
             }
             (204, serde_json::Value::Null)
         }
-        _ if !(magpie || admin || tools) => err(401, "unauthenticated"),
+        ("GET", ["v1", "sandbox-tokens", id]) if gateway => {
+            let g = st.lock().unwrap_or_else(|e| e.into_inner());
+            match g.by_cid.values().find(|s| s.id == *id && s.state != "gone") {
+                Some(s) => (
+                    200,
+                    serde_json::json!({"conversationId": s.cid, "person": s.person, "live": true}),
+                ),
+                None => err(404, "no_sandbox"),
+            }
+        }
+        // the control hashes: this hermit checks no supervisor, so any SHA-256 is its own
+        ("GET", ["v1", "sandbox", "self"]) if gateway => {
+            let g = st.lock().unwrap_or_else(|e| e.into_inner());
+            match g
+                .by_cid
+                .values()
+                .find(|s| s.id == q.sandbox && s.state != "gone")
+            {
+                Some(s) => {
+                    let h = ring::digest::digest(&ring::digest::SHA256, s.id.as_bytes());
+                    let hex: String = h.as_ref().iter().map(|b| format!("{b:02x}")).collect();
+                    (200, serde_json::json!({"control": {"tokenSha256": [hex]}}))
+                }
+                None => err(404, "no_sandbox"),
+            }
+        }
+        _ if !(magpie || admin || tools || gateway) => err(401, "unauthenticated"),
         _ => err(404, "not_found"),
     }
 }
@@ -539,6 +573,7 @@ mod tests {
                 magpie: String::new(),
                 admin: String::new(),
                 tools: String::new(),
+                gateway: String::new(),
             },
             key,
             rng,
