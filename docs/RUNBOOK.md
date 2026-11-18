@@ -46,7 +46,7 @@ digest (Flux prunes what a commit drops, so an emptied file would delete the rou
 ### Agent branches: merged only when CI is green
 
 Deyao, 2026-11-18 (after a router port's tests turned `images` red for a day of pushes): agents never push to main.
-They push a branch (`claude/<topic>`; `wip/<topic>` only runs CI), and the gate (`rust/gate`, `gate.yml`) merges it:
+They push a branch (`claude/<topic>`; `wip/<topic>` only runs CI), and the gate (`rust/gate`) merges it:
 
 - `branch.yml` (every branch push) opens the branch's pull request and sets the commit's `gate` status pending.
 - Every workflow that tests something runs on branch pushes too (images, ios, web, transitions, aviary, infra-tests,
@@ -65,13 +65,15 @@ They push a branch (`claude/<topic>`; `wip/<topic>` only runs CI), and the gate 
 - The agent's side: a Claude Code hook (DE0CH/claude-env `.claude/hooks/git-guard.py`) denies a commit on main and a
   push to it before it runs, so a session learns the branch path from the denial.
 - `gate-release.yml` builds the binary on every branch that touches it and, on main, releases `gate-<sha12>` and writes
-  `rust/gate/pin.txt` (its sha256 and URL): every repo's `gate.yml` reads that one file, so a new gate reaches all of
-  them without touching them.
-- Every agent-pushed repo has the same three workflows, written by `gate vendor <dir> --workflows "ci1, ci2"` (the repo's
-  own CI workflow names; `rust/gate/templates/` is the source): `gate.yml` (a copy: a private repo can't call another
-  private repo's reusable workflow), `branch.yml`, `merge.yml`. `gate setup` does the GitHub side of one repo
-  (GATE_REPOS=owner/name,…): the deploy key `jarvis-merge` and its secret in the `merge` environment (main only), and
-  main's ruleset (update, no deletion, no force push, the required status `gate`; admins and deploy keys bypass). Until
+  `rust/gate/pin.txt` (its sha256 and URL, one space between): every repo's `branch.yml` and `merge.yml` read that one
+  file, so a new gate reaches all of them without touching them.
+- Every agent-pushed repo has the same two workflows, written by `gate vendor <dir> --workflows "ci1, ci2"` (the repo's
+  own CI workflow names; `rust/gate/templates/` is the source): `branch.yml` and `merge.yml`, each holding its job
+  itself. Not a reusable workflow: a job inside a called workflow got the `merge` environment's secret empty
+  (2026-11-18), and a private repo can't call another's. `gate setup` does the GitHub side of one repo
+  (GATE_REPOS=owner/name,…): the deploy key `jarvis-merge` and its secret in the `merge` environment (main only), Actions
+  allowed to open pull requests, and main's ruleset (update, no deletion, no force push, the required status `gate`;
+  admins and deploy keys bypass). Until
   `pin.txt` says a release, the gate's steps warn and pass, so a repo can be set up before the first release.
 
 ### A core release: blue/green and the flip

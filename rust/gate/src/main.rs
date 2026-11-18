@@ -3,7 +3,7 @@
 //!
 //!   gate open    branch.yml, on every push to a branch other than main: open the branch's pull request (a draft for
 //!                wip/<topic>) and set the commit's `gate` status pending
-//!   gate vendor  a repo's three workflows (gate.yml, branch.yml, merge.yml) from rust/gate/templates
+//!   gate vendor  a repo's two workflows (branch.yml, merge.yml) from rust/gate/templates
 //!   gate setup   one repo's GitHub side, idempotent: the deploy key jarvis-merge and its secret in the `merge`
 //!                environment, and main's ruleset requiring the gate (setup.rs; GH_TOKEN is a repo admin's;
 //!                GATE_REPOS=owner/name[+actions],…: +actions when the repo's workflows push main with their token)
@@ -703,8 +703,9 @@ fn vendor() -> Result<()> {
     })?;
     let wf = Path::new(&dir).join(".github/workflows");
     std::fs::create_dir_all(&wf)?;
+    // the reusable gate.yml of the first version goes
+    let _ = std::fs::remove_file(wf.join("gate.yml"));
     for (name, body) in [
-        ("gate.yml", vendor::GATE.to_string()),
         ("branch.yml", vendor::branch_for(&branch)),
         ("merge.yml", vendor::merge_for(&wfs, &branch)),
     ] {
