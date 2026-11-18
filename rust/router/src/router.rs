@@ -70,9 +70,20 @@ impl std::fmt::Display for Busy {
 
 impl std::error::Error for Busy {}
 
-/// a caller's mistake, said as such (400)
+/// a caller's mistake, said as such (400; schedule.go's badRequest)
+#[derive(Debug)]
+pub struct BadReq(pub String);
+
+impl std::fmt::Display for BadReq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for BadReq {}
+
 pub fn bad(msg: impl Into<String>) -> anyhow::Error {
-    anyhow::anyhow!(msg.into())
+    BadReq(msg.into()).into()
 }
 
 static ROUTER_ID: OnceLock<String> = OnceLock::new();
