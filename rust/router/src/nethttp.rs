@@ -487,6 +487,15 @@ pub async fn serve(
         addr.to_string()
     };
     let ln = tokio::net::TcpListener::bind(&addr).await?;
+    serve_listener(ln, h, stop).await
+}
+
+/// serve h on a bound listener until the token says stop
+pub async fn serve_listener(
+    ln: tokio::net::TcpListener,
+    h: Handler,
+    stop: tokio_util::sync::CancellationToken,
+) -> anyhow::Result<()> {
     loop {
         let (conn, peer) = tokio::select! {
             r = ln.accept() => r?,

@@ -81,6 +81,7 @@ impl r2d2::ManageConnection for Manager {
 
 pub type Conn = PooledConnection<Manager>;
 
+#[derive(Clone)]
 pub struct DB {
     pub pool: Pool<Manager>,
     pub url: String,

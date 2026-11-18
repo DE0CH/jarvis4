@@ -20,3 +20,9 @@ lto = "thin"
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
+
+# the router recovers a panicking request as Go's net/http does (a refused state write answers 503: state.rs
+# StateWriteError, http.rs state_write_guard): its image builds with --profile router
+[profile.router]
+inherits = "release"
+panic = "unwind"

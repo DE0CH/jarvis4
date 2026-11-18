@@ -115,6 +115,10 @@ pub mod tails;
 pub mod tasks;
 pub mod terminal;
 pub mod termpage;
+#[cfg(test)]
+mod tests;
+#[cfg(test)]
+pub mod testutil;
 pub mod titles;
 pub mod types;
 pub mod uploads;
