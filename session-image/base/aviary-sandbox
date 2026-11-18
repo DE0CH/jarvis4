@@ -36,7 +36,10 @@
 #   /usr/local/bin/…         Jarvis's session commands ($tools below), read-only binds of the machine's
 #   /etc/resolv.conf, hosts  the machine's (the network namespace is the machine's: $JARVIS_URL, the gateway)
 set -euo pipefail
-tools="jarvis-machine jarvis-request jarvis-message session-secret pull-secrets content-sync"
+# the session image's jarvis-tools under its three names (a bind of the machine's link binds the binary, which picks the
+# tool by the name it is run as): an aviary session waits with schedule-wakeup as any session does (its aviary mode arms
+# magpie's schedules)
+tools="jarvis-machine jarvis-request jarvis-message session-secret pull-secrets content-sync schedule-wakeup schedule-cron retire-session"
 home="${AVIARY_SANDBOX_HOME:-/home/claude}"
 bin="${AVIARY_SANDBOX_BIN:-/usr/local/bin}"
 store="${AVIARY_SANDBOX_STORE:-/data/aviary}"

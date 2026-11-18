@@ -50,6 +50,7 @@ say "wd=$(cat /workspace/f 2>&1)"
 say "keeper=$(cat /usr/local/bin/supervisor-keeper)"
 say "machine-root=$([ -e "$MARKER" ] && echo visible || echo gone); mnt=$(ls -A /mnt)"
 say "tool=$(cat /usr/local/bin/jarvis-request 2>&1); jarvis=$(readlink /usr/local/bin/jarvis)"
+say "wakeup=$(cat /usr/local/bin/schedule-wakeup 2>&1)"
 if echo x 2> /dev/null > /usr/local/bin/jarvis-request; then say "tool-writable"; fi
 say "secrets=$(cat /run/jarvis/sock 2>&1)"
 say "resolv=$(cat /etc/resolv.conf)"
@@ -89,6 +90,7 @@ echo login > "$home/.claude/.credentials.json"
 mount -t tmpfs tmpfs "$home/.claude/projects"   # the volume's transcript mirror, mounted inside as the entrypoint does
 mkdir "$home/.claude/projects/-home-claude-workspace"
 for c in jarvis-machine jarvis-request session-secret; do echo "machine's $c" > "$t/bin/$c"; done
+echo "machine's jarvis-tools" > "$t/bin/jarvis-tools"; ln -s jarvis-tools "$t/bin/schedule-wakeup"   # as the image links them
 echo "BOOT_VAR=from-the-boot" > "$t/boot.env"
 export AVIARY_PINS="$t/pins.json" AVIARY_SANDBOX_STORE="$t/store" AVIARY_SANDBOX_HOME="$home" AVIARY_SANDBOX_BIN="$t/bin"
 export PATH="$t/path:$PATH" MACHINE_VAR=from-the-machine MARKER="$t/pins.json"
@@ -130,6 +132,7 @@ want "wd=repo-file" "/workspace is not the harness's working directory"
 want "keeper=image" "the supervisor is not the image's own"
 want "machine-root=gone; mnt=" "the machine's root is visible in the sandbox"
 want "tool=machine's jarvis-request; jarvis=jarvis-machine" "Jarvis's session commands are not in the sandbox"
+want "wakeup=machine's jarvis-tools" "an aviary session has no schedule-wakeup (the machine's jarvis-tools link)"
 want "secrets=cat: /run/jarvis/sock: No such file or directory" "unexpected /run/jarvis"
 want "resolv=$(cat /etc/resolv.conf | head -1)" "the sandbox has not the machine's resolv.conf" 2>/dev/null || [ "$(grep -c . /etc/resolv.conf)" != 1 ] || fail "the sandbox has not the machine's resolv.conf"
 want "installed-before=no" "the image's root is not clean at the first start"
