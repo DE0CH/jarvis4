@@ -496,6 +496,7 @@ var callRules = map[string]callRule{
 	"POST /api/records/{id}/restore":              callBody,
 	"GET /api/records/{id}/tail":                  callBody,
 	"GET /api/remotes":                            callStatus, // every session's OpenClaw token / OpenCode pairing URL
+	"POST /api/remotes":                           callNo,     // a session proposes a new session itself (jarvis-request new-session)
 	"GET /api/repos":                              callBody,
 	"POST /api/repos/key/begin":                   callNo, // half of a deploy key the phone finishes with its signature
 	"POST /api/repos/key/finish":                  callNo, // needs the phone's signature and sealed share

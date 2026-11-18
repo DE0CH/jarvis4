@@ -565,6 +565,7 @@ pub const CALL_RULES: &[(&str, CallRule)] = &[
     ("POST /api/records/{id}/restore", CallRule::Body),
     ("GET /api/records/{id}/tail", CallRule::Body),
     ("GET /api/remotes", CallRule::Status), // every session's OpenClaw token / OpenCode pairing URL
+    ("POST /api/remotes", CallRule::No), // a session proposes a new session itself (jarvis-request new-session)
     ("GET /api/repos", CallRule::Body),
     ("POST /api/repos/key/begin", CallRule::No), // half of a deploy key the phone finishes with its signature
     ("POST /api/repos/key/finish", CallRule::No), // needs the phone's signature and sealed share

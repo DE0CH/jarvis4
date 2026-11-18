@@ -277,7 +277,9 @@ func TestAviaryRemote(t *testing.T) {
 	addHarnessSession(r, "sPC", "paseo-claude", "started", "mPC")
 	// a paused session whose resume waits for Deyao's approval (a restart onto a newer image) is still a session:
 	// hermit-jarvis takes one missing from this list for destroyed and removes its conversation from the chat
-	// (2026-11-16: three restarted sessions left chat.deyaochen.com). A new session not yet approved is not listed.
+	// (2026-11-16: three restarted sessions left chat.deyaochen.com). A new session not yet approved is listed as
+	// "approval": hermit-jarvis holds a new conversation's first message until the session it proposed is up, and
+	// would take it for denied if the list left it out (2026-11-18).
 	addHarnessSession(r, "sAR", "aviary", "approval", "")
 	addHarnessSession(r, "sAN", "aviary", "approval", "")
 	r.st.Do(func(d *persisted) {
@@ -316,7 +318,7 @@ func TestAviaryRemote(t *testing.T) {
 	r.st.Do(func(d *persisted) { d.Sessions["sAV"].Live.Reg.SessionID = conv })
 	code, out := get("/api/remotes?harness=aviary")
 	ss := out["sessions"].([]any)
-	if code != 200 || len(ss) != 3 {
+	if code != 200 || len(ss) != 4 {
 		t.Fatalf("%d %v", code, out)
 	}
 	byID := map[string]map[string]any{}
@@ -326,8 +328,8 @@ func TestAviaryRemote(t *testing.T) {
 	if s := byID["sAR"]; s["state"] != "paused" || s["webUrl"] != nil {
 		t.Fatalf("a session waiting for its resume approval is listed as paused: %v", s)
 	}
-	if byID["sAN"] != nil {
-		t.Fatalf("a new session not yet approved is not listed: %v", byID["sAN"])
+	if s := byID["sAN"]; s == nil || s["state"] != "approval" || s["webUrl"] != nil {
+		t.Fatalf("a new session not yet approved is listed as approval: %v", s)
 	}
 	if s := byID["sAV"]; s["webUrl"] != convURL || s["model"] != "aviary/claude-opus-5-5" || s["error"] != nil {
 		t.Fatalf("%v", s)

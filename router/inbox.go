@@ -38,7 +38,7 @@ const (
 
 // Caller: who called, from the credential the call carried
 type Caller struct {
-	Kind    string `json:"kind"`              // web | app | session | setup | actions | router
+	Kind    string `json:"kind"`              // web | app | chat | device | session | setup | actions | router
 	Session string `json:"session,omitempty"` // kind session: the calling machine's session
 }
 
@@ -360,6 +360,10 @@ func callerText(d *persisted, c Caller) string {
 		return "Deyao, from the web page"
 	case "app":
 		return "Deyao, from the Jarvis 4 app"
+	case "chat":
+		return "Deyao, from the chat (a new conversation)"
+	case "device":
+		return "Deyao, from a paired app"
 	case "setup":
 		return "Claude (setup session)"
 	case "actions":

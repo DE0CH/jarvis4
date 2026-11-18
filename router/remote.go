@@ -245,12 +245,14 @@ func (r *Router) remotes(w http.ResponseWriter, req *http.Request) {
 	var all []Session
 	r.st.Do(func(d *persisted) {
 		for _, s := range d.Sessions {
-			// "approval" with no pause behind it: a new session Deyao has not approved yet, not a session. One that
-			// was paused and waits for its resume's approval (a restart onto a newer image) is listed, as paused:
-			// a session missing here is a destroyed one to hermit-jarvis, which then ends its conversation
-			if match(s.Harness) && s.State != "destroying" && (s.State != "approval" || s.PausedAt != nil) {
+			// "approval" with no pause behind it: a new session waiting for Deyao's approval, listed as "approval"
+			// (hermit-jarvis proposes one for a new conversation in the chat and holds its first message until it is
+			// up: POST /api/remotes). One that was paused and waits for its resume's approval (a restart onto a newer
+			// image) is listed as paused. A session missing here is a destroyed (or denied) one to hermit-jarvis,
+			// which then ends its conversation
+			if match(s.Harness) && s.State != "destroying" {
 				x := *s
-				if x.State == "approval" {
+				if x.State == "approval" && x.PausedAt != nil {
 					x.State = "paused"
 				}
 				all = append(all, x)

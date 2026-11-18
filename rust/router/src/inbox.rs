@@ -275,6 +275,8 @@ pub fn caller_text(d: &Persisted, c: &Caller) -> String {
     match c.kind.as_str() {
         "web" => "Deyao, from the web page".into(),
         "app" => "Deyao, from the Jarvis 4 app".into(),
+        "chat" => "Deyao, from the chat (a new conversation)".into(),
+        "device" => "Deyao, from a paired app".into(),
         "setup" => "Claude (setup session)".into(),
         "actions" => format!(
             "the actions of {}",

@@ -262,6 +262,68 @@ func (r *Router) admitClaims(c *accessClaims, now time.Time) bool {
 	return r.deviceOfClient(c.CommonName, now) != nil
 }
 
+// deviceCaller: who called a devices route, for the Inbox (requireDeyaoOrDevice admitted it): hermit-jarvis is the
+// chat (Deyao typing there), any other service token a paired app, an email login Deyao on the web
+func (r *Router) deviceCaller(req *http.Request) Caller {
+	tok := req.Header.Get("Cf-Access-Jwt-Assertion")
+	for _, aud := range []string{r.cfg.AppAUD, os.Getenv("ACCESS_DEVICES_AUD")} {
+		if aud == "" {
+			continue
+		}
+		c, err := r.access().verify(tok, aud)
+		if err != nil {
+			continue
+		}
+		switch h := os.Getenv("HERMIT_CLIENT_ID"); {
+		case c.Email != "":
+			return Caller{Kind: "web"}
+		case h != "" && c.CommonName == h:
+			return Caller{Kind: "chat"}
+		default:
+			return Caller{Kind: "device"}
+		}
+	}
+	return Caller{Kind: "web"} // no Access in front (a test router, NoAccess)
+}
+
+// proposeRemote: POST /api/remotes {harness, requestId}: a new session of that harness with the defaults (what the
+// app's New session makes with nothing picked: the harness's stores, model and account, no prompt), proposed into the
+// Inbox as the app's New session is, so it starts only once Deyao approves it there. requestId makes it idempotent
+// while the session exists (a repeat answers the same session). → {id, state}; 400 for a harness that is not one of
+// these apps'.
+func (r *Router) proposeRemote(w http.ResponseWriter, req *http.Request) {
+	var in struct {
+		Harness   string `json:"harness"`
+		RequestID string `json:"requestId"`
+	}
+	if err := json.NewDecoder(io.LimitReader(req.Body, 1<<16)).Decode(&in); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "bad JSON: " + err.Error()})
+		return
+	}
+	if !remoteHarnesses[in.Harness] {
+		writeJSON(w, 400, map[string]string{"error": "harness must be openclaw, opencode, paseo-claude, aviary or dsh"})
+		return
+	}
+	if in.RequestID == "" || len(in.RequestID) > 200 {
+		writeJSON(w, 400, map[string]string{"error": "requestId: 1 to 200 characters"})
+		return
+	}
+	ns := NewSession{Harness: in.Harness, RequestID: in.RequestID}
+	ns.Origin = &Origin{Caller: r.deviceCaller(req), Call: APICall{Method: "POST", Path: "/api/remotes", Args: map[string]any{"harness": in.Harness}}}
+	id, err := r.CreateSession(ns)
+	if err != nil {
+		scheduleErr(w, err)
+		return
+	}
+	state := ""
+	r.st.Do(func(d *persisted) {
+		if s := d.Sessions[id]; s != nil {
+			state = s.State
+		}
+	})
+	writeJSON(w, 200, map[string]string{"id": id, "state": state})
+}
+
 func (r *Router) registerDevices(app appRoute, public publicRoute) {
 	// the pairing page: Deyao's own login only (app() admits his email, never a service token)
 	app("GET /api/devices/pair", func(w http.ResponseWriter, req *http.Request) {
@@ -321,6 +383,10 @@ func (r *Router) registerDevices(app appRoute, public publicRoute) {
 	// the apps: their sessions, and Start for a paused one (a resume on the same image: no phone step)
 	r.appPatterns["GET /api/remotes"], r.appPatterns["POST /api/sessions/{id}/start"] = true, true // Deyao's too (apicalls.go)
 	public("GET /api/remotes", r.requireDeyaoOrDevice(r.remotes))
+	// a new session of a harness with the defaults, proposed into the Inbox like the app's New session (hermit-jarvis,
+	// for a new conversation in the chat: Deyao, 2026-11-18); on the same path, so the same Access app
+	r.appPatterns["POST /api/remotes"] = true
+	public("POST /api/remotes", r.requireDeyaoOrDevice(r.proposeRemote))
 	// whose machine signed a request for a service outside Jarvis 4 (machinesig.go; hermit-jarvis)
 	r.appPatterns["POST /api/machine-signatures/verify"] = true
 	public("POST /api/machine-signatures/verify", r.requireDeyaoOrDevice(r.verifyMachineSignature))
