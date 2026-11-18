@@ -356,3 +356,8 @@ pub fn register_aws_peers(reg: &mut Registrar) {
         write_json(w, 200, &json!({"peers": r.aws_peers()}));
     });
 }
+
+/// the newest listing, by instance id
+pub fn aws_seen() -> BTreeMap<String, Instance> {
+    AWS_SEEN.lock().map(|g| g.clone()).unwrap_or_default()
+}
