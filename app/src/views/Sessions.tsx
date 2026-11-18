@@ -51,6 +51,8 @@ function SessionPill({ m }: { m: Session }) {
   if (m.state === "failed") return <Pill kind="bad">failed</Pill>;
   if (m.state === "paused") return hasSchedule(m) ? <Pill kind="info">scheduled</Pill> : <Pill kind="dim">paused</Pill>;
   if (m.state === "approval") return <Pill kind="info">approve on your iPhone</Pill>;
+  // a fabric session waiting frozen (router timemachine.go): neither running nor paused
+  if (m.state === "frozen") return <Pill kind="info">in the time machine</Pill>;
   // the pill stays short; what a pause or destroy waits on is its own wrapping line under the title (MovingDetail)
   if (MOVING[m.state]) return <Pill kind={m.state === "destroying" ? "bad" : "wait"} spin>{MOVING[m.state]}</Pill>;
   if (m.state === "started") {
@@ -71,8 +73,8 @@ function MovingDetail({ m }: { m: Session }) {
   return <P size={1} color={m.state === "destroying" ? "red" : "amber"} mb={1} id={"session-waiting-" + m.id}>{`${m.waiting[0].toUpperCase()}${m.waiting.slice(1)}`}</P>;
 }
 // the headed sections: a paused session that will wake on its own is not "just paused"
-const GROUPS = ["Running", "Scheduled", "Paused", "Failed"] as const;
-const groupOf = (m: Session): typeof GROUPS[number] => m.state === "paused" ? (hasSchedule(m) ? "Scheduled" : "Paused") : m.state === "failed" ? "Failed" : "Running";
+const GROUPS = ["Running", "In the time machine", "Scheduled", "Paused", "Failed"] as const;
+const groupOf = (m: Session): typeof GROUPS[number] => m.state === "frozen" ? "In the time machine" : m.state === "paused" ? (hasSchedule(m) ? "Scheduled" : "Paused") : m.state === "failed" ? "Failed" : "Running";
 
 // ---- actions (never optimistic: the pending label stays until the router confirms) ----
 const pause = (id: string) => pendUntil("s:" + id, "Pausing…", () => api("POST", `api/sessions/${id}/pause`), (s) => find(s, id)?.state === "paused" || find(s, id)?.state === "failed", 120000);
@@ -468,7 +470,8 @@ export function Sessions() {
           {inGroup.map((m) => {
             const busy = pending.get("s:" + m.id) || serverBusy(m);
             const moving = !!MOVING[m.state] && m.state !== "initialising";
-            const paused = m.state === "paused", resumable = paused || m.state === "failed"; // a failed one with a machine finishes its pause first (router Resume)
+            // a failed one with a machine finishes its pause first (router Resume); a frozen one's Resume thaws it
+            const paused = m.state === "paused", frozen = m.state === "frozen", resumable = paused || frozen || m.state === "failed";
             const own = storesOf(m, policy);
             const modelName = models.find((x) => x.id === m.model)?.label || m.model;
             // auto-pause: off / counting down / the default (a running, non-one-shot session only)
@@ -496,8 +499,9 @@ export function Sessions() {
                   <Row label="Machine">{[REGION[m.region || ""] || m.region, m.guest, m.state === "started" && m.memory && m.memory.totalMb > 0 ? `${gb(m.memory.availMb)} of ${gb(m.memory.totalMb)} GB free` : "", m.state === "started" && m.disk && m.disk.totalMb > 0 ? `${gb(m.disk.availMb)} of ${gb(m.disk.totalMb)} GB disk free` : ""].filter(Boolean).join(" · ") || "—"}</Row>
                   <Row label="Created">{m.created ? ago(m.created) : "—"}</Row>
                   {paused && <Row label="Paused">{m.pausedAt ? ago(m.pausedAt) : "—"}</Row>}
+                  {frozen && <Row label="Frozen" id={"frozen-" + m.id}>{[m.timeMachine?.since ? ago(m.timeMachine.since) : "", m.timeMachine?.until ? "until " + when(m.timeMachine.until) : ""].filter(Boolean).join(", ") || "—"}</Row>}
                   {m.state === "started" && <Row label="Workers" id={"workers-" + m.id}>{m.workers ? workersText(m.workers) : "—"}</Row>}
-                  {!paused && <Row label="Auto-pause" id={"autopause-" + m.id}>{autoPause || (m.oneShot ? "One-shot" : "—")}</Row>}
+                  {!paused && !frozen && <Row label="Auto-pause" id={"autopause-" + m.id}>{autoPause || (m.oneShot ? "One-shot" : "—")}</Row>}
                 </Rows>
                 {!!m.resumePrompt && <Quote by={paused ? "Queued for the next resume" : "Queued prompt"} lines={3}>{clip(m.resumePrompt)}</Quote>}
                 <MemAlert m={m} busy={busy || null} />
