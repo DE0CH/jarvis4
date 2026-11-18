@@ -1,0 +1,22 @@
+[package]
+name = "jarvis-router"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "router"
+path = "src/main.rs"
+
+[dependencies]
+jarvis-sig = { path = "../sig" }
+jarvis-doc = { path = "../doc" }
+jarvis-go = { path = "../go" }
+anyhow = "1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["raw_value"] }
+time = { version = "0.3", features = ["parsing", "formatting", "macros"] }
+tokio = { version = "1", features = ["full"] }
+
+[lints]
+workspace = true

@@ -890,6 +890,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "jarvis-go"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "jarvis-sig",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "time",
+]
+
+[[package]]
 name = "jarvis-machine"
 version = "0.0.0"
 dependencies = [
@@ -928,6 +940,20 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tower-service",
+]
+
+[[package]]
+name = "jarvis-router"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "jarvis-doc",
+ "jarvis-go",
+ "jarvis-sig",
+ "serde",
+ "serde_json",
+ "time",
+ "tokio",
 ]
 
 [[package]]
