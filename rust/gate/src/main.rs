@@ -475,6 +475,21 @@ fn setup_one(gh: &Gh, repo: &str, actions: bool, dry: bool) -> Result<Vec<String
         setup::KEY_TITLE,
         setup::SECRET,
     )?);
+    // branch.yml opens the pull request with the workflow token: GitHub refuses that ("GitHub Actions is not permitted
+    // to create or approve pull requests") until the repo allows it; its default token permissions stay as they are
+    let wf = gh.get(&format!("/repos/{repo}/actions/permissions/workflow"))?;
+    let perms = wf["default_workflow_permissions"]
+        .as_str()
+        .unwrap_or("read")
+        .to_string();
+    match gh.call(
+        reqwest::Method::PUT,
+        &format!("/repos/{repo}/actions/permissions/workflow"),
+        Some(&json!({"default_workflow_permissions": perms, "can_approve_pull_request_reviews": true})),
+    )? {
+        (204 | 200, _) => done.push("Actions may open pull requests".into()),
+        (c, v) => bail!("allowing Actions to open pull requests: {c} {v}"),
+    }
     // main's ruleset: made, or the one this tool made before updated in place
     let want = setup::ruleset_payload(&branch, actions);
     let rs = gh.get(&format!("/repos/{repo}/rulesets"))?;
