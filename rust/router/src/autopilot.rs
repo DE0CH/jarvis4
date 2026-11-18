@@ -539,7 +539,7 @@ pub fn plan_tick(
             let since = l
                 .downgrade_seen_at
                 .max((ROUTER_STARTED.add(-c.downgrade_lookback).unix_nanos() / 1_000_000) as i64);
-            let ev = fresh_refusals(&g.refusals, since);
+            let ev = fresh_refusals(g.refusals(), since);
             if let Some(last) = ev.last() {
                 l.downgrade_seen_at = last.at;
                 l.dialog_reported = true;
