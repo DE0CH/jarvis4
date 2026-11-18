@@ -694,6 +694,9 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         "ROUTER_THROWAWAY=1".into(),
         "KERNEL_URL=http://%s.kernel.e2e:28080".into(),
         "NO_ACCESS=1".into(),
+        // no core, as production's router (k8s/cluster/router/router.yaml): the store calls go to the kernel's
+        // secrets (a session from the chat reads the store list for its defaults; the core's address is no one's here)
+        "NO_CORE=1".into(),
         "RECORDS_OFF=1".into(),
         kv("ADDR", &ROUTER),
         kv("MACHINE_ADDR", &net.machine_addr),
