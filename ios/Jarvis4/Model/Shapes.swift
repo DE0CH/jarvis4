@@ -10,7 +10,11 @@ struct Session: Identifiable, Equatable, Hashable {
   /// Resume brings it back: paused, or failed with no machine (a failed or cut-off start; router Resume)
   /// a failed session with a machine finishes its pause first (router Resume, DECISIONS 181); not one whose last
   /// machine left no snapshot (the router refuses: it would start empty — router/snapsafe.go)
-  var resumable: Bool { (state == "paused" || state == "failed") && noSnapshot == nil }
+  /// and a frozen fabric session (router timemachine.go): its Resume thaws it, its machine going on where it stopped
+  var resumable: Bool { ((state == "paused" || state == "failed") && noSnapshot == nil) || state == "frozen" }
+  /// a fabric session in the time machine: since when, and until when (anything that arrives ends it sooner)
+  var frozenSince: Date? { j["timeMachine"]["since"].string?.isoDate }
+  var frozenUntil: Date? { j["timeMachine"]["until"].string?.isoDate }
   var status: String? { j["status"].text }
   var harness: String { j["harness"].text ?? "claude" }
   /// the Claude account it runs on (router/claudeaccounts.go), fixed when it was made

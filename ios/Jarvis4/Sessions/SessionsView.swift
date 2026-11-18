@@ -62,7 +62,7 @@ private struct SessionList: View {
           .accessibilityElement(children: .combine).accessibilityIdentifier("inbox-note")
         }
       }
-      ForEach(["Running", "Scheduled", "Paused", "Failed"], id: \.self) { g in
+      ForEach(["Running", "In the time machine", "Scheduled", "Paused", "Failed"], id: \.self) { g in
         let inGroup = sessions.filter { $0.group == g }
         if !inGroup.isEmpty {
           Section(g) {

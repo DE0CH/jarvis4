@@ -26,6 +26,8 @@ extension Session {
     case "failed": return ("failed", .red, false)
     case "paused": return hasSchedule ? ("scheduled", .blue, false) : ("paused", .secondary, false)
     case "approval": return ("needs approval", .blue, false)
+    // a fabric session waiting frozen: neither running nor paused (router timemachine.go)
+    case "frozen": return ("in the time machine", .blue, false)
     case "starting", "initialising", "pausing", "resuming", "destroying":
       let base = ["starting": "starting…", "initialising": "initialising…", "pausing": "pausing…", "resuming": "resuming…", "destroying": "destroying…"][state] ?? state
       return (waiting.map { "\(state): \($0)" } ?? base, state == "destroying" ? .red : .orange, true)
@@ -50,6 +52,7 @@ extension Session {
     switch state {
     case "paused": hasSchedule ? "Scheduled" : "Paused"
     case "failed": "Failed"
+    case "frozen": "In the time machine"
     default: "Running"
     }
   }
