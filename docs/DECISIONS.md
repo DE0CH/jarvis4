@@ -3144,3 +3144,12 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      SIGPIPE/SIGTTOU. Shell scripts whose comments still name machine/*.go files are left until they are rewritten
      (Deyao, 2026-11-17: shell scripts are banned, and one that has to change is rewritten in Rust), as are the
      kernel's comments (a change to a kernel input is a release).
+270. **A cron run the session already has is a delivered run** (2026-11-18: "pin-diag" of session "Fix missing SSH
+     binary reports" DMed "cron run 6 was already delivered (last 6)" every period). The machine records a run once
+     its harness took it; when the answer doesn't reach the router (the harness took over 60 s), the router retried,
+     met the machine's replay refusal 5 times and marked run 6 missed without counting it, so every later occurrence
+     sent run 6 again and was refused for ever. Now that refusal (its wording, read by `sessionHasRun` in
+     router/schedule.go and pinned by rust/machine/src/tests/r1.rs) counts the run as delivered at the session's own number, for
+     a scheduled firing and a Run now alike: no missed mark, no DM, the next occurrence carries the next number. A cron
+     stuck before the fix loses one occurrence (it is the one counted) and runs on. *Not chosen*: a structured field in
+     the machine's answer (machines on older images would stay stuck until restarted).

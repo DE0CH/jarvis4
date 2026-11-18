@@ -952,22 +952,47 @@ func (r *Router) fireCron(sid, name string, armedAt int64) error {
 	if c.Name == "" || c.ArmedAt != armedAt || c.NextAt > time.Now().UnixMilli() {
 		return nil
 	}
-	err := errNotVouched
+	run, err := c.Runs+1, errNotVouched
 	if c.Signed != nil { // vouch.go: the session's own signed request, attested by the core; no shell needed
-		err = deliverVouchedHook(r, sid, Delivery{Kind: "cron", Request: c.Signed, Run: c.Runs + 1})
+		err = deliverVouchedHook(r, sid, Delivery{Kind: "cron", Request: c.Signed, Run: run})
+	}
+	if last, ok := sessionHasRun(err, run); ok {
+		log.Printf("[cron] %s %q: the session already has run %d (its answer was lost): counted", sid, name, last)
+		run, err = last, nil
 	}
 	if err != nil {
 		return err
 	}
 	log.Printf("[cron] %s %q delivered", sid, name)
-	r.cronFired(sid, name, armedAt, time.Now(), false)
+	r.cronFired(sid, name, armedAt, run, time.Now(), false)
 	return nil
 }
 
-// cronFired: a cron's run was delivered: count it, clear a missed mark, and move it to its next occurrence. early (a
+// sessionHasRunRE: the machine's refusal of a cron run it already has (rust/machine/src/deliver.rs replay_guard)
+var sessionHasRunRE = regexp.MustCompile(`cron run (\d+) was already delivered \(last (\d+)\)`)
+
+// sessionHasRun: err is the session's refusal of cron run `run` as one it already has; last is the session's own count.
+// That run was delivered: the session records a run only once its harness took it, and only the answer was lost (the
+// harness took over 60 s and the router gave up). Counting it keeps the router's run number the session's; otherwise
+// every later occurrence sent that same number again and was refused (2026-11-18).
+func sessionHasRun(err error, run int) (last int, ok bool) {
+	if err == nil {
+		return 0, false
+	}
+	m := sessionHasRunRE.FindStringSubmatch(err.Error())
+	if m == nil {
+		return 0, false
+	}
+	if last, _ = strconv.Atoi(m[2]); last < run {
+		return 0, false
+	}
+	return last, true
+}
+
+// cronFired: a cron's run (its number) was delivered: count it, clear a missed mark, and move it to its next occurrence. early (a
 // Run now): the next occurrence is at least half a period away, as the machine refuses a cron run sooner than that
 // after the last (rust/machine/src/deliver.rs replay_guard).
-func (r *Router) cronFired(sid, name string, armedAt int64, now time.Time, early bool) {
+func (r *Router) cronFired(sid, name string, armedAt int64, run int, now time.Time, early bool) {
 	r.st.Do(func(d *persisted) {
 		s := d.Schedules[sid]
 		if s == nil || s.Crons[name] == nil || s.Crons[name].ArmedAt != armedAt {
@@ -988,7 +1013,7 @@ func (r *Router) cronFired(sid, name string, armedAt int64, now time.Time, early
 			return
 		}
 		ms := now.UnixMilli()
-		cur.NextAt, cur.Runs, cur.LastFiredAt, cur.Missed = next, cur.Runs+1, &ms, nil
+		cur.NextAt, cur.Runs, cur.LastFiredAt, cur.Missed = next, max(cur.Runs, run), &ms, nil
 	})
 }
 
@@ -1082,6 +1107,10 @@ func (r *Router) RunNow(sid, kind, name string) error {
 			if err == nil {
 				err = deliverVouchedHook(r, sid, dl)
 			}
+			if last, ok := sessionHasRun(err, run); kind == "c" && ok {
+				log.Printf("[schedule] %s: the session already has run %d: counted", key, last)
+				run, err = last, nil
+			}
 			if !errors.Is(err, errSkip) || time.Now().After(deadline) {
 				break
 			}
@@ -1108,7 +1137,7 @@ func (r *Router) RunNow(sid, kind, name string) error {
 				}
 			})
 		case "c":
-			r.cronFired(sid, name, armedAt, time.Now(), true)
+			r.cronFired(sid, name, armedAt, run, time.Now(), true)
 		}
 	}()
 	return nil

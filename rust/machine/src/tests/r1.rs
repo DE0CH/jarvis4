@@ -116,9 +116,13 @@ fn a_wakeup_is_delivered_once_and_a_cron_once_per_run() {
     );
     let mut cr = cron(&k, r#"{"prompt":"p","everySeconds":3600}"#);
     not_replayed(&cr, NOW).unwrap();
+    // the router reads this exact wording as "the session already has run 1" and counts it (router/schedule.go
+    // sessionHasRun): change both together
+    let r = not_replayed(&cr, NOW + 7200);
     assert!(
-        not_replayed(&cr, NOW + 7200).is_err(),
-        "a cron run was delivered twice"
+        r.as_ref()
+            .is_err_and(|e| format!("{e:#}") == "cron run 1 was already delivered (last 1)"),
+        "a cron run was delivered twice: {r:?}"
     );
     cr.run = 2;
     let r = not_replayed(&cr, NOW + 600);

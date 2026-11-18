@@ -530,3 +530,81 @@ func TestKnownErrorFlyLimit(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// the session already has the run the router sends (it took the run, but its answer was lost: the harness took over
+// 60 s): that run was delivered. The router counts it and moves on, no missed mark, no DM; the next run is the
+// session's next number (2026-11-18: "cron run 6 was already delivered (last 6)" DMed every period, for ever)
+func TestCronRunTheSessionAlreadyHasIsDelivered(t *testing.T) {
+	r := newTestRouter(t)
+	dms := captureDM(t)
+	f := &fakeDelivery{err: errors.New("the machine refused or failed: cron run 6 was already delivered (last 6)")}
+	f.install(t)
+	addSession(r, "s9", "started", "m9", false)
+	now := time.Now()
+	r.ArmCron("s9", &Cron{Name: "diag", Prompt: "do", Every: 3600, TZ: "UTC", NextAt: now.Add(-time.Minute).UnixMilli(), ArmedAt: 1, Runs: 5, Signed: signed("diag")})
+	r.scheduleTick(now)
+	waitIdle(t)
+	cs, _ := r.ListCrons("s9")
+	if cs[0].Runs != 6 || cs[0].Missed != nil || cs[0].NextAt <= now.UnixMilli() || cs[0].LastFiredAt == nil {
+		t.Fatalf("not counted as delivered: %+v", cs[0])
+	}
+	if len(dms()) != 0 {
+		t.Fatalf("dms %q", dms())
+	}
+	// the next occurrence carries run 7
+	f.mu.Lock()
+	f.err = nil
+	f.mu.Unlock()
+	r.st.Do(func(d *persisted) { d.Schedules["s9"].Crons["diag"].NextAt = time.Now().Add(-time.Second).UnixMilli() })
+	r.scheduleTick(time.Now())
+	waitIdle(t)
+	if got := f.got(); len(got) != 1 || got[0] != "s9: cron diag run 7" {
+		t.Fatalf("delivered %q", got)
+	}
+}
+
+// the same for a Run now of a run marked missed that the session in fact has: the mark goes, nothing is DMed
+func TestRunNowOfARunTheSessionAlreadyHas(t *testing.T) {
+	r := newTestRouter(t)
+	dms := captureDM(t)
+	f := &fakeDelivery{err: errors.New("the machine refused or failed: cron run 6 was already delivered (last 6)")}
+	f.install(t)
+	addSession(r, "s10", "started", "m10", false)
+	r.ArmCron("s10", &Cron{Name: "diag", Prompt: "do", Every: 3600, TZ: "UTC", NextAt: time.Now().Add(time.Hour).UnixMilli(), ArmedAt: 1, Runs: 5,
+		Missed: &Missed{At: 1, Run: 6, Error: "x"}, Signed: signed("diag")})
+	if err := r.RunNow("s10", "c", "diag"); err != nil {
+		t.Fatal(err)
+	}
+	waitIdle(t)
+	cs, _ := r.ListCrons("s10")
+	if cs[0].Runs != 6 || cs[0].Missed != nil {
+		t.Fatalf("%+v", cs[0])
+	}
+	if len(dms()) != 0 {
+		t.Fatalf("dms %q", dms())
+	}
+}
+
+// only the machine's own replay refusal, and only for this run or a later one, counts as delivered
+func TestSessionHasRun(t *testing.T) {
+	for _, c := range []struct {
+		err  string
+		run  int
+		last int
+		ok   bool
+	}{
+		{"the machine refused or failed: cron run 6 was already delivered (last 6)", 6, 6, true},
+		{"the machine refused or failed: cron run 6 was already delivered (last 9)", 6, 9, true},
+		{"the machine refused or failed: cron run 6 was already delivered (last 6)", 7, 0, false},
+		{"the machine refused or failed: this cron ran less than half its period ago", 6, 0, false},
+		{"the machine didn't answer within 60 s", 6, 0, false},
+	} {
+		last, ok := sessionHasRun(errors.New(c.err), c.run)
+		if last != c.last || ok != c.ok {
+			t.Errorf("%q run %d: %d %v", c.err, c.run, last, ok)
+		}
+	}
+	if _, ok := sessionHasRun(nil, 1); ok {
+		t.Error("nil")
+	}
+}

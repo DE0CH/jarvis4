@@ -157,6 +157,7 @@ pub fn replay_guard(d: &Delivery, now: i64, record: bool) -> Result<()> {
             every = (e as i64).max(15 * 60);
         }
         if d.run <= last.run {
+            // the router parses this wording (router/schedule.go sessionHasRun): the run is delivered, its count is ours
             bail!(
                 "cron run {} was already delivered (last {})",
                 d.run,
