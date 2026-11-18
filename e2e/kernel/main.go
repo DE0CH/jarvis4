@@ -77,6 +77,20 @@ type session struct {
 		SourceCert *sig.Doc `json:"sourceCert"`
 		Burned     bool     `json:"burned"`
 	} `json:"kernel"`
+	// the machine's last status report (router/registry.go): whether its harness runs
+	Live *struct {
+		Reg *struct {
+			Harness *struct {
+				Running bool `json:"running"`
+			} `json:"harness"`
+		} `json:"registry"`
+	} `json:"live"`
+}
+
+// harnessRuns: the machine reported its harness running (a machine that booted without one, as the Rust machine's
+// first image did, "no fd 3 from the keeper", is no boot)
+func (s *session) harnessRuns() bool {
+	return s.Live != nil && s.Live.Reg != nil && s.Live.Reg.Harness != nil && s.Live.Reg.Harness.Running
 }
 
 func readSession(id string) (*session, bool) {
@@ -257,7 +271,7 @@ func main() {
 			if s != nil && s.State == "failed" {
 				log.Fatalf("%s: the session failed: %s", what, s.Error)
 			}
-			if s != nil && s.State == "started" && s.Booted == s.MachineID && s.MachineID != "" {
+			if s != nil && s.State == "started" && s.Booted == s.MachineID && s.MachineID != "" && s.harnessRuns() {
 				m = s.MachineID
 				return true
 			}
