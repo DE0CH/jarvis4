@@ -1089,7 +1089,8 @@ pub fn register_inbox(reg: &mut Registrar) {
         };
         match r.add_store_from(&machine, &i.store, o, &expl, "") {
             Err(e) => write_err(w, &e),
-            Ok(()) => write_json(w, 200, &json!({"ok": true, "approval": true})),
+            // id: what the outcome is filed under (an add-store's is the session's id), which jarvis-request waits on
+            Ok(()) => write_json(w, 200, &json!({"ok": true, "approval": true, "id": sid})),
         }
     });
 }
