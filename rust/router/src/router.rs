@@ -140,6 +140,8 @@ pub struct Router {
     pub next: crate::nextcore::NextCores,
     /// archive.rs: the Storage Box this router uses instead of the env's (tests: Some(None) = none)
     pub box_override: RwLock<Option<Option<Arc<crate::storagebox::StorageBox>>>>,
+    /// discord.rs: this router's DMs go here instead of the bot (tests)
+    pub dm_hook: RwLock<Option<crate::discord::DmHook>>,
     pub muxes: OnceLock<(Arc<Mux>, Arc<Mux>)>,
     /// http.rs: every app route's pattern (apicalls.rs classifies them)
     pub app_patterns: OnceLock<BTreeMap<String, bool>>,
@@ -190,6 +192,7 @@ impl Router {
             me: OnceLock::new(),
             next: crate::nextcore::NextCores::from_env(),
             box_override: RwLock::new(None),
+            dm_hook: RwLock::new(None),
             muxes: OnceLock::new(),
             app_patterns: OnceLock::new(),
             sup: Default::default(),

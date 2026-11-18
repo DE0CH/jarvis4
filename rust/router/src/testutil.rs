@@ -633,6 +633,11 @@ pub fn rig_files() -> Vec<TFile> {
 
 impl Rig {
     pub fn new() -> Rig {
+        Rig::with(|_| {})
+    }
+
+    /// a rig whose router's config f adjusts (Go's tests set r.cfg fields after newRig)
+    pub fn with(f: impl FnOnce(&mut Config)) -> Rig {
         use serde_json::json;
         crate::storagebox::PUT_BACKOFF_MS.store(1, std::sync::atomic::Ordering::Relaxed);
         let dav = MemDav::new();
@@ -653,6 +658,7 @@ impl Rig {
                 c.no_access = false;
                 c.snapshot_stall = std::time::Duration::from_secs(1);
                 c.session_image = "img".into();
+                f(c);
             },
             Some(&core.srv.url),
             policy,
@@ -722,4 +728,178 @@ static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// the tests that change a process-wide seam (a static) run one at a time
 pub fn serial() -> std::sync::MutexGuard<'static, ()> {
     SERIAL.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+// ---- machines, setup calls, sessions -------------------------------------------------------------------------
+
+/// a session machine's key, signing /m requests as the machine does (sessionapi_test.go's testMachine)
+pub struct TestMachine {
+    pub id: String,
+    pub key: TestKey,
+}
+
+/// a started machine of r with its own signing key
+pub fn new_test_machine(r: &Router, id: &str) -> TestMachine {
+    let key = TestKey::new();
+    let started = crate::state::Started {
+        id: id.into(),
+        signing_key: key.public(),
+        ..Default::default()
+    };
+    r.st.do_(|d| {
+        d.started.insert(id.into(), started.clone());
+    });
+    TestMachine { id: id.into(), key }
+}
+
+/// "<method> <path> <time> <sha256 hex of body>" signed by key
+pub fn signed_headers(
+    key: &TestKey,
+    method: &str,
+    path: &str,
+    body: &[u8],
+    at: i64,
+) -> (String, String) {
+    use sha2::Digest;
+    let ts = at.to_string();
+    let sum = hex::encode(sha2::Sha256::digest(body));
+    let sig = key.0.sign(format!("{method} {path} {ts} {sum}").as_bytes());
+    (ts, sig)
+}
+
+impl TestMachine {
+    /// a request to the machines' listener, signed as the machine signs it (decoded path, no query)
+    pub fn do_(
+        &self,
+        h: &Handler,
+        method: &str,
+        target: &str,
+        body: &str,
+    ) -> (u16, serde_json::Value) {
+        let path = target.split_once('?').map_or(target, |(p, _)| p);
+        let path = percent_encoding::percent_decode_str(path)
+            .decode_utf8_lossy()
+            .into_owned();
+        let (ts, sig) = signed_headers(
+            &self.key,
+            method,
+            &path,
+            body.as_bytes(),
+            crate::util::unix_now(),
+        );
+        let mut req = Req::new(method, target, body.as_bytes())
+            .with_header("X-Machine", &self.id)
+            .with_header("X-Time", &ts)
+            .with_header("X-Sig", &sig)
+            .with_header("Content-Type", "application/json");
+        let mut w = W::recorder();
+        h(&mut w, &mut req);
+        (
+            w.status(),
+            serde_json::from_str(&w.body_text()).unwrap_or(serde_json::Value::Null),
+        )
+    }
+}
+
+/// a /setup call, signed by setup when given (roster_test.go's rdo)
+pub fn rdo(
+    h: &Handler,
+    method: &str,
+    path: &str,
+    body: Option<&serde_json::Value>,
+    setup: Option<&TestKey>,
+) -> (u16, serde_json::Value) {
+    let b = body.map(jarvis_go::marshal).unwrap_or_default();
+    let mut req = Req::new(method, path, b.as_bytes());
+    if let Some(k) = setup {
+        let (ts, sig) = signed_headers(k, method, path, b.as_bytes(), crate::util::unix_now());
+        req = req
+            .with_header("X-Setup-Time", &ts)
+            .with_header("X-Setup-Sig", &sig);
+    }
+    let mut w = W::recorder();
+    h(&mut w, &mut req);
+    (
+        w.status(),
+        serde_json::from_str(&w.body_text()).unwrap_or(serde_json::Value::Null),
+    )
+}
+
+/// a session of the line "L<id>" (schedule_test.go's addSession)
+pub fn add_session(r: &Router, id: &str, state: &str, machine: &str, sensitive: bool) {
+    let payload =
+        jarvis_go::marshal(&serde_json::json!({"line": format!("L{id}"), "sensitive": sensitive}));
+    let s = crate::state::Session {
+        id: id.into(),
+        state: state.into(),
+        machine_id: machine.into(),
+        label: format!("label {id}"),
+        harness: "claude".into(),
+        cert: Some(Doc {
+            payload,
+            sig: String::new(),
+        }),
+        ..Default::default()
+    };
+    r.st.do_(|d| {
+        d.sessions.insert(id.into(), s.clone());
+        if !machine.is_empty() {
+            d.machines.insert(machine.into(), id.into());
+        }
+    });
+}
+
+/// every DM r sends, kept
+pub fn capture_dm(r: &Router) -> Arc<std::sync::Mutex<Vec<String>>> {
+    let got: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
+    let g = got.clone();
+    *r.dm_hook.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(move |t: &str| {
+        g.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(t.to_string())
+    }));
+    got
+}
+
+impl Rig {
+    /// the rig's s1 runs on m2 (a successor of m1, the same signing key), booted (snapsafe_test.go's runningM2)
+    pub fn running_m2(&self, with_volume: bool) {
+        use serde_json::json;
+        let mut machine = json!({"id": "m2", "signingKey": self.mkey.public()});
+        if with_volume {
+            machine["volume"] = json!({"id": "vol_m2", "sizeGb": 10, "path": "/data"});
+        }
+        let cert = self.core.key.doc(&json!({"kind": "succession-cert", "predecessorId": "m1", "line": "m1", "machine": machine, "stores": ["default"]}));
+        let started = crate::state::Started {
+            id: "m2".into(),
+            signing_key: self.mkey.public(),
+            ..Default::default()
+        };
+        self.st.do_(|d| {
+            if let Some(s) = d.sessions.get_mut("s1") {
+                s.state = "started".into();
+                s.machine_id = "m2".into();
+                s.booted = "m2".into();
+                s.cert = Some(cert.clone());
+                s.live = Some(crate::autopilot::Liveness {
+                    last_report: jarvis_go::GoTime::now(),
+                    ..Default::default()
+                });
+            }
+            d.machines.insert("m2".into(), "s1".into());
+            d.certs.insert("m2".into(), cert.clone());
+            d.started.insert("m2".into(), started.clone());
+        });
+    }
+
+    /// the rig's machine key as a TestMachine of id
+    pub fn machine(&self, id: &str) -> TestMachine {
+        TestMachine {
+            id: id.into(),
+            key: TestKey(
+                jarvis_sig::Signer::from_scalar(&self.mkey.0.scalar())
+                    .unwrap_or_else(|e| panic!("{e:?}")),
+            ),
+        }
+    }
 }

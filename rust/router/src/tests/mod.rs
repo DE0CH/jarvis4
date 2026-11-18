@@ -2,4 +2,5 @@
 
 mod archive;
 mod db;
+mod small;
 mod statedb;

@@ -622,6 +622,15 @@ pub type ExportDone = Box<dyn FnOnce(Option<String>) + Send>;
 impl Router {
     /// a message to Deyao's Discord DM; without a bot token it only logs
     pub fn dm(&self, text: &str) {
+        if let Some(h) = self
+            .dm_hook
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        {
+            h(text);
+            return;
+        }
         if let Some(h) = DM_HOOK.read().unwrap_or_else(|e| e.into_inner()).clone() {
             h(text);
             return;
