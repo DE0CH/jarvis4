@@ -161,24 +161,34 @@ fn parse_url(url: &str) -> Result<(postgres::Config, bool)> {
     Ok((cfg, tls))
 }
 
+/// how url's connections are made (TLS when it asks for it)
+pub fn manager_for(url: &str) -> Result<Manager> {
+    let (mut cfg, tls) = parse_url(url)?;
+    cfg.connect_timeout(Duration::from_secs(10));
+    Ok(if tls {
+        let rc = rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(NoVerify))
+            .with_no_client_auth();
+        cfg.ssl_mode(postgres::config::SslMode::Require);
+        Manager::Tls(r2d2_postgres::PostgresConnectionManager::new(
+            cfg,
+            tokio_postgres_rustls::MakeRustlsConnect::new(rc),
+        ))
+    } else {
+        Manager::Plain(r2d2_postgres::PostgresConnectionManager::new(cfg, NoTls))
+    })
+}
+
+/// one connection of its own, outside the pool (a LISTEN)
+pub fn connect_one(url: &str) -> Result<Client> {
+    Ok(r2d2::ManageConnection::connect(&manager_for(url)?)?)
+}
+
 impl DB {
     /// a pool on url, the migrations applied
     pub fn open(url: &str) -> Result<DB> {
-        let (mut cfg, tls) = parse_url(url)?;
-        cfg.connect_timeout(Duration::from_secs(10));
-        let manager = if tls {
-            let rc = rustls::ClientConfig::builder()
-                .dangerous()
-                .with_custom_certificate_verifier(Arc::new(NoVerify))
-                .with_no_client_auth();
-            cfg.ssl_mode(postgres::config::SslMode::Require);
-            Manager::Tls(r2d2_postgres::PostgresConnectionManager::new(
-                cfg,
-                tokio_postgres_rustls::MakeRustlsConnect::new(rc),
-            ))
-        } else {
-            Manager::Plain(r2d2_postgres::PostgresConnectionManager::new(cfg, NoTls))
-        };
+        let manager = manager_for(url)?;
         let pool = Pool::builder()
             .max_size(8)
             .connection_timeout(Duration::from_secs(30))
