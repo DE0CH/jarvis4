@@ -1113,3 +1113,24 @@ impl Rig {
             "stores": ["claude", "default"], "options": {"harness": "claude", "permissionMode": "auto", "config": config}}))
     }
 }
+
+/// an app call (the iPhone app's when app: its Access token header), as inbox_test.go's inboxDo
+pub fn inbox_do(
+    r: &Router,
+    method: &str,
+    target: &str,
+    body: &str,
+    app: bool,
+) -> (u16, serde_json::Value) {
+    let h = r.arc().handler();
+    let mut req = Req::new(method, target, body.as_bytes());
+    if app {
+        req = req.with_header("cf-access-token", "x");
+    }
+    let mut w = W::recorder();
+    h(&mut w, &mut req);
+    (
+        w.status(),
+        serde_json::from_str(&w.body_text()).unwrap_or(serde_json::Value::Null),
+    )
+}
