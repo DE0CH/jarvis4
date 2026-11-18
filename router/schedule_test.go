@@ -441,13 +441,13 @@ func TestRunNowResumesAFailedSession(t *testing.T) {
 	f.install(t)
 	addSession(r, "s9", "failed", "", false)
 	resumed := 0
-	old := runNowResumeHook
-	runNowResumeHook = func(r *Router, sid string) error {
+	old := resumeFailedHook
+	resumeFailedHook = func(r *Router, sid string) error {
 		resumed++
 		r.st.Do(func(d *persisted) { d.Sessions[sid].State = "started" })
 		return nil
 	}
-	t.Cleanup(func() { runNowResumeHook = old })
+	t.Cleanup(func() { resumeFailedHook = old })
 	r.ArmCron("s9", &Cron{Name: "rel", Prompt: "check", Every: 1800, TZ: "UTC", NextAt: time.Now().Add(-time.Hour).UnixMilli(), ArmedAt: 1, Signed: signed("rel")})
 	if err := r.RunNow("s9", "c", "rel"); err != nil {
 		t.Fatal(err)
@@ -606,5 +606,39 @@ func TestSessionHasRun(t *testing.T) {
 	}
 	if _, ok := sessionHasRun(nil, 1); ok {
 		t.Error("nil")
+	}
+}
+
+// a scheduled wakeup or cron on a failed session resumes it first, as Run now does (Deyao, 2026-11-18: a pause whose
+// final snapshot met a one-off 502 left the session failed, and every later run was refused and DMed)
+func TestAScheduledRunResumesAFailedSession(t *testing.T) {
+	r := newTestRouter(t)
+	dms := captureDM(t)
+	f := &fakeDelivery{}
+	f.install(t)
+	addSession(r, "s11", "failed", "", false)
+	resumed := 0
+	old := resumeFailedHook
+	resumeFailedHook = func(r *Router, sid string) error {
+		resumed++
+		r.st.Do(func(d *persisted) { d.Sessions[sid].State = "started" })
+		return nil
+	}
+	t.Cleanup(func() { resumeFailedHook = old })
+	r.ArmCron("s11", &Cron{Name: "marks", Prompt: "check", Every: 1800, TZ: "UTC", NextAt: time.Now().Add(-time.Minute).UnixMilli(), ArmedAt: 1, Signed: signed("marks")})
+	r.scheduleTick(time.Now())
+	waitIdle(t)
+	if got := f.got(); resumed != 1 || len(got) != 1 || got[0] != "s11: cron marks run 1" {
+		t.Fatalf("resumed %d, delivered %q", resumed, got)
+	}
+	r.st.Do(func(d *persisted) { d.Sessions["s11"].State = "failed" })
+	r.ArmWakeup("s11", &Wakeup{Name: "once", At: time.Now().Add(-time.Second).UnixMilli(), Prompt: "go", ArmedAt: 2, Signed: signed("once")})
+	r.scheduleTick(time.Now())
+	waitIdle(t)
+	if got := f.got(); resumed != 2 || len(got) != 2 || got[1] != "s11: wakeup once" {
+		t.Fatalf("resumed %d, delivered %q", resumed, got)
+	}
+	if len(dms()) != 0 {
+		t.Fatalf("dms %q", dms())
 	}
 }

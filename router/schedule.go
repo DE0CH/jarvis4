@@ -928,7 +928,7 @@ func (r *Router) fireWakeup(sid, name string, armedAt int64) error {
 	}
 	err := errNotVouched
 	if w.Signed != nil { // vouch.go: the session's own signed request, attested by the core
-		err = deliverVouchedHook(r, sid, Delivery{Kind: "wakeup", Request: w.Signed})
+		err = r.deliverScheduled(sid, Delivery{Kind: "wakeup", Request: w.Signed})
 	}
 	if err != nil {
 		return err
@@ -954,7 +954,7 @@ func (r *Router) fireCron(sid, name string, armedAt int64) error {
 	}
 	run, err := c.Runs+1, errNotVouched
 	if c.Signed != nil { // vouch.go: the session's own signed request, attested by the core; no shell needed
-		err = deliverVouchedHook(r, sid, Delivery{Kind: "cron", Request: c.Signed, Run: run})
+		err = r.deliverScheduled(sid, Delivery{Kind: "cron", Request: c.Signed, Run: run})
 	}
 	if last, ok := sessionHasRun(err, run); ok {
 		log.Printf("[cron] %s %q: the session already has run %d (its answer was lost): counted", sid, name, last)
@@ -1096,17 +1096,7 @@ func (r *Router) RunNow(sid, kind, name string) error {
 		deadline := time.Now().Add(runNowSkipWait)
 		var err error
 		for {
-			err = nil
-			// a session whose start failed (e.g. at Fly's machine limit) gets no delivery, scheduled or not
-			// (lessons/92): Deyao's press resumes it first, as the app's Resume would
-			if st, _ := r.sessionState(sid); st == "failed" {
-				if err = runNowResumeHook(r, sid); errors.Is(err, errBusy) {
-					err = errSkip
-				}
-			}
-			if err == nil {
-				err = deliverVouchedHook(r, sid, dl)
-			}
+			err = r.deliverScheduled(sid, dl)
 			if last, ok := sessionHasRun(err, run); kind == "c" && ok {
 				log.Printf("[schedule] %s: the session already has run %d: counted", key, last)
 				run, err = last, nil
@@ -1145,8 +1135,23 @@ func (r *Router) RunNow(sid, kind, name string) error {
 
 var errNoSchedule = errors.New("no such wakeup or cron")
 
-// runNowResumeHook: a seam for tests (the app's Resume of a failed session)
-var runNowResumeHook = func(r *Router, sid string) error { return r.Resume(sid, false) }
+// deliverScheduled: a wakeup's or cron's delivery, scheduled or Run now. A failed session gets no delivery
+// (deliverVouched refuses it), so it is resumed first, as the app's Resume would (Deyao, 2026-11-18): a failed start
+// (Fly's machine limit, lessons/92) starts again, a failed pause (its final snapshot met a one-off error) finishes its
+// snapshot first. A resume that fails again fails this firing, as any other failure.
+func (r *Router) deliverScheduled(sid string, d Delivery) error {
+	if st, _ := r.sessionState(sid); st == "failed" {
+		if err := resumeFailedHook(r, sid); errors.Is(err, errBusy) {
+			return errSkip
+		} else if err != nil {
+			return err
+		}
+	}
+	return deliverVouchedHook(r, sid, d)
+}
+
+// resumeFailedHook: a seam for tests (the app's Resume of a failed session)
+var resumeFailedHook = func(r *Router, sid string) error { return r.Resume(sid, false) }
 
 func (r *Router) fireResumePrompt(sid string) error {
 	var text string

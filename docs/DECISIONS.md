@@ -3153,3 +3153,11 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      a scheduled firing and a Run now alike: no missed mark, no DM, the next occurrence carries the next number. A cron
      stuck before the fix loses one occurrence (it is the one counted) and runs on. *Not chosen*: a structured field in
      the machine's answer (machines on older images would stay stuck until restarted).
+271. **A scheduled run resumes a failed session first** (Deyao, 2026-11-18, asked: "Resume it first" over skipping
+     with one DM or leaving it). "chat-marks" of session "Mock UI for Aviary session status indicators" DMed "the
+     session has failed: Restart it (or Resume)" every period: its pause's final snapshot had met a one-off gateway
+     502 ("try again"), which leaves the session failed with its machine kept, and nothing retried. Now a wakeup's or
+     cron's firing goes through `deliverScheduled` (router/schedule.go), as Run now already did: a failed session is
+     resumed first (Resume finishes a failed pause's snapshot first, or starts a failed start again), then delivered.
+     A resume that fails again fails the firing like any other failure (back-off, then a DM after 5 attempts). Other
+     deliveries (peer messages, approved held messages) still don't start a failed session.
