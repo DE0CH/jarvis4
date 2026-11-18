@@ -64,6 +64,11 @@ pub fn content_write_err(w: &mut W, err: &anyhow::Error) {
     }
 }
 
+/// a content store's name as the router takes it
+pub fn content_name_ok(n: &str) -> bool {
+    CONTENT_NAME_RE.is_match(n)
+}
+
 pub fn content_name(raw: &str) -> Result<String> {
     let n = raw.trim();
     if !CONTENT_NAME_RE.is_match(n) {
