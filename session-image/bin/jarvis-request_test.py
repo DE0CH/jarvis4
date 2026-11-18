@@ -22,10 +22,14 @@ assert jr.block(["q1"], 0, timeout=1) == 0   # wait after a pause: any recorded 
 # in an aviary sandbox the wait is a person wait on the supervisor's socket while it blocks, ended when it returns
 # (Deyao, 2026-11-18: the chat's list shows the conversation as needing him); nothing without the socket
 import http.server, socketserver
-calls = []
+calls, bodies = [], []
 class H(http.server.BaseHTTPRequestHandler):
     def _r(self):
-        calls.append((self.command, self.path)); self.send_response(204); self.end_headers()
+        calls.append((self.command, self.path))
+        n = int(self.headers.get("Content-Length") or 0)
+        if n:
+            bodies.append(json.loads(self.rfile.read(n)))
+        self.send_response(204); self.end_headers()
     do_POST = do_DELETE = _r
     def log_message(self, *a): pass
     def address_string(self): return "sandbox"
@@ -38,7 +42,26 @@ since = time.time_ns()
 threading.Timer(1.5, lambda: put("q4", "approved", time.time_ns())).start()
 assert jr.block(["q4"], since) == 0
 assert ("POST", "/v1/person-waits/inbox-q4?waitMs=20000") in calls, calls
-assert calls[-1] == ("DELETE", "/v1/person-waits/inbox-q4"), calls
+assert calls[-1] == ("DELETE", "/v1/person-waits/inbox-q4?outcome=approved"), calls
+assert bodies == [], "no card without one: the POST has no body"
+
+# with a card (the filing's title and reason), the wait is a card in the chat until the AI reads the outcome (aviary
+# magpie rule 11, Deyao 2026-11-18): the POST carries it with the marker the outcome lines carry, "(Inbox REF)", and
+# the DELETE says the filing's outcome in a word
+calls.clear()
+since = time.time_ns()
+threading.Timer(1.0, lambda: put("q5", "denied", time.time_ns())).start()
+assert jr.block(["q5"], since, card={"title": jr.card_title("add-repo", ["DE0CH/aviary"]), "why": "push"}) == 1
+assert bodies[0] == {"title": "Deploy key for DE0CH/aviary", "why": "push", "label": "Inbox request",
+                     "marker": "(Inbox q5)"}, bodies
+assert calls[-1] == ("DELETE", "/v1/person-waits/inbox-q5?outcome=denied"), calls
+assert jr.filing_outcome(["approved", "approved"]) == "approved"
+assert jr.filing_outcome(["approved", "lapsed"]) == "lapsed"
+assert jr.filing_outcome([]) is None
+# a wait that timed out ends without an outcome: the card keeps waiting
+calls.clear()
+assert jr.block(["q6"], time.time_ns(), timeout=1, card={"title": "x", "why": ""}) == 2
+assert calls[-1] == ("DELETE", "/v1/person-waits/inbox-q6"), calls
 
 # a batch of two add-store items (two add-repos) names this session twice; one delivery records one file per id, so
 # the wait is for each distinct id (2026-11-18: refs [s, s] against one file never ended, and its person wait kept
@@ -55,7 +78,7 @@ jr.subprocess.run = lambda a, **k: calls.append(("RUN", a[-1])) or subprocess.Co
 since = time.time_ns()
 threading.Timer(1.0, lambda: put("s3", "approved", time.time_ns())).start()
 assert jr.block(["s3"], since, stores=["gmail"]) == 0
-assert calls.index(("DELETE", "/v1/person-waits/inbox-s3")) < calls.index(("RUN", "gmail")), calls
+assert calls.index(("DELETE", "/v1/person-waits/inbox-s3?outcome=approved")) < calls.index(("RUN", "gmail")), calls
 srv.shutdown()
 
 # a single add-store waits on the id its answer names (the session's), never on "" (2026-11-18: the shell had no
@@ -85,7 +108,7 @@ except SystemExit as e:
 # (2026-11-18: only stderr's "Waiting for Deyao's decision" reached the file, the JSON sat in the buffer until the
 # decision, and every replica run failed "the session filed a grant request")
 real_stdout, seen = sys.stdout, []
-def on_wait(refs, since, stores=None):
+def on_wait(refs, since, stores=None, **kw):
     seen.append(open(outf).read())  # the file still open as stdout, as in the detached request
     return 0
 jr.block = on_wait
