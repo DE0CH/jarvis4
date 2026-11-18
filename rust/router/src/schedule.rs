@@ -1209,3 +1209,8 @@ mod tests {
         assert_eq!(session_has_run(Some(&e), 6), None);
     }
 }
+
+/// auto-pause (autopilot.rs) leaves a session running when a wakeup or cron fires within 10 minutes
+pub fn auto_pause_veto(d: &Persisted, sid: &str) -> bool {
+    schedule_due_within(d, sid, Duration::from_secs(600))
+}

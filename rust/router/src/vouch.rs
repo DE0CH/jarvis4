@@ -261,7 +261,7 @@ pub fn attested(d: &Delivery) -> Result<(Vec<u8>, String)> {
             Ok((b, signed_by(r)))
         }
         "continue" => Ok((b"continue".to_vec(), "image-text".into())),
-        "resume-prompt" => match crate::sessionops::clean_resume_prompt(&d.text) {
+        "resume-prompt" => match crate::sessionapi::clean_resume_prompt(&d.text) {
             Ok(p) if !p.is_empty() => Ok((p.into_bytes(), "deyao".into())),
             _ => Err(anyhow!("resume-prompt: empty or too long")),
         },
