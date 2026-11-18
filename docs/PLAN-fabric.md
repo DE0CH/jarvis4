@@ -33,7 +33,7 @@ This file is the plan and becomes the description as the parts land.
 | In the sandbox | the whole session machine, as on Fly: the keeper, aviary-gateway, the tunnel agent, and inside it aviary's sandbox image entered as today |
 | Secrets | the keeper runs in the sandbox and holds the session's stores; `session-secret` works as today |
 | Key path | the kernel's spawner gets a third runner: it asks the fabric hermit for a sandbox and reads the keeper's keys through it. hermit and its hosts are trusted the way Fly and AWS are. A kernel release (Deyao's OK and re-signature at release time) |
-| Hosts | Deyao's AWS account, Frankfurt (eu-central-1), m7i.xlarge; a sandbox is 1 CPU / 7 GiB, two per host |
+| Hosts | Deyao's AWS account, Frankfurt (eu-central-1), m7i.xlarge; a sandbox is 1 CPU / 3.5 GiB with 50 GiB of scratch, four per host (Deyao, 2026-11-18; 4 × 3.5 GiB in 15.5 GiB less 1 GiB reserved, 4 × 50 GiB + 16 GiB of system on the 220 GiB disk) |
 | What lasts | `/workspace` (the session's repository) and the home; everything else is the sandbox's scratch |
 | Mounts | the fabric mounts the list the deployment names (volume folder → path) and knows nothing of what a path means |
 | Storage | JuiceFS: metadata in Postgres on Jarvis 4's cluster, data in Hetzner Object Storage |
