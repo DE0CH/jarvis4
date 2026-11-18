@@ -25,8 +25,10 @@ pub fn ruleset_payload(branch: &str) -> Value {
                 "required_status_checks": [{"context": "gate"}]
             }}
         ],
-        // the admin role (5) and deploy keys keep pushing main: the pins, the gate and Deyao
+        // deploy keys (the pins, the gate's merge key, agents' pushes, which the claude-env hook turns away first) and
+        // the admin role (5, Deyao) keep updating main
         "bypass_actors": [
+            {"actor_id": null, "actor_type": "DeployKey", "bypass_mode": "always"},
             {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}
         ]
     })
@@ -70,7 +72,10 @@ mod tests {
         assert_eq!(v["conditions"]["ref_name"]["include"][0], "refs/heads/main");
         let check = &v["rules"][3]["parameters"]["required_status_checks"][0]["context"];
         assert_eq!(check, "gate");
-        assert_eq!(v["bypass_actors"][0]["actor_id"], 5);
+        // without the DeployKey entry every pin and the gate's own merge would be refused
+        assert_eq!(v["bypass_actors"][0]["actor_type"], "DeployKey");
+        assert_eq!(v["bypass_actors"][1]["actor_type"], "RepositoryRole");
+        assert_eq!(v["bypass_actors"][1]["actor_id"], 5);
     }
 
     #[test]

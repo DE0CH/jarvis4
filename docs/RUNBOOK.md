@@ -29,8 +29,9 @@ DE0CH/jarvis2 -f name=claw|openclaw -f url=… -f sha=…` with `JARVIS2_DISPATC
 sha256 (claw: `session-image/base/forks.json`, so the base rebuilds; OpenClaw: `session-image/openclaw-runtime.json`)
 and pushes with its deploy key, which runs `images`. By hand: the same `gh workflow run` line (DECISIONS 156).
 
-GitHub settings (R1 audit, 2026-10-11; `gh api`): ruleset "main: only admins and deploy keys update it" (deletion,
-non_fast_forward, update, and the required status `gate` (2026-11-18); bypass: the admin role and deploy keys);
+GitHub settings (`gh api`): ruleset "main: the gate, admins and deploy keys" (deletion, non_fast_forward, update, the
+required status `gate`; bypass: deploy keys and the admin role), made by `gate setup` on 2026-11-18 (the R1 audit's
+ruleset of 2026-10-11 was jarvis2's; jarvis4's main had none until then);
 environment `merge` (main only) with MERGE_DEPLOY_KEY (deploy key `jarvis-merge`, the gate's: "Agent branches" below); environment `release` (deployment branches: main only)
 with secrets ASC_KEY_ID / ASC_ISSUER_ID / ASC_PRIVATE_KEY (ios.yml's TestFlight job), CI_IMAGE_KEY (the private half of
 `keys/ci.pub`), PIN_DEPLOY_KEY and FORK_PIN_DEPLOY_KEY (`fork-pin.yml`, deploy key `jarvis2-fork-pin`); environment `replica`
