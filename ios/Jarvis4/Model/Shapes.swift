@@ -42,7 +42,10 @@ struct Session: Identifiable, Equatable, Hashable {
   var wakeups: [Wakeup] { j["wakeups"].array.map(Wakeup.init) }
   var crons: [Cron] { j["crons"].array.map(Cron.init) }
   var watches: [Watch] { j["watches"].array.map(Watch.init) }
-  var hasSchedule: Bool { !wakeups.isEmpty || !crons.isEmpty || !watches.isEmpty }
+  /// an aviary session's chat schedules (magpie's, reported by hermit-jarvis): the soonest next fire (router/schedule.go ChatSchedule)
+  var chatScheduleAt: Date? { j["chatScheduleIso"].string?.isoDate }
+  /// will wake by itself: the router's willWake, which the live dashboard and the chat read (app/src/lib/schedule.ts)
+  var hasSchedule: Bool { !wakeups.isEmpty || !crons.isEmpty || !watches.isEmpty || chatScheduleAt != nil }
   var isTaskLine: Bool { harness.hasPrefix("task:") }
   /// OpenCode and OpenClaw sessions aren't in the Claude app: their primary action is the Remote page
   var hasRemote: Bool { harness == "opencode" || harness == "openclaw" || harness == "paseo-claude" || harness == "aviary" }

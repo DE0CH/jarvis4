@@ -4,6 +4,7 @@ import { api, ago, isTaskLine, challengeRequest, cronEvery, holderTitle, HOLDERS
 import { useStore, setTab, getStore, pend, refresh, refreshUntil, pendUntil, settle, ask, askText, toast, failed, exclusive, BUSY_LABEL } from "../lib/store";
 import { hasShell, requestSecure } from "../lib/shell";
 import { requestGrant } from "../lib/grants";
+import { hasSchedule } from "../lib/schedule";
 import { inboxToast, modeOutcome, modeWaitingText } from "../lib/modeswitch";
 import { ACCOUNT_PHASE } from "../lib/accountswap";
 import { canCopy, copyText } from "../lib/clipboard";
@@ -24,7 +25,6 @@ const leasePills = (ls: Lease[], sid: string) => [
   ...ls.filter((l) => l.holder && l.holder.sid === sid).map((l) => ({ key: "h" + l.name, held: true, text: "holds " + l.name })),
   ...ls.flatMap((l) => l.queue.filter((w) => w.sid === sid).map((w) => ({ key: "q" + l.name, held: false, text: `#${w.position} for ${l.name}` }))),
 ];
-const hasSchedule = (m: Session) => !!(m.wakeups || []).length || !!(m.crons || []).length || !!(m.watches || []).length;
 const clip = (t: string) => t.length > 90 ? t.slice(0, 90) + "…" : t;
 
 // the steps of an Upgrade job (wake.kind "upgrade"), as the busy label
@@ -287,6 +287,9 @@ function Schedules({ m }: { m: Session }) {
           {!!x.expiresAtIso && <Row label="Gives up">{when(Date.parse(x.expiresAtIso))}</Row>}</Rows>
         <Quote by="Prompt when met" color="blue" lines={2}>{clip(x.prompt)}</Quote>
       </Box>)}
+      {!!m.chatScheduleIso && <Box key="chat">
+        <Rows><Row label="Chat schedule">{when(Date.parse(m.chatScheduleIso))}</Row></Rows>
+      </Box>}
     </Callout>
   );
 }

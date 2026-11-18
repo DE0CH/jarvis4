@@ -466,3 +466,7 @@ fixes, 34–40 carried over from the old app and still true, 41–43 the web pag
     confirm saying what it does (a wakeup is then done; a cron's schedule carries on), then a toast/notice that the
     delivery has started: it runs in the background, a paused session resumes first. A cron whose last run was skipped
     shows a red "missed" pill and rows (run, when, why); its Run now is the solid button.
+83. **An aviary session's chat schedule counts as a schedule** (both apps; 2026-11-18). `chatScheduleIso` (router
+    `scheduleView`, hermit-jarvis's report) joins wakeups, crons and watches in `hasSchedule` (`lib/schedule.ts`,
+    `Session.hasSchedule`), the router's `willWake` that the live dashboard and the chat read; the card listed such a
+    session as "idle" while both said "scheduled". "Wakes by itself" shows its next fire as a row of its own.

@@ -149,6 +149,9 @@ private struct SessionDetailList: View {
             WakeRow(symbol: "eye", when: "watch, checks \(Fmt.every(w.interval))", name: w.name, prompt: w.prompt, next: w.nextCheck.map(Fmt.when),
                     tags: w.runs > 0 ? [Fmt.plural(w.runs, "check")] : [])
           }
+          if let at = m.chatScheduleAt {
+            WakeRow(symbol: "bubble.left.and.text.bubble.right", when: Fmt.when(at), name: "chat schedule", prompt: "Armed in the chat")
+          }
         }
       }
 

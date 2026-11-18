@@ -120,7 +120,9 @@ export type Session = {
   modeAfterGrant?: { mode: string; inbox: string; until: string } | null; // a bypass switch waiting on its Inbox grant (router sessionops.go)
   autoPause?: "on" | "off"; notifyIdle?: "on" | "off"; oneShot?: boolean; oneShotDone?: boolean; authFailed?: boolean;
   credsExpiresAt?: string | number; discordChannel?: string; statusUpdatedAt?: string; lastReport?: string; refusals?: Refusal[];
-  wakeups?: Wakeup[]; crons?: Cron[]; watches?: Watch[]; resumePrompt?: string; createRequestId?: string; repos?: string;
+  wakeups?: Wakeup[]; crons?: Cron[]; watches?: Watch[]; resumePrompt?: string;
+  chatScheduleIso?: string; // an aviary session's chat schedules: the soonest next fire (router/schedule.go ChatSchedule)
+  createRequestId?: string; repos?: string;
   // a lifecycle action holding the session (others are refused 409) and a permission-mode / restart job
   // what a pause or destroy is waiting on, in plain words (e.g. "waiting for the machine's last snapshot")
   waiting?: string;
