@@ -155,6 +155,11 @@ image's `/etc/resolv.conf` names public resolvers.
 - Jarvis 4: the spawner's fabric runner against a fake hermit (as `aws_test.go` against a fake EC2); hermit-jarvis's
   `tests/flow.rs` with a fake fabric hermit beside the existing flow, which must pass unchanged; `rust/e2e-kernel`
   (E2E_HARNESS=aviary) gains a fabric run on a replica (a throwaway kernel line, hermit and one real AWS host).
+- A fabric host on a throwaway machine: aviary `testing/fabric-replica` (`up --hermit-json k8s/cluster/fabric/hermit.json`,
+  `check`) builds it with the deployment's own recipe and these pins, stands in for the cloud (metadata service, S3
+  with STS session tokens, JuiceFS stores, PKI) and checks egress by name, pause, freeze to S3 and thaw, and deleting
+  a paused sandbox through sandboxd's API. A change to sandboxd or to the pins is checked there, never on production.
+  A process `runsc exec` started does not survive a restore (gVisor): a freeze check follows the sandbox's init.
 
 ## Costs
 
