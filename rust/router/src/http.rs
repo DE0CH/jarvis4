@@ -502,6 +502,12 @@ impl Registrar {
         self.public.handle(pattern, h);
     }
 
+    /// a public route with its own gate, given the router
+    pub fn public_fn(&mut self, pattern: &str, f: impl Fn(&Arc<Router>, &mut W, &mut Req) + Send + Sync + 'static) {
+        let r = self.r.clone();
+        self.public.handle(pattern, Arc::new(move |w, req| f(&r, w, req)));
+    }
+
     /// a setup route: the setup session's Access token
     pub fn setup_route(&mut self, pattern: &str, f: impl Fn(&Arc<Router>, &mut W, &mut Req) + Send + Sync + 'static) {
         let r = self.r.clone();

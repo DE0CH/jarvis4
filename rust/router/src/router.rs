@@ -121,7 +121,8 @@ pub struct Router {
     pub setup_seen: Mutex<BTreeMap<String, i64>>,
     /// claudeaccounts.rs: the Claude accounts and their logins
     pub claude: OnceLock<Arc<crate::claudeaccounts::ClaudeAccounts>>,
-    pub login_once: std::sync::Once,
+    /// this router, for what it hands out a weak reference to (set by new)
+    pub me: OnceLock<std::sync::Weak<Router>>,
     pub muxes: OnceLock<(Arc<Mux>, Arc<Mux>)>,
     /// http.rs: every app route's pattern (apicalls.rs classifies them)
     pub app_patterns: OnceLock<BTreeMap<String, bool>>,
@@ -163,7 +164,7 @@ impl Router {
             policy,
             setup_seen: Mutex::new(BTreeMap::new()),
             claude: OnceLock::new(),
-            login_once: std::sync::Once::new(),
+            me: OnceLock::new(),
             muxes: OnceLock::new(),
             app_patterns: OnceLock::new(),
             sup: Default::default(),
@@ -186,6 +187,7 @@ impl Router {
             let done = db.done.clone();
             std::thread::spawn(move || crate::mq::listen_loop(&url, &done, &b)); // mq.rs
         }
+        let _ = r.me.set(Arc::downgrade(&r));
         r.wire_kernel();
         // linestate.rs: the core's line state, kept as its answers name a new one
         let lk = LineKeeper::new_core(r.st.clone(), r.core.clone());

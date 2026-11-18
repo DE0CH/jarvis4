@@ -60,6 +60,21 @@ pub fn path_escape(s: &str) -> String {
     out
 }
 
+/// Go's url.QueryEscape: unreserved characters stay, the space is +, the rest %XX
+pub fn query_escape(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
+            out.push(b as char);
+        } else if b == b' ' {
+            out.push('+');
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
 /// a URL path decoded (Go's URL.Path)
 pub fn path_unescape(s: &str) -> String {
     percent_encoding::percent_decode_str(s)
