@@ -3,7 +3,7 @@
 //!
 //!   gate open    branch.yml, on every push to a branch other than main: open the branch's pull request (a draft for
 //!                wip/<topic>) and set the commit's `gate` status pending
-//!   gate vendor  a repo's three workflows (gate.yml, branch.yml, merge.yml) from rust/gate/templates
+//!   gate vendor  a repo's two workflows (branch.yml, merge.yml) from rust/gate/templates
 //!   gate setup   one repo's GitHub side, idempotent: the deploy key jarvis-merge and its secret in the `merge`
 //!                environment, and main's ruleset requiring the gate (setup.rs; GH_TOKEN is a repo admin's;
 //!                GATE_REPOS=owner/name[+actions],…: +actions when the repo's workflows push main with their token)
@@ -184,6 +184,16 @@ struct Git {
 impl Git {
     fn new(repo: &str) -> Result<Git> {
         let dir = tempfile::tempdir()?;
+        // from a session (a repo's first landing by hand): GATE_GIT_URL is the remote as the session's own ssh config
+        // names it (its deploy key), and no MERGE_DEPLOY_KEY is needed
+        if let Ok(url) = std::env::var("GATE_GIT_URL")
+            && !url.is_empty()
+            && std::env::var("MERGE_DEPLOY_KEY")
+                .unwrap_or_default()
+                .is_empty()
+        {
+            return Git::at(dir, "ssh".into(), url);
+        }
         let key = dir.path().join("merge-key");
         let mut k = env("MERGE_DEPLOY_KEY")?;
         if !k.ends_with('\n') {
@@ -263,7 +273,9 @@ fn merge(gh: &Gh) -> Result<()> {
         .map(|w| w.trim().to_string())
         .filter(|w| !w.is_empty())
         .collect();
-    let runs_v = gh.get(&format!("/actions/runs?head_sha={sha}&per_page=100"))?;
+    // every run on the branch, then only those on its own commits since it left main (compare base...sha, up to
+    // 250 commits: a branch longer than that counts its newest 250)
+    let runs_v = gh.get(&format!("/actions/runs?branch={branch}&per_page=100"))?;
     let runs: Vec<Run> = runs_v["workflow_runs"]
         .as_array()
         .map(|a| a.as_slice())
@@ -273,12 +285,23 @@ fn merge(gh: &Gh) -> Result<()> {
         .filter(|r| gated.is_empty() || gated.iter().any(|w| r["name"] == w.as_str()))
         .map(|r| Run {
             path: r["path"].as_str().unwrap_or("").into(),
+            sha: r["head_sha"].as_str().unwrap_or("").into(),
             id: r["id"].as_u64().unwrap_or(0),
             status: r["status"].as_str().unwrap_or("").into(),
             conclusion: r["conclusion"].as_str().unwrap_or("").into(),
         })
         .collect();
-    let runs = decide::latest(&runs, OWN);
+    let cmp = gh.get(&format!("/compare/{base}...{sha}"))?;
+    let mut commits: std::collections::BTreeSet<String> = cmp["commits"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|c| c["sha"].as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    commits.insert(sha.clone());
+    let runs = decide::latest(&runs, &commits, OWN);
     let current = match gh.call(
         reqwest::Method::GET,
         &format!("/git/ref/heads/{branch}"),
@@ -288,7 +311,7 @@ fn merge(gh: &Gh) -> Result<()> {
         _ => false,
     };
     let pr = gh.open_pr(&branch)?;
-    let rel = match gh.get(&format!("/compare/{base}...{sha}"))?["status"].as_str() {
+    let rel = match cmp["status"].as_str() {
         Some("ahead") => Rel::Ahead,
         Some("identical") => Rel::Identical,
         Some("behind") => Rel::Behind,
@@ -296,6 +319,19 @@ fn merge(gh: &Gh) -> Result<()> {
     };
     let action = decide::decide(&branch, &runs, current, pr.is_some(), rel);
     println!("{branch} at {sha}: {action:?}");
+    // GATE_DRY=1: the decision only (a check from a session against a repo's real runs)
+    if std::env::var("GATE_DRY").is_ok_and(|v| v == "1") {
+        for r in &runs {
+            println!(
+                "  {} {} {} on {}",
+                decide::file_name(&r.path),
+                r.status,
+                r.conclusion,
+                &r.sha[..r.sha.len().min(8)]
+            );
+        }
+        return Ok(());
+    }
     match action {
         Action::Wait(why) => {
             if current {
@@ -475,6 +511,21 @@ fn setup_one(gh: &Gh, repo: &str, actions: bool, dry: bool) -> Result<Vec<String
         setup::KEY_TITLE,
         setup::SECRET,
     )?);
+    // branch.yml opens the pull request with the workflow token: GitHub refuses that ("GitHub Actions is not permitted
+    // to create or approve pull requests") until the repo allows it; its default token permissions stay as they are
+    let wf = gh.get(&format!("/repos/{repo}/actions/permissions/workflow"))?;
+    let perms = wf["default_workflow_permissions"]
+        .as_str()
+        .unwrap_or("read")
+        .to_string();
+    match gh.call(
+        reqwest::Method::PUT,
+        &format!("/repos/{repo}/actions/permissions/workflow"),
+        Some(&json!({"default_workflow_permissions": perms, "can_approve_pull_request_reviews": true})),
+    )? {
+        (204 | 200, _) => done.push("Actions may open pull requests".into()),
+        (c, v) => bail!("allowing Actions to open pull requests: {c} {v}"),
+    }
     // main's ruleset: made, or the one this tool made before updated in place
     let want = setup::ruleset_payload(&branch, actions);
     let rs = gh.get(&format!("/repos/{repo}/rulesets"))?;
@@ -688,8 +739,9 @@ fn vendor() -> Result<()> {
     })?;
     let wf = Path::new(&dir).join(".github/workflows");
     std::fs::create_dir_all(&wf)?;
+    // the reusable gate.yml of the first version goes
+    let _ = std::fs::remove_file(wf.join("gate.yml"));
     for (name, body) in [
-        ("gate.yml", vendor::GATE.to_string()),
         ("branch.yml", vendor::branch_for(&branch)),
         ("merge.yml", vendor::merge_for(&wfs, &branch)),
     ] {
