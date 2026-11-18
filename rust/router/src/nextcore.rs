@@ -259,7 +259,7 @@ impl Router {
             std::thread::spawn(move || {
                 loop {
                     let every = Duration::from_millis(DRAIN_WATCH_EVERY_MS.load(std::sync::atomic::Ordering::Relaxed));
-                    if stop.sleep(every) {
+                    if !stop.sleep(every) {
                         return;
                     }
                     let w = standby_gone(&next, &key);
