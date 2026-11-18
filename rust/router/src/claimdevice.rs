@@ -26,7 +26,7 @@ pub struct MasterCert {
     pub master_sig: String,
 }
 
-static CLAIM_DEVICE_MU: Mutex<()> = Mutex::new(());
+pub(crate) static CLAIM_DEVICE_MU: Mutex<()> = Mutex::new(());
 
 impl Router {
     pub fn claim_devices(&self) -> Vec<ClaimDevice> {
