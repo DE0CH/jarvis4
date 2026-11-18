@@ -12,6 +12,8 @@
 //!   GET    /v1/admin/sandboxes/{id}/log              admin: its console
 //!   POST   /v1/admin/sandboxes/{id}/release          admin: killed and deleted
 //!   DELETE /v1/workspaces/{cid}                      caller magpie: its sandbox released, its folders removed
+//!   POST   /v1/conversations/{cid}/sandbox/freeze {until}  caller magpie: paused in place (runsc pause) until then
+//!   POST   /v1/conversations/{cid}/sandbox/thaw     caller magpie: a frozen one resumed (runsc resume)
 //!   GET    /v1/sandbox-tokens/{id}                   caller gateway: the sandbox's liveness (hermit-jarvis, aviary/src/fabric.rs)
 //!   GET    /v1/sandbox/self                          caller gateway, `aviary-sandbox-id`: its descriptor's control hashes
 //!
@@ -57,6 +59,8 @@ struct Sbx {
     name: String,
     person: String,
     state: &'static str,
+    /// each freeze's number: a thaw at `until` acts only on the freeze that set it
+    frozen_gen: u64,
 }
 
 struct St {
@@ -306,6 +310,107 @@ fn start(st: &Arc<Mutex<St>>, s: Sbx) {
     });
 }
 
+/// Unix seconds of an RFC 3339 UTC time (`2026-11-18T12:34:56.789Z`), as the router writes `until`.
+fn unix_of(t: &str) -> Option<i64> {
+    let (date, rest) = t.split_once('T')?;
+    let mut d = date.split('-').map(|x| x.parse::<i64>().ok());
+    let (y, m, day) = (d.next()??, d.next()??, d.next()??);
+    let hms = rest.trim_end_matches('Z');
+    let hms = hms.split(['.', '+']).next()?;
+    let mut h = hms.split(':').map(|x| x.parse::<i64>().ok());
+    let (hh, mm, ss) = (h.next()??, h.next()??, h.next()??);
+    // days from the civil date (Howard Hinnant's algorithm)
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Some((era * 146_097 + doe - 719_468) * 86_400 + hh * 3600 + mm * 60 + ss)
+}
+
+/// Paused in place, as the fabric hermit freezes (aviary hermit `fabric/pausing.rs`); thawed at `until` by itself
+fn freeze(
+    st: &Arc<Mutex<St>>,
+    cid: &str,
+    until: Option<i64>,
+) -> Result<serde_json::Value, (u16, &'static str)> {
+    let (s, mut pause) = {
+        let g = st.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(s) = g.by_cid.get(cid).cloned() else {
+            return Err((404, "no_sandbox"));
+        };
+        if s.state != "ready" {
+            return Err((409, "sandbox_busy"));
+        }
+        let c = runsc(&g.cfg, &["pause", &s.name]);
+        (s, c)
+    };
+    if !pause.status().is_ok_and(|x| x.success()) {
+        return Err((502, "pause_failed"));
+    }
+    let out = {
+        let mut g = st.lock().unwrap_or_else(|e| e.into_inner());
+        let x = g
+            .by_cid
+            .get_mut(cid)
+            .filter(|x| x.id == s.id)
+            .ok_or((404, "no_sandbox"))?;
+        x.state = "frozen";
+        x.frozen_gen += 1;
+        let gen_ = x.frozen_gen;
+        let snap = x.clone();
+        if let Some(u) = until {
+            let (st2, cid2) = (st.clone(), cid.to_owned());
+            std::thread::spawn(move || {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(0));
+                std::thread::sleep(std::time::Duration::from_secs(
+                    u64::try_from((u - now).max(0)).unwrap_or(0),
+                ));
+                let still = st2
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .by_cid
+                    .get(&cid2)
+                    .is_some_and(|x| x.state == "frozen" && x.frozen_gen == gen_);
+                if still {
+                    eprintln!("fake-hermit: {cid2} until passed: thawing");
+                    let _ = thaw(&st2, &cid2);
+                }
+            });
+        }
+        sandbox_json(&g, &snap)
+    };
+    Ok(out)
+}
+
+fn thaw(st: &Arc<Mutex<St>>, cid: &str) -> Result<serde_json::Value, (u16, &'static str)> {
+    let (s, mut resume) = {
+        let g = st.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(s) = g.by_cid.get(cid).cloned() else {
+            return Err((404, "no_sandbox"));
+        };
+        if s.state != "frozen" {
+            return Ok(sandbox_json(&g, &s));
+        }
+        let c = runsc(&g.cfg, &["resume", &s.name]);
+        (s, c)
+    };
+    if !resume.status().is_ok_and(|x| x.success()) {
+        return Err((502, "resume_failed"));
+    }
+    let mut g = st.lock().unwrap_or_else(|e| e.into_inner());
+    let x = g
+        .by_cid
+        .get_mut(cid)
+        .filter(|x| x.id == s.id)
+        .ok_or((404, "no_sandbox"))?;
+    x.state = "ready";
+    let snap = x.clone();
+    Ok(sandbox_json(&g, &snap))
+}
+
 fn release(st: &Arc<Mutex<St>>, s: &Sbx) {
     let (work, cmd_kill, cmd_del) = {
         let g = st.lock().unwrap_or_else(|e| e.into_inner());
@@ -433,12 +538,28 @@ fn handle(st: &Arc<Mutex<St>>, q: &Req) -> (u16, serde_json::Value) {
                 cid: (*cid).to_owned(),
                 person,
                 state: "starting",
+                frozen_gen: 0,
             };
             g.by_cid.insert((*cid).to_owned(), s.clone());
             let out = sandbox_json(&g, &s);
             drop(g);
             start(st, s);
             (202, out)
+        }
+        ("POST", ["v1", "conversations", cid, "sandbox", "freeze"]) if magpie => {
+            let until = serde_json::from_slice::<serde_json::Value>(&q.body)
+                .ok()
+                .and_then(|v| v["until"].as_str().and_then(unix_of));
+            match freeze(st, cid, until) {
+                Ok(v) => (202, v),
+                Err((c, w)) => err(c, w),
+            }
+        }
+        ("POST", ["v1", "conversations", cid, "sandbox", "thaw"]) if magpie => {
+            match thaw(st, cid) {
+                Ok(v) => (202, v),
+                Err((c, w)) => err(c, w),
+            }
         }
         ("GET", ["v1", "conversations", cid, "sandbox"]) if magpie => {
             let g = st.lock().unwrap_or_else(|e| e.into_inner());
@@ -555,6 +676,17 @@ mod tests {
 
     /// its tokens are what the router's verifyHST reads (router/fabricrunner.go): the layout, the context, the key
     #[test]
+    fn until_reads_as_the_router_writes_it() {
+        assert_eq!(unix_of("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(
+            unix_of("2026-11-18T12:34:56.123456789Z"),
+            Some(1_795_005_296)
+        );
+        assert_eq!(unix_of("2000-03-01T00:00:01Z"), Some(951_868_801));
+        assert_eq!(unix_of("not a time"), None);
+    }
+
+    #[test]
     fn a_token_is_hermits() {
         let rng = SystemRandom::new();
         let pkcs8 = Ed25519KeyPair::generate_pkcs8(&rng).expect("a key");
@@ -585,6 +717,7 @@ mod tests {
             name: "sbx-01a1ec41c22f71e4".into(),
             person: "jarvis4@deyaochen.com".into(),
             state: "ready",
+            frozen_gen: 0,
         };
         let t = token(&st, &s).expect("a token");
         let p: Vec<&str> = t.split('.').collect();

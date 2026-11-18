@@ -22,12 +22,13 @@ use std::process::{Command, Output};
 const BIN: &str = env!("CARGO_BIN_EXE_jarvis-tools");
 /// what the stand-in registry serves on each connection: the download the fetch counts
 const SERVED: usize = 3_000_000;
-const SANDBOX_TOOLS: [&str; 5] = [
+const SANDBOX_TOOLS: [&str; 6] = [
     "jarvis-machine",
     "jarvis-request",
     "session-secret",
     "jarvis-tools",
     "schedule-wakeup",
+    "time-machine",
 ];
 
 fn sh(cmd: &mut Command) -> Output {
@@ -343,6 +344,7 @@ fn the_sandbox_is_the_image() {
     }
     // on the machine the tools' names are links to jarvis-tools
     symlink("jarvis-tools", bin.join("schedule-wakeup")).unwrap();
+    symlink("jarvis-tools", bin.join("time-machine")).unwrap();
     let marker = t.join("pins.json");
     write(
         t.join("boot.env"),
@@ -531,6 +533,10 @@ fn the_sandbox_is_the_image() {
     want(
         "tool schedule-wakeup=machine's jarvis-tools",
         "schedule-wakeup (a link to jarvis-tools) is not in the sandbox",
+    );
+    want(
+        "tool time-machine=machine's jarvis-tools",
+        "time-machine (a link to jarvis-tools) is not in the sandbox",
     );
     want("jarvis=jarvis-machine", "no jarvis link in the sandbox");
     want(
