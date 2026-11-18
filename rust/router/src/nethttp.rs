@@ -223,6 +223,14 @@ pub fn write_json<T: Serialize + ?Sized>(w: &mut W, status: u16, v: &T) {
     w.write_str(&s);
 }
 
+/// Go's http.NotFound
+pub fn not_found(w: &mut W) {
+    w.set_header("Content-Type", "text/plain; charset=utf-8");
+    w.set_header("X-Content-Type-Options", "nosniff");
+    w.write_header(404);
+    w.write_str("404 page not found\n");
+}
+
 /// write_json of {"error": msg}
 pub fn write_error(w: &mut W, status: u16, msg: &str) {
     write_json(w, status, &serde_json::json!({"error": msg}));

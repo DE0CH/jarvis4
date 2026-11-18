@@ -16,7 +16,7 @@
 
 use crate::archive::{ArchiveInfo, RECORDS_ROOT, resolve_link, update_index, walk_tar};
 use crate::core::Doc;
-use crate::livesync::FileSum;
+use crate::livearchive::FileSum;
 use crate::router::Router;
 use crate::state::Session;
 use crate::storagebox::StorageBox;
@@ -112,7 +112,7 @@ pub fn layout_snapshot(snap: &Path) -> Result<SnapshotLayout> {
             tar::EntryType::Regular => {
                 regular.insert(name.clone(), (h.mtime().unwrap_or(0), h.size().unwrap_or(0) as i64));
                 if crate::tails::is_transcript(&name) {
-                    out.sums.insert(base(&name).to_string(), crate::livesync::sum_reader(body)?);
+                    out.sums.insert(base(&name).to_string(), crate::livearchive::sum_reader(body)?);
                 }
             }
             tar::EntryType::Symlink if name.starts_with("artifacts/") => {
