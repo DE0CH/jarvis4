@@ -14,9 +14,13 @@
 //!                       (E2E_FABRIC_IMAGE, default ghcr.io/de0ch/jarvis4-session-fabric:latest), unpacked once into
 //!                       E2E_FABRIC_CACHE (default ~/.cache/jarvis4-e2e-fabric). Needs crane and sudo. No Inbox, no
 //!                       approval: the boot check of a fabric change.
-//!   E2E_HARNESS=aviary  (with the fabric) the session's harness aviary, with the chat stack beside the kernel
-//!                       (chat.rs: hermit-jarvis of this tree, magpie, a TLS Postgres, an S3 stand-in) and e2e/aviary
-//!                       as the phone, the stand-in model and the chat front (127.0.0.1:31085) instead of e2e/kernel
+//!   E2E_HARNESS=aviary  the session's harness aviary, with the chat stack beside the kernel (chat.rs: hermit-jarvis
+//!                       of this tree, magpie of the pinned release, a TLS Postgres, an S3 stand-in) and e2e/aviary
+//!                       as the phone, the stand-in model and the chat front (127.0.0.1:31085) instead of e2e/kernel.
+//!                       On Fly the machines reach the front through a second throwaway peer (`-chat`), or over 6PN
+//!                       when this runs on a Fly machine ([`Net`]); with the fabric, on loopback. aviary-pin.yml's
+//!                       replica (every aviary release, before it is pinned); by hand from a session:
+//!                       `session-secret --keys JARVIS2_FLY_TOKEN --exec env E2E_HARNESS=aviary e2e-kernel`
 //!   E2E_SESSION_IMAGE   the session image (default ghcr.io/de0ch/jarvis4-session:latest), pinned by digest here
 //!
 //! `e2e-kernel hosts-exec HOSTS UID GID -- CMD…` (run by the router's `sudo unshare`): HOSTS bound over /etc/hosts in
@@ -62,11 +66,75 @@ fn aviary() -> bool {
     std::env::var("E2E_HARNESS").is_ok_and(|r| r == "aviary")
 }
 
+/// `E2E_ONLY=chat` (with E2E_HARNESS=aviary): only the chat stack, kept up until interrupted (debugging hermit-jarvis
+/// against a real magpie; no Fly token needed)
+fn only_chat() -> bool {
+    aviary() && std::env::var("E2E_ONLY").is_ok_and(|r| r == "chat")
+}
+
 /// e2e/aviary's front: the stand-in model and hermit-jarvis's gateway listener, as the machines reach the chat stack
 const CHAT_FRONT: &str = "127.0.0.1:31085";
+/// the chat stack's own WireGuard peer (aviary on Fly): machines reach e2e/aviary's front through it
+const CHAT_PEER: &str = "jarvis2-e2e-kernel-chat";
+const CHAT_GATEWAY_HEALTH: &str = "127.0.0.1:29084";
+
+/// How Fly machines reach this run. On a Fly machine of the sessions' org (a session): straight over Fly's private
+/// network to this machine's own 6PN address (the router's machines' port and e2e/aviary's front listen there; both
+/// answer only signed or throwaway requests). Elsewhere (CI): throwaway WireGuard peers of the org, each served by
+/// `router m-gateway`, as production's machines reach the router (the peers did not connect from a Fly machine,
+/// 2026-11-11).
+struct Net {
+    /// the router as the machines know it (their JARVIS2_URL)
+    machine_url: String,
+    /// where the router listens for the machines
+    machine_addr: String,
+    /// e2e/aviary's front as the machines know it, and where it listens
+    chat_url: String,
+    front_addr: String,
+    /// the peers and their m-gateways are this run's
+    peers: bool,
+}
+
+fn net() -> Net {
+    if fabric() {
+        // the fabric's machines are sandboxes on this box: the router's fabric listener and the front on loopback
+        return Net {
+            machine_url: format!("http://{PEER}._peer.internal:8081"),
+            machine_addr: MACHINES.into(),
+            chat_url: format!("http://{CHAT_FRONT}"),
+            front_addr: CHAT_FRONT.into(),
+            peers: false,
+        };
+    }
+    let six = std::env::var("FLY_MACHINE_ID")
+        .ok()
+        .zip(std::env::var("FLY_APP_NAME").ok());
+    if let Some((id, app)) = six.filter(|(i, a)| !i.is_empty() && !a.is_empty()) {
+        let host = format!("{id}.vm.{app}.internal");
+        let ip = std::net::ToSocketAddrs::to_socket_addrs(&(host.as_str(), 0))
+            .ok()
+            .and_then(|mut a| a.find(std::net::SocketAddr::is_ipv6))
+            .map(|a| a.ip().to_string())
+            .unwrap_or_default();
+        return Net {
+            machine_url: format!("http://{host}:29081"),
+            machine_addr: format!("[{ip}]:29081"),
+            chat_url: format!("http://{host}:31085"),
+            front_addr: format!("[{ip}]:31085"),
+            peers: false,
+        };
+    }
+    Net {
+        machine_url: format!("http://{PEER}._peer.internal:8081"),
+        machine_addr: MACHINES.into(),
+        chat_url: format!("http://{CHAT_PEER}._peer.internal:8081"),
+        front_addr: CHAT_FRONT.into(),
+        peers: true,
+    }
+}
 
 fn murl() -> String {
-    format!("http://{PEER}._peer.internal:8081")
+    net().machine_url
 }
 
 /// what the run started and must end
@@ -155,12 +223,14 @@ impl Cleanup {
             return;
         }
         sweep(&self.token);
-        let _ = Command::new("flyctl")
-            .args(["wireguard", "remove", ORG, PEER])
-            .env("FLY_API_TOKEN", &self.token)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        for p in [PEER, CHAT_PEER] {
+            let _ = Command::new("flyctl")
+                .args(["wireguard", "remove", ORG, p])
+                .env("FLY_API_TOKEN", &self.token)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
         let _ = fs::remove_dir_all(&self.w);
     }
 }
@@ -363,12 +433,7 @@ fn fabric_image(root: &Path) -> Result<(String, PathBuf, PathBuf)> {
 }
 
 fn e2e() -> Result<()> {
-    if aviary() && !fabric() {
-        bail!(
-            "E2E_HARNESS=aviary is the fabric replica's (E2E_RUNNER=fabric); on Fly, infra/e2e-aviary.sh"
-        );
-    }
-    let token = if fabric() {
+    let token = if fabric() || only_chat() {
         String::new()
     } else {
         std::env::var("JARVIS2_FLY_TOKEN")
@@ -423,7 +488,7 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
             .push(child);
         Ok(())
     };
-    if !fabric() {
+    if !fabric() && !only_chat() {
         sweep(token);
     }
     for r in ROLES {
@@ -473,17 +538,25 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         c
     };
     let wg = w.join("wg.conf");
-    if !fabric() {
-        let _ = fly(&["wireguard", "remove", ORG, PEER])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        run_ok(
-            fly(&["wireguard", "create", ORG, "lhr", PEER])
-                .arg(&wg)
-                .stdout(Stdio::null()),
-            "the WireGuard peer",
-        )?;
+    let wg_chat = w.join("wg-chat.conf");
+    let net = net();
+    if net.peers && !only_chat() {
+        let mut peers = vec![(PEER, &wg)];
+        if aviary() {
+            peers.push((CHAT_PEER, &wg_chat));
+        }
+        for (p, conf) in peers {
+            let _ = fly(&["wireguard", "remove", ORG, p])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            run_ok(
+                fly(&["wireguard", "create", ORG, "lhr", p])
+                    .arg(conf)
+                    .stdout(Stdio::null()),
+                "the WireGuard peer",
+            )?;
+        }
     }
     // the fabric replica: the fake hermit on the unpacked fabric image, with tokens of this run
     let fabric_tokens = {
@@ -520,13 +593,17 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         )?;
     }
     // the chat stack, its hermit-jarvis asking the fake hermit for its sandboxes' control hashes
-    let mut magpie_admin = String::new();
+    let mut chat_keys = chat::Chat::default();
     if aviary() {
         cl.lock().unwrap_or_else(|e| e.into_inner()).chat = Some(root.to_owned());
-        let extra = [
-            format!("FABRIC_HERMIT_URL=http://{FAKE_HERMIT}"),
-            format!("FABRIC_HERMIT_GATEWAY_TOKEN={}", fabric_tokens.3),
-        ];
+        let extra: Vec<String> = if fabric() {
+            vec![
+                format!("FABRIC_HERMIT_URL=http://{FAKE_HERMIT}"),
+                format!("FABRIC_HERMIT_GATEWAY_TOKEN={}", fabric_tokens.3),
+            ]
+        } else {
+            vec![]
+        };
         let mut spawn = |c: &mut Command, name: &str, under_sudo: bool| -> Result<()> {
             let (o, e) = log_to(w, name)?;
             let child = c
@@ -542,7 +619,18 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
             }
             Ok(())
         };
-        magpie_admin = chat::up(root, w, &extra, &mut spawn)?.magpie_admin;
+        chat_keys = chat::up(root, w, &extra, &mut spawn)?;
+        if only_chat() {
+            println!(
+                "e2e-kernel: chat stack up (Ctrl-C ends it): magpie 10.88.0.2:8080 (admin token {}), hermit-jarvis \
+                 127.0.0.1:8080; logs in {}",
+                chat_keys.magpie_admin,
+                w.display()
+            );
+            loop {
+                std::thread::sleep(Duration::from_secs(3600));
+            }
+        }
     }
 
     // the kernel: each component on 127.0.1.<n>:28080, its state in its own directory
@@ -608,7 +696,7 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         "NO_ACCESS=1".into(),
         "RECORDS_OFF=1".into(),
         kv("ADDR", &ROUTER),
-        kv("MACHINE_ADDR", &MACHINES),
+        kv("MACHINE_ADDR", &net.machine_addr),
         kv("DATA_DIR", &data),
         kv("WEB_DIR", &web),
         kv("MACHINE_URL", &murl()),
@@ -618,6 +706,8 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
     ];
     if fabric() {
         router_env.extend([
+            // a session the router proposes with the defaults (a conversation begun in the chat) runs here too
+            "DEFAULT_RUNNER=fabric".into(),
             format!("FABRIC_HERMIT_URL=http://{FAKE_HERMIT}"),
             kv("FABRIC_HERMIT_TOOLS_TOKEN", &fabric_tokens.2),
             kv("FABRIC_HERMIT_MAGPIE_TOKEN", &fabric_tokens.0),
@@ -646,8 +736,9 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
             .sudo
             .push(child.id());
     }
-    // the machines' WireGuard peer runs in the gateway (router/mgateway.go), as on the cluster, passing /m to the router
-    if !fabric() {
+    // the machines' WireGuard peers run in the gateway (router/mgateway.go), as on the cluster: one passing /m to the
+    // router, and for aviary one passing the chat stack's calls to e2e/aviary's front
+    if net.peers {
         start(
             Command::new(w.join("router"))
                 .arg("m-gateway")
@@ -657,6 +748,17 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
                 .env("HEALTH_ADDR", GATEWAY_HEALTH),
             "m-gateway",
         )?;
+        if aviary() {
+            start(
+                Command::new(w.join("router"))
+                    .arg("m-gateway")
+                    .env("POD_NAME", "m-gateway-0")
+                    .env("WG_CONFIGS", &wg_chat)
+                    .env("M_GATEWAY_TO", format!("http://{CHAT_FRONT}"))
+                    .env("HEALTH_ADDR", CHAT_GATEWAY_HEALTH),
+                "m-gateway-chat",
+            )?;
+        }
     }
     ready(
         &format!("http://{ROUTER}/api/kernel"),
@@ -679,11 +781,13 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         .env("E2E_RUNNER", if fabric() { "fabric" } else { "" })
         .env("E2E_FABRIC_MAGPIE", &fabric_tokens.0)
         .env("E2E_FABRIC_ADMIN", &fabric_tokens.1)
-        .env("E2E_FRONT_ADDR", CHAT_FRONT)
+        .env("E2E_FRONT_ADDR", &net.front_addr)
         .env("E2E_HERMIT_GW", "http://127.0.0.1:8081")
-        .env("E2E_CHAT_URL", format!("http://{CHAT_FRONT}"))
+        .env("E2E_CHAT_URL", &net.chat_url)
         .env("E2E_MAGPIE", "http://10.88.0.2:8080")
-        .env("E2E_MAGPIE_ADMIN", &magpie_admin)
+        .env("E2E_MAGPIE_ADMIN", &chat_keys.magpie_admin)
+        .env("E2E_MAGPIE_PIGEON", &chat_keys.magpie_pigeon)
+        .env("E2E_OWNER", chat::OWNER)
         .spawn()
         .context("starting e2e/kernel")?;
     let st = driver.wait()?;

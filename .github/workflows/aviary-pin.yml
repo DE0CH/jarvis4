@@ -7,7 +7,7 @@ name: aviary-pin
 #                                  sandbox runs in it, session-image/tools/src/aviary_sandbox.rs)
 #   aviary/Cargo.toml + Cargo.lock the contract crates' rev (the release's commit)
 # A release is pinned only after the replica passed on it (Deyao, 2026-11-16): `replica` builds the session image of the
-# candidate (ghcr.io/de0ch/jarvis4-session:pin-<release>) and runs infra/e2e-aviary.sh on it (a real Fly machine, the
+# candidate (ghcr.io/de0ch/jarvis4-session:pin-<release>) and runs rust/e2e-kernel with E2E_HARNESS=aviary on it (a real Fly machine, the
 # release's magpie, this tree's hermit-jarvis with the release's contract crates): a turn with a tool call in the
 # sandbox must reach magpie. aviary moved its mount once (2026-11-13) and a pin without this check shipped sessions
 # whose chat showed no tool calls (claude-env lessons/114). A release that fails stays unpinned and this run is red;
@@ -116,17 +116,20 @@ jobs:
           curl -fsSL https://fly.io/install.sh | sh > /dev/null
           echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
           (cd aviary && (rustup show active-toolchain || rustup toolchain install))
+          (cd rust && (rustup show active-toolchain || rustup toolchain install))
           sudo apt-get update -qq && sudo apt-get install -y -qq wireguard-tools iproute2 iptables > /dev/null
       - name: the replica's stand-ins answer as the real services do (e2e/aviary unit tests)
         run: cd e2e && go test ./aviary/
-      - name: the replica (infra/e2e-aviary.sh) on the candidate
+      - name: the replica (rust/e2e-kernel, E2E_HARNESS=aviary) on the candidate
         env:
           JARVIS2_FLY_TOKEN: ${{ secrets.REPLICA_FLY_TOKEN }}
+          E2E_HARNESS: aviary
           E2E_SESSION_IMAGE: ${{ env.IMAGE }}
           E2E_LOGS: /tmp/e2e-aviary-logs
         run: |
           [ -n "$JARVIS2_FLY_TOKEN" ] || { echo "::error::secret REPLICA_FLY_TOKEN is missing from the GitHub environment 'replica'"; exit 1; }
-          infra/e2e-aviary.sh
+          (cd rust && cargo build --release --locked -p e2e-kernel)
+          rust/target/release/e2e-kernel
       - if: failure()
         uses: actions/upload-artifact@v4
         with: { name: e2e-aviary-logs, path: /tmp/e2e-aviary-logs, retention-days: 7, if-no-files-found: ignore }

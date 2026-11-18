@@ -153,8 +153,8 @@ image's `/etc/resolv.conf` names public resolvers.
 
 - aviary: unit and contract tests with each change (its CI gates the release Jarvis 4 pins).
 - Jarvis 4: the spawner's fabric runner against a fake hermit (as `aws_test.go` against a fake EC2); hermit-jarvis's
-  `tests/flow.rs` with a fake fabric hermit beside the existing flow, which must pass unchanged; `infra/e2e-aviary.sh`
-  gains a fabric run on a replica (a throwaway kernel line, hermit and one real AWS host).
+  `tests/flow.rs` with a fake fabric hermit beside the existing flow, which must pass unchanged; `rust/e2e-kernel`
+  (E2E_HARNESS=aviary) gains a fabric run on a replica (a throwaway kernel line, hermit and one real AWS host).
 
 ## Costs
 

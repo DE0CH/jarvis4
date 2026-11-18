@@ -1,5 +1,4 @@
-//! The chat stack beside the kernel for the aviary harness (`E2E_HARNESS=aviary`), as infra/e2e-aviary.sh brings it
-//! up for Fly machines: hermit-jarvis built from this tree's aviary/, magpie from the image the session image's aviary
+//! The chat stack beside the kernel for the aviary harness (`E2E_HARNESS=aviary`, on Fly machines or the fabric's): hermit-jarvis built from this tree's aviary/, magpie from the image the session image's aviary
 //! release names (its root unpacked once, run in its own network namespace as its image's user), a TLS Postgres for
 //! hermit, magpie and the router, an S3 stand-in (rclone serve s3), and the chat stack's keys as DE0CH/deyao-ai's
 //! infra/chat-keys.py makes them.
@@ -17,9 +16,15 @@ pub const NS: &str = "e2e-aviary-mag";
 const PG_PORT: &str = "31432";
 const S3_ADDR: &str = "10.88.0.1:31900";
 
-/// What the driver needs of the stack: magpie's admin token.
+/// hermit-jarvis's person (its owner): the chat's calls are made as them.
+pub const OWNER: &str = "e2e@example.com";
+
+/// What the driver needs of the stack: magpie's admin token, and the token magpie takes from pigeon (the driver makes
+/// the chat's own calls: a conversation begun in the chat).
+#[derive(Default)]
 pub struct Chat {
     pub magpie_admin: String,
+    pub magpie_pigeon: String,
 }
 
 fn sudo(args: &[&str]) -> Result<()> {
@@ -338,7 +343,7 @@ pub fn up(
         "HERMIT_JARVIS_URL=http://127.0.0.1:29080".into(),
         "HERMIT_JARVIS_ACCESS_ID=e2e".into(),
         "HERMIT_JARVIS_ACCESS_SECRET=e2e".into(),
-        "HERMIT_OWNER=e2e@example.com".into(),
+        format!("HERMIT_OWNER={OWNER}"),
         "HERMIT_ACCESS_TEAM=e2e.cloudflareaccess.com".into(),
         "HERMIT_ACCESS_AUD=e2e".into(),
         format!(
@@ -384,5 +389,6 @@ pub fn up(
     )?;
     Ok(Chat {
         magpie_admin: k["ADMIN_MAGPIE"].clone(),
+        magpie_pigeon: k["PIGEON_MAGPIE"].clone(),
     })
 }

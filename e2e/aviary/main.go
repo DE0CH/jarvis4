@@ -1,4 +1,4 @@
-// e2e/aviary: the aviary harness end to end on real Fly machines (infra/e2e-aviary.sh runs it, with the chat stack
+// e2e/aviary: the aviary harness end to end on real Fly machines (rust/e2e-kernel E2E_HARNESS=aviary runs it, with the chat stack
 // and the kernel's line beside it). It plays the iPhone with software keys as e2e/kernel does, serves the stand-in
 // model and the machines' front to hermit-jarvis's gateway listener, and checks every step through the router's
 // records and magpie's admin API:
@@ -21,11 +21,18 @@
 //   - the wakeup arrives as a later turn: in an aviary sandbox schedule-wakeup arms a magpie schedule, whose fire is
 //     the turn (<scheduled-message …>), answered by the stand-in;
 //
+//   - a conversation begun in the chat (Deyao, 2026-11-18: New chat starts its own session): the driver creates it in
+//     magpie as pigeon does, with a first message; hermit-jarvis proposes a session through the router, which waits in
+//     the Inbox while magpie holds the message and says the start waits for the person's approval
+//     (`sandboxWaiting: approval`); approved, the session's machine boots that conversation's sandbox and the held
+//     message is answered; a second one, denied, leaves the chat (magpie's `deletedAt`), its message with it;
+//
 //   - destroy: the source burns, the record stays.
 //
 //     E2E_ROUTER, E2E_SPAWNER, E2E_DATA_DIR, E2E_MASTER_KEY_FILE, E2E_FLY_TOKEN, E2E_RUNNER (as e2e/kernel); E2E_FRONT_ADDR (where
 //     the chat peer's m-gateway sends), E2E_HERMIT_GW (hermit-jarvis's gateway listener), E2E_CHAT_URL (the chat peer
-//     as the machines know it), E2E_MAGPIE + E2E_MAGPIE_ADMIN (magpie and its admin token)
+//     as the machines know it), E2E_MAGPIE + E2E_MAGPIE_ADMIN (magpie and its admin token), E2E_MAGPIE_PIGEON (the
+//     token magpie takes from pigeon: the chat's own calls), E2E_OWNER (hermit-jarvis's person)
 package main
 
 import (
@@ -121,6 +128,7 @@ type session struct {
 	Booted    string `json:"booted"`
 	Error     string `json:"error"`
 	AiTitle   string `json:"aiTitle"`
+	Harness   string `json:"harness"`
 }
 
 func readSession(id string) (*session, bool) {
@@ -259,6 +267,8 @@ func reply(req map[string]any) (kind string, content []map[string]any) {
 			models.Unlock()
 		}
 		return "wakeup", []map[string]any{{"type": "text", "text": "E2E-WOKE " + token}}
+	case strings.Contains(last, "E2E-CHAT "+token):
+		return "chat", []map[string]any{{"type": "text", "text": "E2E-CHATTED " + token}}
 	case strings.Contains(last, "E2E-RUN "+token):
 		if strings.Contains(last, `"type":"image"`) {
 			models.Lock()
@@ -503,6 +513,70 @@ func magpieText() string {
 	return all
 }
 
+// ---- magpie as pigeon calls it (the chat's own calls, for the person hermit-jarvis serves)
+
+func asPigeon() []string {
+	return []string{"Authorization", "Bearer " + os.Getenv("E2E_MAGPIE_PIGEON"), "Aviary-Person", os.Getenv("E2E_OWNER"),
+		"Aviary-Protocol", "magpie-person=1"}
+}
+
+// chatConversation: the conversation as the chat reads it (M2): whether its start waits for an approval, whether it
+// left the chat.
+type chatConversation struct {
+	ID             string  `json:"id"`
+	Sandbox        *string `json:"sandbox"`
+	SandboxWaiting *string `json:"sandboxWaiting"`
+	DeletedAt      *string `json:"deletedAt"`
+}
+
+func readChat(id string) chatConversation {
+	var c chatConversation
+	code, b := call("GET", os.Getenv("E2E_MAGPIE")+"/v1/conversations/"+id, nil, asPigeon()...)
+	if code != 200 {
+		log.Fatalf("FAIL: magpie answered %d to the chat's read of conversation %s: %s", code, id, b)
+	}
+	json.Unmarshal(b, &c)
+	return c
+}
+
+// newChat: New chat with a first message, as pigeon sends it (M3); the conversation's id.
+func newChat(text string) string {
+	body := map[string]any{"idempotencyKey": "e2e-" + text, "message": map[string]any{
+		"clientMessageId": "e2e-" + text, "text": text, "images": []any{}, "files": []any{}}}
+	code, b := call("POST", os.Getenv("E2E_MAGPIE")+"/v1/conversations", body, asPigeon()...)
+	var r struct {
+		Conversation struct{ ID string }
+		Turn         *struct{ ID string }
+	}
+	json.Unmarshal(b, &r)
+	if code != 201 || r.Conversation.ID == "" || r.Turn == nil {
+		log.Fatalf("FAIL: magpie answered %d to a new chat's first message (no turn admitted): %s", code, b)
+	}
+	return r.Conversation.ID
+}
+
+// proposal: the new-session approval the router filed for a session other than `skip` (hermit-jarvis's proposal for a
+// conversation begun in the chat), once it is in the Inbox.
+func proposal(skip map[string]bool) (session, approval string, challenge sig.Doc) {
+	waitFor("hermit-jarvis's proposal in the Inbox", 2*time.Minute, func() bool {
+		var s struct {
+			Approvals []struct {
+				ID, Kind, Session string
+				Challenge         sig.Doc
+			} `json:"approvals"`
+		}
+		must("GET", router+"/api/state", nil, &s)
+		for _, x := range s.Approvals {
+			if !skip[x.Session] && x.Kind == "kernel-source" {
+				session, approval, challenge = x.Session, x.ID, x.Challenge
+				return true
+			}
+		}
+		return false
+	})
+	return
+}
+
 func main() {
 	log.SetFlags(log.Ltime)
 	serveFront()
@@ -584,7 +658,7 @@ func main() {
 	must("GET", os.Getenv("E2E_SPAWNER")+"/identity", nil, &sd)
 	var sid sig.Identity
 	json.Unmarshal([]byte(sd.Payload), &sid)
-	// the runner of this run: Fly (infra/e2e-aviary.sh), or the fabric (rust/e2e-kernel E2E_RUNNER=fabric, its hermit
+	// the runner of this run: Fly (rust/e2e-kernel's default), or the fabric (rust/e2e-kernel E2E_RUNNER=fabric, its hermit
 	// the replica's fake one)
 	runner := os.Getenv("E2E_RUNNER")
 	if runner == "fabric" {
@@ -779,11 +853,48 @@ func main() {
 	}
 	log.Printf("Claude Code runs %s at a context window of %d", sessionModel(), window)
 
+	step("a conversation begun in the chat: its message waits for the session hermit-jarvis proposes, which Deyao approves")
+	chatID := newChat("E2E-CHAT " + token)
+	chatSession, chatApproval, chatChallenge := proposal(map[string]bool{created.ID: true})
+	waitFor("the chat saying the start waits for an approval", 2*time.Minute, func() bool {
+		c := readChat(chatID)
+		return c.Sandbox != nil && *c.Sandbox == "preparing" && c.SandboxWaiting != nil && *c.SandboxWaiting == "approval"
+	})
+	if s, _ := readSession(chatSession); s == nil || s.Harness != "aviary" {
+		log.Fatalf("FAIL: the proposed session is not an aviary session: %+v", s)
+	}
+	ps, _ = phone.Sign([]byte(chatChallenge.Payload))
+	must("POST", router+"/api/approvals/"+chatApproval+"/respond", map[string]string{"signature": ps}, nil)
+	waitFor("the chat session's machine to boot", 15*time.Minute, func() bool {
+		s, _ := readSession(chatSession)
+		if s != nil && s.State == "failed" {
+			log.Fatalf("the chat's session failed: %s", s.Error)
+		}
+		return s != nil && s.State == "started" && s.Booted == s.MachineID && s.MachineID != ""
+	})
+	waitFor("the held message's answer in magpie", 10*time.Minute, func() bool {
+		return strings.Contains(magpieText(), "E2E-CHATTED "+token)
+	})
+	if c := readChat(chatID); c.SandboxWaiting != nil {
+		log.Fatalf("FAIL: the chat still says the start waits for an approval after its answer: %s", *c.SandboxWaiting)
+	}
+
+	step("a conversation begun in the chat whose session Deyao denies: it leaves the chat with its message")
+	deniedID := newChat("E2E-DENIED " + token)
+	_, deniedApproval, _ := proposal(map[string]bool{created.ID: true, chatSession: true})
+	must("POST", router+"/api/approvals/"+deniedApproval+"/reject", map[string]any{}, nil)
+	waitFor("the denied conversation out of the chat", 2*time.Minute, func() bool {
+		return readChat(deniedID).DeletedAt != nil
+	})
+
 	step("destroy: archived, its source burned")
-	must("POST", router+"/api/sessions/"+created.ID+"/destroy?force=1", map[string]any{}, nil)
+	for _, id := range []string{created.ID, chatSession} {
+		must("POST", router+"/api/sessions/"+id+"/destroy?force=1", map[string]any{}, nil)
+	}
 	waitFor("the destroy", 15*time.Minute, func() bool {
 		s, burned := readSession(created.ID)
-		return s == nil && burned
+		c, cburned := readSession(chatSession)
+		return s == nil && burned && c == nil && cburned
 	})
 	fmt.Println("e2e aviary: ok")
 }
