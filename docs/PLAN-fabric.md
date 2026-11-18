@@ -179,8 +179,11 @@ Decisions (Deyao, 2026-11-17):
 - The image (RAM and scratch) is encrypted by the fabric hermit with a key of its own (hermit and its hosts are
   trusted with the session's files already); no kernel change.
 - Images live in AWS S3 in the hosts' region (eu-central-1): no traffic fee, the fastest thaw.
-- `time-machine <duration>` (the agent's tool) freezes with `until`; a message (or any delivery) during it thaws at
-  once and the tool returns early, saying so.
+- `time-machine <duration> [--until-resolved ID …]` (the agent's tool) freezes with `until`; it returns at the first of:
+  the time is up, a message (or any delivery) arrives, or one of the named pending items is resolved, and says which.
+  A pending item is anything that waits on Deyao for as long as he takes (Deyao, 2026-11-18): an `ask` question (its
+  answer) and an Inbox request (`jarvis-request`, its decision) are the same kind, each a blocking command that leaves
+  an ID when cancelled (`ask wait ID`, `jarvis-request wait ID`), so the time machine knows one rule, not one per kind.
 - A turn that ends with background tasks running keeps the sandbox running (today's `held`), and freezes when they end
   or when the agent calls the time machine.
 - A thaw the hosts can't restore (a newer gVisor release than the image's, a lost image) falls back to what release
