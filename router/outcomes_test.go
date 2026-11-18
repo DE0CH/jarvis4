@@ -207,8 +207,9 @@ func TestAnApprovedAddStoreCarriesTheNewCert(t *testing.T) {
 	r := addStoreRouter(t, false)
 	m := newTestMachine(r, "m1")
 	got, mu := captureOutcomes(t, nil)
-	if code, out := m.do(t, r.MachineHandler(), "POST", "/m/api/requests/add-store", `{"store": "yyc", "explanation": "the YYC key"}`); code != 200 {
-		t.Fatalf("%d %v", code, out)
+	code, filed := m.do(t, r.MachineHandler(), "POST", "/m/api/requests/add-store", `{"store": "yyc", "explanation": "the YYC key"}`)
+	if code != 200 {
+		t.Fatalf("%d %v", code, filed)
 	}
 	var id string
 	r.st.Do(func(d *persisted) {
@@ -227,6 +228,11 @@ func TestAnApprovedAddStoreCarriesTheNewCert(t *testing.T) {
 	}
 	o := (*got)[0].Outcomes[0]
 	var c fakeCert
+	// the filing's answer names what its outcome is filed under: jarvis-request waits on that id (it once fell back to
+	// an env variable the shell lacked and waited forever on "")
+	if filed["id"] != o.Ref {
+		t.Fatalf("the filing answered id %v, the outcome's ref is %s", filed["id"], o.Ref)
+	}
 	if o.Outcome != "approved" || o.Ref != "s1" || o.Proof == nil || o.Proof.Decode(&c) != nil || !containsString(c.Stores, "yyc") {
 		t.Fatalf("%+v %+v", o, c)
 	}

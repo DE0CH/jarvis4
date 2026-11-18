@@ -40,4 +40,26 @@ assert jr.block(["q4"], since) == 0
 assert ("POST", "/v1/person-waits/inbox-q4?waitMs=20000") in calls, calls
 assert calls[-1] == ("DELETE", "/v1/person-waits/inbox-q4"), calls
 srv.shutdown()
+
+# a single add-store waits on the id its answer names (the session's), never on "" (2026-11-18: the shell had no
+# JARVIS2_SESSION_ID, the wait was on "" and never ended after Deyao approved); no id anywhere: it says so at once
+import subprocess
+ran = []
+jr.subprocess.run = lambda a, **k: ran.append(a) or subprocess.CompletedProcess(a, 0)
+for v in ("JARVIS2_SESSION_ID", "SESSION_ID"):
+    os.environ.pop(v, None)
+answer = {"ok": True, "approval": True, "id": "s1"}
+jr.call = lambda m, p, b=None: answer
+sys.argv = ["jarvis-request", "add-store", "gmail", "--why", "the mail"]
+threading.Timer(1.0, lambda: put("s1", "approved", time.time_ns())).start()
+try:
+    jr.main()
+except SystemExit as e:
+    assert e.code == 0, e.code
+assert ran == [["jarvis-machine", "await-store", "gmail"]], ran
+answer = {"ok": True, "approval": True}
+try:
+    jr.main(); raise AssertionError("an answer with no id waited")
+except SystemExit as e:
+    assert "names no id" in str(e.code), e.code
 print("ok")

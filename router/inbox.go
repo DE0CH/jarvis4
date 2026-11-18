@@ -982,7 +982,8 @@ func (r *Router) registerInbox(app appRoute, m machineRoute, public publicRoute)
 			writeErr(w, err)
 			return
 		}
-		writeJSON(w, 200, map[string]any{"ok": true, "approval": true})
+		// id: what the outcome is filed under (an add-store's is the session's id), which jarvis-request waits on
+		writeJSON(w, 200, map[string]any{"ok": true, "approval": true, "id": sid})
 	}))
 }
 

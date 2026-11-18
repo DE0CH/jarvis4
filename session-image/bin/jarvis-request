@@ -402,7 +402,11 @@ def main():
     else:
         raise SystemExit(f"jarvis-request: unknown command {kind!r} (jarvis-request --help lists them). Nothing was filed.")
     print(json.dumps(out))
-    ref = out.get("id") or os.environ.get("JARVIS2_SESSION_ID", "")
+    ref = out.get("id") or os.environ.get("JARVIS2_SESSION_ID") or os.environ.get("SESSION_ID") or ""
+    if not ref:
+        # nothing to wait on: a wait on "" never ends (add-store once waited forever after Deyao approved it)
+        raise SystemExit("jarvis-request: the filing went in, but its answer names no id to wait on; read the outcome "
+                         "with `jarvis-request outcomes`")
     print("Waiting for Deyao's decision in his Inbox (the Jarvis 4 app)…", file=sys.stderr, flush=True)
     raise SystemExit(block([ref], since, stores))
 
