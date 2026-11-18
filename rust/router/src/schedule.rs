@@ -1067,7 +1067,7 @@ impl Router {
         });
     }
 
-    fn fire_wakeup(self: &Arc<Self>, sid: &str, name: &str, armed_at: i64) -> Result<()> {
+    pub fn fire_wakeup(self: &Arc<Self>, sid: &str, name: &str, armed_at: i64) -> Result<()> {
         let w = self
             .st
             .do_(|d| {

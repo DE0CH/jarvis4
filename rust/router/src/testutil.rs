@@ -999,3 +999,117 @@ impl FakeDelivery {
         self.0.lock().unwrap_or_else(|e| e.into_inner()).err = e.map(str::to_string);
     }
 }
+
+// ---- the v2 core (vouch_test.go's v2Core): records every body, signs challenges, refuses on demand -------------
+
+#[derive(Default)]
+pub struct V2State {
+    pub bodies: std::collections::BTreeMap<String, Vec<serde_json::Value>>,
+    /// approve_by_dead_machine answers 403 with this (the core's refusal)
+    pub refuse: String,
+    /// /kill answers these first, one per call: status and the core's error
+    pub kill_errs: Vec<(u16, String)>,
+    /// every path, in the order called
+    pub order: Vec<String>,
+}
+
+pub struct V2Core {
+    pub st: Arc<std::sync::Mutex<V2State>>,
+    pub srv: TestServer,
+}
+
+impl V2Core {
+    pub fn new(key: Arc<TestKey>) -> V2Core {
+        use crate::nethttp::write_json;
+        use serde_json::json;
+        let st: Arc<std::sync::Mutex<V2State>> = Arc::default();
+        let s2 = st.clone();
+        let srv = TestServer::handler(move |w, req| {
+            let b: serde_json::Value =
+                serde_json::from_slice(&req.read_body(16 << 20)).unwrap_or(serde_json::Value::Null);
+            let (refuse, kill_err) = {
+                let mut g = s2.lock().unwrap_or_else(|e| e.into_inner());
+                g.bodies
+                    .entry(req.path.clone())
+                    .or_default()
+                    .push(b.clone());
+                g.order.push(req.path.clone());
+                let ke = if req.path == "/kill" && !g.kill_errs.is_empty() {
+                    Some(g.kill_errs.remove(0))
+                } else {
+                    None
+                };
+                (g.refuse.clone(), ke)
+            };
+            let k = &key;
+            match req.path.as_str() {
+                "/input-log" => write_json(w, 200, &json!({"entries": [], "head": k.doc(&json!({"kind": "input-log-head", "seq": 0}))})),
+                "/succession" => write_json(w, 200, &k.doc(&json!({"kind": "challenge", "nonce": "a".repeat(64), "request": b}))),
+                "/approve/by-dead-machine" if !refuse.is_empty() => write_json(w, 403, &k.doc(&json!({"error": refuse}))),
+                "/kill" => match kill_err {
+                    Some((st, msg)) => write_json(w, st, &k.doc(&json!({"error": msg}))),
+                    None => write_json(w, 200, &k.doc(&json!({"kind": "killed", "id": b["machine"]}))),
+                },
+                "/attest" => write_json(
+                    w,
+                    200,
+                    &k.doc(&json!({"kind": "input", "machine": b["machine"], "input": b["input"], "sha256": b["sha256"]})),
+                ),
+                "/key" => write_json(w, 200, &json!({"signingKey": k.public()})),
+                "/identity" => write_json(
+                    w,
+                    200,
+                    &json!({"signingKey": k.public(), "state": k.doc(&json!({"kind": "core-state", "master": "m"}))}),
+                ),
+                "/core-cert" => write_json(w, 200, &json!({"statement": "{}", "masterSig": "x"})),
+                p => write_json(w, 200, &k.doc(&json!({"kind": "ok", "path": p}))),
+            }
+        });
+        V2Core { st, srv }
+    }
+
+    /// the last body of a call to path (None: never called)
+    pub fn last(&self, path: &str) -> Option<serde_json::Value> {
+        self.st
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .bodies
+            .get(path)
+            .and_then(|b| b.last().cloned())
+    }
+
+    pub fn calls(&self, path: &str) -> usize {
+        self.st
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .bodies
+            .get(path)
+            .map_or(0, Vec::len)
+    }
+}
+
+impl Rig {
+    /// the rig on a v2 core (vouch_test.go's v2Rig)
+    pub fn v2() -> (Rig, V2Core) {
+        Rig::v2_with(|_| {})
+    }
+
+    pub fn v2_with(f: impl FnOnce(&mut Config)) -> (Rig, V2Core) {
+        let rg = Rig::with(f);
+        let vc = V2Core::new(rg.core.key.clone());
+        rg.core().set_url(&vc.srv.url);
+        (rg, vc)
+    }
+
+    fn core(&self) -> &Arc<CoreClient> {
+        &self.t.r.core
+    }
+
+    /// a v2 succession cert of the rig's line for machine, with config (vouch_test.go's v2Cert)
+    pub fn v2_cert(&self, machine: &str, config: &str) -> Doc {
+        use serde_json::json;
+        self.core.key.doc(&json!({"kind": "succession-cert", "line": "m1", "vouch": 2,
+            "machine": {"id": machine, "signingKey": self.mkey.public(), "image": format!("ghcr.io/de0ch/jarvis4-session@sha256:{}", "1".repeat(64))},
+            "stores": ["claude", "default"], "options": {"harness": "claude", "permissionMode": "auto", "config": config}}))
+    }
+}

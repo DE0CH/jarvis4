@@ -11,4 +11,5 @@ mod screen;
 mod small;
 mod snapwait_carry_volsweep;
 mod statedb;
+mod vouch;
 mod watches;
