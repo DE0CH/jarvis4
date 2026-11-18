@@ -422,7 +422,8 @@ func (r *Router) deliverVouchedOpts(sid string, d Delivery, boot bool, o *Origin
 		}
 		return errAwaitingApproval
 	}
-	if !boot && state != "started" {
+	// a frozen session counts as running here: an Inbox decision's outcome is one of the things that thaws it
+	if !boot && state != "started" && state != "frozen" {
 		if state == "" {
 			return errNoSession
 		}
@@ -436,6 +437,10 @@ func (r *Router) deliverVouchedOpts(sid string, d Delivery, boot bool, o *Origin
 			if errors.Is(err, errBusy) {
 				return errSkip
 			}
+			return err
+		}
+	case "frozen": // timemachine.go: anything that would resume a paused session thaws a frozen one
+		if err := r.thaw(sid, timeMachineWhy(d.Kind)); err != nil {
 			return err
 		}
 	case "pausing", "destroying", "approval":

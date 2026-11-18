@@ -1048,6 +1048,16 @@ func (r *Router) pauseRun(id, machine string, next *nextMachine, restart bool, u
 // ---- resume ----------------------------------------------------------------------------------------------
 
 func (r *Router) Resume(id string, upgrade bool) error {
+	// a frozen session (timemachine.go) is thawed: its machine goes on where it stopped. In the background: a thaw may
+	// wait minutes for a host and a restore, and the app's tap or the chat's ask returns at once, as a resume does
+	if st, _ := r.sessionState(id); st == "frozen" {
+		go func() {
+			if err := r.thaw(id, "Deyao (a message or an answer in the chat, or Resume)"); err != nil {
+				log.Printf("[time-machine] %s: the thaw failed: %v", id, err)
+			}
+		}()
+		return nil
+	}
 	unlock, err := r.lock(id, "starting")
 	if err != nil {
 		return err
