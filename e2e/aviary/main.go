@@ -15,10 +15,11 @@
 //     its screenshot is the message's image (uploaded for the owner through the gateway), never a path in its text;
 //
 //   - Claude Code's model calls reach the stand-in model through the machine's gateway: a Bash tool call that writes
-//     ~/artifacts/e2e-aviary.txt and arms a wakeup through the session's local Jarvis API, then an answer naming the
+//     ~/artifacts/e2e-aviary.txt and arms a wakeup with the session's schedule-wakeup, then an answer naming the
 //     tool's output (so the command ran in the sandbox);
 //
-//   - the wakeup arrives as a later turn (the harness's inbox, magpie's hermit route), answered by the stand-in;
+//   - the wakeup arrives as a later turn: in an aviary sandbox schedule-wakeup arms a magpie schedule, whose fire is
+//     the turn (<scheduled-message …>), answered by the stand-in;
 //
 //   - destroy: the source burns, the record stays.
 //
@@ -186,6 +187,9 @@ type modelLog struct {
 	root string
 	// the first prompt's message held an image block: its attached screenshot reached the model as an image
 	image bool
+	// the wakeup's turn was magpie's schedule firing (<scheduled-message rule="…">): schedule-wakeup in an aviary
+	// sandbox arms a magpie schedule (Deyao, 2026-11-17), not a router wakeup
+	scheduled bool
 }
 
 var models modelLog
@@ -249,6 +253,11 @@ func reply(req map[string]any) (kind string, content []map[string]any) {
 		}
 		return "answer", []map[string]any{{"type": "text", "text": "E2E-DONE " + token + ": the command printed E2E-OUT-" + token}}
 	case strings.Contains(last, "E2E-WAKEUP "+token):
+		if strings.Contains(last, "scheduled-message rule=") {
+			models.Lock()
+			models.scheduled = true
+			models.Unlock()
+		}
 		return "wakeup", []map[string]any{{"type": "text", "text": "E2E-WOKE " + token}}
 	case strings.Contains(last, "E2E-RUN "+token):
 		if strings.Contains(last, `"type":"image"`) {
@@ -257,8 +266,8 @@ func reply(req map[string]any) (kind string, content []map[string]any) {
 			models.Unlock()
 		}
 		cmd := "echo E2E-OUT-" + token + " | tee ~/artifacts/e2e-aviary.txt && echo E2E-CTX=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-none}. && " +
-			"echo E2E-ROOT=$(test -e /opt/image-setup/Dockerfile && ! test -e /usr/local/bin/harness-aviary.sh && command -v jarvis > /dev/null && echo aviary || echo machine). && curl -sS -H 'Content-Type: application/json' " +
-			"-d '{\"delaySeconds\":60,\"prompt\":\"E2E-WAKEUP " + token + "\"}' \"$JARVIS_URL/api/sessions/$SESSION_ID/wakeup\""
+			"echo E2E-ROOT=$(test -e /opt/image-setup/Dockerfile && ! test -e /usr/local/bin/harness-aviary.sh && command -v jarvis > /dev/null && echo aviary || echo machine). && " +
+			"schedule-wakeup --name e2e 60s 'E2E-WAKEUP " + token + "'"
 		return "tool", []map[string]any{{"type": "tool_use", "id": "toolu_e2e_" + token, "name": "Bash",
 			"input": map[string]any{"command": cmd, "description": "e2e: write the marker and arm the wakeup"}}}
 	}
@@ -711,6 +720,10 @@ func main() {
 	step("the wakeup the tool armed arrives as a later turn")
 	waitFor("the wakeup's answer in magpie", 5*time.Minute, func() bool { return strings.Contains(magpieText(), "E2E-WOKE "+token) })
 	models.Lock()
+	if !models.scheduled {
+		models.Unlock()
+		log.Fatalf("FAIL: the wakeup's turn was not magpie's schedule firing (schedule-wakeup armed no magpie schedule)")
+	}
 	log.Printf("the stand-in model answered %d calls: %v", len(models.calls), models.calls)
 	// the agent's turns went where the session's model lives: an OpenRouter model's to OpenRouter, a Claude model's
 	// to Anthropic; never the other

@@ -40,8 +40,13 @@ jobs:
       # Jarvis 4 in Rust (rust/): each crate tested before it replaces its Go part; rust/sig against kernel/sig's vectors,
       # rust/machine (the session image's jarvis-machine) against documents and snapshots Go wrote
       - run: cd rust && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
-      # the aviary sandbox's home carries the volume's ~/workspace and ~/artifacts (a mount namespace of its own)
-      - run: sudo bash session-image/base/aviary-sandbox_test.sh
+      # the session's Rust tools; aviary-sandbox's own test as root (a mount namespace of its own): the sandbox is the
+      # image, its home carries the volume's ~/workspace and ~/artifacts, Jarvis's session commands are in it
+      - run: >-
+          cd session-image/tools && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings
+          && cargo test --locked
+          && sudo env "PATH=$PATH" "RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup}" "CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}"
+          cargo test --locked --test aviary_sandbox -- --ignored
       # every shell script parses: one that does not ends its harness at every start
       - run: bash session-image/scripts_syntax_test.sh
       # jarvis-request blocks until Deyao's decision and prints it

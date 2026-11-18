@@ -227,14 +227,14 @@ COPY harness-openclaw.sh /usr/local/bin/harness-openclaw.sh
 COPY openclaw-transcript /usr/local/bin/openclaw-transcript
 RUN chmod +x /usr/local/bin/harness-openclaw.sh /usr/local/bin/openclaw-transcript
 # Claude Code · aviary (harness aviary, DE0CH/jarvis4 aviary/README.md): the session's sandbox runs in DE0CH/aviary's
-# own sandbox image (its supervisor, keeper, Claude Code and tools), which aviary-sandbox fetches onto the session's
+# own sandbox image (its supervisor, keeper, Claude Code and tools), which aviary-sandbox (session-image/tools/, in
+# session-image/Dockerfile) fetches onto the session's
 # volume and enters as root in its own PID + mount namespace, with aviary-gateway (session-image/Dockerfile) as its
 # proxy; the chat web app at chat.deyaochen.com is its front end. aviary-home gives the home what that image's home
 # holds (the ~/.claude and ~/.qwen links).
 COPY harness-aviary.sh /usr/local/bin/harness-aviary.sh
-COPY aviary-sandbox /usr/local/bin/aviary-sandbox
 COPY aviary-home /usr/local/bin/aviary-home
-RUN chmod 755 /usr/local/bin/harness-aviary.sh /usr/local/bin/aviary-sandbox /usr/local/bin/aviary-home
+RUN chmod 755 /usr/local/bin/harness-aviary.sh /usr/local/bin/aviary-home
 
 # DeepSeek Harness (harness dsh): Deyao's fork DE0CH/deepseek-harness serves its agent loop and web UI on the session;
 # OpenRouter routed to DeepSeek's own endpoint. The fork and its Node (24) are NOT in the image: session-image/Dockerfile
