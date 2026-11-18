@@ -178,6 +178,32 @@ pub fn clean_device_text(s: &str, n: usize) -> String {
         .collect()
 }
 
+/// what the app's New session form pre-picks before anything is touched (app/src/pages/NewSession.tsx,
+/// app/DECISIONS.md 14, the iPhone app the same): the store `default` when it is not sensitive, and DE0CH/claude-env
+/// with its deploy key's store when the repo is on the list and its store is not sensitive (never a sensitive store).
+/// The stores and the repos' URLs, as POST /api/sessions takes them.
+pub fn new_session_defaults(
+    stores: &[crate::storedocs::StoreRow],
+    repos: &[crate::repos::RepoEntry],
+) -> (Vec<String>, String) {
+    let plain: std::collections::BTreeSet<&str> = stores
+        .iter()
+        .filter(|s| !s.sensitive)
+        .map(|s| s.name.as_str())
+        .collect();
+    let (mut picked, mut urls) = (vec![], vec![]);
+    if plain.contains("default") {
+        picked.push("default".to_string());
+    }
+    for e in repos {
+        if e.repo.eq_ignore_ascii_case("DE0CH/claude-env") && plain.contains(e.store.as_str()) {
+            picked.push(e.store.clone());
+            urls.push(e.url.clone());
+        }
+    }
+    (picked, urls.join(","))
+}
+
 impl Router {
     /// a new device of app (openclaw | paseo) → its id and the service token's credentials
     pub fn pair_device(
@@ -322,8 +348,8 @@ impl Router {
     }
 
     /// POST /api/remotes {harness, requestId}: a new session of that harness with the defaults (what the app's New
-    /// session makes with nothing picked: the harness's stores, model and account, no prompt), proposed into the Inbox
-    /// as the app's New session is, so it starts only once Deyao approves it there. requestId makes it idempotent while
+    /// session makes with nothing touched: new_session_defaults, and the harness's stores, model and account, no
+    /// prompt), proposed into the Inbox as the app's New session is, so it starts only once Deyao approves it there. requestId makes it idempotent while
     /// the session exists (a repeat answers the same session). → {id, state}; 400 for a harness that is not one of these
     /// apps'.
     pub fn propose_remote(self: &Arc<Self>, w: &mut W, req: &mut Req) {
@@ -357,9 +383,20 @@ impl Router {
         }
         let mut args = serde_json::Map::new();
         args.insert("harness".into(), json!(i.harness));
+        // the app's New session form's own pre-picks (a session from the chat is the same session: claude-env's
+        // CLAUDE.md, the default store)
+        let rows = match self.store_list() {
+            Err(e) => {
+                return write_json(w, 503, &json!({"error": format!("the store list: {e:#}")}));
+            }
+            Ok((rows, _)) => rows,
+        };
+        let (stores, repos) = new_session_defaults(&rows, &self.repos());
         let ns = crate::flows::NewSession {
             harness: i.harness.clone(),
             request_id: i.request_id.clone(),
+            stores,
+            repos,
             origin: Some(crate::inbox::Origin {
                 caller: self.device_caller(req),
                 call: crate::inbox::ApiCall {

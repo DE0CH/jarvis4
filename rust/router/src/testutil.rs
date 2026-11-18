@@ -480,6 +480,14 @@ pub fn fake_core_answer(k: &TestKey, w: &mut W, path: &str, body: &[u8]) {
             &json!({"signingKey": k.public(), "state": k.doc(&json!({"kind": "core-state", "master": "m"}))}),
         ),
         "/core-cert" => write_json(w, 200, &json!({"statement": "{}", "masterSig": "x"})),
+        // the signed store list (storedocs.rs store_list): the stores a new session pre-picks
+        "/stores" => write_json(
+            w,
+            200,
+            &k.doc(&json!({"kind": "stores", "stores": [
+            {"name": "default", "keys": []}, {"name": "github-claude-env", "keys": []},
+            {"name": "identity", "sensitive": true, "keys": []}]})),
+        ),
         // the core's record names the snapshot the kill named (core.rs kill_with_snapshot)
         "/kill" => {
             let b: serde_json::Value = serde_json::from_slice(body).unwrap_or_default();
@@ -1099,6 +1107,10 @@ impl V2Core {
                     &json!({"signingKey": k.public(), "state": k.doc(&json!({"kind": "core-state", "master": "m"}))}),
                 ),
                 "/core-cert" => write_json(w, 200, &json!({"statement": "{}", "masterSig": "x"})),
+        // the signed store list (storedocs.rs store_list): the stores a new session pre-picks
+        "/stores" => write_json(w, 200, &k.doc(&json!({"kind": "stores", "stores": [
+            {"name": "default", "keys": []}, {"name": "github-claude-env", "keys": []},
+            {"name": "identity", "sensitive": true, "keys": []}]}))),
                 p => write_json(w, 200, &k.doc(&json!({"kind": "ok", "path": p}))),
             }
         });

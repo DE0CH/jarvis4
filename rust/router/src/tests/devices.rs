@@ -179,3 +179,50 @@ fn run() {
         "start of nothing"
     );
 }
+
+/// A session from the chat is the app's New session with nothing touched (Deyao, 2026-11-18: the first one started
+/// with no CLAUDE.md, as it had no repo): the store `default` and DE0CH/claude-env with its key's store, never a
+/// sensitive store.
+#[test]
+fn new_session_defaults_are_the_apps_pre_picks() {
+    use crate::devices::new_session_defaults;
+    use crate::repos::RepoEntry;
+    use crate::storedocs::StoreRow;
+    let entry = |name: &str, repo: &str, store: &str| RepoEntry {
+        name: name.into(),
+        url: format!("https://github.com/{repo}.git"),
+        repo: repo.into(),
+        store: store.into(),
+        ..Default::default()
+    };
+    let row = |name: &str, sensitive: bool| StoreRow {
+        name: name.into(),
+        sensitive,
+        ..Default::default()
+    };
+    let env = entry("claude-env", "DE0CH/claude-env", "github-claude-env");
+    let other = entry("jarvis4", "DE0CH/jarvis4", "github-jarvis4");
+    let rows = vec![
+        row("default", false),
+        row("github-claude-env", false),
+        row("github-jarvis4", false),
+        row("identity", true),
+    ];
+    let (stores, repos) = new_session_defaults(&rows, &[other, env.clone()]);
+    assert!(
+        stores.join(",") == "default,github-claude-env" && repos == env.url,
+        "defaults: {stores:?} {repos:?}"
+    );
+    // a sensitive default store, or a sensitive (or missing) key store: never pre-picked, nor the repo it would clone
+    let rows = vec![row("default", true), row("github-claude-env", true)];
+    let (stores, repos) = new_session_defaults(&rows, std::slice::from_ref(&env));
+    assert!(
+        stores.is_empty() && repos.is_empty(),
+        "sensitive: {stores:?} {repos:?}"
+    );
+    let (stores, repos) = new_session_defaults(&[row("default", false)], &[]);
+    assert!(
+        stores.join(",") == "default" && repos.is_empty(),
+        "no repos on the list: {stores:?} {repos:?}"
+    );
+}
