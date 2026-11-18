@@ -50,6 +50,15 @@ pub const LIVE_SYNC_MAX_BYTES: usize = 256 << 20;
 /// session ids whose .live dir exists on the box
 static LIVE_DIRS: LazyLock<Mutex<BTreeSet<String>>> = LazyLock::new(Default::default);
 
+pub fn is_live_name(name: &str) -> bool {
+    LIVE_NAME_RE.is_match(name)
+}
+
+/// the session's .live dir is no longer known to exist (its destroy)
+pub fn forget_live_dir(sid: &str) {
+    LIVE_DIRS.lock().unwrap_or_else(|e| e.into_inner()).remove(sid);
+}
+
 pub fn live_dir(sid: &str) -> String {
     format!("{}/{sid}", live_root())
 }
