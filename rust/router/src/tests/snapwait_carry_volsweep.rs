@@ -53,30 +53,33 @@ fn a_snapshot_making_progress_is_waited_for() {
 /// a live machine repeating the same numbers makes no progress: the wait ends after the stall window
 #[test]
 fn repeated_progress_numbers_stall() {
-    // the stall window well above what a loaded machine does between two reports: the test is the repeated
-    // number, not the scheduler
-    let rg = Rig::with(|c| c.snapshot_stall = Duration::from_millis(1500));
+    let rg = Rig::with(|c| c.snapshot_stall = Duration::from_millis(300));
     let _dms = capture_dm(&rg);
     rg.running_m2(false);
     rg.pause("s1").unwrap_or_else(|e| panic!("{e:#}"));
     wait_for("asked", || rg.snapshot_awaited("m2"));
     let m = rg.machine("m2");
     let h = rg.machine_handler();
+    // the same numbers never count as progress: the wait ends ~300 ms in, while the reports are still coming. If they
+    // did count, nothing could end until the reports stopped, so this loop (1.5 s of them) would run out first.
+    // Asserted by the loop breaking, not by its wall time: a loaded runner makes each request slower, never fewer.
     let t0 = Instant::now();
+    let mut left = false;
     for _ in 0..30 {
         if rg.session("s1").state != "pausing" {
+            left = true;
             break;
         }
         let _ = m.do_(&h, "POST", "/m/snapshot-progress", &progress(1));
         std::thread::sleep(Duration::from_millis(50));
     }
-    rg.wait_action_end("s1", "failed")
-        .unwrap_or_else(|e| panic!("{e:#}"));
     assert!(
-        t0.elapsed() <= Duration::from_secs(5),
-        "the stall took {:?}",
+        left,
+        "repeated numbers kept the wait going: still pausing after {:?} of reports",
         t0.elapsed()
     );
+    rg.wait_action_end("s1", "failed")
+        .unwrap_or_else(|e| panic!("{e:#}"));
     let s = rg.session("s1");
     assert!(
         s.snapshot_failed.contains("made no progress") && s.machine_id == "m2",
@@ -97,7 +100,7 @@ fn streamed_bytes_keep_the_wait_going() {
     std::thread::spawn(move || {
         for _ in 0..20 {
             let _ = std::io::Write::write_all(&mut pw, b"x");
-            std::thread::sleep(Duration::from_millis(50));
+            std::thread::sleep(Duration::from_millis(100));
         }
     });
     let r2 = rg.t.r.clone();
@@ -105,15 +108,14 @@ fn streamed_bytes_keep_the_wait_going() {
         let mut rd = crate::snapwait::MovedReader::new(pr, r2, "m9");
         let _ = std::io::copy(&mut rd, &mut std::io::sink());
     });
-    // a loaded machine can take a few hundred ms to schedule the writer; the stall window is 1 s, so anything
-    // under that still shows the bytes resetting the quiet
+    // a byte every 100 ms for 2 s: counted, the quiet clock never grows much; not counted, it grows the whole 2 s
     let mut quiet_max = time::Duration::ZERO;
     for _ in 0..20 {
-        std::thread::sleep(Duration::from_millis(50));
+        std::thread::sleep(Duration::from_millis(100));
         quiet_max = quiet_max.max(rg.snapshot_quiet("m9"));
     }
     assert!(
-        quiet_max <= time::Duration::milliseconds(750),
+        quiet_max <= Duration::from_secs(1),
         "quiet for {quiet_max} while bytes arrived"
     );
     rg.snapshot_arrived("m9");

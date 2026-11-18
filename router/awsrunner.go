@@ -33,11 +33,15 @@ import (
 	"github.com/DE0CH/jarvis4/kernel/spawner"
 )
 
-// sessionRunners: what New session offers. Not the fabric (fabricrunner.go) until a session boots on it end to end
-// (Deyao, 2026-11-17: a fabric session picked there timed out booting); a request that names it is still taken
-// (validRunner).
+// sessionRunners: what New session offers (the fabric only once the router has a fabric hermit: fabricrunner.go).
+// Offered again on 2026-11-18 once a fabric session booted end to end on the fabric replica with the aviary harness
+// (Deyao, 2026-11-17 had it hidden after one timed out booting there).
 func sessionRunners() []struct{ ID, Label string } {
-	return []struct{ ID, Label string }{{"aws", "AWS"}, {"fly", "Fly"}}
+	out := []struct{ ID, Label string }{{"aws", "AWS"}, {"fly", "Fly"}}
+	if fabricEnabled() {
+		out = append(out, struct{ ID, Label string }{"fabric", "Fabric (gVisor)"})
+	}
+	return out
 }
 
 func validRunner(id string) bool {

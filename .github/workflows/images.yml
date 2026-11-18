@@ -38,7 +38,11 @@ jobs:
       - run: cd router && go vet ./... && go test ./...
       # Jarvis 4 in Rust (rust/): each crate tested before it replaces its Go part; rust/sig against kernel/sig's vectors,
       # rust/machine (the session image's jarvis-machine) against documents and snapshots Go wrote
-      - run: cd rust && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
+      # a failing test's name and panic as annotations: job logs need a login, annotations don't (lessons/129)
+      - run: |
+          cd rust && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings
+          set -o pipefail
+          cargo test --locked 2>&1 | tee /tmp/cargo-test.log || { echo "::error::$(grep -E -A3 '^---- |panicked at' /tmp/cargo-test.log | head -60 | sed -z 's/\n/%0A/g')"; exit 1; }
       # the session's Rust tools; aviary-sandbox's own test as root (a mount namespace of its own): the sandbox is the
       # image, its home carries the volume's ~/workspace and ~/artifacts, Jarvis's session commands are in it
       - run: >-
