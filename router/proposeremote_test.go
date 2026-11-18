@@ -37,6 +37,11 @@ func TestHermitProposesANewSession(t *testing.T) {
 			return true
 		})
 	})
+	if err := r.updateRepos(func([]RepoEntry) []RepoEntry {
+		return []RepoEntry{{URL: "https://github.com/DE0CH/claude-env.git"}}
+	}); err != nil {
+		t.Fatal(err)
+	}
 	h := r.Handler()
 	call := func(method, path, client, body string) (int, map[string]any) {
 		tok := accessToken(t, "team.example", map[string]any{"aud": "devices-aud", "common_name": client})
@@ -53,6 +58,14 @@ func TestHermitProposesANewSession(t *testing.T) {
 	if code != 200 || id == "" || out["state"] != "approval" {
 		t.Fatalf("the proposal: %d %v", code, out)
 	}
+	// the app's New session with nothing touched: claude-env (its CLAUDE.md) and the default store
+	r.st.Do(func(d *persisted) {
+		s := d.Sessions[id]
+		if s == nil || s.Harness != "aviary" || s.Repos != "https://github.com/DE0CH/claude-env.git" ||
+			!containsAll(s.Stores, []string{"default", "github-claude-env"}) || containsString(s.Stores, "identity") {
+			t.Fatalf("the proposed session: %+v", s)
+		}
+	})
 	if code, again := call("POST", "/api/remotes", "hermit.access", `{"harness": "aviary", "requestId": "chat:c1"}`); code != 200 || again["id"] != id {
 		t.Fatalf("a repeat answers the same session: %d %v", code, again)
 	}
@@ -98,5 +111,26 @@ func TestHermitProposesANewSession(t *testing.T) {
 	}
 	if code, _ := call("POST", "/api/remotes", "hermit.access", `{"harness": "aviary"}`); code != 400 {
 		t.Fatalf("no requestId answered %d", code)
+	}
+}
+
+// A session from the chat is the app's New session with nothing touched (Deyao, 2026-11-18: the first one started
+// with no CLAUDE.md, as it had no repo): the store `default` and DE0CH/claude-env with its key's store, never a
+// sensitive store.
+func TestNewSessionDefaultsAreTheAppsPrePicks(t *testing.T) {
+	env := RepoEntry{Name: "claude-env", URL: "https://github.com/DE0CH/claude-env.git", Repo: "DE0CH/claude-env", Store: "github-claude-env"}
+	other := RepoEntry{Name: "jarvis4", URL: "https://github.com/DE0CH/jarvis4.git", Repo: "DE0CH/jarvis4", Store: "github-jarvis4"}
+	rows := []StoreRow{{Name: "default"}, {Name: "github-claude-env"}, {Name: "github-jarvis4"}, {Name: "identity", Sensitive: true}}
+	stores, repos := newSessionDefaults(rows, []RepoEntry{other, env})
+	if strings.Join(stores, ",") != "default,github-claude-env" || repos != env.URL {
+		t.Fatalf("defaults: %v %q", stores, repos)
+	}
+	// a sensitive default store, or a sensitive (or missing) key store: never pre-picked, nor the repo it would clone
+	rows = []StoreRow{{Name: "default", Sensitive: true}, {Name: "github-claude-env", Sensitive: true}}
+	if stores, repos := newSessionDefaults(rows, []RepoEntry{env}); len(stores) != 0 || repos != "" {
+		t.Fatalf("sensitive: %v %q", stores, repos)
+	}
+	if stores, repos := newSessionDefaults([]StoreRow{{Name: "default"}}, nil); strings.Join(stores, ",") != "default" || repos != "" {
+		t.Fatalf("no repos on the list: %v %q", stores, repos)
 	}
 }

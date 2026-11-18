@@ -286,8 +286,33 @@ func (r *Router) deviceCaller(req *http.Request) Caller {
 	return Caller{Kind: "web"} // no Access in front (a test router, NoAccess)
 }
 
+// newSessionDefaults: what the app's New session form pre-picks before anything is touched (app/src/pages/
+// NewSession.tsx, app/DECISIONS.md 14, the iPhone app the same): the store `default` when it is not sensitive, and
+// DE0CH/claude-env with its deploy key's store when the repo is on the list and its store is not sensitive (never a
+// sensitive store). The stores and the repos' URLs, as POST /api/sessions takes them.
+func newSessionDefaults(stores []StoreRow, repos []RepoEntry) ([]string, string) {
+	plain := map[string]bool{}
+	for _, s := range stores {
+		if !s.Sensitive {
+			plain[s.Name] = true
+		}
+	}
+	var picked, urls []string
+	if plain["default"] {
+		picked = append(picked, "default")
+	}
+	for _, e := range repos {
+		if strings.EqualFold(e.Repo, "DE0CH/claude-env") && plain[e.Store] {
+			picked = append(picked, e.Store)
+			urls = append(urls, e.URL)
+		}
+	}
+	return picked, strings.Join(urls, ",")
+}
+
 // proposeRemote: POST /api/remotes {harness, requestId}: a new session of that harness with the defaults (what the
-// app's New session makes with nothing picked: the harness's stores, model and account, no prompt), proposed into the
+// app's New session makes with nothing touched: newSessionDefaults, and the harness's stores, model and account, no
+// prompt), proposed into the
 // Inbox as the app's New session is, so it starts only once Deyao approves it there. requestId makes it idempotent
 // while the session exists (a repeat answers the same session). → {id, state}; 400 for a harness that is not one of
 // these apps'.
@@ -308,7 +333,15 @@ func (r *Router) proposeRemote(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "requestId: 1 to 200 characters"})
 		return
 	}
-	ns := NewSession{Harness: in.Harness, RequestID: in.RequestID}
+	// the app's New session form's own pre-picks (a session from the chat is the same session: claude-env's CLAUDE.md,
+	// the default store)
+	rows, _, err := r.StoreList()
+	if err != nil {
+		writeJSON(w, 503, map[string]string{"error": "the store list: " + err.Error()})
+		return
+	}
+	stores, repos := newSessionDefaults(rows, r.Repos())
+	ns := NewSession{Harness: in.Harness, RequestID: in.RequestID, Stores: stores, Repos: repos}
 	ns.Origin = &Origin{Caller: r.deviceCaller(req), Call: APICall{Method: "POST", Path: "/api/remotes", Args: map[string]any{"harness": in.Harness}}}
 	id, err := r.CreateSession(ns)
 	if err != nil {

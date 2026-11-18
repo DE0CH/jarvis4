@@ -248,6 +248,10 @@ func (c *fakeCore) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, 200, map[string]any{"signingKey": c.key.pub(), "state": c.key.doc(map[string]string{"kind": "core-state", "master": "m"})})
 	case "/core-cert":
 		writeJSON(w, 200, map[string]string{"statement": "{}", "masterSig": "x"})
+	case "/stores": // the signed store list (storedocs.go StoreList): the stores a new session pre-picks
+		writeJSON(w, 200, c.key.doc(map[string]any{"kind": "stores", "stores": []map[string]any{
+			{"name": "default", "keys": []any{}}, {"name": "github-claude-env", "keys": []any{}},
+			{"name": "identity", "sensitive": true, "keys": []any{}}}}))
 	case "/kill": // the core's record names the snapshot the kill named (core.go KillWithSnapshot)
 		var in struct {
 			Machine  string `json:"machine"`

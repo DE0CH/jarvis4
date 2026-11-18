@@ -3165,7 +3165,8 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      typing right away"; this replaces "sessions start only in the Jarvis 4 app" of 2026-11-11). hermit-jarvis's
      `/v1/deployment` says `peopleCreate: true`, so the chat offers New chat. The first message's get-or-start finds no
      session for the conversation and proposes one through the router's existing New session path (`POST
-     /api/remotes {harness: aviary, requestId: chat:<conversation>}`: the defaults, the devices Access app hermit-jarvis
+     /api/remotes {harness: aviary, requestId: chat:<conversation>}`: the app's New session with nothing touched,
+     claude-env and the default store included (`newSessionDefaults`; the first one had no repo and no CLAUDE.md), the devices Access app hermit-jarvis
      already reaches, no kernel change). The start waits in hermit's phase `approval` (aviary's contract) while the
      router lists the session as `approval`, then `host`; magpie holds the message (the wait for an approval spends
      none of the turn's 15 min) and the chat says "Waiting for your approval", then "Preparing the workspace". The
