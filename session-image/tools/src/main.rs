@@ -1,10 +1,14 @@
 //! A Jarvis 4 session's own tools, one binary built into the session image (Deyao, 2026-11-17: shell scripts are
 //! banned; Rust tools ship built). The name it runs under picks the tool:
-//!   schedule-wakeup, schedule-cron  arm, list and cancel the session's router crons (schedule.rs)
+//!   schedule-wakeup, schedule-cron  arm, list and cancel the session's router crons (schedule.rs); in an aviary
+//!                                   sandbox a wakeup is a magpie schedule instead (aviary.rs)
 //!   retire-session                  check the session can go, then ask the router to destroy it (retire.rs)
-//! or `jarvis-tools <tool> …`. Every call goes to `$JARVIS_URL/api/sessions/$SESSION_ID/…`: the machine's local
+//!   aviary-sandbox                  (as root) an aviary session's sandbox in aviary's own image (aviary_sandbox.rs)
+//! or `jarvis-tools <tool> …`. Every router call goes to `$JARVIS_URL/api/sessions/$SESSION_ID/…`: the machine's local
 //! proxy signs it with the machine key and forwards it to the router (/m/api).
 
+mod aviary;
+mod aviary_sandbox;
 mod retire;
 mod schedule;
 
@@ -61,20 +65,28 @@ fn main() -> ExitCode {
         };
     }
     let (res, failed_word) = match tool.as_str() {
+        // in an aviary sandbox a wakeup is a magpie schedule (aviary.rs)
         "schedule-wakeup" => (
-            schedule::wakeup_action(&args).and_then(schedule::run),
+            schedule::wakeup_action(&args).and_then(|a| match aviary::conversation() {
+                Some(conv) => aviary::run(a, &conv),
+                None => schedule::run(a),
+            }),
             "ERROR",
         ),
         "schedule-cron" => (
             schedule::cron_action(&args).and_then(schedule::run),
             "ERROR",
         ),
+        "aviary-sandbox" => (aviary_sandbox::run(&args), "aviary-sandbox"),
         "retire-session" => (
             retire::run(args.first().is_some_and(|a| a == "--check")),
             "BLOCKED",
         ),
         _ => (
-            Err("usage: jarvis-tools schedule-wakeup|schedule-cron|retire-session …".into()),
+            Err(
+                "usage: jarvis-tools schedule-wakeup|schedule-cron|retire-session|aviary-sandbox …"
+                    .into(),
+            ),
             "ERROR",
         ),
     };

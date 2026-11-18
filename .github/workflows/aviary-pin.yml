@@ -4,7 +4,7 @@ name: aviary-pin
 # the current pin:
 #   session-image/aviary.json      {release, sandbox}: the release, and its sandbox image by digest
 #                                  (ghcr.io/de0ch/hermit-sandbox:<sha12>, the image YYC AI's sandboxes run: a session's
-#                                  sandbox runs in it, session-image/base/aviary-sandbox)
+#                                  sandbox runs in it, session-image/tools/src/aviary_sandbox.rs)
 #   aviary/Cargo.toml + Cargo.lock the contract crates' rev (the release's commit)
 # A release is pinned only after the replica passed on it (Deyao, 2026-11-16): `replica` builds the session image of the
 # candidate (ghcr.io/de0ch/jarvis4-session:pin-<release>) and runs infra/e2e-aviary.sh on it (a real Fly machine, the
