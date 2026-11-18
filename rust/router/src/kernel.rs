@@ -179,7 +179,7 @@ impl KernelClient {
     }
 
     /// one request to one Deployment (dep), its errors named by role
-    fn do_(&self, role: &str, dep: &str, method: &str, path: &str, body: Option<&Value>) -> Result<(Vec<u8>, i64)> {
+    pub fn do_(&self, role: &str, dep: &str, method: &str, path: &str, body: Option<&Value>) -> Result<(Vec<u8>, i64)> {
         let m = reqwest::Method::from_bytes(method.as_bytes())?;
         let mut req = self
             .http
