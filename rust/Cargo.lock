@@ -943,20 +943,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "jarvis-router"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "jarvis-doc",
- "jarvis-go",
- "jarvis-sig",
- "serde",
- "serde_json",
- "time",
- "tokio",
-]
-
-[[package]]
 name = "jarvis-sig"
 version = "0.0.0"
 dependencies = [

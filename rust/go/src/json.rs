@@ -17,11 +17,12 @@ fn strip_nulls(v: &mut Value) {
     }
 }
 
-/// `b` decoded as Go's `json.Unmarshal` would (trailing data refused, as Go does)
+/// `b` decoded as Go's `json.Unmarshal` would (trailing data refused, as Go does). The stripped value is decoded from
+/// its text, not from the Value itself, so a `RawValue` field (Go's json.RawMessage) decodes too.
 pub fn unmarshal<T: DeserializeOwned>(b: &[u8]) -> Result<T, serde_json::Error> {
     let mut v: Value = serde_json::from_slice(b)?;
     strip_nulls(&mut v);
-    serde_json::from_value(v)
+    serde_json::from_str(&serde_json::to_string(&v)?)
 }
 
 /// `v` encoded as Go's `json.Marshal` would
@@ -50,5 +51,20 @@ mod tests {
         assert!(t.b.is_empty());
         assert_eq!(t.c.map(|c| c.a), Some("x".into()));
         assert!(unmarshal::<T>(br#"{"a":"x"} {}"#).is_err(), "trailing data");
+    }
+
+    #[test]
+    fn raw_values_decode() {
+        #[derive(Deserialize, Default)]
+        #[serde(default)]
+        struct R {
+            raw: Option<Box<serde_json::value::RawValue>>,
+        }
+        let r: R =
+            unmarshal(br#"{"raw": {"b": 1, "a": [null]}}"#).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            r.raw.map(|x| x.get().to_string()),
+            Some(r#"{"a":[null],"b":1}"#.into())
+        );
     }
 }

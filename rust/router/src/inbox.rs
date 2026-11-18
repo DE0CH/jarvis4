@@ -472,6 +472,33 @@ pub fn write_denied(w: &mut W, err: Result<()>) {
     }
 }
 
+/// a caller asked for something wrong (400; router.rs `bad`)
+pub use crate::router::BadReq as BadRequest;
+
+/// the caller may not do this (403)
+#[derive(Debug, Clone)]
+pub struct Forbidden(pub String);
+
+impl std::fmt::Display for Forbidden {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Forbidden {}
+
+/// a caller over its limit of waiting asks (429)
+#[derive(Debug, Clone)]
+pub struct TooMany(pub String);
+
+impl std::fmt::Display for TooMany {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for TooMany {}
+
 pub fn write_request_err(w: &mut W, err: &anyhow::Error) {
     if let Some(t) = err.downcast_ref::<TooMany>() {
         crate::nethttp::write_error(w, 429, &t.0);
