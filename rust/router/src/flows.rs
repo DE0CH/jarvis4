@@ -95,7 +95,7 @@ fn ms(a: &AtomicU64) -> Duration {
     Duration::from_millis(a.load(Ordering::Relaxed))
 }
 
-pub fn flyl_machine_limit(err: &anyhow::Error) -> bool {
+pub fn fly_machine_limit(err: &anyhow::Error) -> bool {
     fly_machine_limit_text(&format!("{err:#}"))
 }
 
@@ -109,7 +109,7 @@ pub const FLY_LIMIT_TEXT: &str = "Fly's machine limit is reached: the Fly org al
 
 /// an error as Deyao reads it: the known text for Fly's machine limit, else the error itself (trimmed)
 pub fn known_error(err: &anyhow::Error) -> String {
-    if flyl_machine_limit(err) {
+    if fly_machine_limit(err) {
         return FLY_LIMIT_TEXT.into();
     }
     crate::util::trim_to(&format!("{err:#}"), 300)
@@ -475,7 +475,7 @@ impl Router {
         // machine to go (sessions pause by themselves) instead of failing a start Deyao already approved
         let mut waited = Duration::ZERO;
         while wait_limit
-            && d.as_ref().is_err_and(flyl_machine_limit)
+            && d.as_ref().is_err_and(fly_machine_limit)
             && waited < ms(&MACHINE_LIMIT_WAIT_MS)
         {
             if self.draining() {
@@ -606,7 +606,7 @@ impl Router {
             }
         };
         let d = match d {
-            Err(e) if flyl_machine_limit(&e) => {
+            Err(e) if fly_machine_limit(&e) => {
                 crate::logf!("start {sid}: {e:#}");
                 fail(&format!("start: {FLY_LIMIT_TEXT}"));
                 return;
