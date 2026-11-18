@@ -27,7 +27,7 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -381,7 +381,9 @@ struct InputLog {
 }
 
 static INPUT_LOG: LazyLock<Mutex<InputLog>> = LazyLock::new(|| Mutex::new(InputLog::default()));
-static KEPT_LOG_PROBE: Mutex<(Option<Instant>, bool)> = Mutex::new((None, false));
+/// core URL → when it was last asked and whether it keeps its own input log
+static KEPT_LOG_PROBE: LazyLock<Mutex<BTreeMap<String, (Instant, bool)>>> =
+    LazyLock::new(Default::default);
 
 #[derive(Deserialize, Default)]
 #[serde(default)]
@@ -721,18 +723,28 @@ impl Router {
     /// the running core is one from before R2 (it answers POST /input-log). Re-checked every minute: a core restart is
     /// a new core, possibly another version.
     pub fn core_keeps_input_log(&self) -> bool {
-        let mut g = KEPT_LOG_PROBE.lock().unwrap_or_else(|e| e.into_inner());
-        if g.0.is_some_and(|t| t.elapsed() < Duration::from_secs(60)) {
-            return g.1;
+        let url = self.core.url();
+        let last = KEPT_LOG_PROBE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&url)
+            .copied();
+        if let Some((at, keeps)) = last
+            && at.elapsed() < Duration::from_secs(60)
+        {
+            return keeps;
         }
         match self
             .core
             .raw("POST", "/input-log", Some(br#"{"from":1099511627776}"#))
         {
-            Err(_) => g.1, // unreachable: keep the last answer
+            Err(_) => last.is_some_and(|l| l.1), // unreachable: keep the last answer
             Ok((st, _)) => {
-                *g = (Some(Instant::now()), st == 200);
-                g.1
+                KEPT_LOG_PROBE
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(url, (Instant::now(), st == 200));
+                st == 200
             }
         }
     }
