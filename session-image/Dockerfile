@@ -23,7 +23,7 @@ COPY session-image/aviary.json /aviary.json
 RUN set -eu; \
     tag=$(sed -n 's/.*"gateway": "\(jarvis-[0-9a-f]\{12\}\)".*/\1/p' /aviary.json); \
     sum=$(sed -n 's/.*"gateway_sha256": "\([0-9a-f]\{64\}\)".*/\1/p' /aviary.json); \
-    test -n "$tag" && test -n "$sum"; \
+    test -n "$tag"; test -n "$sum"; \
     curl -fsSL -o /aviary-gateway "https://github.com/DE0CH/aviary/releases/download/$tag/aviary-gateway"; \
     printf '%s  /aviary-gateway\n' "$sum" | sha256sum -c -; \
     install -D -m 755 /aviary-gateway /out/aviary-gateway
