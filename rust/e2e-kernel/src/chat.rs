@@ -1,4 +1,4 @@
-//! The chat stack beside the kernel for the aviary harness (`E2E_HARNESS=aviary`, on Fly machines or the fabric's): hermit-jarvis built from this tree's aviary/, magpie from the image the session image's aviary
+//! The chat stack beside the kernel for the aviary harness (`E2E_HARNESS=aviary`, on Fly machines or the fabric's): hermit-jarvis built from DE0CH/aviary's jarvis/hermit (E2E_HERMIT_JARVIS), magpie from the image the session image's aviary
 //! release names (its root unpacked once, run in its own network namespace as its image's user), a TLS Postgres for
 //! hermit, magpie and the router, an S3 stand-in (rclone serve s3), and the chat stack's keys as DE0CH/deyao-ai's
 //! infra/chat-keys.py makes them.
@@ -132,10 +132,18 @@ pub fn up(
 ) -> Result<Chat> {
     let cache = PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache/jarvis4-e2e");
     fs::create_dir_all(&cache)?;
-    // hermit-jarvis, built from this tree
+    // hermit-jarvis, built from DE0CH/aviary's jarvis/hermit (it left this repo for the monorepo, 2026-11-19):
+    // E2E_HERMIT_JARVIS names that folder (aviary's CI sets it to its own checkout)
+    let hj = PathBuf::from(std::env::var("E2E_HERMIT_JARVIS").unwrap_or_default());
+    if !hj.join("Cargo.toml").exists() {
+        bail!(
+            "E2E_HERMIT_JARVIS ({}) is not DE0CH/aviary's jarvis/hermit",
+            hj.display()
+        );
+    }
     let st = Command::new("cargo")
         .args(["build", "--release", "--locked", "--bin", "hermit-jarvis"])
-        .current_dir(root.join("aviary"))
+        .current_dir(&hj)
         .env("CARGO_INCREMENTAL", "0")
         .status()?;
     if !st.success() {
@@ -143,7 +151,7 @@ pub fn up(
     }
     let meta = Command::new("cargo")
         .args(["metadata", "--format-version", "1", "--no-deps"])
-        .current_dir(root.join("aviary"))
+        .current_dir(&hj)
         .output()?;
     let target = serde_json::from_slice::<serde_json::Value>(&meta.stdout)?["target_directory"]
         .as_str()
@@ -348,7 +356,7 @@ pub fn up(
         "HERMIT_ACCESS_AUD=e2e".into(),
         format!(
             "HERMIT_SETTINGS={}",
-            root.join("aviary/tests/settings.json").display()
+            hj.join("tests/settings.json").display()
         ),
         format!("HERMIT_ACCEPT_PIGEON={}", k["PIGEON_HERMIT"]),
         format!("HERMIT_ACCEPT_MAGPIE={}", k["MAGPIE_HERMIT"]),

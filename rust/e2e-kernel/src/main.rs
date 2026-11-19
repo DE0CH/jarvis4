@@ -15,7 +15,7 @@
 //!                       E2E_FABRIC_CACHE (default ~/.cache/jarvis4-e2e-fabric). Needs crane and sudo. No Inbox, no
 //!                       approval: the boot check of a fabric change.
 //!   E2E_HARNESS=aviary  the session's harness aviary, with the chat stack beside the kernel (chat.rs: hermit-jarvis
-//!                       of this tree, magpie of the pinned release, a TLS Postgres, an S3 stand-in) and e2e/aviary
+//!                       built from E2E_HERMIT_JARVIS, DE0CH/aviary's jarvis/hermit, magpie of the pinned release, a TLS Postgres, an S3 stand-in) and e2e/aviary
 //!                       as the phone, the stand-in model and the chat front (127.0.0.1:31085) instead of e2e/kernel.
 //!                       On Fly the machines reach the front through a second throwaway peer (`-chat`), or over 6PN
 //!                       when this runs on a Fly machine ([`Net`]); with the fabric, on loopback. aviary-pin.yml's
