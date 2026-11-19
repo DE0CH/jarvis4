@@ -17,6 +17,16 @@ Status (2026-11-19): live. New session offers the runner `fabric`; the kernel re
   out and clears a killed bake's builder; `fabric-ami.yml` and YYC AI's `hermit-ami.yml` switch to it once an aviary
   release holds it. Until then a sandboxd pin needs the launch template set by hand
 
+Ready to merge once deploys resume (2026-11-19, deploys paused for the monorepo move), in this order:
+
+1. aviary `wip/fabric-ready`: `fabric-aws` (replaces `infra.sh`), the release in Rust (`aviary-release`, which ships
+   `fabric-aws` beside `sandboxd`), two flaky tests fixed. Its main CI publishes the release `aviary-<sha12>`.
+2. jarvis4 `wip/fabric-ready` (`fabric-ami.yml` fetches `fabric-aws` from the pinned release) together with the pin of
+   the fabric's hermit (`k8s/cluster/fabric/kustomization.yaml`, tag + digest) and `hermit.json` `fabric.sandboxd` to
+   that release, in one commit: the workflow runs on its own change and needs a release that has `fabric-aws`. The
+   aviary fabric replica (`testing/fabric-replica`) runs on that release first.
+3. YYC AI's `hermit-ami.yml` switched the same way, merged with YYC's pin to that release or later.
+
 What was built (2026-11-17/18):
 
 | Part | State |
