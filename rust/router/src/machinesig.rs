@@ -3,7 +3,7 @@
 //! (require_machine): the machine's current signing key, X-Time within MACHINE_TIME_SKEW, the payload
 //! "<method> <path> <time> <sha256 hex of body>". The answer names the machine's session, its harness and its state,
 //! so the service learns which session asks without holding any credential of the session's. Today's caller:
-//! hermit-jarvis, the aviary harness's hermit (aviary/README.md), at a machine's boot. A path under /m is refused: a
+//! hermit-jarvis, the aviary harness's hermit (DE0CH/aviary jarvis/hermit/README.md), at a machine's boot. A path under /m is refused: a
 //! signature meant for the router itself is never checked for anyone else.
 
 use crate::nethttp::{Req, W, write_error, write_json};

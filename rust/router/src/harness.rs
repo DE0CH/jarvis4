@@ -10,7 +10,7 @@
 //! paseo-claude  Claude Code driven by a Paseo daemon (`paseo/<Claude model id>`), Claude subscription through
 //!               api-proxy.js (so an account switch needs no restart, accountswap.rs): the Paseo app + web UI
 //! aviary        Claude Code driven by DE0CH/aviary's supervisor (`aviary/<model id>`), the same supervisor YYC AI's
-//!               sandboxes run, with Jarvis 4's own pigeon, magpie and hermit (aviary/README.md); Claude
+//!               sandboxes run, with Jarvis 4's own pigeon, magpie and hermit (DE0CH/aviary jarvis/hermit/README.md); Claude
 //!               subscription, or GLM 5.3 on OpenRouter (z.ai's own host), through the machine's aviary-gateway: the
 //!               chat web app at chat.deyaochen.com
 //! dsh           DeepSeek Harness (Deyao's fork DE0CH/deepseek-harness) on OpenRouter, routed only to DeepSeek's own

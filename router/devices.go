@@ -251,7 +251,7 @@ func (r *Router) deyaoOrDevice(tok string) bool {
 
 // admitClaims: Deyao's email, or no email and a paired device's client id, or hermit-jarvis's (HERMIT_CLIENT_ID: the
 // aviary harness's hermit, a server in the services tenant; its own Access service token hermit-jarvis, named in
-// k8s/cluster/router/router.yaml as the health probe's is; aviary/README.md "Its credential")
+// k8s/cluster/router/router.yaml as the health probe's is; DE0CH/aviary jarvis/hermit/README.md "Its credential")
 func (r *Router) admitClaims(c *accessClaims, now time.Time) bool {
 	if c.Email != "" {
 		return strings.EqualFold(c.Email, r.cfg.AllowedEmail)

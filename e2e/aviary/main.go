@@ -362,7 +362,7 @@ func serveModel(w http.ResponseWriter, req *http.Request) {
 	model, _ := in["model"].(string)
 	if openRouter {
 		// As OpenRouter: its own key (never the Claude login), an OpenRouter model id, the model's hosts named
-		// (aviary/src/machine.rs for_openrouter), and no thinking switched off (its hosts answer that 400).
+		// (DE0CH/aviary jarvis/hermit/src/machine.rs for_openrouter), and no thinking switched off (its hosts answer that 400).
 		provider, _ := in["provider"].(map[string]any)
 		order, _ := provider["order"].([]any)
 		thinking, _ := in["thinking"].(map[string]any)

@@ -717,7 +717,7 @@ message waits until the main agent is idle (Paseo's send interrupts a running tu
 the API base URL (its profile, claude.ai connectors, bootstrap, telemetry) go to Anthropic with the placeholder and are
 refused, so claude.ai MCP connectors are not available in these sessions.
 
-Claude Code · aviary (`harness-aviary.sh`, aviary/README.md; Deyao, 2026-11-11) makes the session an aviary sandbox:
+Claude Code · aviary (`harness-aviary.sh`, DE0CH/aviary jarvis/hermit/README.md; Deyao, 2026-11-11) makes the session an aviary sandbox:
 DE0CH/aviary's supervisor (the same build YYC AI's sandboxes run) drives Claude Code, its conversation lives in Jarvis
 4's own magpie, and its front end is pigeon's chat web app at chat.deyaochen.com (a DE0CH/deyao-ai tenant with
 hermit-jarvis, aviary/). The machine's `aviary-gateway` boots the sandbox with hermit-jarvis (signed with the machine

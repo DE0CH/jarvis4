@@ -69,7 +69,7 @@ snapshots, live transcripts, task results).
 ## Harnesses and image
 - Claude: present. OpenCode + Paseo, OpenClaw + claw-code: present (policy: opencode brings `openrouter` + `tunnel`, openclaw brings `claude` + `tunnel`; `GET /api/models[?harness=]`; the harness is signed in the cert's options). `harness-send`: present (the machine's own delivery). API proxy: present.
 - Claude Code + Paseo (`paseo-claude`): new in Jarvis 4 (Deyao, 2026-10-20; DECISIONS 204), no Jarvis 1 counterpart. Brings `tunnel`, runs on a Claude account; the only harness besides `claude` whose running session switches accounts (no restart: its API proxy sends the new pair). Differences from `claude`: no Remote Control (the Paseo app and web UI instead), no claude.ai MCP connectors, Jarvis messages wait for the agent to be idle.
-- Claude Code · aviary (`aviary`): new in Jarvis 4 (Deyao, 2026-11-11; aviary/README.md), no Jarvis 1 counterpart:
+- Claude Code · aviary (`aviary`): new in Jarvis 4 (Deyao, 2026-11-11; DE0CH/aviary jarvis/hermit/README.md), no Jarvis 1 counterpart:
   YYC AI's supervisor, pigeon and magpie, dogfooded. It replaced `cloudcli` (CloudCLI + the Jarvis 4 Chat app).
 - Session image: Jarvis 4 builds all of it. The base (tools, harnesses, entrypoint, supervisor, workspace layer, api-proxy,
   content-sync, pull-secrets, session-secret) is `session-image/base/`, carried over from Jarvis 1's `selfhost/session-image/` (DECISIONS 100-102);

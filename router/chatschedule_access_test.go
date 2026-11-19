@@ -35,7 +35,7 @@ func accessToken(t *testing.T, team string, claims map[string]any) string {
 	return signing + "." + base64.RawURLEncoding.EncodeToString(sig)
 }
 
-// hermit-jarvis reaches the router with its own service token on the "Jarvis 4 devices" Access app (aviary/src/jarvis.rs):
+// hermit-jarvis reaches the router with its own service token on the "Jarvis 4 devices" Access app (DE0CH/aviary jarvis/hermit/src/jarvis.rs):
 // its chat-schedule report must be served there, as the signature check is, not as an app route (Deyao's email only).
 // It was an app route at first, and every report was refused (2026-11-18).
 func TestHermitReachesTheChatScheduleReport(t *testing.T) {

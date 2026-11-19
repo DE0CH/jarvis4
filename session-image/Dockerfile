@@ -13,13 +13,20 @@ COPY rust/ ./
 RUN cargo build --release --locked -p jarvis-machine -p e2e-kernel \
  && install -D target/release/jarvis-machine /out/jarvis-machine && install -D target/release/e2e-kernel /out/e2e-kernel
 
-# the aviary harness (aviary/README.md): aviary-gateway from this repo. The supervisor, its keeper and Claude Code are
-# not in this image: a session's sandbox runs in DE0CH/aviary's own sandbox image, fetched by the digest
-# session-image/aviary.json pins (aviary-sandbox)
+# the aviary harness (DE0CH/aviary jarvis/hermit/README.md): aviary-gateway, the release session-image/aviary.json
+# names (`gateway`: jarvis-<sha12>, built by aviary's jarvis.yml), checked against the sha256 written beside it
+# (`gateway_sha256`). aviary's deploy run writes both (DE0CH/aviary docs/DEPLOY.md). The supervisor, its keeper and
+# Claude Code are not in this image: a session's sandbox runs in DE0CH/aviary's own sandbox image, fetched by the
+# digest aviary.json pins (aviary-sandbox)
 FROM rust:1.99.1-bookworm AS aviary
-WORKDIR /src/aviary
-COPY aviary/ ./
-RUN cargo build --release --locked --bin aviary-gateway && install -D target/release/aviary-gateway /out/aviary-gateway
+COPY session-image/aviary.json /aviary.json
+RUN set -eu; \
+    tag=$(sed -n 's/.*"gateway": "\(jarvis-[0-9a-f]\{12\}\)".*/\1/p' /aviary.json); \
+    sum=$(sed -n 's/.*"gateway_sha256": "\([0-9a-f]\{64\}\)".*/\1/p' /aviary.json); \
+    test -n "$tag" && test -n "$sum"; \
+    curl -fsSL -o /aviary-gateway "https://github.com/DE0CH/aviary/releases/download/$tag/aviary-gateway"; \
+    printf '%s  /aviary-gateway\n' "$sum" | sha256sum -c -; \
+    install -D -m 755 /aviary-gateway /out/aviary-gateway
 
 # the session's own tools (session-image/tools/: schedule-wakeup, schedule-cron, retire-session, aviary-sandbox), one
 # Rust binary built and tested here so a session runs it and never builds it (Deyao, 2026-11-17: shell scripts are

@@ -423,7 +423,7 @@ impl Router {
 
     /// Deyao's email, or no email and a paired device's client id, or hermit-jarvis's (HERMIT_CLIENT_ID: the aviary
     /// harness's hermit, a server in the services tenant; its own Access service token hermit-jarvis, named in
-    /// k8s/cluster/router/router.yaml as the health probe's is; aviary/README.md "Its credential")
+    /// k8s/cluster/router/router.yaml as the health probe's is; DE0CH/aviary jarvis/hermit/README.md "Its credential")
     pub fn admit_claims(&self, c: &AccessClaims, now: GoTime) -> bool {
         if !c.email.is_empty() {
             return c.email.eq_ignore_ascii_case(&self.cfg.allowed_email);

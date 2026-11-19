@@ -6,7 +6,7 @@
 //!   paseo-claude  Claude Code driven by a Paseo daemon, its Claude calls through api-proxy.js with the session's
 //!                 current Claude login
 //!   aviary        Claude Code driven by DE0CH/aviary's supervisor, its Claude calls through the machine's
-//!                 aviary-gateway with the session's current Claude login (aviary/README.md)
+//!                 aviary-gateway with the session's current Claude login (DE0CH/aviary jarvis/hermit/README.md)
 //!   dsh           DeepSeek Harness web: its own agent loop on OpenRouter, its web UI
 //! The last five take prompts through /usr/local/bin/harness-send and publish their own front end through the
 //! session's tunnel (so they take CF_ACCESS_* as "publish it").

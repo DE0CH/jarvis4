@@ -52,7 +52,7 @@ func dshWebURL(id string) string { return "https://dsh.deyaochen.com/s/" + id + 
 
 func webOriginHarness(h string) bool { return h == "dsh" }
 
-// chatURL: Jarvis 4's chat web app, where an aviary session's conversation is (aviary/README.md)
+// chatURL: Jarvis 4's chat web app, where an aviary session's conversation is (DE0CH/aviary jarvis/hermit/README.md)
 const chatURL = "https://chat.deyaochen.com/"
 
 // aviaryConvURL: the session's own conversation in the chat. The machine reports its id (the gateway's conversationId,

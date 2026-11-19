@@ -56,7 +56,7 @@ fn web_origin_harness(h: &str) -> bool {
     h == "dsh"
 }
 
-/// Jarvis 4's chat web app, where an aviary session's conversation is (aviary/README.md)
+/// Jarvis 4's chat web app, where an aviary session's conversation is (DE0CH/aviary jarvis/hermit/README.md)
 pub const CHAT_URL: &str = "https://chat.deyaochen.com/";
 
 /// the session's own conversation in the chat. The machine reports its id (the gateway's conversationId, the

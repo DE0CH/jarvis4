@@ -69,7 +69,7 @@ spec:
             - { name: ACCESS_HEALTH_AUD, value: 855266d6e0f83f5d5db551c615ce18e1d148a45d58d7e40cf09ad411200b7552 }
             - { name: HEALTH_CLIENT_ID, value: "f8d3af1465028cfa370fdf13bd9d4cea.access" }
             # hermit-jarvis (the aviary harness's hermit, DE0CH/deyao-ai k8s/chat): its own Access service token hermit-jarvis,
-            # admitted on the device routes (router/devices.go admitClaims; aviary/README.md "Its credential")
+            # admitted on the device routes (router/devices.go admitClaims; DE0CH/aviary jarvis/hermit/README.md "Its credential")
             - { name: HERMIT_CLIENT_ID, value: "88b0572a2b74d062bde8e7ff1d7fde61.access" }
             # the setup session's PUBLIC key (keys/setup.pub): the router checks it on every /setup call
             - { name: SETUP_KEY, value: "BEhYIkmGeCkg7D8vdKhRe8b00asMI8a9EyXNW41eBbIphkf6lZmy/c9FsRlqoXLD5JyRZgVOxLzM7OBv47Uy2Ms=" }

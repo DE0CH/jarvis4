@@ -1,6 +1,6 @@
 #!/bin/bash
 # Launcher for a session whose harness is aviary (SESSION_HARNESS=aviary), exec'd by harness-claude.sh in place of the
-# `claude --remote-control` host: the session is an aviary sandbox (DE0CH/jarvis4 aviary/README.md).
+# `claude --remote-control` host: the session is an aviary sandbox (DE0CH/aviary jarvis/hermit/README.md).
 #
 #   Claude Code    the agent: the Claude Code of DE0CH/aviary's sandbox image, driven by that image's supervisor, in
 #                  that image's root (the same image YYC AI's sandboxes run: aviary-sandbox), in the session's

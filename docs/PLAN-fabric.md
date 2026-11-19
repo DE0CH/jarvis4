@@ -28,7 +28,7 @@ What was built (2026-11-17/18):
 | router: a destroy asks a fabric machine for its whole state (`snapshot-full`, so the archive holds the files), then deletes the conversation's files at hermit (`DELETE /v1/workspaces/{cid}`, `FABRIC_HERMIT_MAGPIE_TOKEN`) | pushed, tests pass |
 | the source image: a fabric session's sources name `FABRIC_SESSION_IMAGE` with `FABRIC_SESSION_IMAGE_SIG` (router), the iPhone app accepts the fabric repo (`KernelChecks.fabricImageRepo`) | pushed; the app needs a TestFlight build; CI pins and signs it (images.yml `fabric-pin`) once the router's manifest has `FABRIC_SESSION_IMAGE` |
 | image `jarvis4-session-fabric` (images.yml job `fabric`, `session-image/fabric/`), `aviary-sandbox`'s bind mode, the env-fetching entrypoint | pushed; bind mode tested (`session-image/tools/tests/aviary_sandbox.rs`); the new GHCR package must be made public (github-web) before hosts can pull it |
-| hermit-jarvis: the fabric hermit's control hashes in the descriptor (`aviary/src/fabric.rs`, `FABRIC_HERMIT_URL`, `FABRIC_HERMIT_GATEWAY_TOKEN`) | pushed, tests pass (the flow unchanged). No activity forwarding: the fabric hermit's janitor keeps a sandbox whose supervisor answers its health (`silence_check`), and its `idleMinutes`/`maxLifetimeHours` are set past any session |
+| hermit-jarvis: the fabric hermit's control hashes in the descriptor (`DE0CH/aviary jarvis/hermit/src/fabric.rs`, `FABRIC_HERMIT_URL`, `FABRIC_HERMIT_GATEWAY_TOKEN`) | pushed, tests pass (the flow unchanged). No activity forwarding: the fabric hermit's janitor keeps a sandbox whose supervisor answers its health (`silence_check`), and its `idleMinutes`/`maxLifetimeHours` are set past any session |
 | infra: AWS eu-central-1 (AMI, launch template, scaler and AMI-CI users, image bucket, `fabric-ami.yml`), the gateway server, the fabric bucket and its fenced key, the fabric hermit with its database and JuiceFS on the cluster | done 2026-11-17; smoke test passed (`k8s/cluster/fabric/smoke.yaml`: a sandbox asked as the spawner asks, an AWS host in about a minute, the fabric image under gVisor, the console read live, released) |
 | the kernel release (the spawner's fabric runner, its env and network rule), then the router's `FABRIC_HERMIT_URL` and the first fabric session | done 2026-11-18 |
 | hermit's `/jfs` through the JuiceFS CSI driver (k8s/cluster/juicefs-csi, fabric/juicefs.yaml), as YYC AI's | done 2026-11-19 (the FUSE sidecar on an emptyDir got every hermit pod evicted once a session's files were on the volume: lessons/146 in claude-env) |
@@ -123,7 +123,7 @@ The snapshot on the fabric holds only the small files (`rust/machine/src/snapsho
 the JuiceFS metadata database and the bucket are trusted with the session's files between machines, as Deyao
 accepted hermit and its hosts as trusted like Fly.
 
-### hermit-jarvis (DE0CH/jarvis4 aviary/), only for sessions whose runner is `fabric`
+### hermit-jarvis (DE0CH/aviary jarvis/hermit/), only for sessions whose runner is `fabric`
 
 - the descriptor's `control.tokenSha256` also holds the fabric hermit's hash for the session's sandbox (read from
   the fabric hermit's `GET /v1/sandbox/self` as caller `gateway`);
@@ -188,7 +188,7 @@ Built (2026-11-18), switched on per deployment:
 | hermit: the freeze task pauses in place (row `frozen`, host kept); the repacking evicts (`fabric/packing.rs` `place`, `evictions`; `placement.rs` `reclaim`; scaler step 10 `evict_lone_frozen`); a thaw resumes in place or restores from S3 (`Gvisor::thaw`); the janitor wakes a due `until`; a frozen row's release is forced and deletes its image | DE0CH/aviary crates/hermit (`fabric/pausing.rs`, `freezekey.rs`) |
 | magpie: an answer to a question asks hermit for the conversation's sandbox (a use) | DE0CH/aviary 4d38eb57 |
 | router: `POST/GET /m/api/time-machine`, state `frozen`, Resume and every delivery thaw it, `frozenLoop` (hermit thawed it at its time) | router/timemachine.go |
-| hermit-jarvis: a frozen session's sandbox is kept, its chat open, a use thaws it | aviary/src/reconcile.rs, hermit.rs |
+| hermit-jarvis: a frozen session's sandbox is kept, its chat open, a use thaws it | DE0CH/aviary jarvis/hermit/src/reconcile.rs, hermit.rs |
 | the `time-machine` command | session-image/tools/src/timemachine.rs |
 | the frozen state on the web page, the iPhone app and the live push | app/, ios/, router/livepush.go |
 | AWS: managed policy `jarvis4-fabric-freeze` on hermit-scaler (STS federation token `hermit-freeze`; Put/Get/Delete on `frozen/*` of the image bucket) | infra/fabric-aws/freeze-policy.json (applied by hand: `aws iam create-policy` + `attach-user-policy`; the user's inline policies are at AWS's 2048-byte limit) |

@@ -1,0 +1,39 @@
+# Jarvis chat (chat.deyaochen.com, Deyao's): DE0CH/aviary's jarvis/deploy, applied into namespace `services` as
+# flux-services (admin there and nothing else, services.yaml), so nothing aviary holds can touch Jarvis. The source is
+# the commit aviary's deploy run deployed, by its tag deploy-<sha12> (a tag is a shallow clone of one commit; aviary's
+# history is large), and the image tags are its build's (DE0CH/aviary docs/DEPLOY.md: a push to aviary's main is the
+# deploy; this cluster takes changes only from git, DECISIONS 14): the deploy run pushes the tag and writes `tag` and the
+# `images` lines below in one commit with its deploy key. Never aviary's main: a manifest of a newer commit would apply
+# before its images (claude-env lessons/104).
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata: { name: aviary, namespace: flux-system }
+spec:
+  interval: 1m
+  url: https://github.com/DE0CH/aviary
+  ref:
+    tag: "deploy-000000000000"  # written by aviary's deploy run
+  # the chat's folder only (the repository holds much more)
+  ignore: |
+    /*
+    !/jarvis/deploy/
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: { name: chat, namespace: flux-system }
+spec:
+  interval: 1m
+  retryInterval: 30s
+  timeout: 5m
+  sourceRef: { kind: GitRepository, name: aviary }
+  path: ./jarvis/deploy
+  prune: true
+  wait: false
+  targetNamespace: services
+  serviceAccountName: flux-services
+  # written by aviary's deploy run (each image's tag: the last commit that changed its part)
+  images:
+    - { name: pigeon, newName: ghcr.io/de0ch/pigeon, newTag: "deploy" }
+    - { name: magpie, newName: ghcr.io/de0ch/magpie, newTag: "deploy" }
+    - { name: pigeon-app, newName: ghcr.io/de0ch/pigeon-app, newTag: "deploy" }
+    - { name: hermit-jarvis, newName: ghcr.io/de0ch/hermit-jarvis, newTag: "deploy" }

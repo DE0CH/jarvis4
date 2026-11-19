@@ -971,7 +971,7 @@ session paths through the local proxy:
 ## Paired apps (`router/devices.go`)
 
 Deyao's builds of the OpenClaw and Paseo apps pair once and then list and start sessions without a login of their own.
-hermit-jarvis (the aviary harness's hermit, aviary/README.md "Its credential") is admitted on the same routes by its own
+hermit-jarvis (the aviary harness's hermit, DE0CH/aviary jarvis/hermit/README.md "Its credential") is admitted on the same routes by its own
 service token's client id (router env `HERMIT_CLIENT_ID`).
 
 | Path | Does |

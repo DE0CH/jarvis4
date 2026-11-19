@@ -226,7 +226,7 @@ COPY openclaw-claw-harness /usr/local/lib/openclaw-claw-harness
 COPY harness-openclaw.sh /usr/local/bin/harness-openclaw.sh
 COPY openclaw-transcript /usr/local/bin/openclaw-transcript
 RUN chmod +x /usr/local/bin/harness-openclaw.sh /usr/local/bin/openclaw-transcript
-# Claude Code · aviary (harness aviary, DE0CH/jarvis4 aviary/README.md): the session's sandbox runs in DE0CH/aviary's
+# Claude Code · aviary (harness aviary, DE0CH/aviary jarvis/hermit/README.md): the session's sandbox runs in DE0CH/aviary's
 # own sandbox image (its supervisor, keeper, Claude Code and tools), which aviary-sandbox (session-image/tools/, in
 # session-image/Dockerfile) fetches onto the session's
 # volume and enters as root in its own PID + mount namespace, with aviary-gateway (session-image/Dockerfile) as its

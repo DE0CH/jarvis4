@@ -15,7 +15,7 @@
 //!   DELETE /v1/workspaces/{cid}                      caller magpie: its sandbox released, its folders removed
 //!   POST   /v1/conversations/{cid}/sandbox/freeze {until}  caller magpie: paused in place (runsc pause) until then
 //!   POST   /v1/conversations/{cid}/sandbox/thaw     caller magpie: a frozen one resumed (runsc resume)
-//!   GET    /v1/sandbox-tokens/{id}                   caller gateway: the sandbox's liveness (hermit-jarvis, aviary/src/fabric.rs)
+//!   GET    /v1/sandbox-tokens/{id}                   caller gateway: the sandbox's liveness (hermit-jarvis, DE0CH/aviary jarvis/hermit/src/fabric.rs)
 //!   GET    /v1/sandbox/self                          caller gateway, `aviary-sandbox-id`: its descriptor's control hashes
 //!
 //! Its sandbox tokens are hermit's (aviary crates/hermit-api/src/token.rs): `hst1.<kid>.<payload>.<sig>`, the payload
