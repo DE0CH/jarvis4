@@ -1,15 +1,16 @@
 name: fabric-ami
 # Keeps the fabric hosts' AMI (launch template jarvis4-fabric-host, Deyao's AWS account, eu-central-1) and image bucket in
 # step with what k8s/cluster/fabric/hermit.json pins: the fabric image (sandbox.image), the sandboxd release
-# (fabric.sandboxd), the gVisor release (fabric.runsc) and the hosts' disk (fabric.aws.diskGiB), as YYC AI's
-# hermit-ami workflow does (docs/PLAN-fabric.md). Runs when one of them changed against the parent commit, with the
-# fabric scripts of the aviary commit k8s/cluster/fabric/kustomization.yaml pins for hermit: `infra.sh publish-image`
-# puts the fabric image in the bucket (hermit starts sandboxes on a new image only once it is there); only when the
-# AMI's sandboxd, runsc or disk differ from the pins (or on a forced run) does `sync` bake on a t3.large builder, then
-# `check` must pass. The AMI's baked image is a warm cache, never awaited: a host fetches the pinned one from the
-# bucket. images.yml's fabric-pin job dispatches it after each new pin: its pin commits say [skip ci], which no push
+# (fabric.sandboxd), the gVisor release (fabric.runsc) and the hosts' disk (fabric.aws.diskGiB), as aviary's deploy run
+# does for YYC AI's hosts (docs/PLAN-fabric.md). Runs when one of them changed against the parent commit, with
+# `fabric-aws` built from the aviary commit k8s/cluster/fabric/kustomization.yaml pins for hermit (aviary's deploy run
+# writes the pin) and that commit's fabric/host, which the bake copies to its builder: `fabric-aws publish-image` puts
+# the fabric image in the bucket (hermit starts sandboxes on a new image only once it is there); only when the AMI's
+# sandboxd, runsc or disk differ from the pins (or on a forced run) does `sync` bake on a t3.large builder (a killed
+# earlier bake's builder goes first; it waits the snapshot out), then `check` must pass. The AMI's baked image is a
+# warm cache, never awaited: a host fetches the pinned one from the bucket. images.yml's fabric-pin job dispatches it after each new pin: its pin commits say [skip ci], which no push
 # trigger here would see.
-# Secrets: FABRIC_AMI_AWS_ACCESS_KEY_ID/_SECRET_ACCESS_KEY (IAM user hermit-ami-ci, aviary infra.sh ci-iam). The fabric
+# Secrets: FABRIC_AMI_AWS_ACCESS_KEY_ID/_SECRET_ACCESS_KEY (IAM user hermit-ami-ci, `fabric-aws ci-iam`). The fabric
 # image is public: no registry login.
 on:
   push:
@@ -60,6 +61,14 @@ jobs:
           git clone -q --filter=blob:none https://github.com/DE0CH/aviary "$RUNNER_TEMP/aviary"
           git -C "$RUNNER_TEMP/aviary" checkout -q "$AVIARY"
           git -C "$RUNNER_TEMP/aviary" log -1 --format='aviary %H %s'
+      - name: fabric-aws, built from the pinned aviary commit (crates/fabric-aws)
+        if: steps.pins.outputs.run == '1'
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/aviary"
+          rustup toolchain install > /dev/null
+          cargo build --locked --release -q -p fabric-aws
+          sudo install -m755 target/release/fabric-aws /usr/local/bin/fabric-aws
       - name: crane
         if: steps.pins.outputs.run == '1'
         run: curl -fsSL https://github.com/google/go-containerregistry/releases/download/v0.20.6/go-containerregistry_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin crane
@@ -72,18 +81,18 @@ jobs:
         run: |
           set -euo pipefail
           cfg=k8s/cluster/fabric/hermit.json
-          a="$RUNNER_TEMP/aviary/fabric/aws/infra.sh"
-          bash "$a" --config "$cfg" publish-image
+          host="$RUNNER_TEMP/aviary/fabric/host"
+          fabric-aws --config "$cfg" publish-image
           # the AMI holds what changes rarely: sandboxd, runsc and the disk. The image is the bucket's (a host fetches
           # a new one in about 2 min), so a new image alone bakes nothing: every images build pins one, and a bake
           # per pin failed each night of 2026-11-17
-          cur=$(bash "$a" --config "$cfg" current)
+          cur=$(fabric-aws --config "$cfg" current)
           want="sandboxd=$(jq -r .fabric.sandboxd "$cfg") runsc=$(jq -r .fabric.runsc "$cfg") disk=$(jq -r .fabric.aws.diskGiB "$cfg")"
           have=$(grep -o 'sandboxd=[^ ]* runsc=[^ ]* disk=[^ ]*' <<<"$cur" || true)
           echo "host pins: AMI has '$have', the pins are '$want'"
           if [ -n "$FORCE" ] || [ "$have" != "$want" ]; then
-            bash "$a" --config "$cfg" sync
-            bash "$a" --config "$cfg" check
+            fabric-aws --config "$cfg" sync --host-dir "$host" ${FORCE:+--force}
+            fabric-aws --config "$cfg" check
           fi
           echo "### fabric host AMI" >> "$GITHUB_STEP_SUMMARY"
-          bash "$a" --config "$cfg" current | tee -a "$GITHUB_STEP_SUMMARY"
+          fabric-aws --config "$cfg" current | tee -a "$GITHUB_STEP_SUMMARY"
