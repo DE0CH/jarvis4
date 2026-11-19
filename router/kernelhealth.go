@@ -109,18 +109,20 @@ func (r *Router) kernelProblems() ([]string, map[string]copyHealth) {
 			want, ch.Roster = &d, d.ID()
 		}
 		copies[c] = ch
+		// each probe writes into its copy's own Components, never through `copies`: the loop keeps adding copies to
+		// that map while earlier probes run (2026-11-19: "concurrent map read and map write" ended a router)
 		for _, dep := range rosterTargets(c) {
 			wg.Add(1)
-			go func(c, dep string, want *sig.Doc) {
+			go func(comps map[string]string, dep string, want *sig.Doc) {
 				defer wg.Done()
 				st := r.kernelRosterHeld(dep, want)
 				if st == "" {
 					st = "ok"
 				}
 				mu.Lock()
-				copies[c].Components[dep] = st
+				comps[dep] = st
 				mu.Unlock()
-			}(c, dep, want)
+			}(ch.Components, dep, want)
 		}
 	}
 	wg.Wait()
