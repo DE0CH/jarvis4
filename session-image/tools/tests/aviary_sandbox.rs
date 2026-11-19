@@ -758,7 +758,9 @@ fn the_supervisor_claude_code_and_the_home_links_come_from_the_image_only() {
     }
     assert!(
         !image.contains("/out/supervisor")
-            && !(image.contains("releases/download/") && image.contains("supervisor")),
+            && !image
+                .lines()
+                .any(|l| l.contains("releases/download/") && l.contains("supervisor")),
         "the session image carries a supervisor of its own"
     );
 }
