@@ -16,7 +16,6 @@ Status (2026-11-19): live. New session offers the runner `fabric`; the kernel re
 - the AMI bake: aviary `fabric-aws` (Rust, replaces `infra.sh`, aviary `claude/fabric-aws-rust`) waits the snapshot
   out and clears a killed bake's builder; `fabric-ami.yml` and YYC AI's `hermit-ami.yml` switch to it once an aviary
   release holds it. Until then a sandboxd pin needs the launch template set by hand
-- YYC's live dashboard does not draw the `frozen` state (DE0CH/yyc)
 
 What was built (2026-11-17/18):
 
