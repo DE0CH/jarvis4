@@ -1,0 +1,16 @@
+# The JuiceFS CSI driver (docs/PLAN-fabric.md "Storage"): the fabric hermit's /jfs is a static PV of the JuiceFS volume
+# jarvis4-fabric (k8s/cluster/fabric/juicefs.yaml), mounted by the driver's mount pods, as YYC AI's hermit has it
+# (DE0CH/yyc-code news-stream/deploy/clusters/talos/addons/juicefs-csi.values.yaml: the same chart and values, less
+# Talos's read-only /etc and YYC's node selector). The release is vendored and pinned: `helm template juicefs-csi-driver
+# juicefs/juicefs-csi-driver --version 0.33.0 -n kube-system -f values.yaml` (values.yaml beside it), images by digest
+# below; an upgrade is a new rendered file and a push.
+#   juicefs-csi-driver-0.33.0.yaml   sha256 74619d3abd61e931cba4b0ba9c0fe5ec8262c777e2ec16ccfdd8d2b89ce054ff
+# The mount pods' image is the ConfigMap's juicedata/mount:ce-v1.4.1 (the fabric hosts' JuiceFS), named by tag: the
+# driver reads the version from it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: [juicefs-csi-driver-0.33.0.yaml]
+images:
+  - { name: juicedata/juicefs-csi-driver, newTag: v0.33.0, digest: sha256:f918e7331c055ec7efb5a13ff4f81def57620defb003f7379c28fa97822ff44d }
+  - { name: registry.k8s.io/sig-storage/csi-node-driver-registrar, newTag: v2.9.0, digest: sha256:cd21e19cd8bbd5bc56f1b4f1398a436e7897da2995d6d036c9729be3f4e456e6 }
+  - { name: registry.k8s.io/sig-storage/livenessprobe, newTag: v2.12.0, digest: sha256:5baeb4a6d7d517434292758928bb33efc6397368cbb48c8a4cf29496abf4e987 }

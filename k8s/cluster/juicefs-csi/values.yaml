@@ -1,0 +1,21 @@
+# helm values of juicefs-csi-driver-0.33.0.yaml (kustomization.yaml says how it is rendered)
+mountMode: mountpod
+controller: {enabled: false}
+dashboard: {enabled: false}
+webhook: {certManager: {enabled: false}}
+validatingWebhook: {enabled: false}
+defaultMountImage: {ce: "juicedata/mount:ce-v1.4.1"}
+globalConfig:
+  enabled: true
+  manageByHelm: true
+  mountPodPatch:
+    - resources:
+        requests: {cpu: 50m, memory: 192Mi}
+        limits: {memory: 192Mi}
+node:
+  enabled: true
+  fsShareMount: true
+  mountPodNonPreempting: true
+  resources:
+    requests: {cpu: 20m, memory: 384Mi}
+    limits: {memory: 384Mi}

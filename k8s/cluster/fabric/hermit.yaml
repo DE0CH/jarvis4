@@ -2,10 +2,7 @@
 # kernel's spawner (caller magpie and admin), the router (magpie, tools) and hermit-jarvis (gateway) are its callers;
 # no chat site. Configuration: ConfigMap hermit-config (hermit.json, the catalogue, the prompt files, which a fabric
 # sandbox never reads), env from Secret hermit (infra/router-secrets.py --part fabric). /jfs: the JuiceFS volume
-# jarvis4-fabric, mounted by the privileged sidecar `jfs` (FUSE; this cluster has no JuiceFS CSI driver) into an
-# emptyDir hermit sees with HostToContainer propagation. The sidecar is a native sidecar (an init container with
-# restartPolicy Always) whose startup probe waits for the mount: hermit's container then starts with /jfs in place. The sidecar also formats the volume on first start
-# (`juicefs format --no-update` never rewrites an existing volume).
+# jarvis4-fabric, the PVC hermit-jfs (juicefs.yaml: the JuiceFS CSI driver mounts it, as for YYC AI's hermit).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -29,38 +26,6 @@ spec:
       topologySpreadConstraints:
         - { maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway,
             labelSelector: { matchLabels: { app: hermit } }, matchLabelKeys: [pod-template-hash] }
-      initContainers:
-        - name: jfs
-          image: juicedata/mount:ce-v1.4.1@sha256:ab99388a397fe52575fdeb84a9e017c3c594a6b07d63966cd4805bbf6f172673
-          restartPolicy: Always
-          # hermit's container starts only once the volume is mounted (and keeps it: a bind made at its start holds
-          # the FUSE mount; a later remount reaches it through HostToContainer)
-          startupProbe: { exec: { command: [sh, -c, 'grep -q " /jfs fuse" /proc/mounts && test -d /jfs/ws'] }, periodSeconds: 2, failureThreshold: 150 }
-          command: ["/bin/sh", "-c"]
-          args:
-            - |
-              set -e
-              juicefs format --no-update --storage s3 --bucket "$JFS_BUCKET" --access-key "$JFS_ACCESS_KEY" \
-                --secret-key "$JFS_SECRET_KEY" "$HERMIT_JUICEFS_META_URL" jarvis4-fabric
-              export META_PASSWORD="$HERMIT_JUICEFS_META_PASSWORD"
-              trap 'umount -l /jfs 2>/dev/null; exit 0' TERM INT
-              juicefs mount --no-usage-report --all-squash 1000:1000 --cache-size 0 --open-cache 0 \
-                "$HERMIT_JUICEFS_META_URL" /jfs &
-              pid=$!
-              # the conversations' workspaces' folder (hermit makes ws/<id> in it, not it)
-              # (the image has no mountpoint(1))
-              until grep -q " /jfs fuse" /proc/mounts || ! kill -0 "$pid" 2>/dev/null; do sleep 1; done
-              mkdir -p /jfs/ws
-              wait "$pid"
-          env:
-            - { name: META_PASSWORD, valueFrom: { secretKeyRef: { name: hermit, key: HERMIT_JUICEFS_META_PASSWORD } } }
-          envFrom: [{ secretRef: { name: hermit } }]
-          resources:
-            requests: { cpu: 20m, memory: 128Mi }
-            limits: { memory: 256Mi }
-          securityContext: { privileged: true }
-          volumeMounts:
-            - { name: jfs, mountPath: /jfs, mountPropagation: Bidirectional }
       containers:
         - name: hermit
           image: hermit
@@ -89,13 +54,13 @@ spec:
           volumeMounts:
             - { name: config, mountPath: /etc/hermit/config, readOnly: true }
             - { name: catalogue, mountPath: /etc/hermit/catalogue, readOnly: true }
-            - { name: jfs, mountPath: /jfs, mountPropagation: HostToContainer }
+            - { name: jfs, mountPath: /jfs }
             - { name: tmp, mountPath: /tmp }
       volumes:
         - { name: config, configMap: { name: hermit-config } }
         - name: catalogue
           configMap: { name: hermit-config, items: [{ key: catalogue.json, path: catalogue.json }] }
-        - { name: jfs, emptyDir: { sizeLimit: 16Mi } }
+        - { name: jfs, persistentVolumeClaim: { claimName: hermit-jfs } }
         - { name: tmp, emptyDir: { sizeLimit: 256Mi } }
 ---
 apiVersion: v1

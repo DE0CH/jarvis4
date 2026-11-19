@@ -5,6 +5,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - db.yaml
+  - juicefs.yaml
   - hermit.yaml
   - secrets
 images:

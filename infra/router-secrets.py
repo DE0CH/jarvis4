@@ -60,8 +60,14 @@ manifest so it restarts with the new Secret. SRC is `env:VAR` (default `env:KEY`
                  FABRIC_HERMIT_MAGPIE_TOKEN (router/fabricrunner.go)
   --part fabric  k8s/cluster/fabric/secrets/hermit.enc.yaml, Secret hermit in jarvis4-fabric — the fabric hermit's env
                  (HERMIT_*: database, token keys, its callers' tokens, the fabric's TLS, the AWS scaler's key, JuiceFS)
-                 and the JuiceFS bucket for its sidecar (JFS_BUCKET, JFS_ACCESS_KEY, JFS_SECRET_KEY)
+                 (JFS_BUCKET, JFS_ACCESS_KEY, JFS_SECRET_KEY are left from the old JuiceFS sidecar: the next rewrite of
+                 the part leaves them out; the CSI driver mounts /jfs, --part fabric-jfs)
   --part fabric-db-hermit / fabric-db-jfs  basic-auth Secrets (username, password) of fabric-db's two roles
+  --part fabric-jfs  k8s/cluster/fabric/secrets/hermit-juicefs.enc.yaml, Secret hermit-juicefs in jarvis4-fabric — the
+                 JuiceFS CSI driver's secret of the PV hermit-jfs (k8s/cluster/fabric/juicefs.yaml): name=jarvis4-fabric,
+                 metaurl (postgres://jfs@10.77.0.4:5432/jfs?sslmode=require, no password) and
+                 envs={"META_PASSWORD": FABRIC_JFS_META_PASSWORD} (JSON). No storage or bucket: the volume is formatted,
+                 so the driver runs `juicefs format --no-update`, which never rewrites it
 Only for secrets that can't reach a code push (Deyao, 2026-10-09); the pods get them as env (envFrom) or files. Prints
 names only, never a value."""
 import hashlib, json, os, re, subprocess, sys, tempfile, urllib.parse
@@ -75,7 +81,8 @@ BOXES = {  # box → (age recipient file, secrets dir, {part: manifest path unde
         "icloud-index": "services/icloud-index/icloud-index.yaml",
         "icloud-session": "services/icloud-index/icloud-index.yaml",
         "db": RT, "objects": RT, "seal": RT, "wg-b": RT, "aws": RT, "wg-aws": RT,
-        "router-fabric": RT, "fabric": "fabric/hermit.yaml", "fabric-db-hermit": None, "fabric-db-jfs": None}),
+        "router-fabric": RT, "fabric": "fabric/hermit.yaml", "fabric-db-hermit": None, "fabric-db-jfs": None,
+        "fabric-jfs": None}),
 }
 RNS = "jarvis4-router"
 PARTS = {  # part → (file, Secret name, annotation, namespace)
@@ -113,8 +120,9 @@ PARTS |= {  # the fabric (docs/PLAN-fabric.md): its parts live in k8s/cluster/fa
     "fabric": ("hermit.enc.yaml", "hermit", "jarvis2/secrets-rev-fabric", FNS),
     "fabric-db-hermit": ("fabric-db-hermit.enc.yaml", "fabric-db-hermit", None, FNS),
     "fabric-db-jfs": ("fabric-db-jfs.enc.yaml", "fabric-db-jfs", None, FNS),
+    "fabric-jfs": ("hermit-juicefs.enc.yaml", "hermit-juicefs", None, FNS),  # the CSI driver's, read at each mount
 }
-PART_DIRS |= {p: "k8s/cluster/fabric/secrets" for p in ("fabric", "fabric-db-hermit", "fabric-db-jfs")}
+PART_DIRS |= {p: "k8s/cluster/fabric/secrets" for p in ("fabric", "fabric-db-hermit", "fabric-db-jfs", "fabric-jfs")}
 SECRET_TYPES = {"postgres-app": "kubernetes.io/basic-auth", "fabric-db-hermit": "kubernetes.io/basic-auth",
                 "fabric-db-jfs": "kubernetes.io/basic-auth"}  # CloudNativePG's initdb secret is basic-auth
 

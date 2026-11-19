@@ -1,7 +1,7 @@
-# The fabric hermit's namespace (docs/PLAN-fabric.md): hermit, its database. Privileged: hermit's JuiceFS sidecar
-# mounts /jfs with FUSE (this cluster has no JuiceFS CSI driver).
+# The fabric hermit's namespace (docs/PLAN-fabric.md): hermit, its database. Baseline: nothing here needs privileges
+# (hermit's /jfs is mounted by the JuiceFS CSI driver's pods in kube-system).
 apiVersion: v1
 kind: Namespace
 metadata:
   name: jarvis4-fabric
-  labels: { pod-security.kubernetes.io/enforce: privileged, jarvis2/ns: fabric }
+  labels: { pod-security.kubernetes.io/enforce: baseline, jarvis2/ns: fabric }
