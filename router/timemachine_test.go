@@ -151,3 +151,39 @@ func TestFrozenVerdict(t *testing.T) {
 		}
 	})
 }
+
+// a frozen session's final snapshot (its pause, its destroy): the machine answers nothing while frozen, so the router
+// thaws it first and asks it once it reports again (2026-11-19: "silent since", the snapshot never asked for)
+func TestAFrozenSessionIsThawedForItsFinalSnapshot(t *testing.T) {
+	rg := newRig(t)
+	captureDM(t)
+	rg.r.cfg.SnapshotStall = 200 * time.Millisecond
+	old := silentAfter
+	silentAfter = 2 * time.Second
+	t.Cleanup(func() { silentAfter = old })
+	f := &fakeFabricHermit{state: "frozen"}
+	f.install(t)
+	runningM2(rg, false)
+	rg.r.st.Do(func(d *persisted) {
+		s := d.Sessions["s1"]
+		s.State, s.Runner, s.Fabric = "frozen", "fabric", &FabricLine{Conversation: "c-s1", Machine: "m2"}
+		s.Live.LastReport = time.Now().Add(-20 * time.Minute) // frozen since: no report
+	})
+	// the machine reports again once thawed
+	go func() {
+		for !f.saw("POST /v1/conversations/c-s1/sandbox/thaw") {
+			time.Sleep(10 * time.Millisecond)
+		}
+		rg.r.st.Do(func(d *persisted) { d.Sessions["s1"].Live.LastReport = time.Now() })
+	}()
+	err := rg.r.lastSnapshotThen("s1", "m2", nil, true)
+	if !f.saw("POST /v1/conversations/c-s1/sandbox/thaw") {
+		t.Fatalf("not thawed: %v (calls %v)", err, f.calls)
+	}
+	if err != nil && strings.Contains(err.Error(), "silent since") {
+		t.Fatalf("not asked for its snapshot: %v", err)
+	}
+	if st, _ := rg.r.sessionState("s1"); st != "started" {
+		t.Fatalf("state %q", st)
+	}
+}

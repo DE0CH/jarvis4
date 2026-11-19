@@ -1587,6 +1587,20 @@ func (r *Router) lastSnapshotThen(id, machine string, stopSent func(), destroyin
 		r.lcNote(id, machine, "the machine's final snapshot is already here")
 		return nil // it already sent its final one (a machine signs only one: a later ask gets the same)
 	}
+	// a frozen fabric machine answers nothing (timemachine.go): it is thawed first, then its first report after the
+	// thaw is awaited, so the silence check below sees it running (2026-11-19: a frozen session's destroy failed
+	// with "silent since", its snapshot never asked for)
+	if st, _ := r.sessionState(id); st == "frozen" {
+		thawed := time.Now()
+		if err := r.thaw(id, "its final snapshot"); err != nil {
+			r.lcNote(id, machine, "its frozen sandbox could not be thawed: "+err.Error())
+			return fmt.Errorf("its frozen sandbox could not be thawed for its snapshot: %v", err)
+		}
+		r.lcNote(id, machine, "thawed its frozen sandbox for the final snapshot")
+		for deadline := time.Now().Add(silentAfter); r.lastReport(machine).Before(thawed) && time.Now().Before(deadline); {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
 	// a machine that has its secrets is seconds from booted (repos, then its first report): wait for it, or a pause
 	// right after a start would leave its successor with no state at all (its cert names the snapshot this machine
 	// signs, and only that one: vouch.go)

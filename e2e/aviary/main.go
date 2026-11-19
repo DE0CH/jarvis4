@@ -283,6 +283,10 @@ func reply(req map[string]any) (kind string, content []map[string]any) {
 				"input": map[string]any{"command": "time-machine 20s", "description": "e2e: wait 20 s frozen"}}}
 		}
 		return "wakeup", []map[string]any{{"type": "text", "text": "E2E-WOKE " + token}}
+	case strings.Contains(last, "E2E-FREEZE "+token):
+		// a fabric session that waits frozen for an hour: its destroy (no force) must thaw it for its final snapshot
+		return "tool", []map[string]any{{"type": "tool_use", "id": "toolu_e2e_freeze_" + token, "name": "Bash",
+			"input": map[string]any{"command": "time-machine 1h", "description": "e2e: wait an hour frozen"}}}
 	case strings.Contains(last, "E2E-CHAT "+token):
 		return "chat", []map[string]any{{"type": "text", "text": "E2E-CHATTED " + token}}
 	case strings.Contains(last, "E2E-RUN "+token):
@@ -939,13 +943,30 @@ func main() {
 		return readChat(deniedID).DeletedAt != nil
 	})
 
-	step("destroy: archived, its source burned")
-	for _, id := range []string{created.ID, chatSession} {
-		must("POST", router+"/api/sessions/"+id+"/destroy?force=1", map[string]any{}, nil)
+	// a fabric session destroyed while frozen: no force, so its final snapshot must arrive (2026-11-19: a frozen
+	// machine answered nothing and the destroy failed with "silent since")
+	chatForce := "?force=1"
+	if runner == "fabric" {
+		step("a frozen fabric session's destroy: thawed for its final snapshot, no force needed")
+		body := map[string]any{"clientMessageId": "e2e-freeze-" + token, "text": "E2E-FREEZE " + token, "images": []any{}, "files": []any{}}
+		if code, b := call("POST", os.Getenv("E2E_MAGPIE")+"/v1/conversations/"+chatID+"/turns", body, asPigeon()...); code/100 != 2 {
+			log.Fatalf("FAIL: magpie answered %d to the chat's second message: %s", code, b)
+		}
+		waitFor("the chat's session frozen in the time machine", 3*time.Minute, func() bool {
+			s, _ := readSession(chatSession)
+			return s != nil && s.State == "frozen"
+		})
+		chatForce = ""
 	}
+	step("destroy: archived, its source burned")
+	must("POST", router+"/api/sessions/"+created.ID+"/destroy?force=1", map[string]any{}, nil)
+	must("POST", router+"/api/sessions/"+chatSession+"/destroy"+chatForce, map[string]any{}, nil)
 	waitFor("the destroy", 15*time.Minute, func() bool {
 		s, burned := readSession(created.ID)
 		c, cburned := readSession(chatSession)
+		if c != nil && c.State == "failed" {
+			log.Fatalf("FAIL: the chat's session's destroy failed: %s", c.Error)
+		}
 		return s == nil && burned && c == nil && cburned
 	})
 	fmt.Println("e2e aviary: ok")
