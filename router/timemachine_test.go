@@ -153,7 +153,9 @@ func TestFrozenVerdict(t *testing.T) {
 }
 
 // a frozen session's final snapshot (its pause, its destroy): the machine answers nothing while frozen, so the router
-// thaws it first and asks it once it reports again (2026-11-19: "silent since", the snapshot never asked for)
+// thaws it first and asks it once it reports again (2026-11-19: "silent since", the snapshot never asked for). Through
+// Pause, which sets `pausing` before it asks: the frozen record is the time machine's, not the state (the fabric
+// replica, the same day)
 func TestAFrozenSessionIsThawedForItsFinalSnapshot(t *testing.T) {
 	rg := newRig(t)
 	captureDM(t)
@@ -167,6 +169,7 @@ func TestAFrozenSessionIsThawedForItsFinalSnapshot(t *testing.T) {
 	rg.r.st.Do(func(d *persisted) {
 		s := d.Sessions["s1"]
 		s.State, s.Runner, s.Fabric = "frozen", "fabric", &FabricLine{Conversation: "c-s1", Machine: "m2"}
+		s.TimeMachine = &TimeMachine{Since: time.Now().Add(-20 * time.Minute)}
 		s.Live.LastReport = time.Now().Add(-20 * time.Minute) // frozen since: no report
 	})
 	// the machine reports again once thawed
@@ -176,14 +179,18 @@ func TestAFrozenSessionIsThawedForItsFinalSnapshot(t *testing.T) {
 		}
 		rg.r.st.Do(func(d *persisted) { d.Sessions["s1"].Live.LastReport = time.Now() })
 	}()
-	err := rg.r.lastSnapshotThen("s1", "m2", nil, true)
+	if err := rg.r.Pause("s1"); err != nil {
+		t.Fatal(err)
+	}
+	// no snapshot comes from the test's machine: the pause fails at the stall, after asking for it
+	if err := rg.r.waitActionEnd("s1", "failed"); err != nil {
+		t.Fatal(err)
+	}
 	if !f.saw("POST /v1/conversations/c-s1/sandbox/thaw") {
-		t.Fatalf("not thawed: %v (calls %v)", err, f.calls)
+		t.Fatalf("not thawed (calls %v)", f.calls)
 	}
-	if err != nil && strings.Contains(err.Error(), "silent since") {
-		t.Fatalf("not asked for its snapshot: %v", err)
-	}
-	if st, _ := rg.r.sessionState("s1"); st != "started" {
-		t.Fatalf("state %q", st)
+	if s := sessionS1(rg); strings.Contains(s.SnapshotFailed, "silent since") || s.TimeMachine.Back == nil ||
+		s.TimeMachine.Why != "its final snapshot" {
+		t.Fatalf("not asked for its snapshot after the thaw: %q %+v", s.SnapshotFailed, s.TimeMachine)
 	}
 }

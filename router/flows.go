@@ -1590,12 +1590,13 @@ func (r *Router) lastSnapshotThen(id, machine string, stopSent func(), destroyin
 	// a frozen fabric machine answers nothing (timemachine.go): it is thawed first, then its first report after the
 	// thaw is awaited, so the silence check below sees it running (2026-11-19: a frozen session's destroy failed
 	// with "silent since", its snapshot never asked for)
-	if st, _ := r.sessionState(id); st == "frozen" {
+	if conv, frozen := r.frozenConversation(id); frozen {
 		thawed := time.Now()
-		if err := r.thaw(id, "its final snapshot"); err != nil {
+		if err := thawSandbox(conv); err != nil {
 			r.lcNote(id, machine, "its frozen sandbox could not be thawed: "+err.Error())
 			return fmt.Errorf("its frozen sandbox could not be thawed for its snapshot: %v", err)
 		}
+		r.back(id, "its final snapshot")
 		r.lcNote(id, machine, "thawed its frozen sandbox for the final snapshot")
 		for deadline := time.Now().Add(silentAfter); r.lastReport(machine).Before(thawed) && time.Now().Before(deadline); {
 			time.Sleep(100 * time.Millisecond)

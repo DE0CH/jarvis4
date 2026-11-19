@@ -160,6 +160,27 @@ func (r *Router) thaw(sid, why string) error {
 	if state != "frozen" {
 		return nil
 	}
+	log.Printf("[time-machine] %s thawing (%s)", sid, why)
+	if err := thawSandbox(conv); err != nil {
+		return err
+	}
+	r.back(sid, why)
+	return nil
+}
+
+// frozenConversation: a fabric session the time machine has not brought back, and its conversation. Its state may
+// have moved on from `frozen` (a pause or destroy under way sets `pausing` first), its record has not.
+func (r *Router) frozenConversation(sid string) (conv string, frozen bool) {
+	r.st.Read(func(p *persisted) {
+		if s := p.Sessions[sid]; s != nil && s.Fabric != nil && s.TimeMachine != nil && s.TimeMachine.Back == nil {
+			conv, frozen = s.Fabric.Conversation, true
+		}
+	})
+	return
+}
+
+// thawSandbox: hermit resumes the conversation's frozen sandbox; it returns once hermit has it ready
+func thawSandbox(conv string) error {
 	code, b, err := fabricHermitCall("POST", "/v1/conversations/"+conv+"/sandbox/thaw", nil)
 	if err != nil {
 		return err
@@ -167,12 +188,10 @@ func (r *Router) thaw(sid, why string) error {
 	if code/100 != 2 {
 		return fmt.Errorf("the fabric would not thaw it: HTTP %d %s", code, strings.TrimSpace(string(b)))
 	}
-	log.Printf("[time-machine] %s thawing (%s)", sid, why)
 	deadline := time.Now().Add(thawWaitMax)
 	for {
 		st, err := hermitSandboxState(conv)
 		if err == nil && st == "ready" {
-			r.back(sid, why)
 			return nil
 		}
 		if err == nil && st == "frozen" { // a freeze that finished after the first thaw: ask again
@@ -188,15 +207,22 @@ func (r *Router) thaw(sid, why string) error {
 	}
 }
 
-// back: the frozen session runs again
+// back: the frozen session runs again: its time machine says why, and a session still `frozen` is `started` (one a
+// pause or destroy has moved on keeps that state)
 func (r *Router) back(sid, why string) {
 	now := time.Now().UTC()
 	r.st.Do(func(p *persisted) {
-		if s := p.Sessions[sid]; s != nil && s.State == "frozen" {
+		s := p.Sessions[sid]
+		if s == nil {
+			return
+		}
+		if s.State == "frozen" {
 			s.State = "started"
 			if s.TimeMachine == nil {
 				s.TimeMachine = &TimeMachine{Since: now}
 			}
+		}
+		if s.TimeMachine != nil && s.TimeMachine.Back == nil {
 			s.TimeMachine.Why, s.TimeMachine.Back = why, &now
 		}
 	})
