@@ -581,7 +581,7 @@ fn serving_roles_skips_a_role_the_serving_copy_lacks() {
     };
     let cur = crate::roster::RosterCurrent {
         copy: "blue".into(),
-        payload: ro.payload().unwrap(),
+        payload: ro.payload().expect("payload"),
         sig: String::new(),
         at: GoTime::default(),
         results: Default::default(),
