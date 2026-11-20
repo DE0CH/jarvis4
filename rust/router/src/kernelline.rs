@@ -175,10 +175,12 @@ pub fn must_succ(d: &SDoc) -> Object {
         .unwrap_or_else(|| Object(String::new()))
 }
 
-/// where a machine runs, by its id (an EC2 instance's is i-…)
+/// where a machine runs, by its id (an EC2 instance's is i-…, a fabric sandbox's x<32 hex>)
 pub fn runner_name(machine: &str) -> &'static str {
     if crate::awsrunner::is_aws_machine(machine) {
         "AWS"
+    } else if crate::fabricrunner::is_fabric_machine(machine) {
+        "the fabric"
     } else {
         "Fly"
     }
@@ -510,6 +512,8 @@ impl Router {
         let spawned = Instant::now();
         if crate::awsrunner::is_aws_machine(&id) {
             op.note(&id, &format!("the spawner launched EC2 instance {id} ({region}); waiting for its keys (the machine writes them to the instance's serial console once the session image runs)"));
+        } else if crate::fabricrunner::is_fabric_machine(&id) {
+            op.note(&id, &format!("the spawner got fabric sandbox {id} from the fabric hermit; waiting for its keys (the machine writes them to the sandbox's console once the session image runs)"));
         } else {
             op.note(
                 &id,

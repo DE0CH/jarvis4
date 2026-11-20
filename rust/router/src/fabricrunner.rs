@@ -70,6 +70,15 @@ pub fn fabric_enabled() -> bool {
 /// the region a fabric spawn names (the spawner wants one; hermit's hosts are where its config says)
 pub const FABRIC_REGION: &str = "fra";
 
+/// a fabric sandbox's machine id, "x" and its UUID's 32 hex digits (kernel/spawner fabricMachineID)
+pub fn is_fabric_machine(id: &str) -> bool {
+    id.len() == 33 && id.starts_with('x') && id[1..].bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// what one fabric sandbox is (k8s/cluster/fabric/hermit.json sandbox.cpu and memory), whatever the session's size:
+/// hermit starts every sandbox alike
+pub const FABRIC_GUEST: &str = "1 vCPU · 3.5 GB";
+
 pub fn uuid_text(b: &[u8]) -> String {
     let h = hex::encode(b);
     format!(
@@ -466,6 +475,20 @@ mod tests {
             b64.encode(&p),
             b64.encode(sig.to_bytes())
         )
+    }
+
+    /// a fabric session's log names the fabric, not Fly (Deyao, 2026-11-20: "still says fly machine")
+    #[test]
+    fn a_fabric_machine_is_named_the_fabric() {
+        for (id, want) in [
+            ("x01a1f71ecb6d71d6b5be4c4e404255df", "the fabric"),
+            ("i-0123456789abcdef0", "AWS"),
+            ("683dde7ea60478", "Fly"),
+            ("x01a1f71e", "Fly"),
+            ("xzz1f71ecb6d71d6b5be4c4e404255df0", "Fly"),
+        ] {
+            assert_eq!(crate::kernelline::runner_name(id), want, "{id}");
+        }
     }
 
     #[test]

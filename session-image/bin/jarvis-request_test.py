@@ -55,6 +55,22 @@ assert jr.block(["q5"], since, card={"title": jr.card_title("add-repo", ["DE0CH/
 assert bodies[0] == {"title": "Deploy key for DE0CH/aviary", "why": "push", "label": "Inbox request",
                      "marker": "(Inbox q5)"}, bodies
 assert calls[-1] == ("DELETE", "/v1/person-waits/inbox-q5?outcome=denied"), calls
+# the outcome is printed only once the wait has ended: the supervisor answers the end when the chat's card is settled,
+# and a result carrying the marker before that was never counted as the AI's read (2026-11-20: "Not read yet" stayed)
+class Out:
+    def write(self, t):
+        if t.strip():
+            calls.append(("PRINT", t.strip()))
+    def flush(self): pass
+calls.clear()
+since = time.time_ns()
+threading.Timer(1.0, lambda: put("q7", "approved", time.time_ns())).start()
+real, sys.stdout = sys.stdout, Out()
+try:
+    assert jr.block(["q7"], since, card={"title": "x", "why": ""}) == 0
+finally:
+    sys.stdout = real
+assert calls.index(("DELETE", "/v1/person-waits/inbox-q7?outcome=approved")) < calls.index(("PRINT", "APPROVED: q7")), calls
 assert jr.filing_outcome(["approved", "approved"]) == "approved"
 assert jr.filing_outcome(["approved", "lapsed"]) == "lapsed"
 assert jr.filing_outcome([]) is None
