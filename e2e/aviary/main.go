@@ -294,7 +294,8 @@ func reply(req map[string]any) (kind string, content []map[string]any) {
 	case strings.Contains(last, "E2E-SILENT "+token):
 		// aviary's supervisor stopped 150 s, as a final snapshot stops it (supervisor.rs freeze_session): past the
 		// fabric hermit's 90 s silence and two of its janitor passes, so a hermit that judges silence releases it
-		cmd := "(setsid sh -c 'sleep 3; pkill -STOP -x supervisor; sleep 150; pkill -CONT -x supervisor' > /dev/null 2>&1 &); echo E2E-SILENCED-" + token
+		// the supervisor runs as the sandbox's root (aviary's image), so the tool's user stops it through sudo
+		cmd := "sudo -n true && (setsid sh -c 'sleep 3; sudo -n pkill -STOP -x supervisor; sleep 150; sudo -n pkill -CONT -x supervisor' > /dev/null 2>&1 &) && echo E2E-SILENCED-" + token
 		return "tool", []map[string]any{{"type": "tool_use", "id": "toolu_e2e_silent_" + token, "name": "Bash",
 			"input": map[string]any{"command": cmd, "description": "e2e: stop the supervisor 150 s"}}}
 	case strings.Contains(last, "E2E-FREEZE "+token):
