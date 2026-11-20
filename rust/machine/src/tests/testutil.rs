@@ -112,6 +112,9 @@ fn reset_seams() {
     *crate::deliver::TEST_CHANNEL
         .write()
         .unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::deliver::TEST_AVIARY_GATEWAY
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = None;
     *crate::claudelogin::TEST_STARTS
         .lock()
         .unwrap_or_else(|e| e.into_inner()) = None;

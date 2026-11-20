@@ -459,11 +459,16 @@ func (r *Router) lcPollOnce(run *lcRun) {
 	logsOff := run.logsOff
 	run.mu.Unlock()
 	h := &lcHandle{r: r, run: run}
+	runner := r.runnerOfSession(run.op.Session)
 	for _, m := range machines {
-		if isAWSMachine(m) {
+		switch runner {
+		case "aws":
 			if r.lc.awsOn() {
 				r.lcPollAWS(run, m, started)
 			}
+			continue
+		case "fly":
+		default: // the fabric (no machine on Fly: the router's own steps and the supervisor's lines are its log)
 			continue
 		}
 		if !r.lc.flyOn() {

@@ -48,7 +48,7 @@ this session as the caller, from the machine's key) and the reason given here, a
   jarvis-request list              this session's requests still waiting
   jarvis-request outcomes          what became of this session's requests (approved, denied, lapsed, dropped, failed)
   jarvis-request wait ID [--timeout SECONDS]
-                                    block until the request (an Inbox id, or for add-store this session's id) has an
+                                    block until the request (its Inbox id, the `id` its filing answered) has an
                                     outcome here, then print it (no timeout unless given; exit 0 approved, 1 anything
                                     else, 2 still waiting at the timeout): for a request whose filing command ended
                                     before the decision (the session paused meanwhile)
@@ -261,8 +261,13 @@ def block(refs, since_ns, stores=(), timeout=None, card=None):
     waits for Deyao's decision, and only then, aviary's supervisor hears that it waits on him (PersonWait): the pull
     after an approval is not his to wait on."""
     with PersonWait(refs, card=card) as wait:
-        code, got = _decided(refs, since_ns, timeout)
+        code, got, texts = _decided(refs, since_ns, timeout)
         wait.outcome = filing_outcome([o.get("outcome") for o in got.values()]) if code != 2 else None
+    # printed once the person wait has ended: the supervisor answers the end only when the chat's card is settled, and
+    # the chat counts the card read by the first result carrying its marker after that (2026-11-20: a card stayed "Not
+    # read yet" when the outcome reached the AI before the card's end reached the chat)
+    for t in texts:
+        print(t, flush=True)
     if code != 0:
         return code
     for st in stores:
@@ -274,28 +279,28 @@ def block(refs, since_ns, stores=(), timeout=None, card=None):
 
 
 def _decided(refs, since_ns, timeout=None):
-    """until each distinct ref has an outcome: 0 all approved, 1 any other, 2 the timeout passed. A ref can be named
-    more than once (a batch's add-store items all name this session) and one delivery records one file per ref."""
+    """until each distinct ref has an outcome: (0 all approved, 1 any other, 2 the timeout passed; the outcomes by ref;
+    their texts, each once, in the order they came). A ref can be named more than once (a batch's add-store items all
+    name this session) and one delivery records one file per ref."""
     import time
     refs = list(dict.fromkeys(refs))
     deadline = time.time() + timeout if timeout else None
-    got, shown = {}, set()
+    got, texts = {}, []
     while True:
         for r in refs:
             if r not in got:
                 fs = outcome_files(r, since_ns)
                 if fs:
                     got[r] = fs[-1]
-                    if fs[-1]["text"] not in shown:
-                        shown.add(fs[-1]["text"])
-                        print(fs[-1]["text"])
+                    if fs[-1]["text"] not in texts:
+                        texts.append(fs[-1]["text"])
         if len(got) == len(refs):
             break
         if deadline and time.time() > deadline:
             print("still waiting in Deyao's Inbox: " + ", ".join(r for r in refs if r not in got), file=sys.stderr)
-            return 2, got
+            return 2, got, texts
         time.sleep(2)
-    return (0 if all(o["outcome"] == "approved" for o in got.values()) else 1), got
+    return (0 if all(o["outcome"] == "approved" for o in got.values()) else 1), got, texts
 
 
 def show(o):

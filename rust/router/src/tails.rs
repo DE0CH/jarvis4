@@ -1,6 +1,8 @@
 //! Reading a Claude Code transcript (JSONL) for people: the last messages and the title (Jarvis 1 lib/archive.js
-//! parseTranscript; transcript.go). Only what was said: user prompts and assistant text. Tool calls and results, meta
-//! lines, sidechains (subagents) and injected <system-reminder>-style blocks are left out. The title is what the Claude
+//! parseTranscript; transcript.go). Only what was said: user prompts and assistant text; with tools (the live tail,
+//! livetail.rs) also each tool call (role "tool": its name and input, keys sorted where Go keeps the file's order) and each
+//! result (role "result"), clipped. Meta lines, sidechains (subagents) and injected <system-reminder>-style blocks are
+//! left out. The title is what the Claude
 //! app showed: the last custom-title (a rename), else the last ai-title. A message typed while Claude was mid-turn only
 //! exists as a queue-operation enqueue, so those count as user messages too (deduplicated against the user record a
 //! normally delivered one also gets).
@@ -71,8 +73,61 @@ pub fn content_text(raw: Option<&Value>) -> String {
     }
 }
 
+/// how much of a tool call's input or a result a tail with tools keeps
+pub const TOOL_CLIP: usize = 600;
+
+/// a message's tool calls (role "tool": name and input) and results (role "result"), clipped to TOOL_CLIP
+pub fn tool_blocks(raw: Option<&Value>, at: &Value) -> Vec<TailMessage> {
+    let Some(Value::Array(blocks)) = raw else {
+        return vec![];
+    };
+    let clip = |t: &str| {
+        let t = t.trim();
+        if t.chars().count() > TOOL_CLIP {
+            format!("{} …", clip_text(t, TOOL_CLIP))
+        } else {
+            t.to_string()
+        }
+    };
+    let mut out = vec![];
+    for b in blocks.iter().filter_map(Value::as_object) {
+        let (role, text) = match b.get("type").and_then(Value::as_str) {
+            Some("tool_use") => {
+                let name = b.get("name").and_then(Value::as_str).unwrap_or_default();
+                let input = b.get("input").map(Value::to_string).unwrap_or_default();
+                ("tool", clip(&format!("{name} {input}")))
+            }
+            Some("tool_result") => {
+                let mut t = content_text(b.get("content"));
+                if b.get("is_error").and_then(Value::as_bool) == Some(true) {
+                    t = format!("error: {t}");
+                }
+                ("result", clip(&t))
+            }
+            _ => continue,
+        };
+        out.push(TailMessage {
+            role: role.into(),
+            text,
+            at: at.clone(),
+        });
+    }
+    out
+}
+
 /// partial_first_line when text starts mid-file (a tail read); max messages, clip characters each
 pub fn parse_transcript(text: &str, partial_first_line: bool, max: usize, clip: usize) -> Tail {
+    parse_transcript_with(text, partial_first_line, max, clip, false)
+}
+
+/// parse_transcript, and with tools the tool calls and results as messages of their own
+pub fn parse_transcript_with(
+    text: &str,
+    partial_first_line: bool,
+    max: usize,
+    clip: usize,
+    tools: bool,
+) -> Tail {
     let mut lines: Vec<&str> = text.split('\n').collect();
     if partial_first_line && !lines.is_empty() {
         lines.remove(0);
@@ -132,12 +187,22 @@ pub fn parse_transcript(text: &str, partial_first_line: bool, max: usize, clip: 
         {
             continue;
         }
+        // with tools: after the message's text, as Claude Code writes them
+        let calls: Vec<(TailMessage, bool)> = if tools {
+            tool_blocks(msg.and_then(|m| m.get("content")), &at)
+                .into_iter()
+                .map(|m| (m, false))
+                .collect()
+        } else {
+            vec![]
+        };
         let mut t = content_text(msg.and_then(|m| m.get("content")));
         for re in INJECTED.iter() {
             t = re.replace_all(&t, "").into_owned();
         }
         let mut t = t.trim().to_string();
         if t.is_empty() {
+            msgs.extend(calls);
             continue;
         }
         if typ == "user"
@@ -158,6 +223,7 @@ pub fn parse_transcript(text: &str, partial_first_line: bool, max: usize, clip: 
             },
             false,
         ));
+        msgs.extend(calls);
     }
     if msgs.len() > max {
         msgs.drain(..msgs.len() - max);

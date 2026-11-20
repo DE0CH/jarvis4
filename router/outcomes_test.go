@@ -135,8 +135,58 @@ func TestLapsedOutcomesWaitForAPausedSession(t *testing.T) {
 	for _, d := range *got {
 		seen[d.Outcomes[0].Ref] = d.Outcomes[0].Outcome
 	}
-	if seen[rid] != "lapsed" || seen["sa"] != "lapsed" {
-		t.Fatalf("%v", seen)
+	var aid string
+	for _, x := range o {
+		if x.Kind == "add-store" {
+			aid = x.Ref
+		}
+	}
+	if seen[rid] != "lapsed" || aid == "" || aid == "sa" || seen[aid] != "lapsed" {
+		t.Fatalf("%v (the add-store's ref %q)", seen, aid)
+	}
+}
+
+// Two store requests of one session are two requests: each filing answers its own approval's id, and each outcome is
+// filed under that id, never under the session's (2026-11-20: a batch's wait ended at another add-store's lapse, and
+// an Inbox card in the chat could take another filing's outcome, both waiting on the session's id).
+func TestEachAddStoreIsToldUnderItsOwnID(t *testing.T) {
+	r := newTestRouter(t)
+	repoCore(t, r, "DE0CH/x")
+	addSession(r, "sa", "started", "mA", false)
+	m := newTestMachine(r, "mA")
+	got, mu := captureOutcomes(t, nil)
+	h := r.MachineHandler()
+	code, one := m.do(t, h, "POST", "/m/api/requests/add-store", `{"store":"gmail","explanation":"mail"}`)
+	if code != 200 {
+		t.Fatalf("%d %v", code, one)
+	}
+	code, two := m.do(t, h, "POST", "/m/api/requests/batch", batchBody("more", `{"intent":"add-store","store":"chat"}`))
+	if code != 200 {
+		t.Fatalf("%d %v", code, two)
+	}
+	id1, _ := one["id"].(string)
+	item, _ := two["items"].([]any)[0].(map[string]any)
+	id2, _ := item["id"].(string)
+	ids := map[string]bool{}
+	for _, a := range approvalsFor(r, "sa") {
+		ids[a.ID] = true
+	}
+	if !ids[id1] || !ids[id2] || id1 == id2 {
+		t.Fatalf("the filings answer %q and %q, the approvals are %v", id1, id2, ids)
+	}
+	later := time.Now().UTC().Add(11 * time.Minute)
+	r.expireApprovals(later)
+	tickOutcomes(r)
+	mu.Lock()
+	defer mu.Unlock()
+	refs := map[string]string{}
+	for _, d := range *got {
+		for _, x := range d.Outcomes {
+			refs[x.Ref] = x.Outcome
+		}
+	}
+	if refs[id1] != "lapsed" || refs[id2] != "lapsed" || refs["sa"] != "" {
+		t.Fatalf("%v", refs)
 	}
 }
 
@@ -233,7 +283,7 @@ func TestAnApprovedAddStoreCarriesTheNewCert(t *testing.T) {
 	if filed["id"] != o.Ref {
 		t.Fatalf("the filing answered id %v, the outcome's ref is %s", filed["id"], o.Ref)
 	}
-	if o.Outcome != "approved" || o.Ref != "s1" || o.Proof == nil || o.Proof.Decode(&c) != nil || !containsString(c.Stores, "yyc") {
+	if o.Outcome != "approved" || o.Ref != id || o.Proof == nil || o.Proof.Decode(&c) != nil || !containsString(c.Stores, "yyc") {
 		t.Fatalf("%+v %+v", o, c)
 	}
 	if (*got)[0].Request.Path != "/m/api/requests/add-store" {

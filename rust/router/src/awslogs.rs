@@ -378,7 +378,7 @@ pub fn console_new(prev: &str, out: &str) -> (Vec<String>, String) {
 pub fn register_machine_output(reg: &mut Registrar) {
     // POST /m/machine-output {"source":"machine"|"journal","lines":[{"at","text"}]}: an AWS machine's output
     reg.m("POST /m/machine-output", |r, w, _, machine, body| {
-        if !crate::awsrunner::is_aws_machine(machine) {
+        if r.runner_of_machine(machine) != "aws" {
             crate::nethttp::write_error(w, 404, "only an AWS machine pushes its output: Fly ships its machines' (jarvis2-log-shipper)");
             return;
         }

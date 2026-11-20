@@ -197,7 +197,7 @@ func (r *Router) registerMachineOutput(m machineRoute) {
 	// POST /m/machine-output {"source":"machine"|"journal","lines":[{"at","text"}]}: an AWS machine's output (Fly's
 	// machines' output is Fly's to ship)
 	m("POST /m/machine-output", func(w http.ResponseWriter, req *http.Request, machine string, body []byte) {
-		if !isAWSMachine(machine) {
+		if r.runnerOfMachine(machine) != "aws" {
 			writeJSON(w, 404, map[string]string{"error": "only an AWS machine pushes its output: Fly ships its machines' (jarvis2-log-shipper)"})
 			return
 		}

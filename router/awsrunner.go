@@ -58,7 +58,9 @@ func defaultRunner() string {
 }
 
 // runnerOf: where the session's machines run (its own runner, else the default)
-func (r *Router) runnerOf(s *Session) string {
+func (r *Router) runnerOf(s *Session) string { return sessionRunner(s) }
+
+func sessionRunner(s *Session) string {
 	if s != nil && validRunner(s.Runner) {
 		return s.Runner
 	}
@@ -83,8 +85,39 @@ func (r *Router) spawnRegion(s *Session) string {
 	return reg
 }
 
-// isAWSMachine: an EC2 instance id
-func isAWSMachine(id string) bool { return strings.HasPrefix(id, "i-") }
+// runnerOfSession: the runner of the session sid (the router's record, never read from a machine id: Deyao,
+// 2026-11-20, there are more than two kinds); "" for a session the router doesn't have
+func (r *Router) runnerOfSession(sid string) (runner string) {
+	r.st.Read(func(d *persisted) {
+		if s := d.Sessions[sid]; s != nil {
+			runner = sessionRunner(s)
+		}
+	})
+	return runner
+}
+
+// runnerOfMachine: the runner of the session the machine belongs to ("" for a machine of no session)
+func (r *Router) runnerOfMachine(machine string) (runner string) {
+	r.st.Read(func(d *persisted) {
+		if s := d.Sessions[d.Machines[machine]]; s != nil {
+			runner = sessionRunner(s)
+		}
+	})
+	return runner
+}
+
+// runnerLabel: a runner as the log says it
+func runnerLabel(runner string) string {
+	switch runner {
+	case "aws":
+		return "AWS"
+	case "fabric":
+		return "the fabric"
+	case "fly":
+		return "Fly"
+	}
+	return "its runner"
+}
 
 // AWSWG: an AWS machine's WireGuard: its key pair and tunnel address (the private key only until the machine is up)
 type AWSWG struct {

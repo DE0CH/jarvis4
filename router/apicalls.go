@@ -475,6 +475,8 @@ var callRules = map[string]callRule{
 	"GET /api/machines":                           callBody,
 	"POST /api/machines/{id}/destroy":             callBody,
 	"GET /api/runners":                            callBody, // runners.go: the Hetzner runners, each with its session
+	"GET /api/fabric/ops/":                        callBody, // fabricops.go: the fabric hermit's operator page
+	"GET /api/fabric/ops/snapshot":                callBody,
 	"POST /api/runners/{id}/delete":               callBody, // only a runner no session at work owns
 	"GET /api/models":                             callBody,
 	"GET /api/policy":                             callBody,

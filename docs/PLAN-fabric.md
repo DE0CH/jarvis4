@@ -180,7 +180,10 @@ image's `/etc/resolv.conf` names public resolvers.
 
 ## Costs
 
-AWS eu-central-1 on demand: m7i.xlarge USD 0.2415/h per host (two sessions), each host at least 15 min, plus its
+AWS eu-central-1 on demand: m7i.xlarge USD 0.2415/h per host (four sessions), billed by the second after its first
+minute. The fabric is lazy (Deyao, 2026-11-20: save cost aggressively): no spare slots, no warm-up hints (only
+YYC AI's pigeon sends them), and an empty host goes 60 s after its launch at the earliest (`minHostLifetimeSeconds`;
+YYC AI keeps 15 min), its lone frozen sandboxes pushed to S3 first. Plus its
 public IPv4 USD 0.005/h and gp3 disk USD 0.0952 per GB-month while it runs; traffic out of AWS USD 0.09/GB (the
 JuiceFS data written to Hetzner included).
 
@@ -197,7 +200,7 @@ Built (2026-11-18), switched on per deployment:
 | hermit-jarvis: a frozen session's sandbox is kept, its chat open, a use thaws it | DE0CH/aviary jarvis/hermit/src/reconcile.rs, hermit.rs |
 | the `time-machine` command | session-image/tools/src/timemachine.rs |
 | the frozen state on the web page, the iPhone app and the live push | app/, ios/, router/livepush.go |
-| AWS: managed policy `jarvis4-fabric-freeze` on hermit-scaler (STS federation token `hermit-freeze`; Put/Get/Delete on `frozen/*` of the image bucket) | infra/fabric-aws/freeze-policy.json (applied by hand: `aws iam create-policy` + `attach-user-policy`; the user's inline policies are at AWS's 2048-byte limit) |
+| AWS: managed policy `jarvis4-fabric-freeze` on hermit-scaler (STS federation token `hermit-freeze`; Put/Get/Delete on `frozen/*` of the image bucket; List and Delete on `images/*` for the pruning of images no one uses, hermit.json `fabric.aws.pruneImages`) | infra/fabric-aws/freeze-policy.json (applied by hand: `aws iam create-policy` + `attach-user-policy`; the user's inline policies are at AWS's 2048-byte limit) |
 | the key | `HERMIT_FREEZE_KEY` in Secret hermit (`FABRIC_HERMIT_FREEZE_KEY` in the infra store) |
 
 A deployment freezes when hermit.json names `fabric.freeze.bucket` and hermit has `HERMIT_FREEZE_KEY`; YYC AI names

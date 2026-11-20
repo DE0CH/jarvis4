@@ -115,7 +115,7 @@ export type Cron = { name: string; prompt: string; everySeconds: number; tz?: st
 export type Refusal = { kind: "fallback" | "refusal"; at?: string; from?: string; to?: string; model?: string; category?: string };
 export type Session = {
   id: string; machineId?: string | null; released?: boolean; name?: string; state: SessionState | string; status?: string | null;
-  created?: string; region?: string; environment?: string; harness?: string; label?: string; model?: string;
+  created?: string; region?: string; runner?: string; environment?: string; harness?: string; label?: string; model?: string;
   permissionMode?: string; guest?: string; stores?: string[] | null; content?: string[] | null; size?: string; image?: string; pausedAt?: string | null; error?: string | null; title?: string; destroyedAt?: string;
   // live fields (docs/API.md "Sessions"): the machine's report, the autopilot's settings, the schedule
   timeMachine?: TimeMachine | null;
@@ -190,7 +190,10 @@ export type BudgetFly = { spentUsd: number; ratePerHour: number; perMonth: numbe
 export type BudgetAWSOther = { id: string; region: string; type: string; state: string; name?: string; owner?: string };
 export type BudgetAWS = { spentUsd: number; estimateUsd: number; billedUsd: number; billedAt?: string | null; ratePerHour: number; perMonth: number;
   running: number; volumes: number; volumeGb: number; snapshots: number; snapshotGb: number; publicIpv4: number; account?: string;
-  regions?: string[]; other?: BudgetAWSOther[]; owned?: BudgetAWSOther[]; error?: string | null; billedError?: string | null };
+  regions?: string[]; other?: BudgetAWSOther[]; owned?: BudgetAWSOther[]; error?: string | null; billedError?: string | null;
+  bucketGb?: number; fabric?: BudgetFabric | null };
+// the fabric's part of the AWS estimate (router/awsbudget.go): its hosts, disks, AMI snapshots and image bucket
+export type BudgetFabric = { estimateUsd: number; ratePerHour: number; perMonth: number; hosts: number; region: string };
 export type Budget = { month: string; spentUsd: number; capUsd: number; warnUsd: number; warned: boolean; capped: boolean; cappedAt?: string | null; ratePerHour: number; perMonth: number; running: number; volumes: number; sampledAt?: string | null;
   fly?: BudgetFly | null; aws?: BudgetAWS | null };
 export type FlyOther = { kind: string; app: string; id: string; name?: string; state?: string; region?: string; created?: string; detail?: string };

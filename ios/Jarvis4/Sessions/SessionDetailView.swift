@@ -186,7 +186,8 @@ private struct SessionDetailList: View {
         if let mo = m.model { LabeledContent("Model", value: model.models.first { $0.id == mo }?.label ?? mo) }
         LabeledContent("Permission mode", value: m.permissionMode == "bypass" ? "bypass (no prompts)" : "auto")
         if let r = m.region { LabeledContent("Region", value: Fmt.region[r] ?? r) }
-        let machine = [m.size, m.guest].compactMap { $0 }.joined(separator: " · ")
+        // a fabric sandbox is one kind whatever the session's size (router http.go sessionView)
+        let machine = [m.runner == "fabric" ? "Fabric (gVisor)" : m.size, m.guest].compactMap { $0 }.joined(separator: " · ")
         if !machine.isEmpty { LabeledContent("Machine", value: machine) }
         if m.state == "started", let w = m.workers {
           LabeledContent("Workers", value: Fmt.workers(subagents: w.subagents, jobs: w.jobs))

@@ -73,7 +73,7 @@ const HARNESSES = [
 ];
 const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 // what each runner means for the session (docs/PLAN-aws.md)
-const RUNNER_SUB: Record<string, string> = { aws: "An EC2 instance of its own · starts in about 5 min", fly: "A Fly machine · starts in about 2 min" };
+const RUNNER_SUB: Record<string, string> = { aws: "An EC2 instance of its own · starts in about 5 min", fly: "A Fly machine · starts in about 2 min", fabric: "A gVisor sandbox on the fabric's AWS hosts (Frankfurt) · 1 vCPU · 3.5 GB" };
 
 export function NewSession() {
   const SIZES = useStore((s) => s.sizes), REGIONS = useStore((s) => s.regions), defaultRegion = useStore((s) => s.defaultRegion), RUNNERS = useStore((s) => s.runners), defaultRunner = useStore((s) => s.defaultRunner), MODELS = useStore((s) => s.models), stores = useStore((s) => s.stores);

@@ -293,6 +293,7 @@ func (r *Router) buildHandlers() {
 	device("POST /api/core/wipe", "/wipe")
 	r.registerBackups(app)
 	r.registerKernel(app)      // kernelline.go
+	r.registerFabricOps(app)   // fabricops.go: the fabric hermit's operator page, read only
 	r.registerRoster(app, mux) // roster.go
 	r.registerLineState(app)
 	app("GET /api/policy", func(w http.ResponseWriter, req *http.Request) { writeJSON(w, 200, r.policy) })
@@ -889,7 +890,10 @@ func (r *Router) checkSetupSig(method, path, t, sig string, body []byte) error {
 }
 
 func sessionView(s *Session, d *persisted) map[string]any {
-	guest := sizeLabel(s.Size)
+	guest, region, runner := sizeLabel(s.Size), s.Region, sessionRunner(s)
+	if runner == "fabric" { // one kind of sandbox, on the fabric's hosts: the session's size and Fly region are not its
+		guest, region = fabricGuest, fabricRegion
+	}
 	name := s.Label
 	if name == "" {
 		name = s.Title
@@ -897,7 +901,7 @@ func sessionView(s *Session, d *persisted) map[string]any {
 	v := map[string]any{
 		"serverTitle": s.AppTitle, "userTitle": s.UserTitle, "title": sessionTitle(*s), "liveSync": s.LiveSync,
 		"id": s.ID, "machineId": nullIfEmpty(s.MachineID), "released": s.MachineID == "" && s.State == "paused",
-		"name": name, "state": s.State, "status": s.Status, "error": s.Error, "created": s.Created, "region": s.Region, // "" = the router's default (GET /api/regions)
+		"name": name, "state": s.State, "status": s.Status, "error": s.Error, "created": s.Created, "region": region, "runner": runner, // region "" = the router's default (GET /api/regions)
 		"environment": strings.Join(s.Stores, ","), "stores": s.Stores, "content": orEmptyS(s.Content), "harness": s.Harness, "label": s.Label, "aiTitle": s.Title,
 		"model": s.Model, "permissionMode": s.PermissionMode, "guest": guest, "size": s.Size, "pausedAt": s.PausedAt,
 		"image": s.Image, "createRequestId": s.RequestID, "repos": s.Repos, "discordChannel": s.DiscordChannel,

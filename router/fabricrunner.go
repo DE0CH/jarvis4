@@ -49,6 +49,10 @@ func fabricEnabled() bool { return os.Getenv("FABRIC_HERMIT_URL") != "" }
 // fabricRegion: the region a fabric spawn names (the spawner wants one; hermit's hosts are where its config says)
 const fabricRegion = "fra"
 
+// fabricGuest: what one fabric sandbox is (k8s/cluster/fabric/hermit.json sandbox.cpu and memory), whatever the
+// session's size: hermit starts every sandbox alike
+const fabricGuest = "1 vCPU · 3.5 GB"
+
 // newConversation: a random lowercase UUID v4 (the session's conversation at hermit)
 func newConversation() string {
 	b := make([]byte, 16)

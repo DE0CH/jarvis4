@@ -78,9 +78,14 @@ pub fn aws_region_of(reg: &str) -> Option<&'static str> {
     }
 }
 
-/// an EC2 instance id
-pub fn is_aws_machine(id: &str) -> bool {
-    id.starts_with("i-")
+/// a runner as the log says it
+pub fn runner_label(runner: &str) -> &'static str {
+    match runner {
+        "aws" => "AWS",
+        "fabric" => "the fabric",
+        "fly" => "Fly",
+        _ => "its runner",
+    }
 }
 
 /// an AWS machine's WireGuard: its key pair and tunnel address (the private key only until the machine is up)
@@ -316,14 +321,39 @@ pub struct AwsPeer {
     pub endpoint: String,
 }
 
+/// where the session's machines run (its own runner, else the default)
+pub fn session_runner(s: &Session) -> String {
+    if valid_runner(&s.runner) {
+        s.runner.clone()
+    } else {
+        default_runner()
+    }
+}
+
 impl Router {
+    /// the runner of the session sid (the router's record, never read from a machine id: Deyao, 2026-11-20, there
+    /// are more than two kinds); "" for a session the router doesn't have
+    pub fn runner_of_session(&self, sid: &str) -> String {
+        self.st
+            .read(|d| d.sessions.get(sid).map(session_runner))
+            .unwrap_or_default()
+    }
+
+    /// the runner of the session the machine belongs to ("" for a machine of no session)
+    pub fn runner_of_machine(&self, machine: &str) -> String {
+        self.st
+            .read(|d| {
+                d.machines
+                    .get(machine)
+                    .and_then(|sid| d.sessions.get(sid))
+                    .map(session_runner)
+            })
+            .unwrap_or_default()
+    }
+
     /// where the session's machines run (its own runner, else the default)
     pub fn runner_of(&self, s: &Session) -> String {
-        if valid_runner(&s.runner) {
-            s.runner.clone()
-        } else {
-            default_runner()
-        }
+        session_runner(s)
     }
 
     /// the region the spawner gets for the session's next machine, in its runner's terms

@@ -207,6 +207,40 @@ fn app_title() {
     assert_eq!(a.current(), "Inside the shape", "after a failure");
 }
 
+/// the "live-sync" command (router/livetail.go): what changed goes first, then /m/live-synced, which the router's tail
+/// waits for; an unchanged transcript isn't sent again, and the round is still told
+#[test]
+fn live_round_tells_the_router() {
+    let e = TestEnv::new();
+    let key = e.machine_key();
+    let home = fake_home(&e);
+    let dir = home.join(".claude/projects/-home-claude-workspace");
+    std::fs::write(dir.join("aaaa.jsonl"), "{\"type\":\"user\"}\n").unwrap();
+    let got: Arc<Mutex<Vec<String>>> = Arc::default();
+    let g2 = got.clone();
+    let srv = FakeRouter::new(&key.sig.public_key(), move |r| {
+        let name = r
+            .headers
+            .get("X-Name")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        g2.lock()
+            .unwrap()
+            .push(format!("{} {name}", r.path).trim().to_string());
+        ans(200, r#"{"ok":true}"#)
+    });
+    let c = srv.client();
+    crate::livesync::live_round(&c);
+    assert_eq!(
+        *got.lock().unwrap(),
+        vec!["/m/live-transcript aaaa.jsonl", "/m/live-synced"]
+    );
+    got.lock().unwrap().clear();
+    crate::livesync::live_round(&c);
+    assert_eq!(*got.lock().unwrap(), vec!["/m/live-synced"]);
+}
+
 #[test]
 fn live_sync_once() {
     let e = TestEnv::new();

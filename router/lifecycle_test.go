@@ -503,6 +503,7 @@ func TestLifecycleAWSEvents(t *testing.T) {
 	}
 	set := func(v *awsInstanceView) { mu.Lock(); cur = v; mu.Unlock() }
 	addSession(r, "sA", "started", "i-0abc", false)
+	r.st.Do(func(d *persisted) { d.Sessions["sA"].Runner = "aws" }) // an AWS session: its runner says so, not its id
 	h := r.lcBegin("sA", "boot")
 	h.machine("i-0abc")
 	launched := time.Now().UTC()
@@ -562,6 +563,7 @@ func TestLifecycleAWSRunningBefore(t *testing.T) {
 	v := &awsInstanceView{ID: "i-0def", Region: "ap-southeast-1", State: "running", Launched: time.Now().Add(-time.Hour)}
 	r.lc.awsDescribe = func(string) (*awsInstanceView, error) { c := *v; return &c, nil }
 	addSession(r, "sB", "started", "i-0def", false)
+	r.st.Do(func(d *persisted) { d.Sessions["sB"].Runner = "aws" }) // an AWS session: its runner says so, not its id
 	h := r.lcBegin("sB", "pause")
 	h.machine("i-0def")
 	r.lcPollOnce(h.run)

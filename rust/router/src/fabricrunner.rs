@@ -59,6 +59,10 @@ pub fn fabric_enabled() -> bool {
 /// the region a fabric spawn names (the spawner wants one; hermit's hosts are where its config says)
 pub const FABRIC_REGION: &str = "fra";
 
+/// what one fabric sandbox is (k8s/cluster/fabric/hermit.json sandbox.cpu and memory), whatever the session's size:
+/// hermit starts every sandbox alike
+pub const FABRIC_GUEST: &str = "1 vCPU · 3.5 GB";
+
 pub fn uuid_text(b: &[u8]) -> String {
     let h = hex::encode(b);
     format!(
@@ -455,6 +459,19 @@ mod tests {
             b64.encode(&p),
             b64.encode(sig.to_bytes())
         )
+    }
+
+    /// a runner as the log says it: the session's runner, never read from a machine id (Deyao, 2026-11-20)
+    #[test]
+    fn a_runner_is_said_by_its_name() {
+        for (runner, want) in [
+            ("aws", "AWS"),
+            ("fabric", "the fabric"),
+            ("fly", "Fly"),
+            ("", "its runner"),
+        ] {
+            assert_eq!(crate::awsrunner::runner_label(runner), want, "{runner}");
+        }
     }
 
     #[test]

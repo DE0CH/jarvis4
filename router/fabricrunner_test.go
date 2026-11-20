@@ -222,3 +222,33 @@ func sessionByID(r *Router, id string) (s Session) {
 	r.st.Do(func(d *persisted) { s = *d.Sessions[id] })
 	return
 }
+
+// Where a session's machine runs is the session's runner, never read from the machine's id (Deyao, 2026-11-20:
+// "there are more than 2 types"): its log names that runner, and its card shows the fabric's sandbox and hosts.
+func TestTheRunnerIsTheSessions(t *testing.T) {
+	t.Setenv("FABRIC_HERMIT_URL", "http://hermit")
+	r := newTestRouter(t)
+	r.st.Do(func(d *persisted) {
+		// ids of every shape on every runner: the id says nothing
+		for sid, x := range map[string][2]string{"sA": {"aws", "683dde7ea60478"}, "sB": {"fabric", "i-0123456789abcdef0"}, "sC": {"fly", "x01a1f71ecb6d71d6b5be4c4e404255df"}} {
+			d.Sessions[sid] = &Session{ID: sid, Runner: x[0], MachineID: x[1]}
+			d.Machines[x[1]] = sid
+		}
+	})
+	for sid, want := range map[string]string{"sA": "AWS", "sB": "the fabric", "sC": "Fly", "nope": "its runner"} {
+		if got := runnerLabel(r.runnerOfSession(sid)); got != want {
+			t.Errorf("session %s: %q, want %q", sid, got, want)
+		}
+	}
+	if r.runnerOfMachine("683dde7ea60478") != "aws" || r.runnerOfMachine("i-0123456789abcdef0") != "fabric" || r.runnerOfMachine("unknown") != "" {
+		t.Error("a machine's runner is its session's")
+	}
+	v := sessionView(&Session{ID: "s1", Runner: "fabric", Size: "small", Region: "lhr"}, &persisted{})
+	if v["runner"] != "fabric" || v["region"] != fabricRegion || v["guest"] != fabricGuest {
+		t.Fatalf("fabric session view: runner %v region %v guest %v", v["runner"], v["region"], v["guest"])
+	}
+	v = sessionView(&Session{ID: "s2", Runner: "fly", Size: "small", Region: "lhr"}, &persisted{})
+	if v["runner"] != "fly" || v["region"] != "lhr" || v["guest"] != sizeLabel("small") {
+		t.Fatalf("fly session view: runner %v region %v guest %v", v["runner"], v["region"], v["guest"])
+	}
+}
