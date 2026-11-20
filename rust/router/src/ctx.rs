@@ -82,7 +82,8 @@ impl Ctx {
             }
             let now = Instant::now();
             if now >= end {
-                return !self.cancelled();
+                // not self.cancelled(): that locks the flag this loop holds
+                return !self.deadline.is_some_and(|x| now >= x);
             }
             g = self
                 .inner
@@ -91,5 +92,34 @@ impl Ctx {
                 .map(|(g, _)| g)
                 .unwrap_or_else(|e| e.into_inner().0);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// a sleep that runs its whole time returns true, and the context can still be cancelled after it (the flip's
+    /// drain watch hung at its first wakeup, holding the lock its own stop then waited for)
+    #[test]
+    fn a_sleep_that_times_out() {
+        let c = Ctx::background();
+        let c2 = c.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let slept = c2.sleep(Duration::from_millis(10));
+            c2.cancel();
+            let _ = tx.send(slept);
+        });
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(5)),
+            Ok(true),
+            "the sleep never returned"
+        );
+        assert!(c.cancelled());
+        assert!(
+            !c.sleep(Duration::from_secs(5)),
+            "a cancelled context slept"
+        );
     }
 }
