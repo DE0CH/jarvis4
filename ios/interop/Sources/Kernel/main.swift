@@ -197,6 +197,15 @@ check(throwsErr { _ = try KernelChecks.source(payload: vectors["otherImage"]!, s
 check(throwsErr { _ = try KernelChecks.source(payload: vectors["addSecond"]!, session: "s1") }, "…not a cert onto a machine")
 let a = try? KernelChecks.add(first: vectors["addFirst"]!, second: vectors["addSecond"]!, session: "s1", store: "extra")
 check(a?.machine == "0123456789abcd", "an add-store's two certs read as the store onto the running machine")
+check((try? KernelChecks.add(first: vectors["addFirst"]!, second: vectors["addSecondAWS"]!, session: "s1", store: "extra"))?.machine == "i-0123456789abcdef0",
+      "…onto an AWS machine")
+check((try? KernelChecks.add(first: vectors["addFirst"]!, second: vectors["addSecondFabric"]!, session: "s1", store: "extra"))?.machine == "x01a1f84c119b7406bf3daf4fb7f0cba9",
+      "…onto a fabric machine (2026-11-20: refused before)")
+// the app's machine objects are kernel/doc's machineRE, every runner of it
+for (o, want) in [("fly-0123456789abcd", true), ("aws-i-0123456789abcdef0", true), ("fabric-x01a1f84c119b7406bf3daf4fb7f0cba9", true),
+                  ("fabric-01a1f84c119b7406bf3daf4fb7f0cba9", false), ("fabric-x01a1f84c", false), ("aws-0123456789abcd", false), ("x01a1f84c119b7406bf3daf4fb7f0cba9", false)] {
+  check(KernelChecks.isMachine(o) == want, "machine object \(o): \(want)")
+}
 check(throwsErr { _ = try KernelChecks.add(first: vectors["addFirst"]!, second: vectors["addSecond"]!, session: "s1", store: "other") }, "…not for another store")
 check(throwsErr { _ = try KernelChecks.add(first: vectors["source"]!, second: vectors["addSecond"]!, session: "s1", store: "extra") }, "…not when the second cert leaves another source")
 

@@ -286,6 +286,7 @@ fn merge(gh: &Gh) -> Result<()> {
         .map(|r| Run {
             path: r["path"].as_str().unwrap_or("").into(),
             sha: r["head_sha"].as_str().unwrap_or("").into(),
+            event: r["event"].as_str().unwrap_or("").into(),
             id: r["id"].as_u64().unwrap_or(0),
             status: r["status"].as_str().unwrap_or("").into(),
             conclusion: r["conclusion"].as_str().unwrap_or("").into(),
