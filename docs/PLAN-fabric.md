@@ -6,16 +6,18 @@ sandboxd, the AMI recipe, hermit's scaler and placement), unmodified. What diffe
 session's git repository and its own CLAUDE.md, skills and settings, not a managed CLAUDE.md. The existing kinds
 (Fly machines, AWS machines, every harness on them) keep their code paths and tests; nothing of theirs changes.
 
-Status (2026-11-19): live. New session offers the runner `fabric`; the kernel release, the router's
-`FABRIC_HERMIT_URL`, the freeze and the time machine are on. Still open:
+Status (2026-11-20): live. New session offers the runner `fabric`; the kernel release, the router's
+`FABRIC_HERMIT_URL`, the freeze and the time machine are on; aviary's deploy run (DE0CH/aviary docs/DEPLOY.md) writes
+the fabric's pin (`k8s/cluster/fabric`), and `fabric-ami.yml` bakes the hosts' AMI with `fabric-aws` built from that
+aviary commit. Before every merge aviary's CI runs the fabric replica (`ci.yml` `replica-fabric`: `rust/e2e-kernel`
+with `E2E_RUNNER=fabric` on the runner: boot, a tool call, a wakeup, the time machine, a frozen session's destroy).
+Still open:
 
-- the fabric replica (e2e/aviary, `E2E_RUNNER=fabric`) covers a frozen session's destroy (the router thaws it for its
-  final snapshot, jarvis4 4c8b49a2 on `wip/fabric-destroy-frozen`); not run yet: no runner (the Hetzner account's
-  primary IP limit). Freeze to S3 and thaw on the real hermit are checked in aviary `testing/fabric-replica` (sandboxd)
-  and hermit's tests; their join (hermit's repacking evicting a lone frozen sandbox, a thaw from S3) has no replica yet
-- the AMI bake: aviary `fabric-aws` (Rust, replaces `infra.sh`, aviary `claude/fabric-aws-rust`) waits the snapshot
-  out and clears a killed bake's builder; `fabric-ami.yml` and YYC AI's `hermit-ami.yml` switch to it once an aviary
-  release holds it. Until then a sandboxd pin needs the launch template set by hand
+- hermit's join of freeze and S3 (its repacking evicting a lone frozen sandbox to the bucket, a thaw from it on another
+  host) has no replica: hermit's tests drive it against simulated hosts, aviary `testing/fabric-replica` checks
+  sandboxd's freeze, eviction and thaw for real, and CI checks the API between them against the running daemon
+- hermit's test `frozen_sandboxes_are_evicted_only_when_their_slot_is_needed` fails in CI now and then (the emptied
+  host not released), never on a runner; its failure prints the host's row, the rows on it and each pass
 
 What was built (2026-11-17/18):
 
