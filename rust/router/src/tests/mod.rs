@@ -21,6 +21,7 @@ mod messages;
 mod outcomes;
 mod peermsg;
 mod r2_livepush;
+mod schedule;
 mod screen;
 mod sessionops;
 mod small;

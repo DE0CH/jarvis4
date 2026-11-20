@@ -585,6 +585,19 @@ pub(crate) fn sched_release(key: &str) {
     sched_run().busy.remove(key);
 }
 
+/// no firing runs now (tests wait for it: Go's waitIdle)
+pub fn sched_idle() -> bool {
+    sched_run().busy.is_empty()
+}
+
+/// tests: every backoff over now (Go's tests tick at a later time instead; the backoff here is on the real clock)
+#[cfg(test)]
+pub fn sched_backoff_over() {
+    for a in sched_run().attempts.values_mut() {
+        a.1 = Instant::now();
+    }
+}
+
 /// record a failed attempt; true = it has failed SCHEDULE_MAX_ATTEMPT times
 pub(crate) fn sched_failed(key: &str) -> bool {
     let mut g = sched_run();
