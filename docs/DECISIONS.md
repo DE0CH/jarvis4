@@ -3205,3 +3205,13 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      Anthropic (an unknown model) until it restarts onto the newest image. A conversation from before keeps its plain
      pick and runs on its session's account; the menu shows the default entry for it until Deyao picks. *Change*: if
      the Jarvis 4 app's switch should win over the chat's pick, make the gateway trust a found account for good.
+
+275. **Every store request is answered under its own id** (Deyao, 2026-11-20: "own id per request"). An add-store (also
+     the add-store a repo request becomes when the repo has its key, and a kernel line's) is filed and told under its
+     approval's own id: the filing answers it as `id` (a batch item's `id`), the outcome's `ref` is it (`approvalRef`),
+     and so the outcome text's "(Inbox …)" and the chat card's marker name it. Before, every add-store of a session was
+     told under the session's id, so with two open at once the first outcome ended both commands' waits (a deploy-key
+     batch printed another request's LAPSED as its own) and could settle and read the other's card in the chat. A
+     command already waiting on the session's id when the router changed never sees its outcome (the Inbox's 10
+     minutes bound it); `jarvis-request wait ID` reads it. Other approvals keep the session's id: a proposed session's
+     id is what its proposal answered, and a session has one proposal at a time. *Change*: none expected.

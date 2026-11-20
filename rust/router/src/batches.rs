@@ -746,9 +746,12 @@ impl Router {
                 .st
                 .do_(|d| d.machines.get(&it.machine).cloned().unwrap_or_default());
             res.session = sid.clone();
-            if let Err(e) = self.add_store_from(&it.machine, &it.store, o, &it.expl, &b.id) {
-                res.error = format!("{e:#}");
-                return (res, None);
+            match self.add_store_approval(&it.machine, &it.store, o, &it.expl, &b.id) {
+                Ok(id) => res.id = id, // what its outcome is filed under (approval_ref)
+                Err(e) => {
+                    res.error = format!("{e:#}");
+                    return (res, None);
+                }
             }
             return (
                 res,

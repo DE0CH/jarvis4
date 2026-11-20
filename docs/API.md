@@ -368,8 +368,8 @@ When an item a **session** filed (through `/m/api/requests/…`, `/m/api/session
 `approved`, `denied` (Deny, Deny all, the actions' deny), `lapsed` (10 minutes without an answer), `dropped` (it left
 without a decision: the session paused with an API call pending, the session it was about went away, an add-store
 whose machine is gone) or `failed` (an approved API call that couldn't run). The delivery carries the session's own
-signed filing, and per item `{item /* index in a batch, 0 otherwise */, outcome, ref /* the Inbox id; for add-store the
-session's id; for new-session the new session's id */, status? /* an approved API call's HTTP status */, proof?}`. The
+signed filing, and per item `{item /* index in a batch, 0 otherwise */, outcome, ref /* the Inbox id (an add-store's is its
+approval's own); for new-session the new session's id */, status? /* an approved API call's HTTP status */, proof?}`. The
 machine builds the text from its own filing and image texts, and checks the proof of an approval: the phone-signed
 grant (grant), the machine's new core-signed cert naming the store (add-store), the core's approval by the phone with
 the proposal's label and prompt (new-session), the core's signed key answer (repo add/remove); unlock and API calls

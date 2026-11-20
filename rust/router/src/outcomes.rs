@@ -171,6 +171,17 @@ pub fn outcome_attested(d: &Delivery) -> Result<Vec<u8>> {
 /// a decision just landed: the loop looks at once
 static OUTCOME_KICK: AtomicBool = AtomicBool::new(false);
 
+/// What an approval's outcome is filed under, the id its filing answered: an add-store's own id (two store requests of
+/// one session are two requests, each waited on by its own command and shown as its own card in the chat), any other
+/// approval's session (a proposed session's id is what its proposal answered).
+pub fn approval_ref(a: &crate::state::Approval) -> String {
+    if a.kind == "add-store" || a.kind == crate::kernelline::KERNEL_ADD_APPROVAL_KIND {
+        a.id.clone()
+    } else {
+        a.session.clone()
+    }
+}
+
 /// (under the state lock) the item an Origin filed was decided. Only a session's own signed filing gets one; the first
 /// decision of an item stands.
 pub fn note_outcome(

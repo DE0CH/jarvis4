@@ -176,9 +176,10 @@ func TestARepoThatHasItsKeyIsAnAddStoreNotANewKey(t *testing.T) {
 		return n
 	}
 
+	// the answer's id is the add-store's own (what its outcome is filed under, what jarvis-request add-repo waits on)
 	code, out := mA.do(t, mh, "POST", "/m/api/requests/repo/add", `{"repo":"https://github.com/de0ch/claude-env.git","explanation":"push the skill"}`)
 	as := approvalsFor(r, "sA")
-	if code != 200 || out["existing"] != true || out["store"] != "github-claude-env" || out["id"] != nil || requests() != 0 || len(as) != 1 {
+	if code != 200 || out["existing"] != true || out["store"] != "github-claude-env" || requests() != 0 || len(as) != 1 || out["id"] != as[0].ID {
 		t.Fatalf("%d %v, %d requests, approvals %+v", code, out, requests(), as)
 	}
 	a := as[0]
