@@ -188,6 +188,16 @@ pub fn or_empty_core(s: &str) -> String {
     }
 }
 
+/// tests: FLIP_AUTO=1 without the env
+pub static FLIP_AUTO_FORCE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// FLIP_AUTO=1: the router flips by itself
+pub fn flip_auto() -> bool {
+    FLIP_AUTO_FORCE.load(std::sync::atomic::Ordering::SeqCst)
+        || std::env::var("FLIP_AUTO").unwrap_or_default() == "1"
+}
+
 impl Router {
     /// tests and main (the URL and the handoff)
     pub fn set_next_core(&self, url: &str, h: Option<Arc<dyn CoreHandoff>>) {
@@ -426,7 +436,7 @@ impl Router {
         let Some(next) = self.next.client() else {
             return;
         };
-        if std::env::var("FLIP_AUTO").unwrap_or_default() != "1" {
+        if !flip_auto() {
             return;
         }
         let Ok((serving, _)) = core_serving(&next) else {

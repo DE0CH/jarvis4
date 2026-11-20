@@ -520,7 +520,7 @@ impl Router {
             Err(e) => return Err(anyhow!("the {}'s identity isn't readable: {e:#}", sc.who())),
         };
         // the backup first: a key never reaches the core without one (Deyao: "has backup, so can't overwrite")
-        let b = crate::backups::backup_bucket_from_env().ok_or_else(|| anyhow!("the router has no backup credential (BACKUP_READ_ACCESS_KEY): no key is written without its backup. The setup session installs it with infra/backup-read-key.py install (RUNBOOK, the router's secrets)"))?;
+        let b = self.backup_bucket().ok_or_else(|| anyhow!("the router has no backup credential (BACKUP_READ_ACCESS_KEY): no key is written without its backup. The setup session installs it with infra/backup-read-key.py install (RUNBOOK, the router's secrets)"))?;
         let obj = json!({"kind": "key-backup", "store": store, "key": key, "deleted": i.delete, "sealed": sealed,
             "backupSha256": i.backup_sha256, "e": i.wrapped.as_ref().map(|w| w.e.clone()).unwrap_or_default(), "dataSha256": data_sha(&i.data),
             "writer": {"by": writer, "sig": i.sig, "cert": core.get("cert").cloned().unwrap_or(Value::Null)},

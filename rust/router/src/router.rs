@@ -140,6 +140,8 @@ pub struct Router {
     pub next: crate::nextcore::NextCores,
     /// archive.rs: the Storage Box this router uses instead of the env's (tests: Some(None) = none)
     pub box_override: RwLock<Option<Option<Arc<crate::storagebox::StorageBox>>>>,
+    /// backups.rs: this router's backup bucket instead of the env's (tests)
+    pub backup_override: RwLock<Option<crate::backups::BackupBucket>>,
     /// flows.rs SILENT_AFTER_SECS for this router (tests shorten it): a machine silent this long isn't waited for
     pub silent_after_secs: std::sync::atomic::AtomicI64,
     /// schedule.rs: tests catch deliveries here (vouch.rs deliver_vouched otherwise)
@@ -202,6 +204,7 @@ impl Router {
             me: OnceLock::new(),
             next: crate::nextcore::NextCores::from_env(),
             box_override: RwLock::new(None),
+            backup_override: RwLock::new(None),
             dm_hook: RwLock::new(None),
             disc_hook: RwLock::new(None),
             records_off: std::sync::atomic::AtomicBool::new(false),

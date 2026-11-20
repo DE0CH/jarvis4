@@ -494,6 +494,9 @@ pub struct FakeCore {
     pub srv: TestServer,
 }
 
+/// a test's answer for some paths of the fake core (true: answered)
+pub type CoreHook = Arc<dyn Fn(&mut W, &TestKey, &str, &[u8]) -> bool + Send + Sync>;
+
 /// the fake core's answer to one call (body: the request's, read)
 pub fn fake_core_answer(k: &TestKey, w: &mut W, path: &str, body: &[u8]) {
     use crate::nethttp::write_json;
@@ -542,6 +545,22 @@ impl FakeCore {
                 .push(req.path.clone());
             let b = req.read_body(16 << 20);
             fake_core_answer(&k, w, &req.path, &b);
+        });
+        FakeCore { key, calls, srv }
+    }
+
+    /// a core signing with key whose hook answers some paths itself (true: answered); the rest as the fake core's
+    pub fn hooked(key: Arc<TestKey>, hook: CoreHook) -> FakeCore {
+        let calls: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
+        let (k, c) = (key.clone(), calls.clone());
+        let srv = TestServer::handler(move |w, req| {
+            c.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(req.path.clone());
+            let b = req.read_body(16 << 20);
+            if !hook(w, &k, &req.path, &b) {
+                fake_core_answer(&k, w, &req.path, &b);
+            }
         });
         FakeCore { key, calls, srv }
     }
@@ -1095,8 +1114,15 @@ pub struct V2Core {
     pub srv: TestServer,
 }
 
+/// a test's own answer for some paths of the v2 core (true: answered); the rest go to the v2 core's
+pub type V2Hook = Arc<dyn Fn(&mut W, &TestKey, &str, &serde_json::Value) -> bool + Send + Sync>;
+
 impl V2Core {
     pub fn new(key: Arc<TestKey>) -> V2Core {
+        V2Core::with_hook(key, None)
+    }
+
+    pub fn with_hook(key: Arc<TestKey>, hook: Option<V2Hook>) -> V2Core {
         use crate::nethttp::write_json;
         use serde_json::json;
         let st: Arc<std::sync::Mutex<V2State>> = Arc::default();
@@ -1104,6 +1130,11 @@ impl V2Core {
         let srv = TestServer::handler(move |w, req| {
             let b: serde_json::Value =
                 serde_json::from_slice(&req.read_body(16 << 20)).unwrap_or(serde_json::Value::Null);
+            if let Some(h) = &hook
+                && h(w, &key, &req.path, &b)
+            {
+                return;
+            }
             let (refuse, kill_err) = {
                 let mut g = s2.lock().unwrap_or_else(|e| e.into_inner());
                 g.bodies
@@ -1182,7 +1213,34 @@ impl Rig {
         (rg, vc)
     }
 
-    fn core(&self) -> &Arc<CoreClient> {
+    /// the rig on a v2 core whose hook answers some paths itself
+    pub fn v2_hooked(hook: V2Hook) -> (Rig, V2Core) {
+        let rg = Rig::new();
+        let vc = V2Core::with_hook(rg.core.key.clone(), Some(hook));
+        rg.core().set_url(&vc.srv.url);
+        (rg, vc)
+    }
+
+    /// s1 failed with its machine m1 still there (failedsession_test.go's failedWithMachine)
+    pub fn failed_with_machine(&self, msg: &str) {
+        let cert = self.v2_cert("m1", r#"{"v":1}"#);
+        let started = crate::state::Started {
+            id: "m1".into(),
+            signing_key: self.mkey.public(),
+            ..Default::default()
+        };
+        self.st.do_(|d| {
+            if let Some(s) = d.sessions.get_mut("s1") {
+                s.state = "failed".into();
+                s.error = msg.into();
+                s.machine_id = "m1".into();
+                s.cert = Some(cert.clone());
+            }
+            d.started.insert("m1".into(), started.clone());
+        });
+    }
+
+    pub fn core(&self) -> &Arc<CoreClient> {
         &self.t.r.core
     }
 
@@ -1368,4 +1426,17 @@ pub fn add_grant_kind(r: &Router, session: &str, holder: &str, kind: &str) {
     r.st.do_(|d| {
         d.grants.insert(id.clone(), g.clone());
     });
+}
+
+/// a global step or limit set for one test, put back when dropped (the caller holds serial())
+pub struct U64Set(&'static std::sync::atomic::AtomicU64, u64);
+
+pub fn set_u64(a: &'static std::sync::atomic::AtomicU64, v: u64) -> U64Set {
+    U64Set(a, a.swap(v, std::sync::atomic::Ordering::SeqCst))
+}
+
+impl Drop for U64Set {
+    fn drop(&mut self) {
+        self.0.store(self.1, std::sync::atomic::Ordering::SeqCst);
+    }
 }

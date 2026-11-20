@@ -104,7 +104,7 @@ fn j1_path(root: &str, parts: &[&str]) -> String {
 }
 
 /// an import's small files are rows of router_docs, jarvis1-imports/<id>/<file> (statedb.rs)
-fn j1_doc(id: &str, file: &str) -> String {
+pub(crate) fn j1_doc(id: &str, file: &str) -> String {
     format!("jarvis1-imports/{id}/{file}")
 }
 
@@ -136,6 +136,18 @@ static J1_PREPS: LazyLock<Mutex<BTreeMap<String, J1Prep>>> = LazyLock::new(Defau
 
 fn preps() -> std::sync::MutexGuard<'static, BTreeMap<String, J1Prep>> {
     J1_PREPS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// tests: the prepare of id as it now is
+#[cfg(test)]
+pub fn j1_prep(id: &str) -> Option<J1Prep> {
+    preps().get(id).cloned()
+}
+
+/// tests: forget id's prepare (a test's id is every test's)
+#[cfg(test)]
+pub fn j1_forget(id: &str) {
+    preps().remove(id);
 }
 
 /// how long an import waits for the prepare it starts itself (ms; tests shorten it)
@@ -364,7 +376,7 @@ impl Router {
 
     /// an import of a session nobody prepared prepares it first (rather than refusing): the prepare starts (or the
     /// running one is joined) and the import waits for it
-    fn ensure_prepared_jarvis1(self: &Arc<Self>, id: &str) -> Result<()> {
+    pub(crate) fn ensure_prepared_jarvis1(self: &Arc<Self>, id: &str) -> Result<()> {
         check_id(id)?;
         if self.st.read_doc(&j1_doc(id, J1_MANIFEST_FILE)).is_some() {
             return Ok(());
@@ -607,7 +619,7 @@ impl Router {
     }
 
     /// prepare state, manifest hash, the session made from it (waiting or imported)
-    fn j1_status(&self, id: &str, v: &mut Map<String, Value>) {
+    pub(crate) fn j1_status(&self, id: &str, v: &mut Map<String, Value>) {
         if let Some(p) = preps().get(id) {
             v.insert("prepare".into(), json!(p));
         }

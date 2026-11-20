@@ -32,6 +32,17 @@ pub struct BackupBucket {
     pub secret_key: String,
 }
 
+impl Router {
+    /// the backup bucket: a test's own, else the env's
+    pub fn backup_bucket(&self) -> Option<BackupBucket> {
+        self.backup_override
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .or_else(backup_bucket_from_env)
+    }
+}
+
 pub fn backup_bucket_from_env() -> Option<BackupBucket> {
     let ak = std::env::var("BACKUP_READ_ACCESS_KEY").unwrap_or_default();
     let sk = std::env::var("BACKUP_READ_SECRET_KEY").unwrap_or_default();
@@ -324,7 +335,7 @@ impl Router {
 
 pub fn register_backups(reg: &mut Registrar) {
     reg.app("GET /api/backups", |r, w, _| {
-        let Some(b) = backup_bucket_from_env() else {
+        let Some(b) = r.backup_bucket() else {
             crate::nethttp::write_error(w, 503, "the router has no read key for the backups (BACKUP_READ_ACCESS_KEY): the setup session installs it with infra/backup-read-key.py install (RUNBOOK, the router's secrets)");
             return;
         };
