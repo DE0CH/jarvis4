@@ -48,9 +48,12 @@ fn env(k: &str) -> String {
     std::env::var(k).unwrap_or_default()
 }
 
+/// tests: the fabric on without FABRIC_HERMIT_URL (a test can't set the environment: no unsafe)
+pub static FABRIC_FORCE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// the router has a fabric hermit to send sessions to
 pub fn fabric_enabled() -> bool {
-    !env("FABRIC_HERMIT_URL").is_empty()
+    FABRIC_FORCE.load(std::sync::atomic::Ordering::Relaxed) || !env("FABRIC_HERMIT_URL").is_empty()
 }
 
 /// the region a fabric spawn names (the spawner wants one; hermit's hosts are where its config says)

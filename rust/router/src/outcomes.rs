@@ -344,6 +344,11 @@ static OUTCOME_BUSY: LazyLock<Mutex<BTreeSet<String>>> =
     LazyLock::new(|| Mutex::new(BTreeSet::new()));
 static OUTCOME_TICKING: Mutex<()> = Mutex::new(());
 
+/// outcome groups being delivered now (tests wait for none: Go's outcomeWG)
+pub fn outcomes_in_flight() -> usize {
+    OUTCOME_BUSY.lock().unwrap_or_else(|e| e.into_inner()).len()
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct OutcomeView {
     r#ref: String,

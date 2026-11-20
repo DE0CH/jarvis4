@@ -1,23 +1,35 @@
 //! The router's tests (Go's router/*_test.go, one file each)
 
+mod accountswap;
 mod apicalls;
 mod archive;
 mod batch2;
 mod batches;
 mod budget;
+mod claudeaccounts;
+pub mod claudelogin;
 mod content_drain;
 mod core_mq_sealed;
 mod db;
 mod devices;
+mod inbox;
+mod leases;
+mod linestate;
 mod live_lastsnap;
 mod machines_claim;
+mod messages;
+mod outcomes;
+mod peermsg;
 mod r2_livepush;
+mod schedule;
 mod screen;
+mod sessionops;
 mod small;
 mod snaphelp;
 mod snapwait_carry_volsweep;
 mod startinit_sizes;
 mod statedb;
+mod timemachine;
 mod uploads;
 mod vouch;
 mod watches;

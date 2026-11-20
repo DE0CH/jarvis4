@@ -31,10 +31,12 @@ pub struct RunnerOption {
     pub label: &'static str,
 }
 
-/// what New session offers. Not the fabric until a session boots on it end to end (Deyao, 2026-11-17); a request that
-/// names it is still taken (valid_runner)
+/// what New session offers (the fabric only once the router has a fabric hermit: fabricrunner.rs). Hidden on
+/// 2026-11-18 when a fabric session's final snapshot could not reach the snapshot bucket (its sandbox had no
+/// resolvers); offered again with sandboxd aviary-15f22fb9c7fd, checked on the fabric replica (aviary
+/// testing/fabric-replica: egress by name, pause, freeze and thaw).
 pub fn session_runners() -> Vec<RunnerOption> {
-    vec![
+    let mut out = vec![
         RunnerOption {
             id: "aws",
             label: "AWS",
@@ -43,7 +45,14 @@ pub fn session_runners() -> Vec<RunnerOption> {
             id: "fly",
             label: "Fly",
         },
-    ]
+    ];
+    if crate::fabricrunner::fabric_enabled() {
+        out.push(RunnerOption {
+            id: "fabric",
+            label: "Fabric (gVisor)",
+        });
+    }
+    out
 }
 
 pub fn valid_runner(id: &str) -> bool {

@@ -25,14 +25,14 @@ pub const LIVE_MAX: usize = 32;
 #[serde(default)]
 pub struct LiveSession {
     pub name: String,
-    /// working | waiting | background | scheduled | idle | booting
+    /// working | waiting | background | frozen | scheduled | idle | booting
     pub state: String,
     pub jobs: i64,
     pub subagents: i64,
     /// ms: the status's last change (statusUpdatedAt; changes every turn)
     #[serde(skip_serializing_if = "is_zero")]
     pub since: i64,
-    /// ms: a scheduled session's next wakeup or cron (a watch alone has none)
+    /// ms: a scheduled session's next wakeup or cron (a watch alone has none); a frozen one's until
     #[serde(skip_serializing_if = "is_zero")]
     pub next: i64,
 }
@@ -68,8 +68,9 @@ pub fn live_rank(state: &str) -> i64 {
         "idle" => 1,
         "working" => 2,
         "background" => 3,
-        "scheduled" => 4,
-        "booting" => 5,
+        "frozen" => 4,
+        "scheduled" => 5,
+        "booting" => 6,
         _ => 0, // Go's map lookup of an unknown state
     }
 }
@@ -131,6 +132,26 @@ impl Router {
             // Go ranges over a map: the order is the stable sort's tie-break only
             for s in d.sessions.values() {
                 let wakes = crate::schedule::will_wake(d, &s.id);
+                // a fabric session in the time machine (timemachine.rs): frozen until its time, or anything that arrives
+                if s.state == "frozen" {
+                    rows.push(Row {
+                        s: LiveSession {
+                            name: crate::titles::session_title(s),
+                            state: "frozen".into(),
+                            next: s
+                                .time_machine
+                                .as_ref()
+                                .and_then(|tm| tm.until.as_ref())
+                                .map_or(0, |u| {
+                                    i64::try_from(u.unix_nanos() / 1_000_000).unwrap_or(0)
+                                }),
+                            ..Default::default()
+                        },
+                        id: s.id.clone(),
+                        busy: false,
+                    });
+                    continue;
+                }
                 if s.state == "paused" && wakes {
                     rows.push(Row {
                         s: LiveSession {
