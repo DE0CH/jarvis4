@@ -43,7 +43,7 @@
   },
   "ops": {
     "timeZone": "Asia/Hong_Kong",
-    "deployments": [ "hermit-fabric" ],
+    "deployments": [ "hermit" ],
     "podNodePrefix": "jarvis2-cluster-",
     "budgetWatch": 0.8
   }
