@@ -66,7 +66,9 @@ authorisation and signature.
 | Fly app `jarvis4-sessions-preload` | a session with `infra` | open |
 | router: runner `fly-preload` (spawn and lifecycle through the preloader), offered in New session; golden volumes asked for after each session-image pin | `rust/router` (and the Go router while it lives), app, iOS | after the type split (session `s58796a552ddb338a`) lands |
 | CI: after `images.yml` pins a session image, the preloader makes its golden volume in each region in use | `.github/workflows/images.yml` | open |
-| Machine layer without the agent's tools; every harness inside the sandbox (plain Claude Code, dsh, OpenClaw through `aviary-sandbox` with their launchers bound in like Jarvis's session commands); AWS and fabric on it | `session-image/` | after the above |
+| The machine image (Deyao, 2026-11-20: side by side): `session-image/machine-base` (Jarvis's parts, no agent tools) under session-image/Dockerfile's machine side → `jarvis4-session:machine-sha-<commit>` (images.yml job `machine`); aviary's image comes as a folder: the preloaded volume (fly-preload), fetched onto the disk (aws), carried in the fabric image (fabric) | `session-image/machine-base`, `images.yml` | written, not built (d…) |
+| Every harness inside the sandbox: plain Claude Code, Paseo, OpenCode, OpenClaw and dsh started in aviary's image by `aviary-sandbox` (their runtimes and launchers bound in like Jarvis's session commands; Claude Code is aviary's). Their launchers are shell, so each is rewritten in Rust as it moves | `session-image/` | next, one harness at a time, each with a replica run |
+| Switching runners: fly-preload, aws and fabric name the machine image for a harness once that harness runs in the sandbox (the aviary harness first); until then they keep the legacy image for the others | router (after the type split), pins | after the harnesses |
 | Replica runs: `rust/e2e-kernel` per runner and harness; a fly-preload replica (throwaway app) | `rust/e2e-kernel` | with each part |
 | Kernel release | Deyao's authorisation and signature | last |
 

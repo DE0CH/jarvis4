@@ -161,6 +161,53 @@ jobs:
             echo "::error::the session image needs $disk bytes on disk, over Fly's 8 GiB unpack limit: not pinned. Make session-image/base/ smaller."
             exit 1
           fi
+  # the one-image machine (docs/PLAN-one-image.md): the machine base (session-image/machine-base: Jarvis's parts and
+  # no agent tools; the agent's are aviary's sandbox image), then session-image/Dockerfile's machine side on it, as
+  # ghcr.io/de0ch/jarvis4-session:machine-sha-<commit> (the session package, so the kernel and the app take it as a
+  # session image). Built on every run (small); nothing pins it yet, the pin job does not wait for it.
+  machine:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - id: tag
+        run: echo "sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: session-image/base
+          file: session-image/machine-base/Dockerfile
+          push: true
+          tags: ghcr.io/de0ch/jarvis4-session:machine-base-sha-${{ steps.tag.outputs.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=machine-base
+          cache-to: type=gha,mode=max,scope=machine-base
+      - id: base
+        run: echo "ref=$(infra/image-digest.sh "ghcr.io/de0ch/jarvis4-session:machine-base-sha-${{ steps.tag.outputs.sha }}")" >> "$GITHUB_OUTPUT"
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: session-image/Dockerfile
+          push: true
+          build-args: BASE=${{ steps.base.outputs.ref }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          tags: |
+            ghcr.io/de0ch/jarvis4-session:machine-sha-${{ steps.tag.outputs.sha }}
+            ${{ github.ref == 'refs/heads/main' && 'ghcr.io/de0ch/jarvis4-session:machine-latest' || '' }}
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/de0ch/jarvis4-session
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      - name: anonymously pullable, and its size
+        run: |
+          set -e
+          T="machine-sha-${{ steps.tag.outputs.sha }}"
+          out=$(python3 infra/image-unpacked-size.py de0ch/jarvis4-session "$T" --top)
+          echo "$out"
   # the fabric image (docs/PLAN-fabric.md): the session image this run built plus aviary's sandbox image unpacked in
   # it, for session machines on aviary's fabric. Nothing pins it yet; the pin job does not wait for it.
   fabric:
