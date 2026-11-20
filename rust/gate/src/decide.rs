@@ -71,6 +71,16 @@ pub fn latest(runs: &[Run], commits: &std::collections::BTreeSet<String>, own: &
     by.into_values().cloned().collect()
 }
 
+/// The commit a finished run decides for: the branch's head, whichever of the branch's commits the run was on. A slow
+/// workflow (iOS: hours) that finishes on an older commit after every run on the head has ended is the last event
+/// the branch gets; deciding only for its own commit left the head pending for good (2026-11-20, claude/jarvis-tail).
+/// A head with no run of its own yet was only just pushed: its workflows may not be listed, so its own runs decide.
+/// None: nothing to decide now (that, or the branch is gone).
+pub fn decides_for(tested: &str, head: Option<&str>, runs: &[Run]) -> Option<String> {
+    let head = head?;
+    (head == tested || runs.iter().any(|r| r.sha == head)).then(|| head.to_string())
+}
+
 /// branch: the head branch; current: the branch still points at the tested commit; pr_open: its pull request is open
 pub fn decide(branch: &str, runs: &[Run], current: bool, pr_open: bool, rel: Rel) -> Action {
     if !current {
@@ -140,6 +150,26 @@ mod tests {
             run("branch.yml", 1, "completed", "success"),
             run("images.yml", 2, "completed", "success"),
         ]
+    }
+
+    #[test]
+    fn a_run_on_an_older_commit_decides_for_the_head() {
+        let runs = vec![
+            on("old", "ios.yml", 1, "completed", "success"),
+            on("head", "branch.yml", 2, "completed", "success"),
+        ];
+        assert_eq!(
+            decides_for("head", Some("head"), &runs).as_deref(),
+            Some("head")
+        );
+        assert_eq!(
+            decides_for("old", Some("head"), &runs).as_deref(),
+            Some("head"),
+            "a run that finished on an older commit left the head undecided"
+        );
+        // the head was only just pushed: none of its runs is listed yet, so they decide
+        assert_eq!(decides_for("old", Some("newer"), &runs), None);
+        assert_eq!(decides_for("old", None, &runs), None, "the branch is gone");
     }
 
     #[test]
