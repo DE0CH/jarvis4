@@ -2,11 +2,13 @@
 //! pressure/memory pressure, do not upgrade; discord Deyao if upgrade is necessary or recommended"): a component of the
 //! supervisor, beside the stall watch. Every 30 s it reads its own machine's memory and disk and decides by the router's
 //! rules (router/memory.go, router/disk.go) whether the machine is short of memory or of disk. A process the harness's
-//! own memory guard killed counts too. A new episode is told to the session's harness through the Jarvis channel at
-//! once, and again every 15 minutes while it lasts. The text tells the session not to upgrade by itself: a bigger
-//! machine or disk is Deyao's decision, asked for over Discord. The router takes no part.
+//! own memory guard killed counts too. A new episode is told to the session's harness at once, and again every 15
+//! minutes while it lasts, as the one Jarvis message that interrupts the running turn instead of joining it at the next
+//! tool result (Deyao, 2026-11-20: it is time-sensitive, and the running tool call may be what fills the machine;
+//! deliver.rs `interrupt_harness`). The text tells the session not to upgrade by itself: a bigger machine or disk is
+//! Deyao's decision, asked for over Discord. The router takes no part.
 
-use crate::deliver::{live_mode, send_to_harness};
+use crate::deliver::{interrupt_harness, interrupts, live_mode, send_to_harness};
 use crate::disk::DiskSample;
 use crate::memory::MemSample;
 use crate::{logf, paths, util};
@@ -227,8 +229,9 @@ pub fn disk_pressure(s: &DiskSample) -> (bool, bool, String) {
     )
 }
 
-/// the watchdog's message; kind is "memory" or "disk"
-pub fn pressure_text(kind: &str, reason: &str, detail: &str) -> String {
+/// the watchdog's message; kind is "memory" or "disk"; `interrupting`: it stops a running turn (the harness can be
+/// interrupted)
+pub fn pressure_text(kind: &str, reason: &str, detail: &str, interrupting: bool) -> String {
     let (free, more) = if kind == "disk" {
         (
             "remove files you made and no longer need (build output, caches, downloads)",
@@ -240,7 +243,14 @@ pub fn pressure_text(kind: &str, reason: &str, detail: &str) -> String {
             "an upgrade to a bigger machine",
         )
     };
+    let stopped = if interrupting {
+        "This message stopped your running turn so that it reaches you at once: a foreground command it was running \
+         was ended, so check what finished before running anything again, on fewer parallel jobs. "
+    } else {
+        ""
+    };
     format!("Jarvis watchdog: {kind} pressure on this session's machine: {reason} ({detail}). ")
+        + stopped
         + &format!(
             "Do not upgrade the machine yourself. Free what you safely can, {free}, and carry on with the task. "
         )
@@ -258,6 +268,8 @@ pub fn pressure_watch_loop() {
         }
         let mut texts: Vec<(String, bool)> = vec![]; // (text, is memory)
         let now = Instant::now();
+        let mut cert = crate::grants::current_cert();
+        let interrupting = cert.as_ref().is_ok_and(|c| interrupts(&c.options.harness));
         if let Ok(s) = crate::memory::read_memory() {
             let reason = w.mem_reason(&s);
             if w.mem.step(
@@ -266,14 +278,17 @@ pub fn pressure_watch_loop() {
                 now,
                 PRESSURE_MEM_CLEAR,
             ) {
-                texts.push((pressure_text("memory", &reason, &mem_detail(&s)), true));
+                texts.push((
+                    pressure_text("memory", &reason, &mem_detail(&s), interrupting),
+                    true,
+                ));
             }
         }
         if let Ok(s) = crate::disk::read_disk() {
             let (low, clear, detail) = disk_pressure(&s);
             if w.disk.step(low, clear, now, Duration::ZERO) {
                 texts.push((
-                    pressure_text("disk", "it is almost out of disk", &detail),
+                    pressure_text("disk", "it is almost out of disk", &detail, interrupting),
                     false,
                 ));
             }
@@ -281,12 +296,17 @@ pub fn pressure_watch_loop() {
         if texts.is_empty() {
             continue;
         }
-        let mut cert = crate::grants::current_cert();
+        // the first message stops the running turn; a second of the same look joins the turn that one starts
+        let mut told = false;
         for (text, is_mem) in texts {
             let r = match &cert {
-                Ok(c) => send_to_harness(&c.options.harness, &live_mode(c), "jarvis", &text),
+                Ok(c) if told => {
+                    send_to_harness(&c.options.harness, &live_mode(c), "jarvis", &text)
+                }
+                Ok(c) => interrupt_harness(&c.options.harness, &live_mode(c), "jarvis", &text),
                 Err(e) => Err(anyhow::anyhow!("{e:#}")),
             };
+            told |= r.is_ok();
             match r {
                 Err(e) => {
                     logf!("pressure watch: the message wasn't taken: {e:#}");
