@@ -740,6 +740,10 @@ impl Router {
                 }
                 continue;
             }
+            if crate::fabricrunner::is_fabric_machine(m) {
+                // no machine on Fly: the router's own steps and the supervisor's lines are its log
+                continue;
+            }
             if !(hooks.fly_on)() {
                 continue;
             }

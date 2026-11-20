@@ -115,7 +115,7 @@ export type Cron = { name: string; prompt: string; everySeconds: number; tz?: st
 export type Refusal = { kind: "fallback" | "refusal"; at?: string; from?: string; to?: string; model?: string; category?: string };
 export type Session = {
   id: string; machineId?: string | null; released?: boolean; name?: string; state: SessionState | string; status?: string | null;
-  created?: string; region?: string; environment?: string; harness?: string; label?: string; model?: string;
+  created?: string; region?: string; runner?: string; environment?: string; harness?: string; label?: string; model?: string;
   permissionMode?: string; guest?: string; stores?: string[] | null; content?: string[] | null; size?: string; image?: string; pausedAt?: string | null; error?: string | null; title?: string; destroyedAt?: string;
   // live fields (docs/API.md "Sessions"): the machine's report, the autopilot's settings, the schedule
   timeMachine?: TimeMachine | null;

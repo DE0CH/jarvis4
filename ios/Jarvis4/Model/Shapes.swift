@@ -21,6 +21,8 @@ struct Session: Identifiable, Equatable, Hashable {
   var claudeAccount: String? { j["claudeAccount"].text }
   var model: String? { j["model"].text }
   var region: String? { j["region"].text }
+  /// where its machines run (router/awsrunner.go): aws | fly | fabric
+  var runner: String? { j["runner"].text }
   var guest: String? { j["guest"].text }
   var size: String? { j["size"].text }
   var image: String? { j["image"].text }

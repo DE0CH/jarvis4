@@ -276,6 +276,8 @@ func (r *Router) kernelSpawn(sid string) {
 	spawned := time.Now()
 	if isAWSMachine(id) {
 		op.note(id, "the spawner launched EC2 instance "+id+" ("+r.spawnRegion(&s)+"); waiting for its keys (the machine writes them to the instance's serial console once the session image runs)")
+	} else if isFabricMachine(id) {
+		op.note(id, "the spawner got fabric sandbox "+id+" from the fabric hermit; waiting for its keys (the machine writes them to the sandbox's console once the session image runs)")
 	} else {
 		op.note(id, "the spawner made Fly machine "+id+"; waiting for its keys")
 	}
@@ -1197,10 +1199,13 @@ func (r *Router) respondKernelAdd(a *Approval, signatures string) (*Doc, string,
 	return &Doc{Payload: md.Payload, Sig: md.Sig}, a.Session, nil
 }
 
-// runnerName: where a machine runs, by its id (an EC2 instance's is i-…)
+// runnerName: where a machine runs, by its id (an EC2 instance's is i-…, a fabric sandbox's x<32 hex>)
 func runnerName(machine string) string {
 	if isAWSMachine(machine) {
 		return "AWS"
+	}
+	if isFabricMachine(machine) {
+		return "the fabric"
 	}
 	return "Fly"
 }

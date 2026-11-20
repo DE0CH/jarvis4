@@ -58,7 +58,9 @@ func defaultRunner() string {
 }
 
 // runnerOf: where the session's machines run (its own runner, else the default)
-func (r *Router) runnerOf(s *Session) string {
+func (r *Router) runnerOf(s *Session) string { return sessionRunner(s) }
+
+func sessionRunner(s *Session) string {
 	if s != nil && validRunner(s.Runner) {
 		return s.Runner
 	}

@@ -222,3 +222,23 @@ func sessionByID(r *Router, id string) (s Session) {
 	r.st.Do(func(d *persisted) { s = *d.Sessions[id] })
 	return
 }
+
+// A fabric session is said to be one wherever the app shows where it runs: its log names the fabric, not Fly
+// (Deyao, 2026-11-20: "still says fly machine"), and its card shows the fabric's sandbox and hosts.
+func TestAFabricMachineIsNamedTheFabric(t *testing.T) {
+	x := "x01a1f71ecb6d71d6b5be4c4e404255df"
+	for id, want := range map[string]string{x: "the fabric", "i-0123456789abcdef0": "AWS", "683dde7ea60478": "Fly", "x01a1f71e": "Fly", "xzz1f71ecb6d71d6b5be4c4e404255df0": "Fly"} {
+		if got := runnerName(id); got != want {
+			t.Errorf("runnerName(%q) = %q, want %q", id, got, want)
+		}
+	}
+	t.Setenv("FABRIC_HERMIT_URL", "http://hermit")
+	v := sessionView(&Session{ID: "s1", Runner: "fabric", Size: "small", Region: "lhr"}, &persisted{})
+	if v["runner"] != "fabric" || v["region"] != fabricRegion || v["guest"] != fabricGuest {
+		t.Fatalf("fabric session view: runner %v region %v guest %v", v["runner"], v["region"], v["guest"])
+	}
+	v = sessionView(&Session{ID: "s2", Runner: "fly", Size: "small", Region: "lhr"}, &persisted{})
+	if v["runner"] != "fly" || v["region"] != "lhr" || v["guest"] != sizeLabel("small") {
+		t.Fatalf("fly session view: runner %v region %v guest %v", v["runner"], v["region"], v["guest"])
+	}
+}
