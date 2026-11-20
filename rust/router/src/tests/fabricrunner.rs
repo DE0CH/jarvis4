@@ -380,3 +380,53 @@ fn fabric_machine_states() {
         "hermit unavailable: an error (the machine is not taken for lost)"
     );
 }
+
+/// A fabric session is said to be one wherever the app shows where it runs: its log names the fabric, not Fly
+/// (Deyao, 2026-11-20: "still says fly machine"), and its card shows the fabric's sandbox and hosts.
+#[test]
+fn a_fabric_machine_is_named_the_fabric() {
+    let _g = serial();
+    let x = "x01a1f71ecb6d71d6b5be4c4e404255df";
+    for (id, want) in [
+        (x, "the fabric"),
+        ("i-0123456789abcdef0", "AWS"),
+        ("683dde7ea60478", "Fly"),
+        ("x01a1f71e", "Fly"),
+        ("xzz1f71ecb6d71d6b5be4c4e404255df0", "Fly"),
+    ] {
+        assert_eq!(
+            crate::kernelline::runner_name(id),
+            want,
+            "runner_name({id:?})"
+        );
+    }
+    let _env = fabric_env(&[("FABRIC_HERMIT_URL", "http://hermit")]);
+    let d = crate::state::Persisted::default();
+    let s = |id: &str, runner: &str| Session {
+        id: id.into(),
+        runner: runner.into(),
+        size: "small".into(),
+        region: "lhr".into(),
+        ..Default::default()
+    };
+    let v = crate::http::session_view(&s("s1", "fabric"), &d);
+    assert!(
+        v.get("runner") == Some(&serde_json::json!("fabric"))
+            && v.get("region") == Some(&serde_json::json!(crate::fabricrunner::FABRIC_REGION))
+            && v.get("guest") == Some(&serde_json::json!(crate::fabricrunner::FABRIC_GUEST)),
+        "fabric session view: {:?} {:?} {:?}",
+        v.get("runner"),
+        v.get("region"),
+        v.get("guest")
+    );
+    let v = crate::http::session_view(&s("s2", "fly"), &d);
+    assert!(
+        v.get("runner") == Some(&serde_json::json!("fly"))
+            && v.get("region") == Some(&serde_json::json!("lhr"))
+            && v.get("guest") == Some(&serde_json::json!(crate::sizes::size_label("small"))),
+        "fly session view: {:?} {:?} {:?}",
+        v.get("runner"),
+        v.get("region"),
+        v.get("guest")
+    );
+}
