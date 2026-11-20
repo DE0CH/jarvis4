@@ -27,6 +27,7 @@ use jarvis_go::GoTime;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, RwLock};
 use std::time::Duration;
 
@@ -246,6 +247,17 @@ fn hetzner_live(method: &str, path: &str, input: Option<&Value>) -> Result<Vec<u
 
 /// tests swap it
 pub static HETZNER: RwLock<HetznerFn> = RwLock::new(hetzner_live);
+
+/// tests: runners on without HETZNER_RUNNERS_TOKEN (HETZNER is their fake)
+pub static RUNNERS_FORCE: AtomicBool = AtomicBool::new(false);
+
+/// the router holds the runners project's token
+pub fn runners_on() -> bool {
+    RUNNERS_FORCE.load(Ordering::SeqCst)
+        || !std::env::var("HETZNER_RUNNERS_TOKEN")
+            .unwrap_or_default()
+            .is_empty()
+}
 
 fn hetzner(method: &str, path: &str, input: Option<&Value>) -> Result<Vec<u8>> {
     (*HETZNER.read().unwrap_or_else(|e| e.into_inner()))(method, path, input)
@@ -647,10 +659,7 @@ impl Router {
     /// a session's runners go with it (a destroy, a pause nothing will wake). It never fails the action: a runner
     /// Hetzner didn't delete stays on the Machines view, standing out.
     pub fn end_runners(&self, sid: &str, op: &LcHandle, why: &str) {
-        if std::env::var("HETZNER_RUNNERS_TOKEN")
-            .unwrap_or_default()
-            .is_empty()
-        {
+        if !runners_on() {
             return;
         }
         let (gone, err) = delete_session_runners(sid);
@@ -675,10 +684,7 @@ impl Router {
 
     /// a paused session keeps its runners only when something armed will run it again
     pub fn runners_after_pause(&self, sid: &str, op: &LcHandle) {
-        if std::env::var("HETZNER_RUNNERS_TOKEN")
-            .unwrap_or_default()
-            .is_empty()
-        {
+        if !runners_on() {
             return;
         }
         if !self.st.do_(|d| crate::schedule::will_wake(d, sid)) {
