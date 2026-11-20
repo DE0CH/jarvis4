@@ -175,17 +175,6 @@ pub fn must_succ(d: &SDoc) -> Object {
         .unwrap_or_else(|| Object(String::new()))
 }
 
-/// where a machine runs, by its id (an EC2 instance's is i-…, a fabric sandbox's x<32 hex>)
-pub fn runner_name(machine: &str) -> &'static str {
-    if crate::awsrunner::is_aws_machine(machine) {
-        "AWS"
-    } else if crate::fabricrunner::is_fabric_machine(machine) {
-        "the fabric"
-    } else {
-        "Fly"
-    }
-}
-
 /// whether a spawn goes on waiting for its machine's keys after the spawner's answer err. It waits while the machine is
 /// still coming up (not started yet, or its runner briefly unreachable); a machine the spawner reports destroyed never
 /// starts, so the start fails at once with why (a fabric sandbox whose start failed at hermit left its session
@@ -510,15 +499,10 @@ impl Router {
         }
         op.machine(&id);
         let spawned = Instant::now();
-        if crate::awsrunner::is_aws_machine(&id) {
-            op.note(&id, &format!("the spawner launched EC2 instance {id} ({region}); waiting for its keys (the machine writes them to the instance's serial console once the session image runs)"));
-        } else if crate::fabricrunner::is_fabric_machine(&id) {
-            op.note(&id, &format!("the spawner got fabric sandbox {id} from the fabric hermit; waiting for its keys (the machine writes them to the sandbox's console once the session image runs)"));
-        } else {
-            op.note(
-                &id,
-                &format!("the spawner made Fly machine {id}; waiting for its keys"),
-            );
+        match runner.as_str() {
+            "aws" => op.note(&id, &format!("the spawner launched EC2 instance {id} ({region}); waiting for its keys (the machine writes them to the instance's serial console once the session image runs)")),
+            "fabric" => op.note(&id, &format!("the spawner got fabric sandbox {id} from the fabric hermit; waiting for its keys (the machine writes them to the sandbox's console once the session image runs)")),
+            _ => op.note(&id, &format!("the spawner made Fly machine {id}; waiting for its keys")),
         }
         let pred = peek(&source_cert)
             .map(|sc| self.kernel_pred(&s, &sc))
@@ -662,7 +646,7 @@ impl Router {
         let Some(k) = &self.kernel else {
             return (String::new(), String::new());
         };
-        let mut cands: Vec<(String, String)> = vec![];
+        let mut cands: Vec<(String, String, &str)> = vec![];
         match crate::machines::list_fly_machines() {
             Err(e) => crate::logf!(
                 "[kernel] {}: no look on Fly for an earlier spawn's machine ({e:#})",
@@ -683,7 +667,7 @@ impl Router {
                         .first()
                         .map(|x| x.volume.clone())
                         .unwrap_or_default();
-                    cands.push((m.id, vol));
+                    cands.push((m.id, vol, "fly"));
                 }
             }
         }
@@ -696,13 +680,13 @@ impl Router {
             Ok(ins) => {
                 for i in ins {
                     if i.source == source.0 && i.state != "destroyed" && i.state != "destroying" {
-                        cands.push((i.id, String::new()));
+                        cands.push((i.id, String::new(), "aws"));
                     }
                 }
             }
         }
         let (mut id, mut vol) = (String::new(), String::new());
-        for (mid, mvol) in cands {
+        for (mid, mvol, runner) in cands {
             if id.is_empty() {
                 let res = k.doc("spawner", "/init", &json!({"id": mid}));
                 let unknown = res
@@ -718,7 +702,7 @@ impl Router {
                 }
             }
             op.note(&mid, &format!("machine {mid} from {} is a stray of an earlier spawn: asked the spawner to destroy it", source.0));
-            if let Err(e) = k.doc("spawner", "/destroy", &json!({"id": mid})) {
+            if let Err(e) = k.doc("spawner", "/destroy", &json!({"id": mid, "runner": runner})) {
                 crate::logf!("[kernel] stray {mid}: destroy: {e:#}");
             }
         }
@@ -1104,7 +1088,7 @@ impl Router {
             machine,
             &format!(
                 "the spawner confirmed the machine destroyed on {}",
-                runner_name(machine)
+                crate::awsrunner::runner_label(&self.runner_of_session(id))
             ),
         );
         *ok = true;

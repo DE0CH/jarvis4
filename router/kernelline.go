@@ -274,11 +274,12 @@ func (r *Router) kernelSpawn(sid string) {
 	}
 	op.machine(id)
 	spawned := time.Now()
-	if isAWSMachine(id) {
+	switch runner {
+	case "aws":
 		op.note(id, "the spawner launched EC2 instance "+id+" ("+r.spawnRegion(&s)+"); waiting for its keys (the machine writes them to the instance's serial console once the session image runs)")
-	} else if isFabricMachine(id) {
+	case "fabric":
 		op.note(id, "the spawner got fabric sandbox "+id+" from the fabric hermit; waiting for its keys (the machine writes them to the sandbox's console once the session image runs)")
-	} else {
+	default:
 		op.note(id, "the spawner made Fly machine "+id+"; waiting for its keys")
 	}
 	pred := ""
@@ -393,7 +394,7 @@ func (r *Router) kernelPred(s *Session, sc doc.Cert) string {
 // other one is destroyed through the spawner. Only one machine of a source can take the line either way: the
 // notarizer refuses a source's second successor.
 func (r *Router) kernelAdopt(op *lcHandle, source doc.Object) (string, string) {
-	type found struct{ id, vol string }
+	type found struct{ id, vol, runner string }
 	var cands []found
 	ms, err := listFlyMachines()
 	if err != nil {
@@ -403,7 +404,7 @@ func (r *Router) kernelAdopt(op *lcHandle, source doc.Object) (string, string) {
 		if m.Config.Metadata[spawner.SourceMeta] != string(source) || m.State == "destroyed" || m.State == "destroying" {
 			continue
 		}
-		f := found{id: m.ID}
+		f := found{id: m.ID, runner: "fly"}
 		if len(m.Config.Mounts) > 0 {
 			f.vol = m.Config.Mounts[0].Volume
 		}
@@ -415,7 +416,7 @@ func (r *Router) kernelAdopt(op *lcHandle, source doc.Object) (string, string) {
 	}
 	for _, i := range ins {
 		if i.Source == string(source) && i.State != "destroyed" && i.State != "destroying" {
-			cands = append(cands, found{id: i.ID})
+			cands = append(cands, found{id: i.ID, runner: "aws"})
 		}
 	}
 	id, vol := "", ""
@@ -430,7 +431,7 @@ func (r *Router) kernelAdopt(op *lcHandle, source doc.Object) (string, string) {
 			}
 		}
 		op.note(m.id, "machine "+m.id+" from "+string(source)+" is a stray of an earlier spawn: asked the spawner to destroy it")
-		if _, err := r.kernel.Doc("spawner", "/destroy", map[string]string{"id": m.id}); err != nil {
+		if _, err := r.kernel.Doc("spawner", "/destroy", map[string]string{"id": m.id, "runner": m.runner}); err != nil {
 			log.Printf("[kernel] stray %s: destroy: %v", m.id, err)
 		}
 	}
@@ -746,7 +747,7 @@ func (r *Router) kernelKillDone(id, machine string, destroying bool, serr error,
 			s.NoSnapshot = ""
 		}
 	})
-	r.lcNote(id, machine, "the spawner confirmed the machine destroyed on "+runnerName(machine))
+	r.lcNote(id, machine, "the spawner confirmed the machine destroyed on "+runnerLabel(r.runnerOfSession(id)))
 	*ok = true
 	return true
 }
@@ -1197,15 +1198,4 @@ func (r *Router) respondKernelAdd(a *Approval, signatures string) (*Doc, string,
 	})
 	r.send(a.Machine, "refresh-secrets")
 	return &Doc{Payload: md.Payload, Sig: md.Sig}, a.Session, nil
-}
-
-// runnerName: where a machine runs, by its id (an EC2 instance's is i-…, a fabric sandbox's x<32 hex>)
-func runnerName(machine string) string {
-	if isAWSMachine(machine) {
-		return "AWS"
-	}
-	if isFabricMachine(machine) {
-		return "the fabric"
-	}
-	return "Fly"
 }
