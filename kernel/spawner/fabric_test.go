@@ -192,8 +192,9 @@ func TestFabricSpawnInitKill(t *testing.T) {
 	}
 	o := out.(map[string]any)
 	id := o["id"].(string)
-	if id != "x0190f6c25b1e7a3c9d4e000000000001" || runnerOf(id) != "fabric" || object(id) != doc.Object("fabric-"+id) || object(id).Kind() != "machine" {
-		t.Fatalf("machine id %q, object %q", id, object(id))
+	m := r.sp.machines[id]
+	if id != "x0190f6c25b1e7a3c9d4e000000000001" || m == nil || m.Runner != "fabric" || object(m) != doc.Object("fabric-"+id) || object(m).Kind() != "machine" {
+		t.Fatalf("machine id %q, record %+v", id, m)
 	}
 	if o["volume"] != "" {
 		t.Fatalf("a fabric machine has no volume: %v", o["volume"])
@@ -267,7 +268,7 @@ func TestFabricSpawnInitKill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id2 := out.(map[string]any)["id"].(string); id2 == id || runnerOf(id2) != "fabric" {
+	if id2 := out.(map[string]any)["id"].(string); id2 == id || r.sp.machines[id2] == nil || r.sp.machines[id2].Runner != "fabric" {
 		t.Fatalf("the next machine is %q", id2)
 	}
 	// a restart keeps the machines and their conversations (a kill again answers the same cert; the tokens are sent
@@ -344,16 +345,32 @@ func TestFabricRefuses(t *testing.T) {
 	}
 }
 
+// A machine's calls go to the runner its record names, never one read from its id (Deyao, 2026-11-20: there are more
+// than two kinds): a fabric machine whose id looks like a Fly machine's never reaches Fly, and a machine the spawner has
+// no record of is looked up where the router says it found it.
+func TestTheRecordNamesTheRunnerNotTheID(t *testing.T) {
+	r := newFabricRig(t)
+	flyShaped := "0190f6c25b1e7a"
+	r.sp.machines[flyShaped] = &Machine{ID: flyShaped, Runner: "fabric", Source: "source-0190f6c25b1e7a3c9d4e1f2a3b4c5d6e"}
+	if _, err := r.sp.Init(flyShaped); reason(err) != ReasonFabric || !strings.HasPrefix(err.Error(), "fabric inspect") {
+		t.Fatalf("init of a fabric machine went to its runner, the fabric: %v", err)
+	}
+	if _, err := r.sp.Destroy("x0190f6c25b1e7a3c9d4e1f2a3b4c5d6e", "fabric"); reason(err) != ReasonFabric || !strings.HasPrefix(err.Error(), "fabric inspect") {
+		t.Fatalf("a destroy where the router found it (the fabric): %v", err)
+	}
+	if _, err := r.sp.Destroy("x0190f6c25b1e7a3c9d4e1f2a3b4c5d6e", "nowhere"); err == nil {
+		t.Fatal("a destroy on a runner the spawner doesn't know")
+	}
+	if len(r.fly.ms) != 0 {
+		t.Fatal("a fabric machine's call reached Fly")
+	}
+}
+
 func TestFabricIDs(t *testing.T) {
 	sid := "0190f6c2-5b1e-7a3c-9d4e-1f2a3b4c5d6e"
 	id := fabricMachineID(sid)
 	if id != "x0190f6c25b1e7a3c9d4e1f2a3b4c5d6e" || fabricSandboxID(id) != sid || fabricSandboxID("0190f6c25b1e7a3c9d4e1f2a3b4c5d6e") != "" {
 		t.Fatalf("%q %q", id, fabricSandboxID(id))
-	}
-	for id, want := range map[string]string{id: "fabric", "i-0abc1234def567890": "aws", "0190f6c25b1e7a": "fly", "0190f6c25b1e7a3c9d4e1f2a3b4c5d6e": "fly"} {
-		if runnerOf(id) != want {
-			t.Fatalf("%s: %s", id, runnerOf(id))
-		}
 	}
 	if doc.Object("fabric-"+id).Kind() != "machine" || doc.Object("fabric-"+id).Runner() != "fabric" || doc.Object("fabric-"+id).MachineID() != id {
 		t.Fatal("the fabric machine object")

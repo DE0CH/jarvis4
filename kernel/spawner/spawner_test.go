@@ -387,23 +387,23 @@ func TestSpawnIsSingleCalls(t *testing.T) {
 		t.Fatalf("the stray's metadata: %q", r2.fly.ms[stray].source)
 	}
 	sp2, _ := Open(r2.path, r2.w.C["spawner"], r2.w.Trust, r2.fly, nil, map[string]string{"JARVIS2_URL": "http://router"}, nil)
-	out, err := sp2.Destroy(stray)
+	out, err := sp2.Destroy(stray, "")
 	if err != nil || out.(map[string]any)["volumeLeft"] != "" || r2.fly.ms[stray].state != "destroyed" || len(r2.fly.vols) != 0 {
 		t.Fatalf("destroy: %v %v %s %v", out, err, r2.fly.ms[stray].state, r2.fly.vols)
 	}
 	if _, err := sp2.Init(stray); err == nil {
 		t.Fatal("a destroyed machine initialised")
 	}
-	if _, err := sp2.Destroy(stray); err != nil {
+	if _, err := sp2.Destroy(stray, ""); err != nil {
 		t.Fatal("a repeated destroy:", err)
 	}
 
 	id, _ := r.spawn()
-	if _, err := r.sp.Destroy(id); reason(err) != ReasonCameUp || r.fly.ms[id].state != "started" {
+	if _, err := r.sp.Destroy(id, ""); reason(err) != ReasonCameUp || r.fly.ms[id].state != "started" {
 		t.Fatal(err)
 	}
 	r.fly.ms["elsewhere"] = &fakeM{state: "started"}
-	if _, err := r.sp.Destroy("elsewhere"); reason(err) != ReasonUnknown || r.fly.ms["elsewhere"].state != "started" {
+	if _, err := r.sp.Destroy("elsewhere", ""); reason(err) != ReasonUnknown || r.fly.ms["elsewhere"].state != "started" {
 		t.Fatal(err)
 	}
 }
