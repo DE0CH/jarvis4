@@ -82,6 +82,21 @@ authorisation and signature.
 | Replica runs: `rust/e2e-kernel` per runner and harness; a fly-preload replica (throwaway app) | `rust/e2e-kernel` | with each part |
 | Kernel release | Deyao's authorisation and signature | last |
 
+## Every harness in the sandbox (`aviary-sandbox --run`)
+
+The harness launchers (harness-claude.sh and the others) are shell and stay unchanged: what changes is where they run,
+decided in Rust. On the machine image (`/etc/jarvis/machine-base` is there) `session-entrypoint` starts a harness
+other than aviary as `sudo -E aviary-sandbox --run WORKDIR -- /usr/local/bin/harness-claude.sh WORKDIR` (aviary's own
+launcher already enters the sandbox for the supervisor). `--run` builds the same root as the aviary harness (aviary's
+image, the overlay or the bind, /proc, /sys, /dev, resolv.conf and hosts, Jarvis's session commands) with what a
+launcher needs of the machine: its home rbound at `/home/claude` (the launchers' paths; ~/.claude is the machine's,
+with the login and transcripts), its `/tmp` (tmux's socket: the keeper and the Terminal panel see the same tmux
+server), `/run/jarvis`, `/etc/claude-code` and Jarvis's launcher files read-only (never over a file of the image's).
+The command runs as uid 1000 with the machine's environment (sudo -E keeps it: `ALL` implies SETENV) and the image's
+PATH after the machine's. Claude Code is aviary's (`/usr/local/bin/claude`, the version aviary pins). Each harness's
+own runtime (OpenCode, Paseo, claw, the OpenClaw and dsh bundles) is added to the machine base and bound in as that
+harness moves; plain Claude Code needs none.
+
 ## Security notes
 
 - The preloader holds the only token for `jarvis4-sessions-preload`; the spawner's token stays narrowed to

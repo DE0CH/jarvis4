@@ -678,8 +678,9 @@ fn outer(p: &Paths, boot: &str, wd: &str) -> Result<ExitCode, String> {
     Err(format!("starting unshare: {e}"))
 }
 
-/// Inside the new namespaces: the image's root with Jarvis's parts in it, then into it and the image's entrypoint.
-fn inner(p: &Paths, boot: &str, wd: &str) -> Result<ExitCode, String> {
+/// The image's root at ROOT (the bind of an unpacked image directory, else an overlay over it with the session's
+/// upper on the volume), with /proc, /sys and /dev: what both kinds of start share
+fn image_root(p: &Paths) -> Result<(), String> {
     let (img, new) = (p.img.as_str(), ROOT);
     mkdirs(new)?;
     if p.image_dir {
@@ -695,6 +696,97 @@ fn inner(p: &Paths, boot: &str, wd: &str) -> Result<ExitCode, String> {
     mount("proc", &format!("{new}/proc"), Some("proc"), 0, None)?;
     mount("/sys", &format!("{new}/sys"), None, rbind, None)?;
     mount("/dev", &format!("{new}/dev"), None, rbind, None)?;
+    Ok(())
+}
+
+/// One of the machine's files bound read-only at the same path in the root (made empty first when the image has
+/// no such path); never over a file of the image's: a name the image takes is the image's
+fn bind_file_ro(img: &str, src: &str, at: &str) -> Result<(), String> {
+    if Path::new(&format!("{img}{at}")).exists() {
+        return Err(format!("the image has its own {at}"));
+    }
+    let dst = format!("{ROOT}{at}");
+    if let Some(dir) = Path::new(&dst).parent() {
+        fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    if !Path::new(&dst).exists() {
+        fs::File::create(&dst).map_err(|e| format!("{dst}: {e}"))?;
+    }
+    mount(src, &dst, None, libc::MS_BIND, None)?;
+    mount(
+        "none",
+        &dst,
+        None,
+        libc::MS_BIND | libc::MS_REMOUNT | libc::MS_RDONLY,
+        None,
+    )
+}
+
+/// The machine's resolv.conf and hosts copied in, Jarvis's session commands (TOOLS) bound in, `jarvis` linked
+fn machine_parts(p: &Paths) -> Result<(), String> {
+    let (img, new) = (p.img.as_str(), ROOT);
+    for f in ["resolv.conf", "hosts"] {
+        let src = format!("/etc/{f}");
+        if Path::new(&src).exists() {
+            let dst = format!("{new}/etc/{f}");
+            let _ = fs::remove_file(&dst);
+            fs::copy(&src, &dst).map_err(|e| format!("copying {src}: {e}"))?;
+        }
+    }
+    for t in TOOLS {
+        let src = format!("{}/{t}", p.bin);
+        if Path::new(&src).exists() {
+            bind_file_ro(img, &src, &format!("/usr/local/bin/{t}"))?;
+        }
+    }
+    if Path::new(&format!("{new}/usr/local/bin/jarvis-machine")).exists() {
+        let j = format!("{new}/usr/local/bin/jarvis");
+        let _ = fs::remove_file(&j);
+        symlink("jarvis-machine", &j).map_err(|e| format!("{j}: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Into ROOT: pivot_root and the machine's root unmounted from this namespace (or, from a root that can't be pivoted
+/// from, an initramfs, the image moved over it)
+fn enter_root() -> Result<(), String> {
+    let new = ROOT;
+    std::env::set_current_dir(new).map_err(|e| format!("{new}: {e}"))?;
+    let (dot, mnt) = (c("."), c("mnt"));
+    // SAFETY: plain system calls on NUL-terminated strings that live across them
+    unsafe {
+        if libc::syscall(libc::SYS_pivot_root, dot.as_ptr(), mnt.as_ptr()) == 0 {
+            if libc::chroot(dot.as_ptr()) != 0 {
+                return Err(format!("entering the image: {}", errno()));
+            }
+            // MNT_DETACH: the machine root leaves this namespace
+            if libc::umount2(c("/mnt").as_ptr(), libc::MNT_DETACH) != 0 {
+                return Err(format!("unmounting the machine root: {}", errno()));
+            }
+        } else {
+            if libc::mount(
+                dot.as_ptr(),
+                c("/").as_ptr(),
+                std::ptr::null(),
+                libc::MS_MOVE,
+                std::ptr::null(),
+            ) != 0
+            {
+                return Err(format!("entering the image: {}", errno()));
+            }
+            if libc::chroot(dot.as_ptr()) != 0 {
+                return Err(format!("entering the image: {}", errno()));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Inside the new namespaces: the image's root with Jarvis's parts in it, then into it and the image's entrypoint.
+fn inner(p: &Paths, boot: &str, wd: &str) -> Result<ExitCode, String> {
+    let (img, new) = (p.img.as_str(), ROOT);
+    image_root(p)?;
+    let rbind = libc::MS_BIND | libc::MS_REC;
     // rbind: with what is mounted in the machine's home. ~/workspace and ~/artifacts are mounts from the session's
     // volume there; a plain bind left them out, and the agent wrote its repos and records to the root disk, which a
     // pause throws away (tests/aviary_sandbox.rs). The tmpfs hides the machine's ~/.harness.
@@ -728,41 +820,7 @@ fn inner(p: &Paths, boot: &str, wd: &str) -> Result<ExitCode, String> {
             None,
         )?;
     }
-    for f in ["resolv.conf", "hosts"] {
-        let src = format!("/etc/{f}");
-        if Path::new(&src).exists() {
-            let dst = format!("{new}/etc/{f}");
-            let _ = fs::remove_file(&dst);
-            fs::copy(&src, &dst).map_err(|e| format!("copying {src}: {e}"))?;
-        }
-    }
-    for t in TOOLS {
-        let src = format!("{}/{t}", p.bin);
-        if !Path::new(&src).exists() {
-            continue;
-        }
-        // never over a file of the image's: a name the image takes is the image's
-        if Path::new(&format!("{img}/usr/local/bin/{t}")).exists() {
-            return Err(format!("the image has its own /usr/local/bin/{t}"));
-        }
-        let dst = format!("{new}/usr/local/bin/{t}");
-        if !Path::new(&dst).exists() {
-            fs::File::create(&dst).map_err(|e| format!("{dst}: {e}"))?;
-        }
-        mount(&src, &dst, None, libc::MS_BIND, None)?;
-        mount(
-            "none",
-            &dst,
-            None,
-            libc::MS_BIND | libc::MS_REMOUNT | libc::MS_RDONLY,
-            None,
-        )?;
-    }
-    if Path::new(&format!("{new}/usr/local/bin/jarvis-machine")).exists() {
-        let j = format!("{new}/usr/local/bin/jarvis");
-        let _ = fs::remove_file(&j);
-        symlink("jarvis-machine", &j).map_err(|e| format!("{j}: {e}"))?;
-    }
+    machine_parts(p)?;
 
     // Into the image's root, then the image's entrypoint with the image's environment and the boot environment
     // (supervisor 6.2: nothing else of the machine's is passed on)
@@ -785,35 +843,7 @@ fn inner(p: &Paths, boot: &str, wd: &str) -> Result<ExitCode, String> {
         .filter(|w| !w.is_empty())
         .unwrap_or("/")
         .to_string();
-    std::env::set_current_dir(new).map_err(|e| format!("{new}: {e}"))?;
-    let (dot, mnt) = (c("."), c("mnt"));
-    // SAFETY: plain system calls on NUL-terminated strings that live across them
-    unsafe {
-        if libc::syscall(libc::SYS_pivot_root, dot.as_ptr(), mnt.as_ptr()) == 0 {
-            if libc::chroot(dot.as_ptr()) != 0 {
-                return Err(format!("entering the image: {}", errno()));
-            }
-            // MNT_DETACH: the machine root leaves this namespace
-            if libc::umount2(c("/mnt").as_ptr(), libc::MNT_DETACH) != 0 {
-                return Err(format!("unmounting the machine root: {}", errno()));
-            }
-        } else {
-            // a root that cannot be pivoted from (an initramfs): the image moves over it
-            if libc::mount(
-                dot.as_ptr(),
-                c("/").as_ptr(),
-                std::ptr::null(),
-                libc::MS_MOVE,
-                std::ptr::null(),
-            ) != 0
-            {
-                return Err(format!("entering the image: {}", errno()));
-            }
-            if libc::chroot(dot.as_ptr()) != 0 {
-                return Err(format!("entering the image: {}", errno()));
-            }
-        }
-    }
+    enter_root()?;
     std::env::set_current_dir(&wdir).map_err(|e| format!("{wdir}: {e}"))?;
     let mut av: Vec<*const libc::c_char> = args.iter().map(|a| a.as_ptr()).collect();
     av.push(std::ptr::null());
@@ -828,6 +858,152 @@ fn inner(p: &Paths, boot: &str, wd: &str) -> Result<ExitCode, String> {
     ))
 }
 
+/// What a harness launcher run inside the sandbox (`--run`) needs of the machine besides TOOLS, bound read-only at the
+/// same path where the machine has it (docs/PLAN-one-image.md "Every harness in the sandbox")
+pub const HARNESS_FILES: [&str; 24] = [
+    "/usr/local/bin/harness-claude.sh",
+    "/usr/local/bin/harness-opencode.sh",
+    "/usr/local/bin/harness-paseo-claude.sh",
+    "/usr/local/bin/harness-openclaw.sh",
+    "/usr/local/bin/harness-dsh.sh",
+    "/usr/local/bin/harness-send",
+    "/usr/local/bin/session-attachments",
+    "/usr/local/bin/set-permission-mode",
+    "/usr/local/bin/opencode-instructions.py",
+    "/usr/local/bin/opencode-transcript.py",
+    "/usr/local/bin/openclaw-transcript",
+    "/usr/local/bin/dsh-profile-patch.py",
+    "/usr/local/bin/dsh-transcript.py",
+    "/usr/local/bin/dsh-send.py",
+    "/usr/local/bin/jarvis-channel",
+    "/usr/local/bin/jarvis-channel-send",
+    "/usr/local/bin/openclaw",
+    "/usr/local/bin/dsh-runtime",
+    "/usr/local/bin/claw",
+    "/usr/local/lib/paseo-front.js",
+    "/usr/local/lib/api-proxy.js",
+    "/usr/local/lib/cf-tunnel-agent.js",
+    "/usr/local/lib/dsh-front.js",
+    "/usr/local/share/forks.json",
+];
+
+/// The machine's directories a launcher run inside the sandbox reads, rbound at the same path (Claude Code's managed
+/// settings and the Jarvis channel's config, the runtime pins and task templates)
+pub const HARNESS_DIRS: [&str; 2] = ["/etc/claude-code", "/opt/jarvis"];
+
+/// `--run WORKDIR -- CMD [ARG...]` → (WORKDIR, CMD and its arguments)
+pub fn run_args(args: &[String]) -> Result<(String, Vec<String>), String> {
+    let usage = "usage: aviary-sandbox --run WORKDIR -- CMD [ARG...]";
+    match args {
+        [flag, wd, sep, cmd @ ..] if flag == "--run" && sep == "--" && !cmd.is_empty() => {
+            Ok((wd.clone(), cmd.to_vec()))
+        }
+        _ => Err(usage.into()),
+    }
+}
+
+/// WORKDIR (a path under the machine's home) as the launcher sees it: the home is at /home/claude inside
+pub fn run_workdir(wd: &str, home: &str) -> String {
+    match wd.strip_prefix(home) {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => format!("/home/claude{rest}"),
+        _ => wd.to_string(),
+    }
+}
+
+/// A launcher's PATH inside the sandbox: the machine's first (its launchers name ~/.local/bin and /usr/local/bin),
+/// then the image's directories the machine's lacks (the image's tools: /opt/py/bin, /opt/cargo/bin, …)
+pub fn run_path(machine: &str, image: &str) -> String {
+    let mut out: Vec<&str> = machine.split(':').filter(|d| !d.is_empty()).collect();
+    for d in image.split(':') {
+        if !d.is_empty() && !out.contains(&d) {
+            out.push(d);
+        }
+    }
+    out.join(":")
+}
+
+/// `--run` outside the namespaces: the image fetched (or found), then this program again inside a new PID and mount
+/// namespace
+fn outer_run(p: &Paths, wd: &str, cmd: &[String]) -> Result<ExitCode, String> {
+    fetch(p)?;
+    let me = std::env::current_exe().map_err(|e| format!("this program's path: {e}"))?;
+    let e = Command::new("unshare")
+        .args(["--pid", "--fork", "--mount", "--propagation", "private"])
+        .arg(me)
+        .args(["aviary-sandbox", "--run", wd, "--"])
+        .args(cmd)
+        .env("AVIARY_SANDBOX_INNER", "1")
+        .exec();
+    Err(format!("starting unshare: {e}"))
+}
+
+/// `--run` inside the namespaces: the image's root with the machine's home at /home/claude, its /tmp, /run/jarvis and
+/// the launchers' files, then into it and CMD as uid 1000 with the machine's environment
+fn inner_run(p: &Paths, wd: &str, cmd: &[String]) -> Result<ExitCode, String> {
+    let (img, new) = (p.img.as_str(), ROOT);
+    image_root(p)?;
+    let rbind = libc::MS_BIND | libc::MS_REC;
+    // the launchers' home: the machine's whole home with what is mounted in it (~/workspace, ~/artifacts from the
+    // volume, ~/.claude with the login and the transcripts)
+    mkdirs(&format!("{new}/home/claude"))?;
+    mount(&p.home, &format!("{new}/home/claude"), None, rbind, None)?;
+    // one /tmp with the machine: tmux's socket (the keeper and the Terminal panel see the launcher's tmux server), the
+    // attachments' staging
+    mount("/tmp", &format!("{new}/tmp"), None, rbind, None)?;
+    if Path::new("/run/jarvis").is_dir() {
+        mkdirs(&format!("{new}/run/jarvis"))?;
+        mount(
+            "/run/jarvis",
+            &format!("{new}/run/jarvis"),
+            None,
+            rbind,
+            None,
+        )?;
+    }
+    for d in HARNESS_DIRS {
+        if Path::new(d).is_dir() {
+            mkdirs(&format!("{new}{d}"))?;
+            mount(d, &format!("{new}{d}"), None, rbind, None)?;
+        }
+    }
+    for f in HARNESS_FILES {
+        if Path::new(f).exists() {
+            bind_file_ro(img, f, f)?;
+        }
+    }
+    machine_parts(p)?;
+    let config: Value = fs::read_to_string(format!("{img}.config"))
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .map(|v| v["config"].clone())
+        .ok_or_else(|| format!("no image config at {img}.config"))?;
+    let image_path = environment(&config, "")
+        .into_iter()
+        .find(|(k, _)| k == "PATH")
+        .map(|(_, v)| v)
+        .unwrap_or_default();
+    let path = run_path(&env_or("PATH", "/usr/local/bin:/usr/bin:/bin"), &image_path);
+    enter_root()?;
+    let wd = run_workdir(wd, &p.home);
+    std::env::set_current_dir(&wd).map_err(|e| format!("{wd}: {e}"))?;
+    // SAFETY: plain system calls; the groups first, while still root
+    unsafe {
+        if libc::setgroups(0, std::ptr::null()) != 0
+            || libc::setgid(1000) != 0
+            || libc::setuid(1000) != 0
+        {
+            return Err(format!("becoming uid 1000: {}", errno()));
+        }
+    }
+    let e = Command::new(&cmd[0])
+        .args(&cmd[1..])
+        .env("PATH", path)
+        .env("HOME", "/home/claude")
+        .env_remove("AVIARY_SANDBOX_INNER")
+        .exec();
+    Err(format!("starting {}: {e}", cmd[0]))
+}
+
 pub fn run(args: &[String]) -> Result<ExitCode, String> {
     // SAFETY: a plain system call
     if unsafe { libc::geteuid() } != 0 {
@@ -839,9 +1015,20 @@ pub fn run(args: &[String]) -> Result<ExitCode, String> {
         println!("{}", p.img);
         return Ok(ExitCode::SUCCESS);
     }
-    let boot = args
-        .first()
-        .ok_or("usage: aviary-sandbox BOOT_ENV_FILE [WORKDIR] | --fetch")?;
+    if args.first().map(String::as_str) == Some("--run") {
+        let (wd, cmd) = run_args(args)?;
+        if !under_workspace(Path::new(&wd), &p.home) {
+            return Err(format!("{wd} is not under ~/workspace"));
+        }
+        return if std::env::var("AVIARY_SANDBOX_INNER").as_deref() == Ok("1") {
+            inner_run(&p, &wd, &cmd)
+        } else {
+            outer_run(&p, &wd, &cmd)
+        };
+    }
+    let boot = args.first().ok_or(
+        "usage: aviary-sandbox BOOT_ENV_FILE [WORKDIR] | --fetch | --run WORKDIR -- CMD [ARG...]",
+    )?;
     let wd = args
         .get(1)
         .cloned()
@@ -894,6 +1081,53 @@ mod tests {
             progress_line(0, Some(10_000_000), 0, 0.0),
             "0 of 10 MB downloaded (0%), 0 MB unpacked, 0.0 MB/s"
         );
+    }
+
+    #[test]
+    fn run_takes_a_workdir_and_a_command_after_the_separator() {
+        let a = |v: &[&str]| v.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            run_args(&a(&[
+                "--run",
+                "/home/claude/workspace",
+                "--",
+                "/usr/local/bin/harness-claude.sh",
+                "x"
+            ])),
+            Ok((
+                "/home/claude/workspace".into(),
+                a(&["/usr/local/bin/harness-claude.sh", "x"])
+            ))
+        );
+        assert!(run_args(&a(&["--run", "/w", "--"])).is_err());
+        assert!(run_args(&a(&["--run", "/w", "cmd"])).is_err());
+        assert!(run_args(&a(&["--run"])).is_err());
+    }
+
+    #[test]
+    fn a_workdir_under_the_home_is_seen_under_home_claude() {
+        assert_eq!(
+            run_workdir("/t/claude/workspace/repo", "/t/claude"),
+            "/home/claude/workspace/repo"
+        );
+        assert_eq!(run_workdir("/t/claude", "/t/claude"), "/home/claude");
+        assert_eq!(run_workdir("/t/claudex/w", "/t/claude"), "/t/claudex/w");
+        assert_eq!(
+            run_workdir("/home/claude/workspace", "/home/claude"),
+            "/home/claude/workspace"
+        );
+    }
+
+    #[test]
+    fn a_launchers_path_is_the_machines_then_the_images_others() {
+        assert_eq!(
+            run_path(
+                "/home/claude/.local/bin:/usr/local/bin:/usr/bin:/bin",
+                "/home/sandbox/.npm-global/bin:/opt/py/bin:/opt/cargo/bin:/usr/local/bin:/usr/bin:/bin"
+            ),
+            "/home/claude/.local/bin:/usr/local/bin:/usr/bin:/bin:/home/sandbox/.npm-global/bin:/opt/py/bin:/opt/cargo/bin"
+        );
+        assert_eq!(run_path("", "/a:/b"), "/a:/b");
     }
 
     #[test]

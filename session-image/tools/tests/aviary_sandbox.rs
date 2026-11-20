@@ -92,6 +92,62 @@ fn sandbox(env: &[(&str, String)], args: &[&str]) -> (i32, String) {
     )
 }
 
+/// A harness launcher run by `aviary-sandbox --run` (docs/PLAN-one-image.md): this test program, as the command; it
+/// reports what it sees into the machine's ~/artifacts (through /home/claude) and exits 7. Outside it does nothing.
+#[test]
+#[ignore = "the command run by the_sandbox_is_the_image's --run part"]
+fn inside_a_run() {
+    if std::env::var("AVIARY_RUN_CHECK").as_deref() != Ok("1") {
+        return;
+    }
+    let env = |k: &str| std::env::var(k).unwrap_or_else(|_| "none".into());
+    let mut out = String::new();
+    let mut say = |s: String| {
+        out.push_str(&s);
+        out.push('\n');
+    };
+    // SAFETY: plain system calls
+    say(format!(
+        "uid={} gid={}",
+        unsafe { libc::getuid() },
+        unsafe { libc::getgid() }
+    ));
+    say(format!("home={}", env("HOME")));
+    say(format!(
+        "cwd={}",
+        std::env::current_dir().unwrap().display()
+    ));
+    say(format!("machine-env={}", env("MACHINE_VAR")));
+    say(format!("path={}", env("PATH")));
+    say(format!(
+        "login={}",
+        read("/home/claude/.claude/.credentials.json").trim()
+    ));
+    say(format!(
+        "workspace={}",
+        read("/home/claude/workspace/where").trim()
+    ));
+    say(format!("tmp={}", read(env("RUN_TMP_MARKER")).trim()));
+    say(format!(
+        "keeper={}",
+        read("/usr/local/bin/supervisor-keeper").trim()
+    ));
+    say(format!(
+        "tool jarvis-request={}",
+        read("/usr/local/bin/jarvis-request").trim()
+    ));
+    say(format!(
+        "machine-root={}",
+        if Path::new(&env("MARKER")).exists() {
+            "visible"
+        } else {
+            "gone"
+        }
+    ));
+    fs::write("/home/claude/artifacts/run-result", out).unwrap();
+    std::process::exit(7);
+}
+
 /// The stand-in image's entrypoint: this test program, run as PID 1 inside the sandbox (the config's Env sets
 /// AVIARY_SANDBOX_CHECK); outside it the test does nothing.
 #[test]
@@ -589,6 +645,87 @@ fn the_sandbox_is_the_image() {
     assert!(
         !mounts.contains("aviary-sandbox-root"),
         "the sandbox's root is mounted on the machine's side"
+    );
+
+    // ---- a harness launcher inside the sandbox (`--run`, docs/PLAN-one-image.md): the image's root with the machine's
+    // home at /home/claude, its /tmp, its environment and session commands, run as uid 1000 in the workdir, its
+    // status passed on
+    let tmp_marker = format!("/tmp/aviary-run-marker-{}", std::process::id());
+    write(&tmp_marker, "shared\n");
+    let mut renv = env.clone();
+    renv.push(("AVIARY_RUN_CHECK", "1".into()));
+    renv.push(("RUN_TMP_MARKER", tmp_marker.clone()));
+    // the machine's root, outside /tmp (which a launcher shares on purpose): this crate's sources
+    renv.push((
+        "MARKER",
+        concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml").to_string(),
+    ));
+    let (rc, err) = sandbox(
+        &renv,
+        &[
+            "--run",
+            &repo,
+            "--",
+            "/check",
+            "inside_a_run",
+            "--exact",
+            "--ignored",
+            "--test-threads=1",
+            "-q",
+        ],
+    );
+    let _ = fs::remove_file(&tmp_marker);
+    assert_eq!(rc, 7, "the launcher's status (7) did not come back: {err}");
+    let r = read(home.join("artifacts/run-result"));
+    for (line, why) in [
+        ("uid=1000 gid=1000", "the launcher does not run as uid 1000"),
+        (
+            "home=/home/claude",
+            "the launcher's HOME is not /home/claude",
+        ),
+        (
+            "cwd=/home/claude/workspace/repo",
+            "the launcher does not start in its workdir (under /home/claude)",
+        ),
+        (
+            "machine-env=from-the-machine",
+            "the machine's environment does not reach the launcher",
+        ),
+        (
+            "login=login",
+            "the machine's ~/.claude (its login) is not the launcher's",
+        ),
+        (
+            "workspace=volume",
+            "the launcher's ~/workspace is not the volume's",
+        ),
+        (
+            "tmp=shared",
+            "the launcher's /tmp is not the machine's (tmux's socket)",
+        ),
+        ("keeper=image", "the launcher's root is not the image's"),
+        (
+            "tool jarvis-request=machine's jarvis-request",
+            "Jarvis's session commands are not in the launcher's root",
+        ),
+        (
+            "machine-root=gone",
+            "the machine's root is visible to the launcher",
+        ),
+    ] {
+        assert!(
+            r.lines().any(|l| l == line),
+            "(--run) {why} (wanted: {line}) in:\n{r}"
+        );
+    }
+    let p = r
+        .lines()
+        .find_map(|l| l.strip_prefix("path="))
+        .unwrap_or_default();
+    assert!(
+        p.starts_with(&t.join("path").display().to_string())
+            && p.split(':').any(|d| d == "/usr/local/bin"),
+        "(--run) the launcher's PATH is not the machine's then the image's: {p}"
     );
 
     // ---- a fabric machine (docs/PLAN-fabric.md): the image unpacked in the fabric image, its config beside it;

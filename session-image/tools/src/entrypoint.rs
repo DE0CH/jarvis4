@@ -348,16 +348,80 @@ pub fn run() -> Result<ExitCode, String> {
         }
     }
 
-    let err = Command::new("/usr/local/bin/harness-claude.sh")
-        .arg(&wd)
-        .exec();
-    Err(format!("exec harness-claude.sh: {err}"))
+    let harness = std::env::var("SESSION_HARNESS").unwrap_or_default();
+    let argv = harness_argv(
+        Path::new(MACHINE_BASE).exists(),
+        &harness,
+        &wd.to_string_lossy(),
+    );
+    if argv[0] != LAUNCHER {
+        say(&format!(
+            "the {harness} harness runs in aviary's sandbox image (aviary-sandbox --run)"
+        ));
+    }
+    let err = Command::new(&argv[0]).args(&argv[1..]).exec();
+    Err(format!("exec {}: {err}", argv[0]))
+}
+
+/// the harness launcher (it dispatches on SESSION_HARNESS)
+const LAUNCHER: &str = "/usr/local/bin/harness-claude.sh";
+
+/// written by the machine base (session-image/machine-base): the agent's tools are only in aviary's sandbox image
+const MACHINE_BASE: &str = "/etc/jarvis/machine-base";
+
+/// What starts the harness (docs/PLAN-one-image.md "Every harness in the sandbox"). On the legacy image: the launcher
+/// itself. On the machine image, where the agent's tools are aviary's image only, a harness other than aviary runs
+/// its launcher inside that image (`aviary-sandbox --run`, sudo -E keeping the machine's environment); the aviary
+/// harness's launcher enters the sandbox itself for the supervisor.
+pub fn harness_argv(machine_base: bool, harness: &str, wd: &str) -> Vec<String> {
+    if !machine_base || harness == "aviary" {
+        return vec![LAUNCHER.into(), wd.into()];
+    }
+    [
+        "sudo",
+        "-E",
+        "-n",
+        "/usr/local/bin/aviary-sandbox",
+        "--run",
+        wd,
+        "--",
+        LAUNCHER,
+        wd,
+    ]
+    .iter()
+    .map(|s| (*s).to_string())
+    .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_harness_runs_in_the_sandbox_only_on_the_machine_image_and_aviary_never_wrapped() {
+        let w = "/home/claude/workspace";
+        assert_eq!(harness_argv(false, "claude", w), [LAUNCHER, w]);
+        assert_eq!(harness_argv(false, "aviary", w), [LAUNCHER, w]);
+        assert_eq!(harness_argv(true, "aviary", w), [LAUNCHER, w]);
+        for h in ["claude", "", "opencode", "dsh"] {
+            assert_eq!(
+                harness_argv(true, h, w),
+                [
+                    "sudo",
+                    "-E",
+                    "-n",
+                    "/usr/local/bin/aviary-sandbox",
+                    "--run",
+                    w,
+                    "--",
+                    LAUNCHER,
+                    w
+                ],
+                "{h}"
+            );
+        }
+    }
 
     #[test]
     fn repo_names() {

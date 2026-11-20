@@ -25,16 +25,22 @@ RUN curl -fsSL "https://github.com/google/go-containerregistry/releases/download
 RUN userdel -r ubuntu 2>/dev/null; useradd -m -u 1000 -s /bin/bash claude \
  && echo 'claude ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-claude \
  && chmod 0440 /etc/sudoers.d/90-claude
-# the session's helpers and the aviary harness (session-image/base, unchanged): harness-claude.sh dispatches on
-# SESSION_HARNESS; on this base only the aviary harness has what it needs (the others move into the sandbox next,
-# docs/PLAN-one-image.md)
-COPY pull-secrets session-secret content-sync harness-claude.sh harness-aviary.sh aviary-home jarvis-ssh /usr/local/bin/
+# the session's helpers and the launchers (session-image/base, unchanged): harness-claude.sh dispatches on
+# SESSION_HARNESS. A harness other than aviary runs inside aviary's image (session-entrypoint → aviary-sandbox --run,
+# docs/PLAN-one-image.md), the launchers and these helpers bound in; set-permission-mode and harness-send also act from
+# the machine's side (through the shared /tmp: tmux's socket). The other harnesses' runtimes come with their move.
+COPY pull-secrets session-secret content-sync harness-claude.sh harness-aviary.sh aviary-home jarvis-ssh \
+     set-permission-mode harness-send session-attachments /usr/local/bin/
 COPY cf-tunnel-agent.js /usr/local/lib/cf-tunnel-agent.js
 COPY sshd_config /etc/ssh/jarvis_sshd_config
 COPY ssh-ca.pub /etc/ssh/jarvis-ca.pub
 RUN rm -f /etc/ssh/ssh_host_* && echo chendeyao000 > /etc/ssh/jarvis-principals \
  && chmod 755 /usr/local/bin/pull-secrets /usr/local/bin/session-secret /usr/local/bin/content-sync \
-      /usr/local/bin/harness-claude.sh /usr/local/bin/harness-aviary.sh /usr/local/bin/aviary-home /usr/local/bin/jarvis-ssh
+      /usr/local/bin/harness-claude.sh /usr/local/bin/harness-aviary.sh /usr/local/bin/aviary-home /usr/local/bin/jarvis-ssh \
+      /usr/local/bin/set-permission-mode /usr/local/bin/harness-send /usr/local/bin/session-attachments
+# the mark session-entrypoint reads: on this base a harness other than aviary runs inside aviary's image
+# (aviary-sandbox --run; docs/PLAN-one-image.md)
+RUN mkdir -p /etc/jarvis && echo "the agent's tools are aviary's sandbox image" > /etc/jarvis/machine-base
 USER claude
 WORKDIR /home/claude
 ENV PATH=/home/claude/.local/bin:/usr/local/bin:/usr/bin:/bin
