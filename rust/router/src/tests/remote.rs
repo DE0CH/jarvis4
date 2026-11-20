@@ -60,7 +60,6 @@ fn policy_of(hs: &[&str]) -> Policy {
             .iter()
             .map(|h| (h.to_string(), HarnessPolicy::default()))
             .collect(),
-        ..Default::default()
     }
 }
 
