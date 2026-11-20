@@ -79,6 +79,7 @@ func TestMachineOutputToTheShipper(t *testing.T) {
 	sh := useFakeShipper(t)
 	r := newTestRouter(t)
 	addSession(r, "sA", "started", "i-0abc", false)
+	r.st.Do(func(d *persisted) { d.Sessions["sA"].Runner = "aws" }) // an AWS session: its runner says so, not its id
 	awsSeenMu.Lock()
 	awsSeen["i-0abc"] = spawner.Instance{ID: "i-0abc", Region: "eu-west-2", State: "started"}
 	awsSeenMu.Unlock()
@@ -201,6 +202,7 @@ func TestConsoleTick(t *testing.T) {
 	consoleOff = time.Time{}
 	consoleMu.Unlock()
 	addSession(r, "sA", "started", "i-0abc", false)
+	r.st.Do(func(d *persisted) { d.Sessions["sA"].Runner = "aws" }) // an AWS session: its runner says so, not its id
 	awsSeenMu.Lock()
 	awsSeen["i-0abc"] = spawner.Instance{ID: "i-0abc", Region: "eu-west-2", State: "started"}
 	awsSeen["i-0old"] = spawner.Instance{ID: "i-0old", Region: "eu-west-2", State: "destroyed"}

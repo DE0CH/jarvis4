@@ -49,15 +49,6 @@ func fabricEnabled() bool { return os.Getenv("FABRIC_HERMIT_URL") != "" }
 // fabricRegion: the region a fabric spawn names (the spawner wants one; hermit's hosts are where its config says)
 const fabricRegion = "fra"
 
-// isFabricMachine: a fabric sandbox's machine id, "x" and its UUID's 32 hex digits (kernel/spawner fabricMachineID)
-func isFabricMachine(id string) bool {
-	if len(id) != 33 || id[0] != 'x' {
-		return false
-	}
-	_, err := hex.DecodeString(id[1:])
-	return err == nil
-}
-
 // fabricGuest: what one fabric sandbox is (k8s/cluster/fabric/hermit.json sandbox.cpu and memory), whatever the
 // session's size: hermit starts every sandbox alike
 const fabricGuest = "1 vCPU · 3.5 GB"

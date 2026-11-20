@@ -304,10 +304,12 @@ enum KernelChecks {
     return AddReview(store: store, machine: String(b.succ.drop(while: { $0 != "-" }).dropFirst()))
   }
 
-  /// a machine object (kernel/doc): "fly-<Fly machine id>" or "aws-i-<EC2 instance id>"
+  /// a machine object, kernel/doc's machineRE exactly: "fly-<Fly machine id>", "aws-i-<EC2 instance id>" or
+  /// "fabric-x<a sandbox's 32 hex>" (Deyao, 2026-11-20: every fabric session's add-store was refused here)
   static func isMachine(_ o: String) -> Bool {
     if o.hasPrefix("fly-") { let id = o.dropFirst(4); return (8...32).contains(id.count) && isHex(id) }
     if o.hasPrefix("aws-i-") { let id = o.dropFirst(6); return (8...17).contains(id.count) && isHex(id) }
+    if o.hasPrefix("fabric-x") { let id = o.dropFirst(8); return id.count == 32 && isHex(id) }
     return false
   }
 
