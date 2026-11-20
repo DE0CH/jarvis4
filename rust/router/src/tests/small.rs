@@ -633,3 +633,13 @@ fn preload_asks_for_a_golden_per_region() {
     assert_eq!(golden_state(d.to_string().as_bytes()), "ready vol_1");
     assert_eq!(golden_state(b"x"), "an answer that isn't the preloader's");
 }
+
+/// an aviary session that asks for no disk gets room for aviary's sandbox image; the others keep the default
+#[test]
+fn an_aviary_sessions_default_disk_holds_the_sandbox_image() {
+    use crate::disk::{AVIARY_DISK, DEFAULT_DISK, default_disk_for};
+    const { assert!(AVIARY_DISK >= 20) };
+    assert_eq!(default_disk_for("aviary"), AVIARY_DISK);
+    assert_eq!(default_disk_for("claude"), DEFAULT_DISK);
+    assert_eq!(default_disk_for(""), DEFAULT_DISK);
+}

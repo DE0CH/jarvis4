@@ -401,7 +401,7 @@ impl Router {
             s.size.clone()
         };
         let gb = if s.disk_gb == 0 {
-            crate::disk::DEFAULT_DISK
+            crate::disk::default_disk_for(&s.harness)
         } else {
             s.disk_gb
         };

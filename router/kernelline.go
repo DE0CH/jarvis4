@@ -201,7 +201,7 @@ func (r *Router) kernelSpawn(sid string) {
 	}
 	gb := s.DiskGB
 	if gb == 0 {
-		gb = defaultDisk
+		gb = defaultDiskFor(s.Harness)
 	}
 	runner := r.runnerOf(&s)
 	var wg *spawner.WireGuard

@@ -31,6 +31,9 @@ const (
 	diskSilent   = 3 * time.Minute
 	maxDiskGB    = 500 // core/volumes.go
 	defaultDisk  = 10  // core/volumes.go defaultDiskGB: the volume when the session asks for no size
+	// aviaryDisk: an aviary session's when it asks for no size: aviary's sandbox image is fetched onto the volume
+	// (8,935 MiB with the agent's tools, 2026-11-20; DE0CH/aviary images/sandbox), beside its upper and the workspace
+	aviaryDisk = 24
 )
 
 type DiskFS struct {
@@ -89,6 +92,14 @@ func (d *DiskState) observe(s *DiskSample, now time.Time) bool {
 		d.Alert.Detail = detail
 	}
 	return false
+}
+
+// defaultDiskFor: the volume of a session of this harness that asks for no size
+func defaultDiskFor(harness string) int {
+	if harness == "aviary" {
+		return aviaryDisk
+	}
+	return defaultDisk
 }
 
 // nextDisk: More disk's size: twice the volume, at most maxDiskGB
@@ -216,8 +227,12 @@ func (r *Router) MoreDisk(id string) (map[string]any, error) {
 		if s.State != "paused" && s.State != "failed" && s.State != "started" {
 			return nil, fmt.Errorf("session is %s: More disk once it is running, paused or failed", s.State) // "session is …" → 409
 		}
-		to := nextDisk(s.DiskGB)
-		if to <= s.DiskGB {
+		cur := s.DiskGB
+		if cur <= 0 {
+			cur = defaultDiskFor(s.Harness)
+		}
+		to := nextDisk(cur)
+		if to <= cur {
 			return nil, fmt.Errorf("session is at the largest disk (%d GB)", maxDiskGB)
 		}
 		r.st.Do(func(d *persisted) {
@@ -225,7 +240,7 @@ func (r *Router) MoreDisk(id string) (map[string]any, error) {
 				x.DiskGB = to
 			}
 		})
-		return map[string]any{"ok": true, "kind": "disk", "fromGb": max(s.DiskGB, defaultDisk), "toGb": to, "nextStart": true}, nil
+		return map[string]any{"ok": true, "kind": "disk", "fromGb": cur, "toGb": to, "nextStart": true}, nil
 	}
 	from := max(vol.SizeGB, s.DiskGB)
 	to := nextDisk(from)

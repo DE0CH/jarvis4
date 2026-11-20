@@ -35,7 +35,7 @@
     "bootTimeoutSeconds": 480, "orphanInstanceSeconds": 600, "jfsRetireSeconds": 120,
     "migration": { "downtimeMs": 100, "maxRounds": 20, "maxDowntimeMs": 500, "idleCpu": 0.05, "minAgeSeconds": 315360000 },
     "aws": {
-      "region": "eu-central-1", "launchTemplate": "jarvis4-fabric-host", "maxHosts": 5, "diskGiB": 220,
+      "region": "eu-central-1", "launchTemplate": "jarvis4-fabric-host", "maxHosts": 5, "diskGiB": 232,
       "subnet": "subnet-08dafb7a50104d442", "tags": { "app": "jarvis4-fabric-host", "hermit": "jarvis4" },
       "imageBucket": "jarvis4-fabric-images-795109470764",
       "fallbackHost": { "memory": "15.5Gi", "reserve": "1Gi", "cpus": 4 }

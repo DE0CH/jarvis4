@@ -39,3 +39,11 @@ func TestGoldenStateReadsThePreloadersDocument(t *testing.T) {
 		t.Fatalf("%q", got)
 	}
 }
+
+// an aviary session that asks for no disk gets room for aviary's sandbox image (fetched onto its volume); the others
+// keep the default
+func TestAnAviarySessionsDefaultDiskHoldsTheSandboxImage(t *testing.T) {
+	if defaultDiskFor("aviary") != aviaryDisk || aviaryDisk < 20 || defaultDiskFor("claude") != defaultDisk || defaultDiskFor("") != defaultDisk {
+		t.Fatalf("aviary %d, claude %d", defaultDiskFor("aviary"), defaultDiskFor("claude"))
+	}
+}

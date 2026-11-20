@@ -34,6 +34,18 @@ pub const DISK_SILENT: time::Duration = time::Duration::minutes(3);
 pub const MAX_DISK_GB: i64 = 500;
 /// core/volumes.go defaultDiskGB: the volume when the session asks for no size
 pub const DEFAULT_DISK: i64 = 10;
+/// an aviary session's when it asks for no size: aviary's sandbox image is fetched onto the volume (8,935 MiB with the
+/// agent's tools, 2026-11-20; DE0CH/aviary images/sandbox), beside its upper and the workspace (disk.go aviaryDisk)
+pub const AVIARY_DISK: i64 = 24;
+
+/// the volume of a session of this harness that asks for no size
+pub fn default_disk_for(harness: &str) -> i64 {
+    if harness == "aviary" {
+        AVIARY_DISK
+    } else {
+        DEFAULT_DISK
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -272,8 +284,13 @@ impl Router {
                     s.state
                 ));
             }
-            let to = next_disk(s.disk_gb);
-            if to <= s.disk_gb {
+            let cur = if s.disk_gb <= 0 {
+                default_disk_for(&s.harness)
+            } else {
+                s.disk_gb
+            };
+            let to = next_disk(cur);
+            if to <= cur {
                 return Err(anyhow!("session is at the largest disk ({MAX_DISK_GB} GB)"));
             }
             self.st.do_(|d| {
@@ -282,7 +299,7 @@ impl Router {
                 }
             });
             return Ok(
-                json!({"ok": true, "kind": "disk", "fromGb": s.disk_gb.max(DEFAULT_DISK), "toGb": to, "nextStart": true}),
+                json!({"ok": true, "kind": "disk", "fromGb": cur, "toGb": to, "nextStart": true}),
             );
         };
         let from = vol.size_gb.max(s.disk_gb);
