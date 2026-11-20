@@ -76,6 +76,7 @@ pub mod outcomes;
 pub mod peer;
 pub mod peermsg;
 pub mod policy;
+pub mod preload;
 pub mod procstat;
 pub mod regions;
 pub mod registry;

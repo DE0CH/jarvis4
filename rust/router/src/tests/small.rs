@@ -591,3 +591,45 @@ fn serving_roles_skips_a_role_the_serving_copy_lacks() {
     assert!(moves("spawner") && moves("secrets") && !moves("preloader"));
     assert!(crate::kernelflip::serving_roles(None)("preloader"));
 }
+
+/// the golden volumes asked for: none without PRELOAD_SESSION_IMAGE; the router's region and 20 GB by default; the
+/// configured regions and size otherwise (preload_test.go); the preloader's signed answer read
+#[test]
+fn preload_asks_for_a_golden_per_region() {
+    use crate::preload::{golden_state, preload_config, preload_steps};
+    let env = |m: Vec<(&'static str, &'static str)>| {
+        move |k: &str| {
+            m.iter()
+                .find(|(n, _)| *n == k)
+                .map(|(_, v)| (*v).to_string())
+                .unwrap_or_default()
+        }
+    };
+    assert!(preload_config(env(vec![]), "lhr").is_none());
+    let img = "ghcr.io/de0ch/jarvis4-session@sha256:a1b2";
+    let c = preload_config(env(vec![("PRELOAD_SESSION_IMAGE", img)]), "lhr").expect("config");
+    assert_eq!(
+        preload_steps(&c),
+        vec![json!({"region": "lhr", "image": img, "diskGb": 20})]
+    );
+    let c = preload_config(
+        env(vec![
+            ("PRELOAD_SESSION_IMAGE", img),
+            ("PRELOAD_REGIONS", "lhr, sin,"),
+            ("PRELOAD_DISK_GB", "40"),
+        ]),
+        "lhr",
+    )
+    .expect("config");
+    assert_eq!(
+        preload_steps(&c),
+        vec![
+            json!({"region": "lhr", "image": img, "diskGb": 40}),
+            json!({"region": "sin", "image": img, "diskGb": 40})
+        ]
+    );
+    let d =
+        json!({"payload": json!({"state": "ready", "volume": "vol_1"}).to_string(), "sig": "x"});
+    assert_eq!(golden_state(d.to_string().as_bytes()), "ready vol_1");
+    assert_eq!(golden_state(b"x"), "an answer that isn't the preloader's");
+}
