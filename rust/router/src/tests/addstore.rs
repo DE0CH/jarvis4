@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 /// a core's add-store rules. held = the production core of 2026-10-13 (before R1): no newest cert at all, so it
 /// answers any add-store challenge from the cert it was made from and ignores current
 #[derive(Default)]
-struct AddStoreState {
+pub struct AddStoreState {
     held: bool,
     /// machine → newest cert nonce
     latest: BTreeMap<String, String>,
@@ -47,7 +47,7 @@ fn cert(nonce: &str, stores: &[String], machine: &str) -> Value {
         "options": {"permissionMode": "auto"}})
 }
 
-fn add_store_router(held: bool) -> (TestRouter, Arc<Mutex<AddStoreState>>, TestServer) {
+pub fn add_store_router(held: bool) -> (TestRouter, Arc<Mutex<AddStoreState>>, TestServer) {
     let t = new_test_router();
     let st = Arc::new(Mutex::new(AddStoreState {
         held,

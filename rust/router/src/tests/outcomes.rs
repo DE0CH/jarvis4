@@ -366,3 +366,49 @@ fn outcome_attested_refuses_free_text() {
         assert!(outcome_attested(&d).is_err(), "took {it:?}");
     }
 }
+
+/// an approved add-store's outcome carries the new cert, filed under the id the filing answered (jarvis-request waits
+/// on that id: it once fell back to an env variable the shell lacked and waited forever on "")
+#[test]
+fn an_approved_add_store_carries_the_new_cert() {
+    let got = capture_outcomes(None);
+    let (t, _c, _srv) = super::addstore::add_store_router(false);
+    let r = t.r.clone();
+    let m = new_test_machine(&r, "m1");
+    let (code, filed) = m.do_(
+        &t.machine_handler(),
+        "POST",
+        "/m/api/requests/add-store",
+        r#"{"store": "yyc", "explanation": "the YYC key"}"#,
+    );
+    assert_eq!(code, 200, "{filed}");
+    let id =
+        r.st.read(|d| d.approvals.keys().next().cloned().unwrap_or_default());
+    r.respond(&id, "sig").unwrap_or_else(|e| panic!("{e:#}"));
+    tick_outcomes(&r);
+    let ds = got.take();
+    assert_eq!(ds.len(), 1, "{ds:?}");
+    let o = ds[0].outcomes.first().cloned().unwrap_or_default();
+    assert_eq!(
+        filed["id"],
+        o.r#ref.as_str(),
+        "the filing's id and the outcome's ref"
+    );
+    let cert: serde_json::Value = o
+        .proof
+        .as_ref()
+        .and_then(|p| serde_json::from_str(&p.payload).ok())
+        .unwrap_or_default();
+    assert!(
+        o.outcome == "approved"
+            && o.r#ref == "s1"
+            && cert["stores"]
+                .as_array()
+                .is_some_and(|s| s.iter().any(|x| x == "yyc")),
+        "{o:?} {cert}"
+    );
+    assert_eq!(
+        ds[0].request.as_ref().map(|q| q.path.clone()).as_deref(),
+        Some("/m/api/requests/add-store")
+    );
+}

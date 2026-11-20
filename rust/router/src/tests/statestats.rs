@@ -92,6 +92,7 @@ fn state_load_is_logged() {
 /// added, changed and deleted, the records list, settings set and cleared, a session's cert
 #[test]
 fn state_catch_up() {
+    let _g = serial(); // DO_LOAD_EVERY_MS: another test's 0 resets the counters this one reads
     let tw = two();
     let (a, b) = (&tw.a, &tw.b);
     let same = |what: &str| {
@@ -240,6 +241,7 @@ fn version(st: &State) -> i64 {
 /// when the copy can't be caught up
 #[test]
 fn state_read() {
+    let _g = serial(); // DO_LOAD_EVERY_MS
     let tw = two();
     let (a, b) = (&tw.a, &tw.b);
     b.read(|_| {}); // its copy is of no version yet: a Do

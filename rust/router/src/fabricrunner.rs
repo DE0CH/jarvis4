@@ -44,7 +44,18 @@ pub struct FabricLine {
     pub env: BTreeMap<String, String>,
 }
 
+/// tests: the fabric's settings instead of the environment (FABRIC_HERMIT_URL, FABRIC_HERMIT_MAGPIE_TOKEN,
+/// FABRIC_SESSION_IMAGE)
+pub static FABRIC_ENV: RwLock<Option<BTreeMap<String, String>>> = RwLock::new(None);
+
 fn env(k: &str) -> String {
+    if let Some(m) = FABRIC_ENV
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+    {
+        return m.get(k).cloned().unwrap_or_default();
+    }
     std::env::var(k).unwrap_or_default()
 }
 
