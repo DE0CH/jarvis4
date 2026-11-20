@@ -9,7 +9,7 @@
   "sandbox": {
     "image": "ghcr.io/de0ch/jarvis4-session-fabric:sha-83be1f860cc9@sha256:497f24701bdcf37f754af96172ac4314a02d3430d8079d7b3e4206004c2c0ad4",
     "cpu": 1, "memory": "3.5Gi", "pids": 32768, "openFiles": 65536,
-    "maxActive": 10, "idleMinutes": 525600, "maxLifetimeHours": 8760, "lifetimeGraceMinutes": 60,
+    "maxActive": 10, "idleMinutes": 525600, "maxLifetimeHours": 8760, "lifetimeGraceMinutes": 60, "silenceSeconds": 31536000,
     "capacityWaitSeconds": 300, "hostWaitSeconds": 600, "supervisorWaitSeconds": 3600, "startDeadlineSeconds": 4200,
     "poolVictimIdleSeconds": 120, "reserveSeconds": 120, "activityEverySeconds": 15,
     "workspace": { "quotaGiB": 50, "quotaInodes": 5000000 },

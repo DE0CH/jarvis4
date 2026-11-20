@@ -287,6 +287,16 @@ func reply(req map[string]any) (kind string, content []map[string]any) {
 				"input": map[string]any{"command": "time-machine 20s", "description": "e2e: wait 20 s frozen"}}}
 		}
 		return "wakeup", []map[string]any{{"type": "text", "text": "E2E-WOKE " + token}}
+	case strings.Contains(last, "tool_result") && strings.Contains(last, "E2E-SILENCED-"+token):
+		return "answer", []map[string]any{{"type": "text", "text": "E2E-STILL-HERE " + token}}
+	case strings.Contains(last, "E2E-AFTER "+token):
+		return "answer", []map[string]any{{"type": "text", "text": "E2E-AFTERED " + token}}
+	case strings.Contains(last, "E2E-SILENT "+token):
+		// aviary's supervisor stopped 150 s, as a final snapshot stops it (supervisor.rs freeze_session): past the
+		// fabric hermit's 90 s silence and two of its janitor passes, so a hermit that judges silence releases it
+		cmd := "(setsid sh -c 'sleep 3; pkill -STOP -x supervisor; sleep 150; pkill -CONT -x supervisor' > /dev/null 2>&1 &); echo E2E-SILENCED-" + token
+		return "tool", []map[string]any{{"type": "tool_use", "id": "toolu_e2e_silent_" + token, "name": "Bash",
+			"input": map[string]any{"command": cmd, "description": "e2e: stop the supervisor 150 s"}}}
 	case strings.Contains(last, "E2E-FREEZE "+token):
 		// a fabric session that waits frozen for an hour: its destroy (no force) must thaw it for its final snapshot
 		return "tool", []map[string]any{{"type": "tool_use", "id": "toolu_e2e_freeze_" + token, "name": "Bash",
@@ -1029,6 +1039,30 @@ func main() {
 	// a fabric session destroyed while frozen: no force, so its final snapshot must arrive (2026-11-19: a frozen
 	// machine answered nothing and the destroy failed with "silent since")
 	chatForce := "?force=1"
+	if runner == "fabric" {
+		// 2026-11-20: a destroy's final snapshot stops aviary's supervisor, the fabric hermit's health checks went
+		// unanswered and it released the sandbox mid-snapshot; hermit.json's sandbox.silenceSeconds keeps it
+		step("a fabric session whose supervisor is stopped 150 s is kept by the fabric hermit")
+		before, _ := readSession(chatSession)
+		body := map[string]any{"clientMessageId": "e2e-silent-" + token, "text": "E2E-SILENT " + token, "images": []any{}, "files": []any{}}
+		if code, b := call("POST", os.Getenv("E2E_MAGPIE")+"/v1/conversations/"+chatID+"/turns", body, asPigeon()...); code/100 != 2 {
+			log.Fatalf("FAIL: magpie answered %d to the silent message: %s", code, b)
+		}
+		waitFor("the silent turn's answer", 6*time.Minute, func() bool {
+			return strings.Contains(magpieText(), "E2E-STILL-HERE "+token)
+		})
+		time.Sleep(160 * time.Second) // the stop's whole 150 s has passed, whenever the answer came
+		body = map[string]any{"clientMessageId": "e2e-after-" + token, "text": "E2E-AFTER " + token, "images": []any{}, "files": []any{}}
+		if code, b := call("POST", os.Getenv("E2E_MAGPIE")+"/v1/conversations/"+chatID+"/turns", body, asPigeon()...); code/100 != 2 {
+			log.Fatalf("FAIL: magpie answered %d to the message after the silence: %s", code, b)
+		}
+		waitFor("the answer after the silence", 6*time.Minute, func() bool {
+			return strings.Contains(magpieText(), "E2E-AFTERED "+token)
+		})
+		if s, _ := readSession(chatSession); s == nil || s.State != "started" || before == nil || s.MachineID != before.MachineID {
+			log.Fatalf("FAIL: the session did not keep its machine through its supervisor's silence: %+v", s)
+		}
+	}
 	if runner == "fabric" {
 		step("a frozen fabric session's destroy: thawed for its final snapshot, no force needed")
 		body := map[string]any{"clientMessageId": "e2e-freeze-" + token, "text": "E2E-FREEZE " + token, "images": []any{}, "files": []any{}}
