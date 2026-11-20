@@ -102,6 +102,17 @@ func (k *Kernel) Move(t testing.TB, g gv.Signed, cert, nz sig.Doc) gv.Signed {
 // the grant moved onto the machine. Its boot documents (what GET /m/kernel/boot answers) and the Fly machine.
 func (k *Kernel) Line(t testing.TB, sid, image string, settings json.RawMessage, stores ...string) (map[string]any, *FakeMachine) {
 	t.Helper()
+	return k.LineOn(t, "fly", sid, image, settings, stores...)
+}
+
+// LineOn: Line on a runner: "fly" through the spawner, "fly-preload" through the preloader (whose identity the boot
+// documents carry as their `spawner`: the signer of the machine's cert)
+func (k *Kernel) LineOn(t testing.TB, runner, sid, image string, settings json.RawMessage, stores ...string) (map[string]any, *FakeMachine) {
+	t.Helper()
+	signer := "spawner"
+	if runner == "fly-preload" {
+		signer = "preloader"
+	}
 	b := make([]byte, 16)
 	rand.Read(b)
 	allowed := []string{}
@@ -117,22 +128,23 @@ func (k *Kernel) Line(t testing.TB, sid, image string, settings json.RawMessage,
 	}
 	snz := k.Notarize(t, sc)
 	g := k.Move(t, gv.Signed{Grant: k.RootTop(), By: "root"}, sc, snz)
-	created, err := k.post("spawner", "/spawn", map[string]any{"cert": sc, "notarized": snz, "notarizer": k.Identity("notarizer"), "region": "lhr", "size": "medium", "diskGb": 10})
+	created, err := k.post(signer, "/spawn", map[string]any{"cert": sc, "notarized": snz, "notarizer": k.Identity("notarizer"), "region": "lhr", "size": "medium", "diskGb": 10, "runner": runner})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var cr struct{ ID string }
 	json.Unmarshal([]byte(created.Payload), &cr)
-	mc, err := k.post("spawner", "/init", map[string]string{"id": cr.ID})
+	mc, err := k.post(signer, "/init", map[string]string{"id": cr.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
 	mnz := k.Notarize(t, mc)
 	g = k.Move(t, g, mc, mnz)
 	out := map[string]any{"grant": g, "machineCert": mc, "machineNotarized": mnz, "sourceCert": sc, "sourceNotarized": snz}
-	for _, r := range []string{"notary", "notarizer", "mover", "merger", "spawner", "secrets"} {
+	for _, r := range []string{"notary", "notarizer", "mover", "merger", "secrets"} {
 		out[r] = k.Identity(r)
 	}
+	out["spawner"] = k.Identity(signer)
 	out["keys"], _ = k.post("secrets", "/keys", map[string]any{})
 	out["stores"], _ = k.post("secrets", "/stores", map[string]string{"nonce": "n"})
 	return out, k.Fly.Machine(cr.ID)

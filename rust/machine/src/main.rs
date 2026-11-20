@@ -103,7 +103,25 @@ pub fn machine_object(id: &str) -> String {
     if on_fabric() {
         return format!("fabric-{id}");
     }
+    if on_fly_preload() {
+        return format!("flypreload-{id}");
+    }
     format!("fly-{id}")
+}
+
+/// made by the preloader on a preloaded volume (the fly-preload runner, docs/PLAN-one-image.md): a Fly machine whose
+/// cert the preloader signs and names flypreload-<id>
+pub fn on_fly_preload() -> bool {
+    crate::env::get("JARVIS2_RUNNER") == "fly-preload"
+}
+
+/// the kernel role that signs this machine's cert: the preloader for a fly-preload machine, else the spawner
+pub fn machine_signer() -> &'static str {
+    if on_fly_preload() {
+        "preloader"
+    } else {
+        "spawner"
+    }
 }
 
 /// started by the spawner's AWS runner (the instance's unit sets JARVIS2_RUNNER=aws)

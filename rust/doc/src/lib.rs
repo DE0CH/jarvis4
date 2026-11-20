@@ -33,8 +33,9 @@ fn re(p: &str) -> Regex {
 }
 
 static SOURCE_RE: LazyLock<Regex> = LazyLock::new(|| re(r"^source-[0-9a-f]{32}$"));
-static MACHINE_RE: LazyLock<Regex> =
-    LazyLock::new(|| re(r"^(fly-[0-9a-f]{8,32}|aws-i-[0-9a-f]{8,17}|fabric-x[0-9a-f]{32})$"));
+static MACHINE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    re(r"^((fly|flypreload)-[0-9a-f]{8,32}|aws-i-[0-9a-f]{8,17}|fabric-x[0-9a-f]{32})$")
+});
 static IMAGE_RE: LazyLock<Regex> = LazyLock::new(|| {
     re(r"^[a-z0-9./-]+(:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@sha256:[0-9a-f]{64}$")
 });
@@ -43,8 +44,8 @@ static ABOUT_RE: LazyLock<Regex> = LazyLock::new(|| re(r"^[a-z][a-z0-9-]{0,31}$"
 
 // ---- objects --------------------------------------------------------------------------------------------------
 
-/// "sink", "source-<32 hex>" or a machine: "fly-<Fly machine id>", "aws-<EC2 instance id>" or
-/// "fabric-x<the sandbox's id at the fabric hermit, 32 hex>"
+/// "sink", "source-<32 hex>" or a machine: "fly-<Fly machine id>", "aws-<EC2 instance id>",
+/// "fabric-x<the sandbox's id at the fabric hermit, 32 hex>" or "flypreload-<Fly machine id>" (the preloader's)
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Object(pub String);
@@ -72,7 +73,7 @@ impl Object {
         }
     }
 
-    /// where a machine object runs, "fly", "aws" or "fabric" (None for the sink and a source)
+    /// where a machine object runs, "fly", "flypreload", "aws" or "fabric" (None for the sink and a source)
     pub fn runner(&self) -> Option<&str> {
         (self.kind() == Some(Kind::Machine)).then(|| self.0.split_once('-').map_or("", |(r, _)| r))
     }
@@ -123,6 +124,8 @@ pub mod by {
     pub const SPAWNER: &str = "spawner";
     pub const IDENTITY: &str = "identity";
     pub const GULLIBLE: &str = "gullible";
+    /// the fly-preload runner's signer (docs/PLAN-one-image.md)
+    pub const PRELOADER: &str = "preloader";
 }
 
 /// a succession cert (pred → succ with pair), signed by `signer`
@@ -348,6 +351,12 @@ mod tests {
         );
         let fab = obj(&format!("fabric-x{}", "f".repeat(32)));
         assert_eq!(fab.runner(), Some("fabric"));
+        let pre = obj("flypreload-0123456789abcd");
+        assert_eq!(
+            (pre.kind(), pre.runner(), pre.machine_id()),
+            (Some(Kind::Machine), Some("flypreload"), "0123456789abcd")
+        );
+        assert_eq!(obj("fly-preload-0123456789abcd").kind(), None);
         assert_eq!(obj("FLY-0123456789").kind(), None);
         assert_eq!(obj("sink").runner(), None);
     }

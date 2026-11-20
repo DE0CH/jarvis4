@@ -29,6 +29,8 @@ type rustMachineVectors struct {
 	Blue  sig.Doc  `json:"blue"` // the serving copy's roster
 	A     rustLine `json:"a"`
 	B     rustLine `json:"b"`
+	// P: a line on the fly-preload runner, its machine's cert the preloader's (docs/PLAN-one-image.md)
+	P rustLine `json:"p"`
 	// Input: the notary's challenge about "input" for line a's wakeup "wake up"; Cert: the same subject about "cert"
 	Input sig.Doc `json:"input"`
 	Cert  sig.Doc `json:"cert"`
@@ -42,7 +44,11 @@ type rustMachineVectors struct {
 }
 
 func rustLineOf(t *testing.T, k *Kernel, settings json.RawMessage, stores ...string) rustLine {
-	m, fm := k.Line(t, "s1", testImage, settings, stores...)
+	return rustLineOn(t, k, "fly", settings, stores...)
+}
+
+func rustLineOn(t *testing.T, k *Kernel, runner string, settings json.RawMessage, stores ...string) rustLine {
+	m, fm := k.LineOn(t, runner, "s1", testImage, settings, stores...)
 	raw, _ := json.Marshal(m)
 	var docs map[string]any
 	json.Unmarshal(raw, &docs)
@@ -74,6 +80,7 @@ func TestRustMachineVectors(t *testing.T) {
 	v.Blue, _ = k.Roster()
 	v.A = rustLineOf(t, k, settings, "default", "tunnel")
 	v.B = rustLineOf(t, k, settings, "default", "tunnel")
+	v.P = rustLineOn(t, k, "fly-preload", settings, "default", "tunnel")
 	sum := sha256.Sum256([]byte("wake up"))
 	subj := inputSubject("fly-"+v.A.ID, "wakeup", hex.EncodeToString(sum[:]))
 	v.Input = k.Challenge(t, subj, "input")
