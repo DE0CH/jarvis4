@@ -368,8 +368,8 @@ When an item a **session** filed (through `/m/api/requests/…`, `/m/api/session
 `approved`, `denied` (Deny, Deny all, the actions' deny), `lapsed` (10 minutes without an answer), `dropped` (it left
 without a decision: the session paused with an API call pending, the session it was about went away, an add-store
 whose machine is gone) or `failed` (an approved API call that couldn't run). The delivery carries the session's own
-signed filing, and per item `{item /* index in a batch, 0 otherwise */, outcome, ref /* the Inbox id; for add-store the
-session's id; for new-session the new session's id */, status? /* an approved API call's HTTP status */, proof?}`. The
+signed filing, and per item `{item /* index in a batch, 0 otherwise */, outcome, ref /* the Inbox id (an add-store's is its
+approval's own); for new-session the new session's id */, status? /* an approved API call's HTTP status */, proof?}`. The
 machine builds the text from its own filing and image texts, and checks the proof of an approval: the phone-signed
 grant (grant), the machine's new core-signed cert naming the store (add-store), the core's approval by the phone with
 the proposal's label and prompt (new-session), the core's signed key answer (repo add/remove); unlock and API calls
@@ -1013,7 +1013,7 @@ signed as every `/m` call). Any `:id` in the path must be the calling machine's 
 | `POST /api/sessions/:id/runners/:name/:action` | `poweron`, `poweroff`, `shutdown`, `reboot` or `reset` on the session's runner → `{ok}`. |
 | `GET/POST /api/credentials` | The session's Claude account's login ("Claude accounts" above). |
 | `POST /api/requests/peer` | A peer message ("Peer messages" below; `jarvis-message`). |
-| `GET /api/tail/:session` | Any session's conversation as it is now (`jarvis-tail`; `router/livetail.go`, DECISIONS 276): `:session` is its id or exact title, `?n=` messages (default 40, at most 500), `?said=1` only what was said (else tool calls as role `tool` and results as role `result` too, each clipped to 600 characters). A running session's machine gets the `live-sync` command and the router waits up to 45 s for its `/m/live-synced`; then it reads the end of the `.live` copy whose last entry is newest → `{title, sessionId, messages: [{role, text, at}], session, state, file, bytes, lastAt, stale?, why?}`. `stale` with `why`: the session isn't running (paused, frozen) or its machine didn't answer (an image from before 2026-11-20), so this is its last copy. Any session may read any session's (as transcript search). 404 for no such session (a destroyed one is in transcript search, whole) or no copy yet. |
+| `GET /api/tail/:session` | Any session's conversation as it is now (`jarvis-tail`; `router/livetail.go`, DECISIONS 277): `:session` is its id or exact title, `?n=` messages (default 40, at most 500), `?said=1` only what was said (else tool calls as role `tool` and results as role `result` too, each clipped to 600 characters). A running session's machine gets the `live-sync` command and the router waits up to 45 s for its `/m/live-synced`; then it reads the end of the `.live` copy whose last entry is newest → `{title, sessionId, messages: [{role, text, at}], session, state, file, bytes, lastAt, stale?, why?}`. `stale` with `why`: the session isn't running (paused, frozen) or its machine didn't answer (an image from before 2026-11-20), so this is its last copy. Any session may read any session's (as transcript search). 404 for no such session (a destroyed one is in transcript search, whole) or no copy yet. |
 | anything else | 404 |
 
 Nothing is forwarded to Jarvis 1.

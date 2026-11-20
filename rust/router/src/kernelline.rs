@@ -1516,7 +1516,7 @@ impl Router {
                     d,
                     Some(o),
                     "add-store",
-                    &a.session,
+                    &crate::outcomes::approval_ref(a),
                     crate::outcomes::OUTCOME_APPROVED,
                     0,
                     Some(&nz2d),

@@ -532,7 +532,7 @@ pub fn outcome_fresh(d: &Delivery) -> Delivery {
     d
 }
 
-/// The delivery's checked text, under each of its items' ids (an Inbox id, or this session's id for an add-store), as
+/// The delivery's checked text, under each of its items' ids (an Inbox id; a proposed session's id for a new session), as
 /// <ref>.<unix ns>.json {"ref","outcome","text"}, readable by the session's user; the jarvis-request command that filed
 /// it waits for a file of its request's id newer than its filing
 pub fn record_outcome(d: &Delivery, text: &str, ns: u128) -> Result<()> {
