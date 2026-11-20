@@ -22,6 +22,10 @@
 //   - the wakeup arrives as a later turn: in an aviary sandbox schedule-wakeup arms a magpie schedule, whose fire is
 //     the turn (<scheduled-message …>), answered by the stand-in;
 //
+//   - a message to a paused session (Deyao, 2026-11-20): the session is paused as the app pauses it, its conversation
+//     stays open, a message sent in the chat (as pigeon sends it) resumes the session on a new machine with no prompt
+//     and no approval in the Inbox, and the message is answered there;
+//
 //   - a conversation begun in the chat (Deyao, 2026-11-18: New chat starts its own session): the driver creates it in
 //     magpie as pigeon does, with a first message; hermit-jarvis proposes a session through the router, which waits in
 //     the Inbox while magpie holds the message and says the start waits for the person's approval
@@ -287,6 +291,8 @@ func reply(req map[string]any) (kind string, content []map[string]any) {
 		// a fabric session that waits frozen for an hour: its destroy (no force) must thaw it for its final snapshot
 		return "tool", []map[string]any{{"type": "tool_use", "id": "toolu_e2e_freeze_" + token, "name": "Bash",
 			"input": map[string]any{"command": "time-machine 1h", "description": "e2e: wait an hour frozen"}}}
+	case strings.Contains(last, "E2E-PAUSED "+token):
+		return "resumed", []map[string]any{{"type": "text", "text": "E2E-RESUMED " + token}}
 	case strings.Contains(last, "E2E-CHAT "+token):
 		return "chat", []map[string]any{{"type": "text", "text": "E2E-CHATTED " + token}}
 	case strings.Contains(last, "E2E-RUN "+token):
@@ -583,6 +589,51 @@ func newChat(text string) string {
 		log.Fatalf("FAIL: magpie answered %d to a new chat's first message (no turn admitted): %s", code, b)
 	}
 	return r.Conversation.ID
+}
+
+// magpieConversationTitled: the id of magpie's conversation titled `title` (a session's conversation is titled with
+// its name), "" when there is none.
+func magpieConversationTitled(title string) string {
+	hdr := []string{"Authorization", "Bearer " + os.Getenv("E2E_MAGPIE_ADMIN"), "Aviary-Admin", "e2e@example.com"}
+	code, b := call("GET", os.Getenv("E2E_MAGPIE")+"/v1/admin/conversations", nil, hdr...)
+	if code != 200 {
+		return ""
+	}
+	var list any
+	json.Unmarshal(b, &list)
+	found := ""
+	var walk func(any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case map[string]any:
+			if id, ok := x["id"].(string); ok && x["title"] == title {
+				found = id
+			}
+			for _, y := range x {
+				walk(y)
+			}
+		case []any:
+			for _, y := range x {
+				walk(y)
+			}
+		}
+	}
+	walk(list)
+	return found
+}
+
+// approvalFor: whether the Inbox holds an approval for `session`.
+func approvalFor(session string) bool {
+	var s struct {
+		Approvals []struct{ Session string } `json:"approvals"`
+	}
+	must("GET", router+"/api/state", nil, &s)
+	for _, x := range s.Approvals {
+		if x.Session == session {
+			return true
+		}
+	}
+	return false
 }
 
 // proposal: the new-session approval the router filed for a session other than `skip` (hermit-jarvis's proposal for a
@@ -908,6 +959,38 @@ func main() {
 		log.Fatalf("FAIL: Claude Code runs %s at a context window of %d, want %s: it compacts the conversation there", sessionModel(), window, wantContext)
 	}
 	log.Printf("Claude Code runs %s at a context window of %d", sessionModel(), window)
+
+	step("a message to a paused session resumes it (no prompt, no approval) and is answered on its new machine")
+	must("POST", router+"/api/sessions/"+created.ID+"/pause", map[string]any{}, nil)
+	waitFor("the session paused", 15*time.Minute, func() bool {
+		s, _ := readSession(created.ID)
+		if s != nil && s.State == "failed" {
+			log.Fatalf("FAIL: the pause failed: %s", s.Error)
+		}
+		return s != nil && s.State == "paused"
+	})
+	conversation := magpieConversationTitled(label)
+	if conversation == "" {
+		log.Fatalf("FAIL: no conversation in magpie titled %q (the session's)", label)
+	}
+	// as pigeon sends a message (M4): a closed conversation refuses it
+	paused := map[string]any{"clientMessageId": "e2e-paused-" + token, "text": "E2E-PAUSED " + token, "images": []any{}, "files": []any{}}
+	if code, b := call("POST", os.Getenv("E2E_MAGPIE")+"/v1/conversations/"+conversation+"/turns", paused, asPigeon()...); code/100 != 2 {
+		log.Fatalf("FAIL: magpie answered %d to a message in the paused session's conversation (it must take it and resume the session): %s", code, b)
+	}
+	waitFor("the paused session resumed on a new machine", 15*time.Minute, func() bool {
+		s, _ := readSession(created.ID)
+		if s != nil && s.State == "failed" {
+			log.Fatalf("FAIL: the resume for the message failed: %s", s.Error)
+		}
+		if approvalFor(created.ID) {
+			log.Fatalf("FAIL: the resume for a message waits for an approval in the Inbox: it must need none")
+		}
+		return s != nil && s.State == "started" && s.MachineID != "" && s.MachineID != machine && s.Booted == s.MachineID
+	})
+	waitFor("the message's answer in magpie", 10*time.Minute, func() bool {
+		return strings.Contains(magpieText(), "E2E-RESUMED "+token)
+	})
 
 	step("a conversation begun in the chat: its message waits for the session hermit-jarvis proposes, which Deyao approves")
 	chatID := newChat("E2E-CHAT " + token)
