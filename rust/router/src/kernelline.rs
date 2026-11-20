@@ -646,7 +646,7 @@ impl Router {
         let Some(k) = &self.kernel else {
             return (String::new(), String::new());
         };
-        let mut cands: Vec<(String, String, &str)> = vec![];
+        let mut cands: Vec<(String, String)> = vec![];
         match crate::machines::list_fly_machines() {
             Err(e) => crate::logf!(
                 "[kernel] {}: no look on Fly for an earlier spawn's machine ({e:#})",
@@ -667,7 +667,7 @@ impl Router {
                         .first()
                         .map(|x| x.volume.clone())
                         .unwrap_or_default();
-                    cands.push((m.id, vol, "fly"));
+                    cands.push((m.id, vol));
                 }
             }
         }
@@ -680,13 +680,13 @@ impl Router {
             Ok(ins) => {
                 for i in ins {
                     if i.source == source.0 && i.state != "destroyed" && i.state != "destroying" {
-                        cands.push((i.id, String::new(), "aws"));
+                        cands.push((i.id, String::new()));
                     }
                 }
             }
         }
         let (mut id, mut vol) = (String::new(), String::new());
-        for (mid, mvol, runner) in cands {
+        for (mid, mvol) in cands {
             if id.is_empty() {
                 let res = k.doc("spawner", "/init", &json!({"id": mid}));
                 let unknown = res
@@ -702,7 +702,8 @@ impl Router {
                 }
             }
             op.note(&mid, &format!("machine {mid} from {} is a stray of an earlier spawn: asked the spawner to destroy it", source.0));
-            if let Err(e) = k.doc("spawner", "/destroy", &json!({"id": mid, "runner": runner})) {
+            // the spawner's /destroy takes no runner until its release (wip/spawner-runner-record)
+            if let Err(e) = k.doc("spawner", "/destroy", &json!({"id": mid})) {
                 crate::logf!("[kernel] stray {mid}: destroy: {e:#}");
             }
         }

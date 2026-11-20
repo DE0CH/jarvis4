@@ -394,7 +394,7 @@ func (r *Router) kernelPred(s *Session, sc doc.Cert) string {
 // other one is destroyed through the spawner. Only one machine of a source can take the line either way: the
 // notarizer refuses a source's second successor.
 func (r *Router) kernelAdopt(op *lcHandle, source doc.Object) (string, string) {
-	type found struct{ id, vol, runner string }
+	type found struct{ id, vol string }
 	var cands []found
 	ms, err := listFlyMachines()
 	if err != nil {
@@ -404,7 +404,7 @@ func (r *Router) kernelAdopt(op *lcHandle, source doc.Object) (string, string) {
 		if m.Config.Metadata[spawner.SourceMeta] != string(source) || m.State == "destroyed" || m.State == "destroying" {
 			continue
 		}
-		f := found{id: m.ID, runner: "fly"}
+		f := found{id: m.ID}
 		if len(m.Config.Mounts) > 0 {
 			f.vol = m.Config.Mounts[0].Volume
 		}
@@ -416,7 +416,7 @@ func (r *Router) kernelAdopt(op *lcHandle, source doc.Object) (string, string) {
 	}
 	for _, i := range ins {
 		if i.Source == string(source) && i.State != "destroyed" && i.State != "destroying" {
-			cands = append(cands, found{id: i.ID, runner: "aws"})
+			cands = append(cands, found{id: i.ID})
 		}
 	}
 	id, vol := "", ""
@@ -431,7 +431,8 @@ func (r *Router) kernelAdopt(op *lcHandle, source doc.Object) (string, string) {
 			}
 		}
 		op.note(m.id, "machine "+m.id+" from "+string(source)+" is a stray of an earlier spawn: asked the spawner to destroy it")
-		if _, err := r.kernel.Doc("spawner", "/destroy", map[string]string{"id": m.id, "runner": m.runner}); err != nil {
+		// the spawner's /destroy takes no runner until its release (wip/spawner-runner-record): it reads it from the id
+		if _, err := r.kernel.Doc("spawner", "/destroy", map[string]string{"id": m.id}); err != nil {
 			log.Printf("[kernel] stray %s: destroy: %v", m.id, err)
 		}
 	}
