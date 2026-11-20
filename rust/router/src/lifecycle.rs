@@ -226,6 +226,12 @@ impl Lifecycle {
         self.hooks.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
+    /// tests: hold the appends, as a slow write would
+    #[cfg(test)]
+    pub fn file_lock(&self) -> MutexGuard<'_, ()> {
+        self.file.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     pub fn dropped(&self, session: &str) -> bool {
         self.lock().gone.contains(session)
     }
@@ -444,6 +450,12 @@ pub struct LcHandle {
 impl LcHandle {
     fn new(r: Option<Arc<Router>>, run: Arc<LcRun>, joined: bool) -> LcHandle {
         LcHandle { r, run, joined }
+    }
+
+    /// tests: the run, to poll by hand
+    #[cfg(test)]
+    pub fn run(&self) -> Arc<LcRun> {
+        self.run.clone()
     }
 
     pub fn op_id(&self) -> String {
@@ -725,7 +737,7 @@ impl Router {
     // ---- polling ---------------------------------------------------------------------------------------------
 
     /// new Fly events and platform log lines of the operation's machines, each kept once
-    fn lc_poll_once(self: &Arc<Self>, run: &Arc<LcRun>) {
+    pub(crate) fn lc_poll_once(self: &Arc<Self>, run: &Arc<LcRun>) {
         let hooks = self.lc.hooks();
         let (machines, started, mut logs_off) = {
             let g = run.lock();

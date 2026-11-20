@@ -16,6 +16,7 @@ mod devices;
 mod discord;
 mod inbox;
 mod leases;
+mod lifecycle;
 mod linestate;
 mod live_lastsnap;
 mod machines_claim;
