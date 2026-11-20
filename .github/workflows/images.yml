@@ -55,6 +55,57 @@ jobs:
       # jarvis-request blocks until Deyao's decision and prints it
       - run: python3 session-image/bin/jarvis-request_test.py
       - run: pip install -q cryptography && python3 infra/setup_trust_test.py && python3 infra/setup_write_test.py && python3 infra/setup_roster_test.py && python3 infra/kernel_pin_test.py
+  # The fabric replica of this tree (rust/e2e-kernel E2E_RUNNER=fabric, docs/PLAN-fabric.md): the kernel components and
+  # the router built from this commit, the session as a gVisor sandbox from the latest fabric image, the fake hermit;
+  # a new session boots, pauses into a source, resumes from it and is destroyed. No Fly, no secret. aviary's CI runs it
+  # with its own harness before each aviary release; here it runs on every branch, so a router change meets it before
+  # the gate merges (lessons/129: an end-to-end nobody runs rots).
+  replica-fabric:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: free disk space (the session image and the fabric image, unpacked)
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h / | tail -1
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.25" }
+      - name: tools (crane, the Rust toolchain of rust/)
+        run: |
+          set -euo pipefail
+          curl -sSfL -o "$RUNNER_TEMP/crane.tgz" https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz
+          echo "0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0  $RUNNER_TEMP/crane.tgz" | sha256sum -c -
+          sudo tar -xzf "$RUNNER_TEMP/crane.tgz" -C /usr/local/bin crane
+          (cd rust && (rustup show active-toolchain || rustup toolchain install))
+      - name: the gVisor fork the fabric pins (k8s/cluster/fabric/hermit.json fabric.runsc), runsc and its sidecars
+        run: |
+          set -euo pipefail
+          gv=$(jq -r .fabric.runsc k8s/cluster/fabric/hermit.json)
+          u=https://github.com/DE0CH/gvisor/releases/download/$gv
+          t=$(mktemp -d)
+          curl -fsSL -o "$t/gvisor.tar.zstd" "$u/gvisor.tar.zstd" && curl -fsSL -o "$t/SHA256SUMS" "$u/SHA256SUMS"
+          (cd "$t" && grep ' gvisor.tar.zstd$' SHA256SUMS | sha256sum -c --quiet)
+          mkdir -p "$t/x" && tar --zstd -xf "$t/gvisor.tar.zstd" -C "$t/x"
+          sudo install -m755 "$t/x/runsc" /usr/local/bin/
+          sudo mkdir -p /usr/local/bin/gvisor-bin && sudo install -m755 "$t/x/gvisor-bin/"* /usr/local/bin/gvisor-bin/
+          runsc --version | head -1
+      - name: the fabric replica
+        env:
+          E2E_RUNNER: fabric
+          E2E_LOGS: /tmp/e2e-fabric-logs
+        run: |
+          set -o pipefail
+          (cd rust && cargo build --release --locked -p e2e-kernel)
+          rust/target/release/e2e-kernel 2>&1 | tee /tmp/e2e.log || {
+            # job logs need a login, annotations don't (lessons/129)
+            echo "::error::$(tail -40 /tmp/e2e.log | sed -z 's/\n/%0A/g')"
+            for f in /tmp/e2e-fabric-logs/router.log /tmp/e2e-fabric-logs/machine-*.log; do
+              [ -f "$f" ] && echo "::error title=$(basename "$f")::$(tail -25 "$f" | sed -z 's/\n/%0A/g')"
+            done
+            exit 1
+          }
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with: { name: e2e-fabric-logs, path: /tmp/e2e-fabric-logs, retention-days: 7, if-no-files-found: ignore }
   base:
     needs: test
     runs-on: ubuntu-latest
