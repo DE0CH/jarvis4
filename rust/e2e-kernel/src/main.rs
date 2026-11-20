@@ -39,6 +39,8 @@ use std::time::{Duration, Instant};
 
 const ORG: &str = "jarvis2-370";
 const PEER: &str = "jarvis2-e2e-kernel";
+/// the sessions' Fly app
+const SESSIONS_APP: &str = "jarvis4-sessions";
 const MAPI: &str = "https://api.machines.dev/v1/apps/jarvis4-sessions";
 const ROLES: [&str; 9] = [
     "notary",
@@ -109,16 +111,21 @@ fn net() -> Net {
             peers: false,
         };
     }
-    let six = std::env::var("FLY_MACHINE_ID")
+    // an aviary session's sandbox has FLY_MACHINE_ID but no FLY_APP_NAME: the sessions' app then, when this machine's
+    // 6PN name resolves under it. Without it such a run took the shared peers and collided with another run's
+    // (each run's sweep destroys the machines naming its peer: 2026-11-20, two runs ended each other's machine)
+    let id = std::env::var("FLY_MACHINE_ID").unwrap_or_default();
+    let app = std::env::var("FLY_APP_NAME")
         .ok()
-        .zip(std::env::var("FLY_APP_NAME").ok());
-    if let Some((id, app)) = six.filter(|(i, a)| !i.is_empty() && !a.is_empty()) {
-        let host = format!("{id}.vm.{app}.internal");
-        let ip = std::net::ToSocketAddrs::to_socket_addrs(&(host.as_str(), 0))
-            .ok()
-            .and_then(|mut a| a.find(std::net::SocketAddr::is_ipv6))
-            .map(|a| a.ip().to_string())
-            .unwrap_or_default();
+        .filter(|a| !a.is_empty())
+        .unwrap_or_else(|| SESSIONS_APP.into());
+    let host = format!("{id}.vm.{app}.internal");
+    let ip = (!id.is_empty())
+        .then(|| std::net::ToSocketAddrs::to_socket_addrs(&(host.as_str(), 0)).ok())
+        .flatten()
+        .and_then(|mut a| a.find(std::net::SocketAddr::is_ipv6))
+        .map(|a| a.ip().to_string());
+    if let Some(ip) = ip {
         return Net {
             machine_url: format!("http://{host}:29081"),
             machine_addr: format!("[{ip}]:29081"),

@@ -67,15 +67,35 @@ pub fn router_transport(v: &str) -> (String, Arc<RouterDialer>) {
     (base, Arc::new(d))
 }
 
+/// TCP keepalive on every connection to the router (Go's net.Dialer default, which the Go machine had): a far end gone
+/// without a reset (a gateway restarted behind WireGuard) is noticed within KEEPALIVE_IDLE + KEEPALIVE_INTERVAL *
+/// KEEPALIVE_RETRIES (75 s), not at the request's own limit (10 min). Without it a long poll of /m/commands hung 10 min
+/// after m-gateway-1 restarted and an approved Inbox batch waited that long (2026-11-20).
+pub const KEEPALIVE_IDLE: Duration = Duration::from_secs(15);
+pub const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
+pub const KEEPALIVE_RETRIES: u32 = 4;
+
+pub fn keepalive(s: &TcpStream) -> std::io::Result<()> {
+    let ka = socket2::TcpKeepalive::new()
+        .with_time(KEEPALIVE_IDLE)
+        .with_interval(KEEPALIVE_INTERVAL)
+        .with_retries(KEEPALIVE_RETRIES);
+    socket2::SockRef::from(s).set_tcp_keepalive(&ka)
+}
+
 async fn dial(addr: &str) -> std::io::Result<TcpStream> {
     let t = Duration::from_millis(DIAL_TIMEOUT_MS.load(Ordering::Relaxed));
-    match tokio::time::timeout(t, TcpStream::connect(addr)).await {
-        Ok(r) => r,
-        Err(_) => Err(std::io::Error::new(
-            std::io::ErrorKind::TimedOut,
-            format!("dial {addr}: timeout"),
-        )),
-    }
+    let s = match tokio::time::timeout(t, TcpStream::connect(addr)).await {
+        Ok(r) => r?,
+        Err(_) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("dial {addr}: timeout"),
+            ));
+        }
+    };
+    keepalive(&s)?;
+    Ok(s)
 }
 
 impl RouterDialer {
@@ -173,5 +193,32 @@ mod tests {
         let (_, one) = router_transport("http://only:8081");
         assert_eq!(one.hosts.len(), 1);
         assert!(one.front.ends_with(":8081"));
+    }
+
+    /// every connection to the router probes its far end: a gateway gone without a reset is noticed in 75 s, not at a
+    /// long poll's 10-minute limit (2026-11-20: an approved Inbox batch waited 10 min after m-gateway-1 restarted)
+    #[test]
+    fn a_router_connection_probes_its_far_end() {
+        crate::rt::block_on(async {
+            let l = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .unwrap_or_else(|e| panic!("{e}"));
+            let addr = l.local_addr().unwrap_or_else(|e| panic!("{e}")).to_string();
+            let (_, d) = router_transport(&format!("http://{addr}"));
+            let s = d.connect(&addr).await.unwrap_or_else(|e| panic!("{e}"));
+            let r = socket2::SockRef::from(&s);
+            assert!(
+                r.keepalive().unwrap_or_else(|e| panic!("{e}")),
+                "no keepalive"
+            );
+            assert_eq!(r.tcp_keepalive_time().ok(), Some(KEEPALIVE_IDLE));
+            assert_eq!(r.tcp_keepalive_interval().ok(), Some(KEEPALIVE_INTERVAL));
+            assert_eq!(r.tcp_keepalive_retries().ok(), Some(KEEPALIVE_RETRIES));
+            let dead = KEEPALIVE_IDLE + KEEPALIVE_INTERVAL * KEEPALIVE_RETRIES;
+            assert!(
+                dead <= Duration::from_secs(75),
+                "a dead gateway is noticed only after {dead:?}"
+            );
+        });
     }
 }
