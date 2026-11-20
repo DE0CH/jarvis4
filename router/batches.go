@@ -275,7 +275,7 @@ type batchItem struct {
 // BatchResult: what filing one item did
 type BatchResult struct {
 	Intent    string `json:"intent"`
-	ID        string `json:"id,omitempty"`      // a request's id, or a new session's id (its approval follows)
+	ID        string `json:"id,omitempty"`      // a request's id, an add-store's approval id, or a new session's id (its approval follows)
 	Session   string `json:"session,omitempty"` // add-store, new-session, jarvis1-import: the session the approval is for
 	Duplicate bool   `json:"duplicate,omitempty"`
 	Batch     string `json:"batch,omitempty"` // a duplicate already in another batch: that batch
@@ -568,10 +568,12 @@ func (r *Router) fileBatchItem(c Caller, method, path string, b *Batch, it *batc
 		var sid string
 		r.st.Do(func(d *persisted) { sid = d.Machines[it.machine] })
 		res.Session = sid
-		if err := r.AddStoreFrom(it.machine, it.store, o, it.expl, b.ID); err != nil {
+		id, err := r.addStoreApproval(it.machine, it.store, o, it.expl, b.ID)
+		if err != nil {
 			res.Error = err.Error()
 			return res, nil
 		}
+		res.ID = id // what its outcome is filed under (approvalRef)
 		return res, &BatchEntry{Intent: it.intent, Session: sid}
 	case it.intent == "new-session" || it.intent == "jarvis1-import":
 		var sid string

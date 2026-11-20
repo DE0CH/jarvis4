@@ -124,6 +124,16 @@ func outcomeAttested(d Delivery) ([]byte, error) {
 
 // noteOutcome (under the state lock): the item an Origin filed was decided. Only a session's own signed filing gets
 // one; the first decision of an item stands.
+// approvalRef: what an approval's outcome is filed under, the id its filing answered: an add-store's own id (two store
+// requests of one session are two requests, each waited on by its own command and shown as its own card in the
+// chat), any other approval's session (a proposed session's id is what its proposal answered)
+func approvalRef(a *Approval) string {
+	if a.Kind == "add-store" || a.Kind == kernelAddApprovalKind {
+		return a.ID
+	}
+	return a.Session
+}
+
 func noteOutcome(d *persisted, o *Origin, kind, ref, outcome string, status int, proof *Doc) {
 	if o == nil || o.Signed == nil || (o.Caller.Kind != "session" && o.Caller.Kind != "actions") || o.Caller.Session == "" {
 		return

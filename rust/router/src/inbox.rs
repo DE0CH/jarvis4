@@ -1058,7 +1058,7 @@ impl Router {
                     write_json(
                         w,
                         200,
-                        &json!({"ok": true, "approval": id, "store": store, "existing": true,
+                        &json!({"ok": true, "approval": id, "id": id, "store": store, "existing": true,
                         "note": format!("{} has its deploy key already (store {store}): asked for that store, not for a new key", np.repo)}),
                     );
                     return;
@@ -1367,10 +1367,10 @@ pub fn register_inbox(reg: &mut Registrar) {
                 )),
                 ..Default::default()
             };
-            match r.add_store_from(&machine, &i.store, o, &expl, "") {
+            match r.add_store_approval(&machine, &i.store, o, &expl, "") {
                 Err(e) => write_err(w, &e),
-                // id: what the outcome is filed under (an add-store's is the session's id), which jarvis-request waits on
-                Ok(()) => write_json(w, 200, &json!({"ok": true, "approval": true, "id": sid})),
+                // id: what the outcome is filed under (the approval's own, approval_ref), which jarvis-request waits on
+                Ok(id) => write_json(w, 200, &json!({"ok": true, "approval": true, "id": id})),
             }
         },
     );

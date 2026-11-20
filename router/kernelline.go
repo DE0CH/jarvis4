@@ -1192,7 +1192,7 @@ func (r *Router) respondKernelAdd(a *Approval, signatures string) (*Doc, string,
 			}
 		}
 		if a.Origin != nil {
-			noteOutcome(d, a.Origin, "add-store", a.Session, outcomeApproved, 0, &Doc{Payload: nz2.Payload, Sig: nz2.Sig})
+			noteOutcome(d, a.Origin, "add-store", approvalRef(a), outcomeApproved, 0, &Doc{Payload: nz2.Payload, Sig: nz2.Sig})
 		}
 	})
 	r.send(a.Machine, "refresh-secrets")
