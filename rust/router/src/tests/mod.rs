@@ -29,6 +29,7 @@ mod snaphelp;
 mod snapwait_carry_volsweep;
 mod startinit_sizes;
 mod statedb;
+mod tasks;
 mod timemachine;
 mod uploads;
 mod vouch;
