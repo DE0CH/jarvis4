@@ -135,7 +135,8 @@ accepted hermit and its hosts as trusted like Fly.
 The fabric hermit's `hermit.json` leaves pausing to Jarvis 4: `idleMinutes`, `maxLifetimeHours` and `silenceSeconds`
 past any session (the fabric hermit gets no activity report, so its silence rule would health-check every sandbox each
 janitor pass, and a final snapshot stops the supervisor that answers: 2026-11-20 a destroy's sandbox was released
-mid-snapshot; the replica's fake hermit runs the same rule from this file, and e2e/aviary stops a supervisor 150 s),
+mid-snapshot; the replica's fake hermit runs the same rule from this file, and e2e/aviary destroys a session past 90 s with 4 GB
+in its workspace: without the setting it fails as production did),
 long `supervisorWaitSeconds` and `startDeadlineSeconds` (the supervisor comes up only after the machine's cert), and
 a `fabric.migration.minAgeSeconds` no sandbox reaches (a direct connection does not survive a move).
 
