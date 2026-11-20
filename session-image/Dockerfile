@@ -74,7 +74,7 @@ COPY --chmod=644 session-image/claude-code/managed-settings.json session-image/c
 RUN printf '#!/bin/sh\nexec /usr/local/bin/jarvis-machine init\n' > /usr/local/bin/jarvis2-init \
  && chmod 755 /usr/local/bin/jarvis2-init \
  && ln -s /usr/local/bin/jarvis-machine /usr/local/bin/jarvis \
- && for t in schedule-wakeup schedule-cron retire-session time-machine aviary-sandbox session-entrypoint workspace-layer; do ln -sfn /usr/local/bin/jarvis-tools /usr/local/bin/$t; done \
+ && for t in schedule-wakeup schedule-cron retire-session time-machine aviary-sandbox session-entrypoint workspace-layer fly-token; do ln -sfn /usr/local/bin/jarvis-tools /usr/local/bin/$t; done \
  && chmod -R a+rX,go-w /opt/jarvis/tasks
 USER claude
 # what the harness reads as user claude must be readable by it (see /etc/claude-code above): every directory searchable,

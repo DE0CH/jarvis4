@@ -126,6 +126,7 @@ impl Router {
         go(self, |r| r.console_loop()); // awslogs.rs: the AWS instances' serial consoles (the leader)
         go(self, |r| r.lost_loop()); // lostmachine.rs: machines that stopped without Jarvis doing it
         go(self, |r| r.frozen_loop()); // timemachine.rs: a frozen session hermit thawed at its time is running again
+        go(self, |r| r.preload_loop()); // preload.rs: the fly-preload runner's golden volumes, stepped until ready
         go(self, |r| r.never_booted_loop()); // neverbooted.rs: a machine that never boots fails its session
         go(self, |r| r.kernel_volumes_loop()); // kernelline.rs: a killed kernel machine's volume left, killed again
     }

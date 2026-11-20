@@ -641,6 +641,11 @@ impl Registrar {
     }
 
     fn spawner_relay(&mut self, pattern: &str, path: &'static str) {
+        self.kernel_setup_relay(pattern, "spawner", path);
+    }
+
+    /// a setup route relaying its body to one kernel component (the spawner's, the preloader's)
+    fn kernel_setup_relay(&mut self, pattern: &str, role: &'static str, path: &'static str) {
         self.setup_route(pattern, move |r, w, req| {
             let b = req.read_body(1 << 16);
             let input: Option<Value> = serde_json::from_slice(&b).ok();
@@ -648,7 +653,7 @@ impl Registrar {
                 crate::nethttp::write_error(w, 400, "{sealed}, on a box with a kernel");
                 return;
             };
-            match k.call("spawner", "POST", path, Some(&input)) {
+            match k.call(role, "POST", path, Some(&input)) {
                 Err(e) => write_err(w, &e),
                 Ok(b) => {
                     w.set_header("Content-Type", "application/json");
@@ -731,6 +736,26 @@ impl Registrar {
             }
         });
         self.spawner_relay("POST /setup/kernel/spawner/fly-token", "/fly-token");
+        // the kernel's preloader (kernel/spawner/preload.go, docs/PLAN-one-image.md): the same two, its own Fly token
+        // (narrowed to jarvis4-sessions-preload; infra/setup.py kernel-fly-token FILE preloader)
+        self.setup_route("GET /setup/kernel/preloader/identity", |r, w, _| {
+            let Some(k) = &r.kernel else {
+                crate::nethttp::write_error(w, 503, "this box runs no kernel");
+                return;
+            };
+            match k.call("preloader", "GET", "/identity", None) {
+                Err(e) => write_err(w, &e),
+                Ok(b) => {
+                    w.set_header("Content-Type", "application/json");
+                    w.write(&b);
+                }
+            }
+        });
+        self.kernel_setup_relay(
+            "POST /setup/kernel/preloader/fly-token",
+            "preloader",
+            "/fly-token",
+        );
         // the spawner's AWS key, sealed to it the same way (infra/setup.py kernel-aws-credentials)
         self.spawner_relay(
             "POST /setup/kernel/spawner/aws-credentials",

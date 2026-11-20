@@ -45,7 +45,7 @@ import (
 )
 
 // kernelRoles: every component of a copy (a roster names exactly these, sorted)
-var kernelRoles = []string{"gullible", "identity", "merger", "minter", "mover", "notarizer", "notary", "secrets", "spawner"}
+var kernelRoles = []string{"gullible", "identity", "merger", "minter", "mover", "notarizer", "notary", "preloader", "secrets", "spawner"}
 
 // rosterTargets: a copy's Deployments, which its roster goes to (KERNEL_URL's %s)
 func rosterTargets(copy string) []string {

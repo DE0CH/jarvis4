@@ -176,7 +176,9 @@ pub fn check_kernel_boot(
         ("notarizer", &b.notarizer),
         ("mover", &b.mover),
         ("merger", &b.merger),
-        ("spawner", &b.spawner),
+        // the identity of whoever signed this machine's cert, under the boot documents' `spawner` member: the
+        // preloader's for a fly-preload machine (docs/PLAN-one-image.md)
+        (crate::machine_signer(), &b.spawner),
         ("secrets", &b.secrets),
     ] {
         check_identity(&id.id(), role, bx).map_err(|e| anyhow!("{e}"))?;
@@ -190,8 +192,9 @@ pub fn check_kernel_boot(
     };
     let self_obj = machine_object(me);
     let k = |n: &str| keys.get(n).cloned().unwrap_or_default();
-    let mut mc = Err(anyhow!("no spawner in the roster"));
-    for key in bx.signing_keys("spawner") {
+    let signer = crate::machine_signer();
+    let mut mc = Err(anyhow!("no {signer} in the roster"));
+    for key in bx.signing_keys(signer) {
         mc = jarvis_doc::open_cert(&b.machine_cert.as_sig_doc(), &key).map_err(|e| anyhow!("{e}"));
         if mc.is_ok() {
             break;

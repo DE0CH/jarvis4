@@ -20,7 +20,7 @@ import (
 	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
-var roles = []string{"gullible", "identity", "merger", "minter", "mover", "notarizer", "notary", "secrets", "spawner"}
+var roles = []string{"gullible", "identity", "merger", "minter", "mover", "notarizer", "notary", "preloader", "secrets", "spawner"}
 
 type component struct {
 	c     *sig.Component

@@ -31,6 +31,7 @@ type FlyMachine struct {
 	Image  string
 	Volume string
 	Source string
+	Exit   *int // the main process's exit code once it has stopped (nil: still running, or Fly reported none)
 }
 
 // Fly: single calls, no waiting or retrying (the router retries)
@@ -119,6 +120,9 @@ const FlyApp = "jarvis4-sessions"
 // SourceMeta: the Fly metadata key naming the source a machine is from (the router lists machines by it)
 const SourceMeta = "jarvis4_source"
 
+// GoldenMeta: the Fly metadata key of a machine filling a golden volume (preload.go)
+const GoldenMeta = "jarvis4_golden"
+
 const (
 	volumePath = "/data" // where the machine finds its volume (machine/volume.go)
 	volumeName = "jarvis4_state"
@@ -166,11 +170,16 @@ type FlyAPI struct {
 	mu    sync.Mutex
 	token string
 	base  string
+	app   string
 	http  *http.Client
 }
 
-func NewFlyAPI() *FlyAPI {
-	return &FlyAPI{base: "https://api.machines.dev/v1", http: &http.Client{}}
+// NewFlyAPI: the spawner's Fly app (FlyApp)
+func NewFlyAPI() *FlyAPI { return NewFlyAPIApp(FlyApp) }
+
+// NewFlyAPIApp: one Fly app's machines and volumes (the preloader's: PreloadFlyApp)
+func NewFlyAPIApp(app string) *FlyAPI {
+	return &FlyAPI{base: "https://api.machines.dev/v1", app: app, http: &http.Client{}}
 }
 
 func (f *FlyAPI) Configure(token string) {
@@ -191,7 +200,7 @@ func (f *FlyAPI) call(method, path string, body any, out any) error {
 		b, _ := json.Marshal(body)
 		rd = bytes.NewReader(b)
 	}
-	req, _ := http.NewRequest(method, f.base+"/apps/"+FlyApp+path, rd)
+	req, _ := http.NewRequest(method, f.base+"/apps/"+f.app+path, rd)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := f.http.Do(req)
@@ -247,6 +256,14 @@ func (f *FlyAPI) Create(image, region string, guest map[string]any, env map[stri
 func (f *FlyAPI) Inspect(id string) (FlyMachine, error) {
 	var m struct {
 		State  string `json:"state"`
+		Events []struct {
+			Type    string `json:"type"`
+			Request struct {
+				ExitEvent *struct {
+					ExitCode int `json:"exit_code"`
+				} `json:"exit_event"`
+			} `json:"request"`
+		} `json:"events"`
 		Config struct {
 			Image    string            `json:"image"`
 			Metadata map[string]string `json:"metadata"`
@@ -271,7 +288,50 @@ func (f *FlyAPI) Inspect(id string) (FlyMachine, error) {
 	if len(m.Config.Mounts) > 0 {
 		fm.Volume = m.Config.Mounts[0].Volume
 	}
+	for _, e := range m.Events { // newest first
+		if e.Type == "exit" && e.Request.ExitEvent != nil {
+			code := e.Request.ExitEvent.ExitCode
+			fm.Exit = &code
+			break
+		}
+	}
 	return fm, nil
+}
+
+// ForkVolume: Fly's volume fork (source_volume_id): a new volume holding source's data, of its size, usable at once
+// (its blocks are read from source until the copy is done, "hydrating"). Its backups are off, as CreateVolume's.
+func (f *FlyAPI) ForkVolume(source, region string, guest map[string]any) (string, error) {
+	var v struct {
+		ID string `json:"id"`
+	}
+	body := map[string]any{"name": volumeName, "region": region, "source_volume_id": source, "encrypted": true,
+		"snapshot_retention": 1, "auto_backup_enabled": false, "require_unique_zone": false, "compute": guest}
+	if err := f.call("POST", "/volumes", body, &v); err != nil {
+		return "", err
+	}
+	if v.ID == "" {
+		return "", fmt.Errorf("fly forked no volume")
+	}
+	return v.ID, nil
+}
+
+// goldenCmd: what a golden volume's machine runs instead of the image's entry point: aviary's sandbox image fetched
+// and unpacked onto the volume (/data/aviary/image-<digest12>.ok), then the machine stops
+var goldenCmd = []string{"/usr/local/bin/aviary-sandbox", "--fetch"}
+
+// CreateGolden: the machine that fills a golden volume (preload.go): the session image with goldenCmd, no secrets, no
+// keys, no restart; GoldenMeta marks it so a listing tells it from a session's machine
+func (f *FlyAPI) CreateGolden(image, region, volume string) (string, error) {
+	var m struct {
+		ID string `json:"id"`
+	}
+	config := map[string]any{"image": image, "guest": goldenGuest, "restart": map[string]any{"policy": "no"},
+		"init":     map[string]any{"entrypoint": goldenCmd[:1], "cmd": goldenCmd[1:]},
+		"metadata": map[string]string{GoldenMeta: "1"}, "mounts": []map[string]any{{"volume": volume, "path": volumePath}}}
+	if err := f.call("POST", "/machines", map[string]any{"region": region, "config": config}, &m); err != nil {
+		return "", err
+	}
+	return m.ID, nil
 }
 
 // Init: jarvis2-init waits for the machine's keys (made at boot), prints them and lets boot go on. One run.

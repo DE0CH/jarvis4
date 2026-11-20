@@ -37,7 +37,7 @@ import (
 )
 
 // Roles: every kernel component (a copy has one of each)
-var Roles = []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "minter", "secrets"}
+var Roles = []string{"notary", "notarizer", "mover", "merger", "spawner", "preloader", "identity", "gullible", "minter", "secrets"}
 
 // Copy: one kernel copy's running components
 type Copy struct {
@@ -115,7 +115,7 @@ func (k *Kernel) startCopy(t testing.TB, name string) *Copy {
 		k.Copies[name] = cp
 	}
 	cp.URL = map[string]string{}
-	for _, role := range Roles[:8] {
+	for _, role := range Roles[:len(Roles)-1] { // secrets (last) is started apart
 		c, err := sig.NewComponent(role)
 		if err != nil {
 			t.Fatal(err)
@@ -141,6 +141,12 @@ func (k *Kernel) startCopy(t testing.TB, name string) *Copy {
 			merger.Register(s, merger.New(c.Signer, trust))
 		case "spawner":
 			sp, err := spawner.Open(filepath.Join(cp.dir, "spawner"), c, trust, k.Fly, nil, k.env, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			spawner.Register(s, sp)
+		case "preloader":
+			sp, err := spawner.OpenRole(spawner.PreloaderRole, filepath.Join(cp.dir, "preloader"), c, trust, k.Fly, nil, k.env, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -189,7 +195,7 @@ func (k *Kernel) Other() string {
 func (k *Kernel) Release(t testing.TB) *Copy {
 	cp := k.startCopy(t, k.Other())
 	cp.retired = nil
-	for _, role := range Roles[:8] {
+	for _, role := range Roles[:len(Roles)-1] { // secrets (last) is started apart
 		cp.retired = append(cp.retired, k.identityAt(k.Active, role))
 	}
 	cp.retired = append(cp.retired, k.Copies[k.Active].retired...)
@@ -296,7 +302,7 @@ func (k *Kernel) Flip(t testing.TB) {
 		}
 		handoffs[role] = h
 	}
-	for _, role := range []string{"notarizer", "spawner", "secrets"} {
+	for _, role := range []string{"notarizer", "spawner", "preloader", "secrets"} {
 		if _, err := postTo(k.Copies[to].URL[role], "/takeover", map[string]any{"handoff": handoffs[role]}); err != nil {
 			t.Fatalf("%s's takeover: %v", role, err)
 		}
@@ -375,6 +381,7 @@ type FakeMachine struct {
 	Env              map[string]string
 	Sig              *sig.Signer
 	Enc              *ecdh.PrivateKey
+	Golden           bool // fills a golden volume (CreateGolden): stops with exit 0 at once
 }
 
 type FakeFly struct {
@@ -382,6 +389,7 @@ type FakeFly struct {
 	n        int
 	Machines map[string]*FakeMachine
 	vols     map[string]bool
+	forks    map[string]string // a forked volume → its source
 	// Booting: new machines stay "starting" until Up
 	Booting bool
 	// Full: the next this-many creates answer that the volume's host is full (Fly's 412 volume_placement_capacity)
@@ -393,7 +401,7 @@ type FakeFly struct {
 }
 
 func NewFakeFly() *FakeFly {
-	return &FakeFly{Machines: map[string]*FakeMachine{}, vols: map[string]bool{}}
+	return &FakeFly{Machines: map[string]*FakeMachine{}, vols: map[string]bool{}, forks: map[string]string{}}
 }
 
 func (f *FakeFly) Configure(string) {}
@@ -475,7 +483,43 @@ func (f *FakeFly) Inspect(id string) (spawner.FlyMachine, error) {
 	if m == nil {
 		return spawner.FlyMachine{State: "destroyed"}, nil
 	}
-	return spawner.FlyMachine{State: m.State, Image: strings.Replace(m.Image, ":latest", "", 1), Volume: m.Volume, Source: m.Source}, nil
+	fm := spawner.FlyMachine{State: m.State, Image: strings.Replace(m.Image, ":latest", "", 1), Volume: m.Volume, Source: m.Source}
+	if m.Golden && m.State == "stopped" {
+		zero := 0
+		fm.Exit = &zero
+	}
+	return fm, nil
+}
+
+// ForkVolume: the preloader's fork (spawner.Preloads): a new volume, recorded as a copy of source
+func (f *FakeFly) ForkVolume(source, region string, guest map[string]any) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.vols[source] {
+		return "", &spawner.FlyError{HTTP: 404, Msg: "POST /volumes: HTTP 404 no volume " + source}
+	}
+	f.n++
+	v := fmt.Sprintf("vol_%d", f.n)
+	f.vols[v] = true
+	f.forks[v] = source
+	return v, nil
+}
+
+// ForkOf: the volume a forked volume copies ("" for one made empty)
+func (f *FakeFly) ForkOf(v string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.forks[v]
+}
+
+// CreateGolden: the machine that fills a golden volume, which here has filled it and stopped
+func (f *FakeFly) CreateGolden(image, region, volume string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.n++
+	id := fmt.Sprintf("%014x", f.n)
+	f.Machines[id] = &FakeMachine{ID: id, Image: image, State: "stopped", Volume: volume, Golden: true}
+	return id, nil
 }
 
 func (f *FakeFly) Init(id string) (spawner.MachineKeys, error) {

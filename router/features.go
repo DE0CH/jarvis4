@@ -78,6 +78,7 @@ func (r *Router) startFeatures() {
 	go r.consoleLoop()       // awslogs.go: the AWS instances' serial consoles (the leader)
 	go r.lostLoop()          // lostmachine.go: machines that stopped without Jarvis doing it
 	go r.frozenLoop()        // timemachine.go: a frozen session hermit thawed at its time is running again
+	go r.preloadLoop()       // preload.go: the fly-preload runner's golden volumes, stepped until ready
 	go r.neverBootedLoop()   // neverbooted.go: a machine that never boots fails its session
 	go r.kernelVolumesLoop() // kernelline.go: a killed kernel machine's volume left, killed again until it is gone
 }

@@ -32,6 +32,7 @@ struct Vectors {
     blue: Doc,
     a: Line,
     b: Line,
+    p: Line,
     input: Doc,
     cert: Doc,
     other_root: String,
@@ -57,6 +58,30 @@ fn sd(d: &Doc) -> SignedDoc {
 
 fn loose(id: &Identity) -> LooseIdentity {
     crate::gojson::unmarshal(jarvis_sig::go_json(id).unwrap().as_bytes()).unwrap()
+}
+
+/// a fly-preload machine (JARVIS2_RUNNER=fly-preload, docs/PLAN-one-image.md) takes documents whose cert the preloader
+/// signed for flypreload-<id>; the same documents name another machine to a plain Fly machine, and a spawner's line
+/// doesn't pass as a fly-preload one
+#[test]
+fn a_fly_preload_machine_takes_the_preloaders_cert() {
+    let _e = TestEnv::new();
+    let v = vectors();
+    let bx = trust(&v.root, &v.blue);
+    crate::env::set("JARVIS2_RUNNER", Some("fly-preload"));
+    let preloaded = check_kernel_boot(&v.p.docs(), &bx, &v.p.source, &v.p.id, &v.p.keys);
+    let spawners = check_kernel_boot(&v.a.docs(), &bx, &v.a.source, &v.a.id, &v.a.keys);
+    crate::env::set("JARVIS2_RUNNER", Some(""));
+    let plain = check_kernel_boot(&v.p.docs(), &bx, &v.p.source, &v.p.id, &v.p.keys);
+    assert!(preloaded.is_ok(), "{:?}", preloaded.err());
+    assert!(
+        spawners.is_err(),
+        "a spawner's line passed as a fly-preload one"
+    );
+    assert!(
+        plain.is_err(),
+        "a plain Fly machine took the preloader's cert"
+    );
 }
 
 /// the documents a kernel machine boots from check, and give the settings, stores and session the source names

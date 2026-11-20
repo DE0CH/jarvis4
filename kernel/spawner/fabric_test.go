@@ -192,8 +192,8 @@ func TestFabricSpawnInitKill(t *testing.T) {
 	}
 	o := out.(map[string]any)
 	id := o["id"].(string)
-	if id != "x0190f6c25b1e7a3c9d4e000000000001" || runnerOf(id) != "fabric" || object(id) != doc.Object("fabric-"+id) || object(id).Kind() != "machine" {
-		t.Fatalf("machine id %q, object %q", id, object(id))
+	if id != "x0190f6c25b1e7a3c9d4e000000000001" || runnerOf(id) != "fabric" || r.sp.object(id) != doc.Object("fabric-"+id) || r.sp.object(id).Kind() != "machine" {
+		t.Fatalf("machine id %q, object %q", id, r.sp.object(id))
 	}
 	if o["volume"] != "" {
 		t.Fatalf("a fabric machine has no volume: %v", o["volume"])

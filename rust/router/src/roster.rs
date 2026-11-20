@@ -50,6 +50,7 @@ pub const KERNEL_ROLES: &[&str] = &[
     "mover",
     "notarizer",
     "notary",
+    "preloader",
     "secrets",
     "spawner",
 ];

@@ -121,25 +121,35 @@ type Spawner struct {
 	awsEnv    map[string]string // the same for an AWS machine (the router's address on the tailnet)
 	path      string
 	machines  map[string]*Machine
+	role      Role               // the spawner or the preloader (preload.go)
+	goldens   map[string]*Golden // the preloader's golden volumes by region and image digest (preload.go)
+	goldenMu  sync.Mutex         // one golden step at a time
 }
 
 type state struct {
 	Machines map[string]*Machine `json:"machines"`
+	Goldens  map[string]*Golden  `json:"goldens,omitempty"`
 }
 
 // Open: the state at path (made if missing), its mode beside it. env, awsEnv: the env every Fly / AWS machine gets
 // (the router's address as that runner's machines reach it). aws nil: no AWS runner.
 func Open(path string, c *sig.Component, t *sig.Trust, fly Fly, aws *AWSAPI, env, awsEnv map[string]string) (*Spawner, error) {
+	return OpenRole(SpawnerRole, path, c, t, fly, aws, env, awsEnv)
+}
+
+// OpenRole: Open as the spawner or the preloader (preload.go; the preloader has no AWS or fabric runner)
+func OpenRole(role Role, path string, c *sig.Component, t *sig.Trust, fly Fly, aws *AWSAPI, env, awsEnv map[string]string) (*Spawner, error) {
 	cont, err := serve.OpenContinuity(path + ".mode")
 	if err != nil {
 		return nil, err
 	}
 	if r := t.Roster(); r != nil { // a roster already held decides a new volume's mode now (else POST /roster does)
-		if err := cont.Decide(*r, "spawner"); err != nil {
+		if err := cont.Decide(*r, role.Name); err != nil {
 			return nil, err
 		}
 	}
-	sp := &Spawner{cont: cont, s: c.Signer, agreement: c.Agreement, trust: t, fly: fly, aws: aws, env: env, awsEnv: awsEnv, path: path, machines: map[string]*Machine{}}
+	sp := &Spawner{cont: cont, s: c.Signer, agreement: c.Agreement, trust: t, fly: fly, aws: aws, env: env, awsEnv: awsEnv, path: path, machines: map[string]*Machine{},
+		role: role, goldens: map[string]*Golden{}}
 	b, err := os.ReadFile(path)
 	if err == nil {
 		var st state
@@ -148,6 +158,9 @@ func Open(path string, c *sig.Component, t *sig.Trust, fly Fly, aws *AWSAPI, env
 		}
 		if st.Machines != nil {
 			sp.machines = st.Machines
+		}
+		if st.Goldens != nil {
+			sp.goldens = st.Goldens
 		}
 	} else if !os.IsNotExist(err) {
 		return nil, err
@@ -174,7 +187,7 @@ func (sp *Spawner) conversationOf(id string) string {
 
 // save: the state, atomically (callers hold mu)
 func (sp *Spawner) save() error {
-	b, _ := json.Marshal(state{Machines: sp.machines})
+	b, _ := json.Marshal(state{Machines: sp.machines, Goldens: sp.goldens})
 	tmp := sp.path + ".tmp"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -265,8 +278,14 @@ func machineImageDigest(runner, ref string) string {
 	return imageDigest(ref)
 }
 
-// object: the machine's object, "<runner>-<id>"
-func object(id string) doc.Object { return doc.Object(runnerOf(id) + "-" + id) }
+// object: the machine's object, "<runner>-<id>"; a Fly machine's runner is the role's (fly or flypreload)
+func (sp *Spawner) object(id string) doc.Object {
+	r := runnerOf(id)
+	if r == "fly" {
+		r = sp.role.FlyObject
+	}
+	return doc.Object(r + "-" + id)
+}
 
 // serving: a call may go on (callers hold op shared)
 func (sp *Spawner) serving() error { return sp.cont.Serving() }
@@ -396,9 +415,18 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 	if in.DiskGB < 1 || in.DiskGB > maxDiskGB || in.Region == "" {
 		return nil, serve.Fail(400, "diskGb 1 to %d and a region", maxDiskGB)
 	}
+	if (sp.role == PreloaderRole) != (in.Runner == PreloaderRole.FlyRunner) {
+		return nil, serve.Fail(400, "runner %q is not the %s's (the preloader makes fly-preload machines, the spawner the rest)", orFly(in.Runner), sp.role.Name)
+	}
 	var run Runner = flyRunner{sp.fly}
 	switch in.Runner {
 	case "", "fly":
+	case PreloaderRole.FlyRunner:
+		pre, ok := sp.fly.(Preloads)
+		if !ok {
+			return nil, serve.Fail(503, "this preloader's Fly can't fork volumes")
+		}
+		run = preloadRunner{Fly: sp.fly, pre: pre, golden: sp.readyGolden(in.Region, c.Source.Image, in.DiskGB)}
 	case "aws":
 		if sp.aws == nil {
 			return nil, serve.Fail(503, "this spawner has no AWS runner")
@@ -428,7 +456,7 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 		}
 		run = sp.fabric
 	default:
-		return nil, serve.Fail(400, "runner: aws, fabric or fly")
+		return nil, serve.Fail(400, "runner: aws, fabric, fly or fly-preload")
 	}
 	base := sp.env
 	switch in.Runner {
@@ -450,6 +478,9 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 	env := map[string]string{"JARVIS2_SOURCE": string(c.Succ), "JARVIS2_KERNEL_ROSTER": string(rj), "JARVIS2_KERNEL_ROOT": sp.trust.Root()}
 	for k, v := range base {
 		env[k] = v
+	}
+	if in.Runner == PreloaderRole.FlyRunner {
+		env["JARVIS2_RUNNER"] = PreloaderRole.FlyRunner // the machine names itself flypreload-<id> (rust/machine)
 	}
 	id, vid, err := run.Create(CreateInput{Image: c.Source.Image, Region: in.Region, Guest: guest, MemoryMB: mem, Env: env,
 		DiskGB: in.DiskGB, Source: string(c.Succ), WireGuard: in.WireGuard, Fabric: in.Fabric})
@@ -532,8 +563,8 @@ func (sp *Spawner) Init(id string) (sig.Doc, error) {
 		return sig.Doc{}, flyFail("init", err)
 	}
 	keys := doc.Keys{SigningKey: k.SigningKey, EncryptionKey: k.EncryptionKey}
-	c := doc.Cert{Kind: "succession", Pred: m.Source, Succ: object(id), Pair: perm.Top(),
-		Machine: &doc.Machine{Keys: keys, Image: fm.Image}, Signer: doc.BySpawner, IssuedAt: doc.Now()}
+	c := doc.Cert{Kind: "succession", Pred: m.Source, Succ: sp.object(id), Pair: perm.Top(),
+		Machine: &doc.Machine{Keys: keys, Image: fm.Image}, Signer: sp.role.Name, IssuedAt: doc.Now()}
 	if err := c.Check(); err != nil {
 		return sig.Doc{}, serve.Fail(502, "machine %s: %v", id, err)
 	}
@@ -649,8 +680,8 @@ func (sp *Spawner) Kill(id string, snap *Snapshot) (any, error) {
 			if sum != "" {
 				src.Snapshot = sum
 			}
-			c := doc.Cert{Kind: "succession", Pred: object(id), Succ: doc.NewSource(b), Pair: perm.Top(),
-				Source: &src, Signer: doc.BySpawner, IssuedAt: doc.Now()}
+			c := doc.Cert{Kind: "succession", Pred: sp.object(id), Succ: doc.NewSource(b), Pair: perm.Top(),
+				Source: &src, Signer: sp.role.Name, IssuedAt: doc.Now()}
 			if err := c.Check(); err != nil {
 				return nil, err
 			}
@@ -735,6 +766,7 @@ func (sp *Spawner) Destroy(id string) (any, error) {
 // handed: the state as it moves to the other copy
 type handed struct {
 	Machines map[string]*Machine `json:"machines"`
+	Goldens  map[string]*Golden  `json:"goldens,omitempty"` // the preloader's (preload.go)
 	FlyToken string              `json:"flyToken,omitempty"`
 	AWSKey   *AWSCredentials     `json:"awsKey,omitempty"`
 	Fabric   *FabricCredentials  `json:"fabric,omitempty"`
@@ -743,7 +775,7 @@ type handed struct {
 func (sp *Spawner) Decide(r sig.Roster) error {
 	sp.op.Lock()
 	defer sp.op.Unlock()
-	return sp.cont.Decide(r, "spawner")
+	return sp.cont.Decide(r, sp.role.Name)
 }
 
 // Mode: serving, standby or handed-off ("" before the first roster)
@@ -758,7 +790,7 @@ func (sp *Spawner) Handoff(roster string) ([]byte, error) {
 	}
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
-	return json.Marshal(handed{Machines: sp.machines, FlyToken: sp.token, AWSKey: sp.awsKey, Fabric: sp.fabricKey})
+	return json.Marshal(handed{Machines: sp.machines, Goldens: sp.goldens, FlyToken: sp.token, AWSKey: sp.awsKey, Fabric: sp.fabricKey})
 }
 
 // Takeover: the predecessor's machines replace this volume's (saved before it serves), and its Fly token
@@ -776,8 +808,11 @@ func (sp *Spawner) Takeover(id string, state []byte) error {
 	if h.Machines == nil {
 		h.Machines = map[string]*Machine{}
 	}
+	if h.Goldens == nil {
+		h.Goldens = map[string]*Golden{}
+	}
 	sp.mu.Lock()
-	sp.machines = h.Machines
+	sp.machines, sp.goldens = h.Machines, h.Goldens
 	err = sp.save()
 	if err == nil && h.FlyToken != "" {
 		sp.fly.Configure(h.FlyToken)
@@ -836,4 +871,8 @@ func Register(s *serve.Server, sp *Spawner) {
 	}) (any, error) {
 		return sp.Destroy(in.ID)
 	})
+	if sp.role == PreloaderRole {
+		serve.Handle(s, "POST /golden", func(in GoldenInput) (any, error) { return sp.MakeGolden(in) })
+		serve.Handle(s, "POST /goldens", func(struct{}) (any, error) { return map[string]any{"goldens": sp.Goldens()}, nil })
+	}
 }

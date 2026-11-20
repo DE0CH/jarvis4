@@ -113,6 +113,37 @@ func TestShapesOutsideTheTableAreRefused(t *testing.T) {
 	r.refused(r.input(w.Cert(doc.BySpawner, x, "fly-aaaaaaaa01", store, nil, m)), "⊤")
 }
 
+// ✱ the preloader has the spawner's rows for its own machines (flypreload-*) and the spawner keeps the rest: neither
+// signs for the other's machines, and a source still has one first successor whichever of them signs it
+func TestThePreloaderAndTheSpawnerSignOnlyTheirOwnMachines(t *testing.T) {
+	r := newRig(t)
+	w := r.w
+	x, y := kt.Source(), kt.Source()
+	_, m1 := kt.MachineKeys()
+	_, m2 := kt.MachineKeys()
+	r.ok(w.Cert(doc.ByIPhone, doc.Sink, x, store, kt.SourceContent("t"), nil))
+	r.refused(r.input(w.Cert(doc.BySpawner, x, "flypreload-aaaaaaaa01", perm.Top(), nil, m1)), "not the spawner's machine")
+	r.refused(r.input(w.Cert(doc.ByPreloader, x, "fly-aaaaaaaa01", perm.Top(), nil, m1)), "not the preloader's machine")
+	r.refused(r.input(w.Cert(doc.ByPreloader, x, "aws-i-0123456789abcdef0", perm.Top(), nil, m1)), "not the preloader's machine")
+	r.refused(r.input(w.Cert(doc.ByPreloader, x, "flypreload-aaaaaaaa01", store, nil, m1)), "⊤")
+	r.ok(w.Cert(doc.ByPreloader, x, "flypreload-aaaaaaaa01", perm.Top(), nil, m1))
+	r.refused(r.input(w.Cert(doc.BySpawner, x, "fly-aaaaaaaa02", perm.Top(), nil, m2)), "already has a successor")
+	r.ok(w.Cert(doc.ByIdentity, "flypreload-aaaaaaaa01", "flypreload-aaaaaaaa01", store, nil, nil))
+	snap := kt.SourceContent("t")
+	snap.Snapshot = strings.Repeat("ab", 32)
+	r.refused(r.input(w.Cert(doc.BySpawner, "flypreload-aaaaaaaa01", y, perm.Top(), snap, nil)), "not the spawner's machine")
+	r.ok(w.Cert(doc.ByPreloader, "flypreload-aaaaaaaa01", y, perm.Top(), snap, nil))
+	// a kill's new source may go on with either runner: the legacy fly runner as the fallback
+	r.ok(w.Cert(doc.BySpawner, y, "fly-aaaaaaaa02", perm.Top(), nil, m2))
+	// the preloader's cert checked against its own identity, never the spawner's
+	_, m3 := kt.MachineKeys()
+	z := kt.Source()
+	r.ok(w.Cert(doc.ByIPhone, doc.Sink, z, store, kt.SourceContent("t"), nil))
+	in := r.input(w.Cert(doc.ByPreloader, z, "flypreload-aaaaaaaa03", perm.Top(), nil, m3))
+	in.Signer = r.w.ID("spawner")
+	r.refused(in, "not a preloader identity")
+}
+
 // ✱ a cert signed by the wrong key for its signer, a vouched identity of another role, an unvouched one
 func TestSignerKeysAreChecked(t *testing.T) {
 	r := newRig(t)

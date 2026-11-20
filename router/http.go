@@ -207,6 +207,36 @@ func (r *Router) buildHandlers() {
 		w.Write(b)
 	}))
 
+	// the kernel's preloader (kernel/spawner/preload.go, docs/PLAN-one-image.md): the same two, its own Fly token
+	// (narrowed to jarvis4-sessions-preload; infra/setup.py kernel-fly-token FILE preloader)
+	mux.Handle("GET /setup/kernel/preloader/identity", r.requireSetup(func(w http.ResponseWriter, req *http.Request) {
+		if r.kernel == nil {
+			writeJSON(w, 503, map[string]string{"error": "this box runs no kernel"})
+			return
+		}
+		b, err := r.kernel.call("preloader", "GET", "/identity", nil)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(b)
+	}))
+	mux.Handle("POST /setup/kernel/preloader/fly-token", r.requireSetup(func(w http.ResponseWriter, req *http.Request) {
+		var in json.RawMessage
+		if r.kernel == nil || json.NewDecoder(io.LimitReader(req.Body, 1<<16)).Decode(&in) != nil {
+			writeJSON(w, 400, map[string]string{"error": "{sealed}, on a box with a kernel"})
+			return
+		}
+		b, err := r.kernel.call("preloader", "POST", "/fly-token", in)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(b)
+	}))
+
 	// the spawner's AWS key, sealed to it the same way (infra/setup.py kernel-aws-credentials)
 	mux.Handle("POST /setup/kernel/spawner/aws-credentials", r.requireSetup(func(w http.ResponseWriter, req *http.Request) {
 		var in json.RawMessage

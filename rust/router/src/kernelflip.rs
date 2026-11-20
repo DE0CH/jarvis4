@@ -51,7 +51,16 @@ pub struct KernelFlip {
 }
 
 /// the components whose state moves (the others only freeze)
-pub const FLIP_STATEFUL: &[&str] = &["notarizer", "spawner", "secrets"];
+pub const FLIP_STATEFUL: &[&str] = &["notarizer", "spawner", "preloader", "secrets"];
+
+/// whether a role is in the serving copy's roster. A role it lacks (one released for the first time, as the preloader
+/// was) has nothing to hand over: the new roster retires none of its keys, so the new copy's component serves at once
+/// (kernel/internal/serve flip.go Decide), and the flip neither waits for nor asks the old copy's. No serving roster
+/// recorded: every role moves.
+pub fn serving_roles(cur: Option<&RosterCurrent>) -> impl Fn(&str) -> bool + use<> {
+    let ro: Option<Roster> = cur.map(RosterCurrent::roster);
+    move |role: &str| ro.as_ref().is_none_or(|r| r.member(role).is_some())
+}
 
 /// one try at a time
 static KERNEL_FLIP_MU: Mutex<()> = Mutex::new(());
@@ -152,9 +161,13 @@ impl Router {
     /// one try at the flip; Ok once it finished (or there is none)
     pub fn kernel_flip_run(&self) -> Result<()> {
         let _g = KERNEL_FLIP_MU.lock().unwrap_or_else(|e| e.into_inner());
-        let (f, next) = self
-            .st
-            .do_(|p| (p.kernel_flip.clone(), p.kernel_roster_next.clone()));
+        let (f, next, cur) = self.st.do_(|p| {
+            (
+                p.kernel_flip.clone(),
+                p.kernel_roster_next.clone(),
+                p.kernel_roster.clone(),
+            )
+        });
         let Some(mut f) = f else { return Ok(()) };
         let Some(next) = next.filter(|n| n.copy == f.to && n.doc().id() == f.roster) else {
             let why = "the roster it was started with is gone";
@@ -162,8 +175,9 @@ impl Router {
             return Err(anyhow!(why));
         };
         let from = other_copy(&f.to);
+        let moves = serving_roles(cur.as_ref());
         if f.handoffs.is_empty() {
-            let why = self.flip_ready(from, &next);
+            let why = self.flip_ready(from, &next, &moves);
             if !why.is_empty() {
                 self.flip_waiting(&why);
                 return Err(anyhow!(why));
@@ -172,7 +186,7 @@ impl Router {
         let Some(k) = &self.kernel else { return Ok(()) };
         let res = {
             let _w = k.gate.write();
-            let res = self.flip_steps(&mut f, &next.doc(), from);
+            let res = self.flip_steps(&mut f, &next.doc(), from, &moves);
             if res.is_ok() {
                 self.st.do_(|p| {
                     p.kernel_copy = f.to.clone();
@@ -203,7 +217,7 @@ impl Router {
 
     /// "" when the flip can begin: every component of the other copy holds its roster (posted again if one lost it),
     /// and every serving component is one that roster retires (the serving secrets: the one it names)
-    fn flip_ready(&self, from: &str, next: &RosterCurrent) -> String {
+    fn flip_ready(&self, from: &str, next: &RosterCurrent, moves: &dyn Fn(&str) -> bool) -> String {
         let Some(k) = &self.kernel else {
             return "no kernel".into();
         };
@@ -220,6 +234,9 @@ impl Router {
             }
         }
         for role in KERNEL_ROLES {
+            if !moves(role) {
+                continue;
+            }
             let dep = format!("{role}-{from}");
             let b = match k.do_(&dep, &dep, "GET", "/identity", None) {
                 Err(e) => return format!("{dep} doesn't answer ({e:#})"),
@@ -249,12 +266,18 @@ impl Router {
     }
 
     /// the handoffs, then the takeovers, each kept before the next (callers hold the gate)
-    fn flip_steps(&self, f: &mut KernelFlip, roster: &SDoc, from: &str) -> Result<()> {
+    fn flip_steps(
+        &self,
+        f: &mut KernelFlip,
+        roster: &SDoc,
+        from: &str,
+        moves: &dyn Fn(&str) -> bool,
+    ) -> Result<()> {
         let Some(k) = &self.kernel else {
             return Err(anyhow!("no kernel"));
         };
         for role in KERNEL_ROLES {
-            if f.handoffs.contains_key(*role) {
+            if f.handoffs.contains_key(*role) || !moves(role) {
                 continue;
             }
             let dep = format!("{role}-{from}");
@@ -280,7 +303,7 @@ impl Router {
             crate::logf!("kernel: {dep} handed over to the {} copy", f.to);
         }
         for role in FLIP_STATEFUL {
-            if f.taken.get(*role).copied().unwrap_or(false) {
+            if f.taken.get(*role).copied().unwrap_or(false) || !moves(role) {
                 continue;
             }
             let dep = format!("{role}-{}", f.to);

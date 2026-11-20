@@ -565,3 +565,81 @@ fn a_slow_body_is_not_refused_as_too_old() {
     assert_eq!(slow, 200, "a slow body");
     assert_eq!(stale, 401, "a stale X-Time");
 }
+
+/// a role the serving roster lacks (the preloader's first release) neither hands over nor is waited for in a flip; with
+/// no serving roster recorded every role moves (kernelflip.go TestServingRolesSkipsARoleTheServingCopyLacks)
+#[test]
+fn serving_roles_skips_a_role_the_serving_copy_lacks() {
+    let members = ["notary", "spawner", "secrets"]
+        .iter()
+        .map(|r| jarvis_sig::Component::new(r).identity)
+        .collect();
+    let ro = jarvis_sig::Roster {
+        copy: "blue".into(),
+        members,
+        ..Default::default()
+    };
+    let cur = crate::roster::RosterCurrent {
+        copy: "blue".into(),
+        payload: ro.payload().expect("payload"),
+        sig: String::new(),
+        at: GoTime::default(),
+        results: Default::default(),
+        stale: Default::default(),
+    };
+    let moves = crate::kernelflip::serving_roles(Some(&cur));
+    assert!(moves("spawner") && moves("secrets") && !moves("preloader"));
+    assert!(crate::kernelflip::serving_roles(None)("preloader"));
+}
+
+/// the golden volumes asked for: none without PRELOAD_SESSION_IMAGE; the router's region and 20 GB by default; the
+/// configured regions and size otherwise (preload_test.go); the preloader's signed answer read
+#[test]
+fn preload_asks_for_a_golden_per_region() {
+    use crate::preload::{golden_state, preload_config, preload_steps};
+    let env = |m: Vec<(&'static str, &'static str)>| {
+        move |k: &str| {
+            m.iter()
+                .find(|(n, _)| *n == k)
+                .map(|(_, v)| (*v).to_string())
+                .unwrap_or_default()
+        }
+    };
+    assert!(preload_config(env(vec![]), "lhr").is_none());
+    let img = "ghcr.io/de0ch/jarvis4-session@sha256:a1b2";
+    let c = preload_config(env(vec![("PRELOAD_SESSION_IMAGE", img)]), "lhr").expect("config");
+    assert_eq!(
+        preload_steps(&c),
+        vec![json!({"region": "lhr", "image": img, "diskGb": 20})]
+    );
+    let c = preload_config(
+        env(vec![
+            ("PRELOAD_SESSION_IMAGE", img),
+            ("PRELOAD_REGIONS", "lhr, sin,"),
+            ("PRELOAD_DISK_GB", "40"),
+        ]),
+        "lhr",
+    )
+    .expect("config");
+    assert_eq!(
+        preload_steps(&c),
+        vec![
+            json!({"region": "lhr", "image": img, "diskGb": 40}),
+            json!({"region": "sin", "image": img, "diskGb": 40})
+        ]
+    );
+    let d =
+        json!({"payload": json!({"state": "ready", "volume": "vol_1"}).to_string(), "sig": "x"});
+    assert_eq!(golden_state(d.to_string().as_bytes()), "ready vol_1");
+    assert_eq!(golden_state(b"x"), "an answer that isn't the preloader's");
+}
+
+/// an aviary session that asks for no disk gets room for aviary's sandbox image; the others keep the default
+#[test]
+fn an_aviary_sessions_default_disk_holds_the_sandbox_image() {
+    use crate::disk::{AVIARY_DISK, DEFAULT_DISK, default_disk_for};
+    const { assert!(AVIARY_DISK >= 20) };
+    assert_eq!(default_disk_for("aviary"), AVIARY_DISK);
+    assert_eq!(default_disk_for("claude"), DEFAULT_DISK);
+    assert_eq!(default_disk_for(""), DEFAULT_DISK);
+}

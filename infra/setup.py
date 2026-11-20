@@ -48,7 +48,8 @@ both). Values never print.
   infra/setup.py kernel-flipped        after a copy flip: k8s/cluster/kernel/active-kernel.txt names the copy that
                                        serves now, its Deployments' release hold goes, the other copy goes to replicas 0
                                        (infra/kernel-pin.py flipped); commit and push
-  infra/setup.py kernel-fly-token FILE the kernel's spawner's Fly token (FILE: infra/fly-token.sh's), sealed to the
+  infra/setup.py kernel-fly-token FILE [preloader]  the kernel's spawner's Fly token (FILE: infra/fly-token.sh's; the
+                                       preloader's: `jarvis-tools fly-token jarvis4-sessions-preload FILE`), sealed to the
                                        spawner's key as the root key's current roster names it (checked against
                                        keys/root.pub); again after every spawner restart (and its new roster)
   infra/setup.py kernel-aws-credentials  the spawner's AWS key (IAM user jarvis4-spawner, infra/aws/iam.tf) from
@@ -524,17 +525,22 @@ def main():
         backup("core", tok, True, me["master"])
         print("ok: the core has its Fly token, and the core store's backup is written")
     elif cmd == "kernel-fly-token":
-        # the kernel's spawner (kernel/spawner): its identity checked against the root key's roster, the token sealed to it
-        d = call("GET", "/setup/kernel/spawner/identity")
+        # the kernel's spawner (kernel/spawner), or with `preloader` the preloader (docs/PLAN-one-image.md: its own token,
+        # narrowed to jarvis4-sessions-preload by `jarvis-tools fly-token`): its identity checked against the root
+        # key's roster, the token sealed to it
+        role = args[1] if len(args) > 1 else "spawner"
+        if role not in ("spawner", "preloader"):
+            raise SystemExit("usage: infra/setup.py kernel-fly-token FILE [spawner|preloader]")
+        d = call("GET", f"/setup/kernel/{role}/identity")
         ident = json.loads(d["payload"])
         if not _verify(ident["signingKey"], d["payload"].encode(), d["sig"]):
-            raise SystemExit("the spawner's identity document isn't signed by the spawner")
-        member = roster_members(call("GET", "/setup/kernel/roster").get("current")).get("spawner")
-        if ident.get("role") != "spawner" or member != {k: ident.get(k) for k in ("role", "signingKey", "agreementKey")}:
-            raise SystemExit("the spawner's keys aren't the ones the root key's current roster names (a restart? sign a new roster)")
+            raise SystemExit(f"the {role}'s identity document isn't signed by the {role}")
+        member = roster_members(call("GET", "/setup/kernel/roster").get("current")).get(role)
+        if ident.get("role") != role or member != {k: ident.get(k) for k in ("role", "signingKey", "agreementKey")}:
+            raise SystemExit(f"the {role}'s keys aren't the ones the root key's current roster names (a restart? sign a new roster)")
         tok = {"FLY_API_TOKEN": open(os.path.expanduser(args[0])).read().strip()}
-        call("POST", "/setup/kernel/spawner/fly-token", {"sealed": seal_to(ident["agreementKey"], json.dumps(tok).encode(), "jarvis2/fly-token")})
-        print("ok: the kernel's spawner has its Fly token (send it again after the spawner restarts)")
+        call("POST", f"/setup/kernel/{role}/fly-token", {"sealed": seal_to(ident["agreementKey"], json.dumps(tok).encode(), "jarvis2/fly-token")})
+        print(f"ok: the kernel's {role} has its Fly token (send it again after the {role} restarts)")
     elif cmd == "kernel-aws-credentials":
         # the same check as kernel-fly-token, then the AWS key sealed to the spawner (kernel/spawner/aws.go)
         d = call("GET", "/setup/kernel/spawner/identity")
@@ -621,7 +627,7 @@ def main():
 
 # ---- the kernel's roster (docs/PLAN-cluster.md "The roster") ----------------------------------------------------
 
-KERNEL_ROLES = ["notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "minter"]
+KERNEL_ROLES = ["notary", "notarizer", "mover", "merger", "spawner", "preloader", "identity", "gullible", "minter"]
 
 
 def write_root_key(k):

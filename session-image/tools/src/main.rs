@@ -13,6 +13,7 @@
 mod aviary;
 mod aviary_sandbox;
 mod entrypoint;
+mod flytoken;
 mod retire;
 mod schedule;
 mod timemachine;
@@ -85,6 +86,7 @@ fn main() -> ExitCode {
         ),
         "aviary-sandbox" => (aviary_sandbox::run(&args), aviary_sandbox::TAG),
         "time-machine" => (timemachine::run(&args), "ERROR"),
+        "fly-token" => (flytoken::run(&args), "ERROR"),
         "session-entrypoint" => (entrypoint::run(), entrypoint::TAG),
         "workspace-layer" => (workspace_layer::run(&args), workspace_layer::TAG),
         "retire-session" => (
@@ -93,7 +95,7 @@ fn main() -> ExitCode {
         ),
         _ => (
             Err(
-                "usage: jarvis-tools schedule-wakeup|schedule-cron|retire-session|time-machine|aviary-sandbox|workspace-layer|session-entrypoint …"
+                "usage: jarvis-tools schedule-wakeup|schedule-cron|retire-session|time-machine|aviary-sandbox|workspace-layer|session-entrypoint|fly-token …"
                     .into(),
             ),
             "ERROR",

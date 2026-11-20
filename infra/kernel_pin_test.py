@@ -64,14 +64,15 @@ c = edit("kernel/spawner/spawner.go", "\n// x\n", "spawner change")
 rc, out, err = plan(c)
 assert rc == 1 and out == [] and "kernel/spawner/spawner.go" in err and "spawner-blue (spawner" in err and "notary" not in err, (rc, out, err)
 
-# 3. a malformed trailer doesn't count; Deyao's trailer moves the spawner alone
+# 3. a malformed trailer doesn't count; Deyao's trailer moves the spawner and the preloader (built from the spawner's
+# package) alone
 git("commit", "-q", "--allow-empty", "-m", "release\n\nKernel-Release: placement retries")
 rc, out, err = plan(git("rev-parse", "HEAD"))
 assert rc == 1 and "malformed" in err, (rc, err)
 git("commit", "-q", "--allow-empty", "-m", "release\n\nKernel-Release: placement retries (Deyao, 2026-10-24)")
 rel = git("rev-parse", "HEAD")
 rc, out, err = plan(rel)
-assert (rc, out) == (0, ["spawner-green"]), (rc, out, err)
+assert (rc, sorted(out)) == (0, ["preloader-green", "spawner-green"]), (rc, out, err)
 
 # 4. an edit after the release needs another one; a sig edit touches every component, each moving only in green
 c = edit("kernel/sig/sig.go", "\n// x\n", "sig change")
