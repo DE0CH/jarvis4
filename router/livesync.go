@@ -32,6 +32,8 @@ type LiveSync struct {
 	Files  map[string]int64 `json:"files"`  // conversation file → bytes last received
 	Stored bool             `json:"stored"` // false: received but not written (no Storage Box, or RECORDS_OFF)
 	Error  string           `json:"error,omitempty"`
+	// RoundAt: when the machine last finished a sync round the router asked for (POST /m/live-synced, livetail.go)
+	RoundAt *time.Time `json:"roundAt,omitempty"`
 }
 
 const liveRoot = recordsRoot + "/.live"

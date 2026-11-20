@@ -189,6 +189,11 @@ fn live_sent_across_processes() {
         1,
         "the teardown didn't send the changed transcript"
     );
+    assert_eq!(
+        normal.pass(std::slice::from_ref(&f)),
+        0,
+        "supervisor-normal sent again what supervisor-core's round sent"
+    );
 }
 
 /// a new episode is told at once, again every 15 min while it lasts, never while healthy; a memory episode ends after

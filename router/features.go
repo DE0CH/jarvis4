@@ -30,6 +30,7 @@ func (r *Router) registerFeatures(app appRoute, m machineRoute, public publicRou
 	r.registerLeases(app, m, public)        // leases.go: shared-device leases (before sessionapi.go's /m/api/ catch-all)
 	r.registerTimeMachine(m)                // timemachine.go: a fabric session waits frozen (before the /m/api/ catch-all)
 	r.registerWatches(app, m)               // watches.go: conditional wakeups
+	r.registerLiveTail(m)                   // livetail.go: a session's tail now (before the /m/api/ catch-all)
 	r.registerSessionAPI(app, m)            // sessionapi.go: wakeups, crons, /m/api
 	r.registerJarvis1Import(app, m, public) // jarvis1import.go: paused Jarvis 1 sessions as new lines
 	r.registerArchive(app, m)               // archive.go, restore.go (budget.go needs no routes: /api/state via stateHooks)

@@ -3205,3 +3205,17 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      Anthropic (an unknown model) until it restarts onto the newest image. A conversation from before keeps its plain
      pick and runs on its session's account; the menu shows the default entry for it until Deyao picks. *Change*: if
      the Jarvis 4 app's switch should win over the chat's pick, make the gateway trust a found account for good.
+275. **A session's tail, now** (Deyao, 2026-11-20: "in addition to the transcript search that lags current by some
+     time, have a function to get the tail of a session in a timely manner"; asked who may read one: "Same as
+     transcript search", any session). `jarvis-tail SESSION` (`GET /m/api/tail/{session}`, `router/livetail.go`):
+     for a running session the router sends the `live-sync` command and waits (up to 45 s) for the machine's
+     `POST /m/live-synced`, sent after it has sent every transcript that changed (the live sync's own path, so the
+     `.live` copies and transcript search gain from it too); then it Range-reads the end of the conversation's
+     `.live` copy and parses it as the app's tails, with tool calls and results (clipped to 600 characters) unless
+     `?said=1`. The conversation is the copy whose last entry is newest: one rule, right for every image, and no
+     field the machine must report. Paused, frozen or not answering (an image from before this): the last copy,
+     `stale` with why; the final snapshot now sends a sync round first, so a paused session's copy ends where its
+     snapshot does. Nothing is pushed more often: a round costs only when someone asks. The two supervisors share the
+     live sync's state file and merge it before each pass, so supervisor-core's rounds don't make supervisor-normal
+     send the same transcripts again. *Change*: if reading a session's tail should need its stores, check the
+     direction as peer messages do (`peerDirection`).

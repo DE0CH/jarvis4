@@ -34,6 +34,9 @@ pub struct LiveSync {
     pub stored: bool,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub error: String,
+    /// when the machine last finished a sync round the router asked for (POST /m/live-synced, livetail.rs)
+    #[serde(rename = "roundAt", skip_serializing_if = "Option::is_none")]
+    pub round_at: Option<GoTime>,
 }
 
 pub fn live_root() -> String {
