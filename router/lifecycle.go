@@ -466,6 +466,9 @@ func (r *Router) lcPollOnce(run *lcRun) {
 			}
 			continue
 		}
+		if isFabricMachine(m) { // no machine on Fly: the router's own steps and the supervisor's lines are its log
+			continue
+		}
 		if !r.lc.flyOn() {
 			continue
 		}

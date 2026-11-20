@@ -375,13 +375,20 @@ pub fn session_view(s: &Session, d: &Persisted) -> Map<String, Value> {
         &s.label
     };
     let stores = s.stores.clone();
+    let runner = crate::awsrunner::session_runner(s);
+    // one kind of sandbox, on the fabric's hosts: the session's size and Fly region are not its
+    let (guest, region) = if runner == "fabric" {
+        (crate::fabricrunner::FABRIC_GUEST.to_string(), crate::fabricrunner::FABRIC_REGION.to_string())
+    } else {
+        (crate::sizes::size_label(&s.size), s.region.clone())
+    };
     let mut v: Map<String, Value> = json!({
         "serverTitle": s.app_title, "userTitle": s.user_title, "title": crate::titles::session_title(s), "liveSync": s.live_sync,
         "id": s.id, "machineId": null_if_empty(&s.machine_id), "released": s.machine_id.is_empty() && s.state == "paused",
-        "name": name, "state": s.state, "status": s.status, "error": s.error, "created": s.created, "region": s.region,
+        "name": name, "state": s.state, "status": s.status, "error": s.error, "created": s.created, "region": region, "runner": runner,
         "environment": stores.clone().unwrap_or_default().join(","), "stores": stores, "content": s.content.clone().unwrap_or_default(),
         "harness": s.harness, "label": s.label, "aiTitle": s.title,
-        "model": s.model, "permissionMode": s.permission_mode, "guest": crate::sizes::size_label(&s.size), "size": s.size, "pausedAt": s.paused_at,
+        "model": s.model, "permissionMode": s.permission_mode, "guest": guest, "size": s.size, "pausedAt": s.paused_at,
         "image": s.image, "createRequestId": s.request_id, "repos": s.repos, "discordChannel": s.discord_channel,
         "waiting": s.waiting, "lockedStore": s.locked_store, "carryLost": s.carry_lost, "oldCore": s.old_core,
         "claudeAccount": null_if_empty(&s.claude_account),

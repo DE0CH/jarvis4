@@ -307,14 +307,19 @@ pub struct AwsPeer {
     pub endpoint: String,
 }
 
+/// where the session's machines run (its own runner, else the default)
+pub fn session_runner(s: &Session) -> String {
+    if valid_runner(&s.runner) {
+        s.runner.clone()
+    } else {
+        default_runner()
+    }
+}
+
 impl Router {
     /// where the session's machines run (its own runner, else the default)
     pub fn runner_of(&self, s: &Session) -> String {
-        if valid_runner(&s.runner) {
-            s.runner.clone()
-        } else {
-            default_runner()
-        }
+        session_runner(s)
     }
 
     /// the region the spawner gets for the session's next machine, in its runner's terms
