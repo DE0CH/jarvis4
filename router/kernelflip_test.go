@@ -222,3 +222,21 @@ func TestAFlipRefusesARosterThatCantTakeOver(t *testing.T) {
 		t.Fatalf("something froze: %+v", f)
 	}
 }
+
+// a role the serving roster lacks (the preloader's first release) neither hands over nor is waited for; with no
+// serving roster recorded every role moves
+func TestServingRolesSkipsARoleTheServingCopyLacks(t *testing.T) {
+	ids := []sig.Identity{}
+	for _, r := range []string{"notary", "spawner", "secrets"} {
+		c, _ := sig.NewComponent(r)
+		ids = append(ids, c.Identity)
+	}
+	p, _ := sig.Roster{Copy: "blue", Members: ids}.Payload()
+	moves := servingRoles(&RosterCurrent{Copy: "blue", Payload: p})
+	if !moves("spawner") || !moves("secrets") || moves("preloader") {
+		t.Fatalf("spawner %v secrets %v preloader %v", moves("spawner"), moves("secrets"), moves("preloader"))
+	}
+	if !servingRoles(nil)("preloader") {
+		t.Fatal("with no serving roster the preloader didn't move")
+	}
+}

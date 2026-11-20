@@ -40,7 +40,7 @@ use std::time::{Duration, Instant};
 const ORG: &str = "jarvis2-370";
 const PEER: &str = "jarvis2-e2e-kernel";
 const MAPI: &str = "https://api.machines.dev/v1/apps/jarvis4-sessions";
-const ROLES: [&str; 9] = [
+const ROLES: [&str; 10] = [
     "notary",
     "notarizer",
     "mover",
@@ -49,6 +49,7 @@ const ROLES: [&str; 9] = [
     "identity",
     "gullible",
     "minter",
+    "preloader",
     "secrets",
 ];
 const ROUTER: &str = "127.0.0.1:29080";
@@ -677,6 +678,9 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
             .env("KERNEL_BOX_KEY", &box_key)
             .env("KERNEL_DATA", &data)
             .env("KERNEL_ADDR", format!("127.0.1.{n}:28080"));
+        if *r == "preloader" {
+            c.env("KERNEL_MACHINE_URL", murl());
+        }
         if *r == "spawner" {
             c.env("KERNEL_MACHINE_URL", murl());
             if fabric() {

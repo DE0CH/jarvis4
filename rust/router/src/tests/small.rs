@@ -565,3 +565,29 @@ fn a_slow_body_is_not_refused_as_too_old() {
     assert_eq!(slow, 200, "a slow body");
     assert_eq!(stale, 401, "a stale X-Time");
 }
+
+/// a role the serving roster lacks (the preloader's first release) neither hands over nor is waited for in a flip; with
+/// no serving roster recorded every role moves (kernelflip.go TestServingRolesSkipsARoleTheServingCopyLacks)
+#[test]
+fn serving_roles_skips_a_role_the_serving_copy_lacks() {
+    let members = ["notary", "spawner", "secrets"]
+        .iter()
+        .map(|r| jarvis_sig::Component::new(r).identity)
+        .collect();
+    let ro = jarvis_sig::Roster {
+        copy: "blue".into(),
+        members,
+        ..Default::default()
+    };
+    let cur = crate::roster::RosterCurrent {
+        copy: "blue".into(),
+        payload: ro.payload().unwrap(),
+        sig: String::new(),
+        at: GoTime::default(),
+        results: Default::default(),
+        stale: Default::default(),
+    };
+    let moves = crate::kernelflip::serving_roles(Some(&cur));
+    assert!(moves("spawner") && moves("secrets") && !moves("preloader"));
+    assert!(crate::kernelflip::serving_roles(None)("preloader"));
+}

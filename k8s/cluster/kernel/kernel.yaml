@@ -1,5 +1,5 @@
 # The kernel on the one cluster (DESIGN "Target design", docs/PLAN-cluster.md "The roster" and "Releases: the copy
-# flip"): two copies, blue and green, of its nine components, one binary each from ghcr.io/de0ch/jarvis4-kernel, each its
+# flip"): two copies, blue and green, of its ten components, one binary each from ghcr.io/de0ch/jarvis4-kernel, each its
 # own Deployment ("<role>-<copy>") so a bug in one can't read another's memory. No box key: each component makes fresh
 # keys in RAM at start and answers them at GET /identity; the root key (the Jarvis 4 app's) vouches for a copy's
 # components in that copy's roster, which the router posts (POST /roster) and every component checks against
@@ -205,6 +205,49 @@ kind: Service
 metadata: { name: spawner-blue, namespace: jarvis4-kernel }
 spec:
   selector: { app: kernel, role: spawner, color: blue }
+  ports: [{ port: 8080, targetPort: 8080 }]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: preloader-blue-data, namespace: jarvis4-kernel }
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources: { requests: { storage: 1Gi } }
+---
+# the preloader (kernel/spawner/preload.go, docs/PLAN-one-image.md): the fly-preload runner's signer, its machines and
+# golden volumes in Fly app jarvis4-sessions-preload; new with no release yet (`:latest`, replicas 0 until the first
+# Kernel-Release pins it)
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: preloader-blue, namespace: jarvis4-kernel }
+spec:
+  replicas: 0
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: kernel, role: preloader, color: blue } }
+  template:
+    metadata: { labels: { app: kernel, role: preloader, color: blue, egress: "fly-api" } }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      containers:
+        - name: preloader
+          image: ghcr.io/de0ch/jarvis4-kernel:latest
+          command: ["/kernel/preloader"]
+          ports: [{ containerPort: 8080 }]
+          env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_DATA, value: /data }, { name: KERNEL_MACHINE_URL, value: "http://jarvis4-box._peer.internal:8081,http://jarvis4-gw-b._peer.internal:8081" }]
+          volumeMounts: [{ name: data, mountPath: /data }]
+          readinessProbe: { httpGet: { path: /identity, port: 8080 }, periodSeconds: 5 }
+          resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 96Mi } }
+          securityContext: { runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] }, seccompProfile: { type: RuntimeDefault } }
+      securityContext: { fsGroup: 65532 }
+      volumes: [{ name: data, persistentVolumeClaim: { claimName: preloader-blue-data } }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: preloader-blue, namespace: jarvis4-kernel }
+spec:
+  selector: { app: kernel, role: preloader, color: blue }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
 apiVersion: apps/v1
@@ -519,6 +562,49 @@ spec:
   selector: { app: kernel, role: spawner, color: green }
   ports: [{ port: 8080, targetPort: 8080 }]
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: preloader-green-data, namespace: jarvis4-kernel }
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources: { requests: { storage: 1Gi } }
+---
+# the preloader (kernel/spawner/preload.go, docs/PLAN-one-image.md): the fly-preload runner's signer, its machines and
+# golden volumes in Fly app jarvis4-sessions-preload; new with no release yet (`:latest`, replicas 0 until the first
+# Kernel-Release pins it)
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: preloader-green, namespace: jarvis4-kernel }
+spec:
+  replicas: 0
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: kernel, role: preloader, color: green } }
+  template:
+    metadata: { labels: { app: kernel, role: preloader, color: green, egress: "fly-api" } }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      containers:
+        - name: preloader
+          image: ghcr.io/de0ch/jarvis4-kernel:latest
+          command: ["/kernel/preloader"]
+          ports: [{ containerPort: 8080 }]
+          env: [{ name: KERNEL_ROOT, valueFrom: { configMapKeyRef: { name: kernel-root, key: root.pub } } }, { name: KERNEL_DATA, value: /data }, { name: KERNEL_MACHINE_URL, value: "http://jarvis4-box._peer.internal:8081,http://jarvis4-gw-b._peer.internal:8081" }]
+          volumeMounts: [{ name: data, mountPath: /data }]
+          readinessProbe: { httpGet: { path: /identity, port: 8080 }, periodSeconds: 5 }
+          resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 96Mi } }
+          securityContext: { runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] }, seccompProfile: { type: RuntimeDefault } }
+      securityContext: { fsGroup: 65532 }
+      volumes: [{ name: data, persistentVolumeClaim: { claimName: preloader-green-data } }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: preloader-green, namespace: jarvis4-kernel }
+spec:
+  selector: { app: kernel, role: preloader, color: green }
+  ports: [{ port: 8080, targetPort: 8080 }]
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: identity-green, namespace: jarvis4-kernel }
@@ -683,6 +769,19 @@ spec:
     # the fabric hermit (kernel/spawner/fabric.go, docs/PLAN-fabric.md)
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: jarvis4-fabric } }, podSelector: { matchLabels: { app: hermit } } }]
       ports: [{ port: 8080, protocol: TCP }]
+---
+# the preloader: Fly's Machines API only (api.machines.dev, 443: its machines, volumes and the exec of jarvis2-init)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: kernel-preloader, namespace: jarvis4-kernel }
+spec:
+  podSelector: { matchLabels: { egress: fly-api } }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }, podSelector: { matchLabels: { k8s-app: kube-dns } } }]
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+    - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10] } }, { ipBlock: { cidr: "::/0", except: ["fc00::/7", "fe80::/10"] } }]
+      ports: [{ port: 443, protocol: TCP }]
 ---
 # the minter: GitHub's API (api.github.com, 443: the repos' deploy keys), the kernel's only GitHub egress
 apiVersion: networking.k8s.io/v1

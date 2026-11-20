@@ -45,7 +45,7 @@ type KernelFlip struct {
 }
 
 // flipStateful: the components whose state moves (the others only freeze)
-var flipStateful = []string{"notarizer", "spawner", "secrets"}
+var flipStateful = []string{"notarizer", "spawner", "preloader", "secrets"}
 
 var (
 	kernelFlipMu sync.Mutex // one try at a time
@@ -124,12 +124,16 @@ func (r *Router) kernelFlipRun() error {
 	kernelFlipMu.Lock()
 	defer kernelFlipMu.Unlock()
 	var f KernelFlip
-	var next *RosterCurrent
+	var next, cur *RosterCurrent
 	have := false
 	r.st.Do(func(p *persisted) {
 		if p.KernelFlip != nil {
 			f, have = *p.KernelFlip, true
 			f.Handoffs, f.Taken = mapsClone(p.KernelFlip.Handoffs), boolsClone(p.KernelFlip.Taken)
+		}
+		if p.KernelRoster != nil {
+			x := *p.KernelRoster
+			cur = &x
 		}
 		if p.KernelRosterNext != nil {
 			x := *p.KernelRosterNext
@@ -145,15 +149,16 @@ func (r *Router) kernelFlipRun() error {
 		return errors.New(why)
 	}
 	from := otherCopy(f.To)
+	moves := servingRoles(cur)
 	if len(f.Handoffs) == 0 {
-		if why := r.flipReady(from, next); why != "" {
+		if why := r.flipReady(from, next, moves); why != "" {
 			r.flipWaiting(why)
 			return errors.New(why)
 		}
 	}
 	k := r.kernel
 	k.gate.Lock()
-	err := r.flipSteps(&f, next.doc(), from)
+	err := r.flipSteps(&f, next.doc(), from, moves)
 	if err == nil {
 		r.st.Do(func(p *persisted) {
 			p.KernelCopy = f.To
@@ -176,7 +181,7 @@ func (r *Router) kernelFlipRun() error {
 
 // flipReady: "" when the flip can begin: every component of the other copy holds its roster (posted again if one
 // lost it), and every serving component is one that roster retires (the serving secrets: the one it names)
-func (r *Router) flipReady(from string, next *RosterCurrent) string {
+func (r *Router) flipReady(from string, next *RosterCurrent, moves func(string) bool) string {
 	k := r.kernel
 	d := next.doc()
 	ro := next.roster()
@@ -191,6 +196,9 @@ func (r *Router) flipReady(from string, next *RosterCurrent) string {
 		}
 	}
 	for _, role := range kernelRoles {
+		if !moves(role) {
+			continue
+		}
 		dep := role + "-" + from
 		b, _, err := k.do(dep, dep, "GET", "/identity", nil)
 		if err != nil {
@@ -231,11 +239,27 @@ func identityAnswer(dep string, b []byte) (sig.Identity, error) {
 	return id, nil
 }
 
-// flipSteps: the handoffs, then the takeovers, each kept before the next (callers hold the gate)
-func (r *Router) flipSteps(f *KernelFlip, roster sig.Doc, from string) error {
+// servingRoles: whether a role is in the serving copy's roster. A role it lacks (one released for the first time, as the
+// preloader was) has nothing to hand over: the new roster retires none of its keys, so the new copy's component serves
+// at once (kernel/internal/serve flip.go Decide), and the flip neither waits for nor asks the old copy's. No serving
+// roster recorded: every role moves.
+func servingRoles(cur *RosterCurrent) func(string) bool {
+	if cur == nil {
+		return func(string) bool { return true }
+	}
+	ro := cur.roster()
+	return func(role string) bool {
+		_, ok := ro.Member(role)
+		return ok
+	}
+}
+
+// flipSteps: the handoffs, then the takeovers, each kept before the next (callers hold the gate); moves: the roles
+// whose components hand over (servingRoles)
+func (r *Router) flipSteps(f *KernelFlip, roster sig.Doc, from string, moves func(string) bool) error {
 	k := r.kernel
 	for _, role := range kernelRoles {
-		if _, ok := f.Handoffs[role]; ok {
+		if _, ok := f.Handoffs[role]; ok || !moves(role) {
 			continue
 		}
 		dep := role + "-" + from
@@ -259,7 +283,7 @@ func (r *Router) flipSteps(f *KernelFlip, roster sig.Doc, from string) error {
 		log.Printf("kernel: %s handed over to the %s copy", dep, f.To)
 	}
 	for _, role := range flipStateful {
-		if f.Taken[role] {
+		if f.Taken[role] || !moves(role) {
 			continue
 		}
 		dep := role + "-" + f.To
