@@ -119,6 +119,7 @@ pub mod termpage;
 mod tests;
 #[cfg(test)]
 pub mod testutil;
+pub mod timemachine;
 pub mod titles;
 pub mod types;
 pub mod uploads;

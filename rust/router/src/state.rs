@@ -54,6 +54,9 @@ pub struct Session {
     /// fabricrunner.rs: its conversation at the fabric hermit, its machine's env
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fabric: Option<FabricLine>,
+    /// timemachine.rs: its wait in the time machine (state `frozen`), and what ended the last one
+    #[serde(rename = "timeMachine", skip_serializing_if = "Option::is_none")]
+    pub time_machine: Option<crate::timemachine::TimeMachine>,
     pub harness: String,
     pub stores: Option<Vec<String>>,
     /// claudeaccounts.rs: the Claude account it uses, fixed when made

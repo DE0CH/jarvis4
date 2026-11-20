@@ -372,3 +372,27 @@ fn live_posts() {
         "a refused push is an error"
     );
 }
+
+/// a fabric session in the time machine is listed frozen, with its until as its next time
+#[test]
+fn live_doc_frozen() {
+    let r = crate::testutil::new_test_router();
+    crate::testutil::add_session(&r, "fz", "frozen", "mfz", false);
+    r.st.do_(|d| {
+        if let Some(s) = d.sessions.get_mut("fz") {
+            s.time_machine = Some(crate::timemachine::TimeMachine {
+                since: GoTime::now(),
+                until: Some(GoTime::from_unix_nanos(5_000_000 * 1_000_000)),
+                ..Default::default()
+            });
+        }
+    });
+    let doc = r.live_doc(GoTime::now());
+    assert!(
+        doc.sessions.len() == 1
+            && doc.sessions[0].state == "frozen"
+            && doc.sessions[0].next == 5_000_000,
+        "{:?}",
+        doc.sessions
+    );
+}

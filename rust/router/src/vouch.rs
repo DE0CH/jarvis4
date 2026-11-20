@@ -604,7 +604,8 @@ impl Router {
             self.hold_message(sid, &d, &text, &from, &note, o)?;
             return Err(msg::awaiting_approval());
         }
-        if !boot && state != "started" {
+        // a frozen session counts as running here: an Inbox decision's outcome is one of the things that thaws it
+        if !boot && state != "started" && state != "frozen" {
             if state.is_empty() {
                 return Err(crate::sessionapi::no_session());
             }
@@ -620,6 +621,8 @@ impl Router {
                     return Err(e);
                 }
             }
+            // timemachine.rs: anything that would resume a paused session thaws a frozen one
+            "frozen" => self.thaw(sid, &crate::timemachine::time_machine_why(&d.kind))?,
             "pausing" | "destroying" | "approval" => {
                 return Err(skip(&format!("the session is {state}")));
             }

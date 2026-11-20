@@ -1372,6 +1372,19 @@ impl Router {
     // ---- resume ---------------------------------------------------------------------------------------------
 
     pub fn resume(self: &Arc<Self>, id: &str, upgrade: bool) -> Result<()> {
+        // a frozen session (timemachine.rs) is thawed: its machine goes on where it stopped. In the background: a thaw
+        // may wait minutes for a host and a restore, and the app's tap or the chat's ask returns at once, as a resume does
+        if self.session_state(id).0 == "frozen" {
+            let r = self.clone();
+            let id = id.to_string();
+            std::thread::spawn(move || {
+                if let Err(e) = r.thaw(&id, "Deyao (a message or an answer in the chat, or Resume)")
+                {
+                    crate::logf!("[time-machine] {id}: the thaw failed: {e}");
+                }
+            });
+            return Ok(());
+        }
         let unlock = self.lock(id, "starting")?;
         let s: Session = self
             .st
@@ -2065,6 +2078,32 @@ impl Router {
         if self.have_snap(machine) {
             self.lc_note(id, machine, "the machine's final snapshot is already here");
             return Ok(()); // it already sent its final one (a machine signs only one)
+        }
+        // a frozen fabric machine answers nothing (timemachine.rs): it is thawed first, then its first report after the
+        // thaw is awaited, so the silence check below sees it running (2026-11-19: a frozen session's destroy failed
+        // with "silent since", its snapshot never asked for)
+        if let Some(conv) = self.frozen_conversation(id) {
+            let thawed = GoTime::now();
+            if let Err(e) = crate::timemachine::thaw_sandbox(&conv) {
+                self.lc_note(
+                    id,
+                    machine,
+                    &format!("its frozen sandbox could not be thawed: {e}"),
+                );
+                return Err(anyhow!(
+                    "its frozen sandbox could not be thawed for its snapshot: {e}"
+                ));
+            }
+            self.back(id, "its final snapshot");
+            self.lc_note(
+                id,
+                machine,
+                "thawed its frozen sandbox for the final snapshot",
+            );
+            let deadline = Instant::now() + self.silent_after().unsigned_abs();
+            while self.last_report(machine).before(&thawed) && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(100));
+            }
         }
         // a machine that has its secrets is seconds from booted: wait for it, or a pause right after a start would
         // leave its successor with no state at all

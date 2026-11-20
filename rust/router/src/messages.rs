@@ -1,5 +1,5 @@
 //! Message approvals (docs/DESIGN.md "Message approvals"; rust/machine/src/messages.rs): every message Jarvis delivers
-//! into a session holding a sensitive store (a wakeup, a cron run, a watch, a login "continue", an Inbox outcome, a peer
+//! into a session holding a sensitive store (a wakeup, a cron run, a watch, a login "continue", a peer
 //! message, a lease or upgrade note), and every resume prompt into any session, waits in the Inbox as a pending message
 //! until Deyao delivers or denies THAT message (Deyao, 2026-10-20: "he should approve or deny the specific message").
 //! Deliver = the phone signs it: the session's line, the kind, the sha256 of exactly the bytes the core attests, and the
@@ -26,8 +26,7 @@ use crate::inbox::{
 };
 use crate::nethttp::write_json;
 use crate::outcomes::{
-    OUTCOME_APPROVED, OUTCOME_DENIED, OUTCOME_DROPPED, OUTCOME_FAILED, OUTCOME_LAPSED, OutcomeItem,
-    note_outcome,
+    OUTCOME_APPROVED, OUTCOME_DENIED, OUTCOME_DROPPED, OUTCOME_FAILED, OUTCOME_LAPSED, note_outcome,
 };
 use crate::peermsg::PeerNote;
 use crate::router::Router;
@@ -221,11 +220,6 @@ pub const MESSAGE_KINDS: &[(&str, &str, &str)] = &[
         "Lease handed back",
         "Always deliver Jarvis's lease-handed-back notes to this session",
     ),
-    (
-        "request-outcome",
-        "Inbox outcome",
-        "Always deliver Inbox outcomes to this session",
-    ),
     ("peer", "Peer message", ""),
     ("resume-prompt", "Resume prompt", ""),
 ];
@@ -256,7 +250,7 @@ pub fn rule_kinds() -> Vec<&'static str> {
 
 /// kinds only the machine renders (its cert, the proofs): a paused session is started for them first
 pub fn preview_only(kind: &str) -> bool {
-    kind == "peer" || kind == "request-outcome"
+    kind == "peer"
 }
 
 static WATCH_NAME_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
@@ -363,18 +357,14 @@ pub fn message_text(d: &Delivery) -> Option<(String, String, String)> {
 
 /// who asks, for the kinds the machine renders
 pub fn message_from(d: &Delivery) -> String {
-    match d.kind.as_str() {
-        "peer" => {
-            if let Some(p) = &d.peer {
-                return format!(
-                    "Session “{}” ({})",
-                    crate::util::trim_to(&fields(&p.from_title), 80),
-                    p.from
-                );
-            }
-        }
-        "request-outcome" => return "Jarvis: the result of a request this session filed".into(),
-        _ => {}
+    if d.kind == "peer"
+        && let Some(p) = &d.peer
+    {
+        return format!(
+            "Session “{}” ({})",
+            crate::util::trim_to(&fields(&p.from_title), 80),
+            p.from
+        );
     }
     message_text(d).map(|(_, f, _)| f).unwrap_or_default()
 }
@@ -417,11 +407,6 @@ pub fn replace_key(d: &Delivery) -> String {
             .as_ref()
             .map(|r| format!("{} {}", d.kind, r.sig))
             .unwrap_or_default(),
-        "request-outcome" => d
-            .request
-            .as_ref()
-            .map(|r| format!("outcome {}", r.sig))
-            .unwrap_or_default(),
         "resume-prompt" => "resume-prompt".into(),
         _ => String::new(),
     }
@@ -442,7 +427,6 @@ pub fn old_image_text(d: &Delivery) -> Option<String> {
     }
     match d.kind.as_str() {
         "peer" => peer_twin_text(d.peer.as_ref()),
-        "request-outcome" => outcome_twin_text(d),
         _ => None,
     }
 }
@@ -480,30 +464,6 @@ pub fn peer_twin_text(n: Option<&PeerNote>) -> Option<String> {
         n.to_mode,
         n.from,
         n.text
-    ))
-}
-
-/// an Inbox outcome as the router knows it (the machine words each item from the session's own filing)
-pub fn outcome_twin_text(d: &Delivery) -> Option<String> {
-    if d.request.is_none() || d.outcomes.is_empty() {
-        return None;
-    }
-    let mut items: Vec<&OutcomeItem> = d.outcomes.iter().collect();
-    items.sort_by_key(|it| it.item);
-    let lines: Vec<String> = items
-        .iter()
-        .map(|it| {
-            format!(
-                "{}. {} (Inbox {})",
-                it.item + 1,
-                it.outcome.to_uppercase(),
-                it.r#ref
-            )
-        })
-        .collect();
-    Some(format!(
-        "[Inbox outcome] Deyao's Inbox has decided items this session filed:\n{}\nThis is an automated message from Jarvis.",
-        lines.join("\n")
     ))
 }
 
@@ -981,7 +941,7 @@ impl Router {
         });
     }
 
-    /// an approved message into its session (started first unless it is an Inbox outcome)
+    /// an approved message into its session (started first)
     fn deliver_approved(self: &Arc<Self>, id: &str) {
         let Some(pm) = self
             .st
@@ -998,12 +958,7 @@ impl Router {
             .clone()
         {
             Some(h) => h(self, &pm, d),
-            None => self.deliver_vouched_opts(
-                &pm.session,
-                d,
-                pm.kind != "request-outcome",
-                pm.origin.as_ref(),
-            ),
+            None => self.deliver_vouched_opts(&pm.session, d, true, pm.origin.as_ref()),
         };
         match res {
             Ok(()) => {
