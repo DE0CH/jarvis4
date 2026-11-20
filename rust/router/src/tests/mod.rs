@@ -13,6 +13,7 @@ mod core_mq_sealed;
 mod db;
 mod devices;
 mod inbox;
+mod leases;
 mod linestate;
 mod live_lastsnap;
 mod machines_claim;
