@@ -89,8 +89,8 @@ spec:
             # the budget counts the fabric's image bucket (router/awsbudget.go; S3 Standard in its region)
             - { name: AWS_BUDGET_BUCKETS, value: "eu-central-1/jarvis4-fabric-images-795109470764" }
             - { name: FABRIC_MACHINE_ADDR, value: ":3128" }
-            - { name: FABRIC_SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session-fabric:sha-48c59383c57d@sha256:0c311dc17d45769637b7ae385556e9986af4a0fcc8b59798285123cbb5b3122a" }
-            - { name: FABRIC_SESSION_IMAGE_SIG, value: "MEUCIQCN+2hA3bNucCoAoZWe0X3+MWqthIXMBelcuy8MmxiEiAIgZ22a+mJkgiFnYtX1vHCovbpnC/xrUIR8HJXG3O8AAhk=" }
+            - { name: FABRIC_SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session-fabric:sha-dc16deb64428@sha256:8884060d7dd1ea5c9f982c636c6e4bf0c06f7e1639bb583e85505c0626bff829" }
+            - { name: FABRIC_SESSION_IMAGE_SIG, value: "MEQCICrxs4AmNyF8MWlLdWbJPt4wC67jfc+zfaYRtJzTbwWNAiAwp8U7dHyoWM3QpIjwFJSH9w22QuvnhK4mUsrwauYbnQ==" }
           # SOPS-encrypted to the cluster's age key (k8s/cluster/secrets, infra/router-secrets.py --box cluster).
           # router-secrets-github stays LAST: with a key in several envFrom sources the last one wins
           envFrom: [{ secretRef: { name: router-secrets, optional: true } }, { secretRef: { name: router-secrets-backup, optional: true } }, { secretRef: { name: router-secrets-flyorgs, optional: true } }, { secretRef: { name: router-secrets-flypersonal, optional: true } }, { secretRef: { name: router-secrets-flyvolumes, optional: true } }, { secretRef: { name: router-secrets-browserbase, optional: true } }, { secretRef: { name: router-secrets-devices, optional: true } }, { secretRef: { name: router-secrets-livepush, optional: true } }, { secretRef: { name: router-secrets-runners, optional: true } }, { secretRef: { name: router-db } }, { secretRef: { name: router-secrets-objects } }, { secretRef: { name: router-seal } }, { secretRef: { name: router-secrets-aws, optional: true } }, { secretRef: { name: router-secrets-fabric, optional: true } }, { secretRef: { name: router-secrets-github, optional: true } }]
