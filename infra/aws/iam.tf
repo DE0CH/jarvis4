@@ -103,6 +103,13 @@ resource "aws_iam_user_policy" "router" {
         Resource  = "arn:aws:ec2:*:${data.aws_caller_identity.me.account_id}:instance/*"
         Condition = { Null = { "aws:ResourceTag/jarvis4_source" = "false" } }
       },
+      {
+        # the budget's estimate counts the fabric's image bucket (router/awsbudget.go AWS_BUDGET_BUCKETS)
+        Sid      = "SizeOfTheFabricsImageBucket"
+        Effect   = "Allow"
+        Action   = "s3:ListBucket"
+        Resource = "arn:aws:s3:::jarvis4-fabric-images-${data.aws_caller_identity.me.account_id}"
+      },
     ]
   })
 }
