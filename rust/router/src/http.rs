@@ -378,7 +378,10 @@ pub fn session_view(s: &Session, d: &Persisted) -> Map<String, Value> {
     let runner = crate::awsrunner::session_runner(s);
     // one kind of sandbox, on the fabric's hosts: the session's size and Fly region are not its
     let (guest, region) = if runner == "fabric" {
-        (crate::fabricrunner::FABRIC_GUEST.to_string(), crate::fabricrunner::FABRIC_REGION.to_string())
+        (
+            crate::fabricrunner::FABRIC_GUEST.to_string(),
+            crate::fabricrunner::FABRIC_REGION.to_string(),
+        )
     } else {
         (crate::sizes::size_label(&s.size), s.region.clone())
     };
