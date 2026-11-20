@@ -13,7 +13,7 @@ use jarvis_go::GoTime;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, Mutex};
 
 /// Deyao, 2026-10-12: anything in the Inbox (request or approval) goes after 10 min
 pub const INBOX_TTL_SECS: i64 = 600;
@@ -328,17 +328,8 @@ pub fn caller_text(d: &Persisted, c: &Caller) -> String {
     }
 }
 
-/// the caller of an action whose approval the router makes later, on a thread (resume, restore)
-static ORIGINS: LazyLock<Mutex<BTreeMap<String, (Origin, GoTime)>>> =
-    LazyLock::new(|| Mutex::new(BTreeMap::new()));
-
-pub fn take_origin(sid: &str) -> Option<Origin> {
-    let mut g = ORIGINS.lock().ok()?;
-    match g.remove(sid) {
-        Some((o, at)) if at.since() <= ORIGIN_REMEMBER => Some(o),
-        _ => None,
-    }
-}
+/// the caller of an action whose approval the router makes later, on a thread (resume, restore): session → it
+pub type Origins = Mutex<BTreeMap<String, (Origin, GoTime)>>;
 
 /// one entry. Title and core action are NOT here: the app renders them from kind + params (the list) and the shell
 /// from the signed content (the review page) — never from router prose.
@@ -833,8 +824,17 @@ impl Router {
     }
 
     /// the caller of the approval session sid gets next (and of one it has already, without a caller)
+    /// the caller noted for the session's next approval (note_origin), once
+    pub fn take_origin(&self, sid: &str) -> Option<Origin> {
+        let mut g = self.origins.lock().ok()?;
+        match g.remove(sid) {
+            Some((o, at)) if at.since() <= ORIGIN_REMEMBER => Some(o),
+            _ => None,
+        }
+    }
+
     pub fn note_origin(&self, sid: &str, o: Origin) {
-        if let Ok(mut g) = ORIGINS.lock() {
+        if let Ok(mut g) = self.origins.lock() {
             g.retain(|_, (_, at)| at.since() <= ORIGIN_REMEMBER);
             g.insert(sid.to_string(), (o.clone(), GoTime::now()));
         }
