@@ -194,15 +194,15 @@ fn the_router_writes_each_account_into_its_core_store() {
 /// A core from before the router writer refuses: the account stays the router's, tried again later, nothing breaks
 #[test]
 fn a_core_without_the_router_writer_is_tried_again_later() {
-    let _s = serial();
+    let _s = serial(); // its own account: the stores' retry state is global, by store name
     let _f = FakeAnthropic::new();
     let t = new_test_router();
     let r = t.r.clone();
     let c = account_core(true);
     r.core.set_url(&c.srv.url);
-    sign_in(&r, "/api/claude-accounts", r#"{"name":"main"}"#);
+    sign_in(&r, "/api/claude-accounts", r#"{"name":"spare"}"#);
     r.sync_account_stores();
-    let st = account_store_state("claude-main");
+    let st = account_store_state("claude-spare");
     assert!(
         st.as_ref()
             .is_some_and(|(written, retry)| written.is_empty() && !retry.is_zero()),
