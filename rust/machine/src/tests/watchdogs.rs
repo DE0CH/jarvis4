@@ -348,6 +348,7 @@ fn pressure_text_says_what_deyao_asked() {
         "memory",
         "it is almost out of memory",
         "100 MB free of 4.0 GB",
+        true,
     );
     for want in [
         "Jarvis watchdog: memory pressure",
@@ -355,18 +356,142 @@ fn pressure_text_says_what_deyao_asked() {
         "Do not upgrade",
         "Discord Deyao",
         "This is an automated message from Jarvis.",
+        "stopped your running turn",
     ] {
         assert!(m.contains(want), "{m:?} is missing {want:?}");
     }
+    // a harness with no interrupt (Paseo, OpenClaw…): the message joins the turn, and says nothing of a stop
     let d = pressure_text(
         "disk",
         "it is almost out of disk",
         "0.5 GB free of 10.0 GB on its volume",
+        false,
     );
     assert!(
         d.contains("Jarvis watchdog: disk pressure") && d.contains("Do not upgrade"),
         "{d}"
     );
+    assert!(!d.contains("stopped"), "{d}");
+}
+
+/// The pressure watchdog's message interrupts (Deyao, 2026-11-20): on aviary it is the gateway's delivery that says
+/// `interrupt`, straight to the gateway (not the inbox spool, whose loop waits on a running turn); a refusal is an
+/// error, so the watch tells it again at its next look
+#[test]
+fn interrupt_on_aviary_is_an_interrupting_delivery() {
+    use crate::deliver::{TEST_AVIARY_GATEWAY, interrupt_harness};
+    let _e = TestEnv::new();
+    let got: Arc<Mutex<Vec<serde_json::Value>>> = Arc::default();
+    let status = Arc::new(std::sync::atomic::AtomicU16::new(202));
+    let (g, st) = (got.clone(), status.clone());
+    let app = axum::Router::new().route(
+        "/jarvis/deliver",
+        axum::routing::post(move |axum::Json(b): axum::Json<serde_json::Value>| {
+            let (g, st) = (g.clone(), st.clone());
+            async move {
+                g.lock().unwrap().push(b);
+                let code = st.load(std::sync::atomic::Ordering::SeqCst);
+                (axum::http::StatusCode::from_u16(code).unwrap(), "{}")
+            }
+        }),
+    );
+    let url = crate::rt::block_on(async move {
+        let ln = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", ln.local_addr().unwrap());
+        tokio::spawn(async move {
+            let _ = axum::serve(ln, app).await;
+        });
+        url
+    });
+    *TEST_AVIARY_GATEWAY.write().unwrap() = Some(url);
+    interrupt_harness(
+        "aviary",
+        "bypass",
+        "jarvis",
+        "Jarvis watchdog: memory pressure",
+    )
+    .unwrap();
+    let b = got.lock().unwrap()[0].clone();
+    assert_eq!(b["interrupt"], true);
+    assert_eq!(b["text"], "Jarvis watchdog: memory pressure");
+    assert!(b["id"].as_str().unwrap().starts_with("jarvis-"), "{b}");
+    status.store(409, std::sync::atomic::Ordering::SeqCst);
+    let e = interrupt_harness("aviary", "bypass", "jarvis", "again").unwrap_err();
+    assert!(e.to_string().contains("409"), "{e:#}");
+    assert_ne!(
+        got.lock().unwrap()[1]["id"],
+        b["id"],
+        "each message its own id"
+    );
+}
+
+/// On Claude Code a turn the pane shows running is stopped with Esc before the message goes in through the Jarvis
+/// channel; an idle pane gets no key; a harness with no interrupt is sent the message as any other
+#[test]
+fn interrupt_on_claude_code_stops_the_turn_then_sends() {
+    use crate::deliver::{interrupt_harness, interrupts};
+    let e = TestEnv::new();
+    let out = e.root.join("got");
+    let script = e.root.join("send");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\n{{ echo \"$@\"; cat; }} > {}\necho '{{\"success\":true}}'\n",
+            out.display()
+        ),
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let cfg = e.root.join("cfg.json");
+    std::fs::write(&cfg, "{}").unwrap();
+    *crate::deliver::TEST_CHANNEL.write().unwrap() =
+        Some((script.display().to_string(), cfg.display().to_string()));
+    let running = "✻ Compiling… (12s · esc to interrupt)\n❯ ";
+    let pane = Arc::new(Mutex::new(running.to_string()));
+    let keys: Arc<Mutex<Vec<String>>> = Arc::default();
+    let p1 = pane.clone();
+    *crate::claudelogin::TEST_PANE.lock().unwrap() =
+        Some(Arc::new(move || p1.lock().unwrap().clone()));
+    let (p2, k2) = (pane.clone(), keys.clone());
+    *crate::claudelogin::TEST_KEYS.lock().unwrap() = Some(Arc::new(move |a: &[&str]| {
+        k2.lock().unwrap().push(a.join(" "));
+        if a == ["Escape"] {
+            // the message must not be in the channel before the turn was stopped
+            assert!(!std::fs::exists(&out).unwrap_or(false));
+            *p2.lock().unwrap() = "⎿ Interrupted · What should Claude do instead?\n❯ ".into();
+        }
+        Ok(())
+    }));
+    let out = e.root.join("got");
+    interrupt_harness(
+        "claude",
+        "bypass",
+        "jarvis",
+        "Jarvis watchdog: memory pressure",
+    )
+    .unwrap();
+    assert_eq!(*keys.lock().unwrap(), ["Escape"]);
+    assert_eq!(
+        std::fs::read_to_string(&out).unwrap(),
+        "--from jarvis\nJarvis watchdog: memory pressure"
+    );
+    // idle: no key, the message goes in at once
+    interrupt_harness(
+        "claude",
+        "bypass",
+        "jarvis",
+        "Jarvis watchdog: disk pressure",
+    )
+    .unwrap();
+    assert_eq!(keys.lock().unwrap().len(), 1);
+    assert!(
+        std::fs::read_to_string(&out)
+            .unwrap()
+            .ends_with("disk pressure")
+    );
+    assert!(interrupts("claude") && interrupts("") && interrupts("aviary"));
+    assert!(!interrupts("paseo-claude") && !interrupts("openclaw") && !interrupts("dsh"));
 }
 
 /// only an outage that outlasts 3 min, seen between turns, is revived, and again only after 10 min
