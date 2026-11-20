@@ -1,11 +1,13 @@
 //! The router's tests (Go's router/*_test.go, one file each)
 
+mod accountswap;
 mod apicalls;
 mod archive;
 mod batch2;
 mod batches;
 mod budget;
-mod claudelogin;
+mod claudeaccounts;
+pub mod claudelogin;
 mod content_drain;
 mod core_mq_sealed;
 mod db;

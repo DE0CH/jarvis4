@@ -710,10 +710,6 @@ impl Rig {
 
     /// a rig whose router's config f adjusts (Go's tests set r.cfg fields after newRig)
     pub fn with(f: impl FnOnce(&mut Config)) -> Rig {
-        use serde_json::json;
-        crate::storagebox::PUT_BACKOFF_MS.store(1, std::sync::atomic::Ordering::Relaxed);
-        let dav = MemDav::new();
-        let core = FakeCore::new();
         let policy = crate::policy::Policy {
             harnesses: [(
                 "claude".to_string(),
@@ -725,6 +721,15 @@ impl Rig {
             .into_iter()
             .collect(),
         };
+        Rig::with_policy(f, policy)
+    }
+
+    /// the same with the router's policy (Go's tests set r.policy after newRig)
+    pub fn with_policy(f: impl FnOnce(&mut Config), policy: crate::policy::Policy) -> Rig {
+        use serde_json::json;
+        crate::storagebox::PUT_BACKOFF_MS.store(1, std::sync::atomic::Ordering::Relaxed);
+        let dav = MemDav::new();
+        let core = FakeCore::new();
         let t = new_test_router_with(
             |c| {
                 c.no_access = false;
