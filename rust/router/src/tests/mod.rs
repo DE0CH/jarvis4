@@ -28,6 +28,7 @@ mod live_lastsnap;
 mod machines_claim;
 mod memory;
 mod messages;
+mod mgateway;
 mod nextcore;
 mod outcomes;
 mod parity;

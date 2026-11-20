@@ -66,6 +66,7 @@ pub mod machines;
 pub mod machinesig;
 pub mod memory;
 pub mod messages;
+pub mod mgateway;
 pub mod mq;
 pub mod nethttp;
 pub mod neverbooted;
@@ -126,6 +127,7 @@ pub mod uploads;
 pub mod volsweep;
 pub mod vouch;
 pub mod watches;
+pub mod wgserve;
 
 use crate::router::{Config, Router, env};
 use std::sync::Arc;
@@ -140,9 +142,15 @@ fn fatal(msg: impl std::fmt::Display) -> ! {
 fn main() {
     crate::procstat::mark_start();
     if std::env::args().nth(1).as_deref() == Some("m-gateway") {
-        fatal(
-            "m-gateway: the machines' WireGuard peer is not part of this build yet (the Go router's `router m-gateway` serves it)",
-        );
+        // mgateway.rs: the machines' WireGuard peer, in its own Deployment
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap_or_else(|e| fatal(format!("m-gateway: {e}")));
+        if let Err(e) = rt.block_on(crate::mgateway::command()) {
+            fatal(format!("{e:#}"));
+        }
+        return;
     }
     let stall: u64 = env("SNAPSHOT_STALL_SECONDS", "600").parse().unwrap_or(0);
     let sigs_file = std::env::var("SESSION_IMAGE_SIGS_FILE").unwrap_or_default();
