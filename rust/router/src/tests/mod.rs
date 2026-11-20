@@ -3,6 +3,7 @@
 mod accountswap;
 mod apicalls;
 mod archive;
+mod autopilot;
 mod batch2;
 mod batches;
 mod budget;
