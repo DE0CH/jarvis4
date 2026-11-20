@@ -42,6 +42,7 @@ signal-hook = "0.3"
 tar = "0.4"
 time = { version = "0.3", features = ["parsing", "formatting", "macros"] }
 tokio = { version = "1", features = ["full"] }
+socket2 = { version = "0.6", features = ["all"] }
 tower-service = "0.3"
 tokio-util = { version = "0.7", features = ["io"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
