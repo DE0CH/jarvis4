@@ -57,6 +57,11 @@ func main() {
 			Source: &doc.Source{Image: img, Settings: settings}, Signer: doc.ByIPhone, IssuedAt: "2026-10-21T15:00:00Z"}),
 		"addSecond": cert(doc.Cert{Kind: "succession", Pred: add, Succ: "fly-0123456789abcd", Pair: perm.Top(), Machine: m, Signer: doc.ByIPhone,
 			IssuedAt: "2026-10-21T15:00:00Z"}),
+		// the same onto a machine of each other runner (kernel/doc machineRE)
+		"addSecondAWS": cert(doc.Cert{Kind: "succession", Pred: add, Succ: "aws-i-0123456789abcdef0", Pair: perm.Top(), Machine: m, Signer: doc.ByIPhone,
+			IssuedAt: "2026-10-21T15:00:00Z"}),
+		"addSecondFabric": cert(doc.Cert{Kind: "succession", Pred: add, Succ: "fabric-x01a1f84c119b7406bf3daf4fb7f0cba9", Pair: perm.Top(), Machine: m, Signer: doc.ByIPhone,
+			IssuedAt: "2026-10-21T15:00:00Z"}),
 		// refused: allows a shell, another session's, another repo's image
 		"shell": cert(doc.Cert{Kind: "succession", Pred: doc.Sink, Succ: src, Pair: perm.Pair{Allowed: perm.Only("shell", "store:default"), Conditions: []string{"session:s1"}},
 			Source: &doc.Source{Image: img, Settings: settings}, Signer: doc.ByIPhone, IssuedAt: "2026-10-21T15:00:00Z"}),

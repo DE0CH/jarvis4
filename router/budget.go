@@ -262,6 +262,8 @@ type BudgetState struct {
 	AWSUSD       float64    `json:"awsUsd,omitempty"`
 	AWSBilledUSD float64    `json:"awsBilledUsd,omitempty"`
 	AWSBilledAt  *time.Time `json:"awsBilledAt,omitempty"`
+	// FabricUSD: the fabric's part of AWSUSD (awsbudget.go awsFabricRegion)
+	FabricUSD float64 `json:"fabricUsd,omitempty"`
 }
 
 // pool: the month's spend against the cap: Fly's estimate + AWS's (the larger of the estimate and the billed figure)
@@ -274,6 +276,7 @@ func (s BudgetState) awsPart() float64 { return max(s.AWSUSD, s.AWSBilledUSD) }
 // spendSample: one tick's rates (USD an hour) and, when Cost Explorer was read, its figure
 type spendSample struct {
 	FlyRate, AWSRate float64
+	FabricRate       float64 // the fabric's part of AWSRate
 	Billed           *awsBilled
 }
 
@@ -299,6 +302,7 @@ func applySample(prev *BudgetState, now time.Time, smp spendSample, capUSD, warn
 	t := now.UTC()
 	s.SpentUSD += (smp.FlyRate + smp.AWSRate) * deltaH
 	s.AWSUSD += smp.AWSRate * deltaH
+	s.FabricUSD += smp.FabricRate * deltaH
 	s.LastSampleAt, s.RatePerHour = &t, smp.FlyRate+smp.AWSRate
 	if b := smp.Billed; b != nil && b.Month == month {
 		at := b.At
@@ -541,7 +545,7 @@ func (r *Router) budgetTick(fly flyReader, aws awsCoster, now time.Time, capUSD,
 	ap := readAWS(aws, prev, now) // awsbudget.go; nil without a key
 	smp := spendSample{FlyRate: b.RatePerHour}
 	if ap != nil {
-		smp.AWSRate, smp.Billed = ap.burn.RatePerHour, ap.billed
+		smp.AWSRate, smp.FabricRate, smp.Billed = ap.burn.RatePerHour, ap.burn.FabricRatePerHour, ap.billed
 	}
 	var state BudgetState
 	var act budgetActions
@@ -575,11 +579,20 @@ func (r *Router) budgetTick(fly flyReader, aws awsCoster, now time.Time, capUSD,
 	}
 	if ap != nil {
 		for _, in := range ap.inv.Instances {
-			if in.State == "running" || in.State == "pending" {
+			// the fabric's hosts are hermit's: they go when their sandboxes do (the fabric's sessions, below)
+			if (in.State == "running" || in.State == "pending") && in.Region != awsFabricRegion {
 				up = append(up, in.ID)
 			}
 		}
 	}
+	// the fabric's sessions: their machines are hermit's sandboxes, in neither Fly's nor AWS's listing
+	r.st.Read(func(d *persisted) {
+		for _, s := range d.Sessions {
+			if s.Fabric != nil && s.MachineID != "" && (s.State == "started" || s.State == "frozen") {
+				up = append(up, s.MachineID)
+			}
+		}
+	})
 	split := ""
 	if ap != nil {
 		split = fmt.Sprintf(" (Fly %s, AWS %s)", usd(state.flyPart()), usd(state.awsPart()))

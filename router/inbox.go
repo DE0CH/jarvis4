@@ -790,7 +790,7 @@ func (r *Router) fileIntent(w http.ResponseWriter, method, path, intent string, 
 		}
 		o.Call.Args["store"] = store
 		if id, err := r.addStoreApproval(machine, store, o, expl, ""); err == nil {
-			writeJSON(w, 200, map[string]any{"ok": true, "approval": id, "store": store, "existing": true,
+			writeJSON(w, 200, map[string]any{"ok": true, "approval": id, "id": id, "store": store, "existing": true,
 				"note": np.Repo + " has its deploy key already (store " + store + "): asked for that store, not for a new key"})
 			return
 		} else {
@@ -982,12 +982,13 @@ func (r *Router) registerInbox(app appRoute, m machineRoute, public publicRoute)
 		})
 		o := Origin{Caller: Caller{Kind: "session", Session: sid}, Call: APICall{Method: "POST", Path: "/api/requests/add-store", Args: map[string]any{"store": in.Store}},
 			Signed: signedRequestOf(req, req.Header.Get("X-Machine"), b)}
-		if err := r.AddStoreFrom(machine, in.Store, o, expl, ""); err != nil {
+		id, err := r.addStoreApproval(machine, in.Store, o, expl, "")
+		if err != nil {
 			writeErr(w, err)
 			return
 		}
-		// id: what the outcome is filed under (an add-store's is the session's id), which jarvis-request waits on
-		writeJSON(w, 200, map[string]any{"ok": true, "approval": true, "id": sid})
+		// id: what the outcome is filed under (the approval's own, approvalRef), which jarvis-request waits on
+		writeJSON(w, 200, map[string]any{"ok": true, "approval": true, "id": id})
 	}))
 }
 
