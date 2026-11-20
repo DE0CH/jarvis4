@@ -3205,3 +3205,19 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      Anthropic (an unknown model) until it restarts onto the newest image. A conversation from before keeps its plain
      pick and runs on its session's account; the menu shows the default entry for it until Deyao picks. *Change*: if
      the Jarvis 4 app's switch should win over the chat's pick, make the gateway trust a found account for good.
+275. **The memory and disk watchdog interrupts the turn; every other Jarvis message joins it at the next tool result**
+     (Deyao, 2026-11-20: "jarvis memory and disk watchdog should interrupt the turn and deliver immediately, since it's
+     time sensitive … two categories, one is the normal idle or scheduled message delivery …, and another is to
+     interrupt turn and deliver immediately"; "turn means attached before or after a tool call result, like the
+     default behaviour in claude code for a message"). Normal is what every Jarvis message already did: Claude Code's
+     channel queues it `next` (taken in at the next tool result), aviary's delivery says `joinRunning`, magpie's
+     schedules join the same way. The pressure watch (`rust/machine/src/pressure.rs`) sends through
+     `deliver.rs` `interrupt_harness` instead: on aviary a POST of the machine's aviary-gateway `/jarvis/deliver`
+     with `interrupt: true` (hermit-jarvis → magpie's `interruptRunning`: the running turn gets the person's stop and
+     the message waits, held, then runs as a turn of its own, as the app's "send now" on a queued message), not
+     through the inbox spool, whose loop waits on a running turn; on Claude Code an Esc into the pane when its spinner
+     shows a turn, then the channel as before. The others (Paseo, OpenClaw, opencode, dsh) have no interrupt and take
+     it as any message; the text says it stopped the turn only where it does. When memory and disk come in the same
+     look, only the first message interrupts. *Not chosen*: Claude Code's `priority: "now"` on a stream-json input
+     line (tried on 2.1.325: the running tool call ran to its end first) or on the channel (Claude Code always queues a
+     channel message `next`); a third, wait-for-the-reply's-end category (not what Deyao meant by a turn).

@@ -1,5 +1,6 @@
 //! Plain HTTPS from the machine itself (Anthropic's APIs, the bucket's presigned URLs): reqwest with rustls, on the one
-//! runtime, waited on from the calling thread.
+//! runtime, waited on from the calling thread. Also plain HTTP to a server on this machine (the aviary harness's
+//! gateway), never through a proxy.
 
 use crate::rt;
 use anyhow::{Result, anyhow};
@@ -13,6 +14,34 @@ static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .build()
         .unwrap_or_default()
 });
+
+static LOCAL: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .http1_only()
+        .no_proxy()
+        .build()
+        .unwrap_or_default()
+});
+
+/// a JSON POST to a server on this machine → status and body (at most 64 KiB), within `limit`
+pub fn post_local_json(
+    url: &str,
+    body: &serde_json::Value,
+    limit: Duration,
+) -> Result<(u16, String)> {
+    let req = LOCAL.post(url).json(body);
+    rt::block_on(async {
+        tokio::time::timeout(limit, async {
+            let resp = req.send().await?;
+            let status = resp.status().as_u16();
+            let text = resp.text().await.unwrap_or_default();
+            let text: String = text.chars().take(65536).collect();
+            Ok::<_, anyhow::Error>((status, text))
+        })
+        .await
+        .map_err(|_| anyhow!("{url}: timeout"))?
+    })
+}
 
 /// a GET with headers → status and body (at most `max` bytes), within `limit`
 pub fn get(
