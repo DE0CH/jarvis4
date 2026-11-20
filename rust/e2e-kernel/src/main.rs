@@ -5,7 +5,8 @@
 //! on the cluster), and the session image; e2e/kernel plays the iPhone: the roster, a Reset with the public TEST master
 //! key, the root grant, a new session, pause (its snapshot), resume (restored), destroy.
 //! Leaves nothing behind but the logs (`$E2E_LOGS`, default /tmp/jarvis2-e2e-kernel-logs): every machine naming this
-//! run's peer is destroyed with its volume, the peer removed, the processes stopped. Needs sudo (a mount namespace).
+//! run's peer is destroyed with its volume, the peer removed, the processes stopped. Runs may overlap (several aviary
+//! branches at once): each names its peers after its own start (`peer()`) and touches only its own and crashed runs'. Needs sudo (a mount namespace).
 //!
 //!   JARVIS2_FLY_TOKEN   the jarvis2-370 org token (the spawner's here, the sweep's, the peer's)
 //!   E2E_RUNNER=fabric   the fabric replica instead (docs/PLAN-fabric.md): no Fly; the session's machines are gVisor
@@ -35,10 +36,16 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const ORG: &str = "jarvis2-370";
-const PEER: &str = "jarvis2-e2e-kernel";
+/// A CI run's WireGuard peers (`Net::peers`) are named after the run's start, so runs that overlap never share one:
+/// with one fixed name each run's start replaced the other's peer and its sweep destroyed the other's machines, and every
+/// aviary replica that overlapped another failed (2026-11-20: the machine stopped 45 s into its boot). A crashed run's
+/// peers and machines are known as leftovers by the start in their names.
+const PEER_PREFIX: &str = "e2e-kernel-";
+/// longer than any run (the replica jobs' timeout is 90 min): a peer named with an earlier start is a crashed run's
+const LEFTOVER_AFTER_SECS: u64 = 3 * 3600;
 const MAPI: &str = "https://api.machines.dev/v1/apps/jarvis4-sessions";
 const ROLES: [&str; 9] = [
     "notary",
@@ -76,7 +83,6 @@ fn only_chat() -> bool {
 /// e2e/aviary's front: the stand-in model and hermit-jarvis's gateway listener, as the machines reach the chat stack
 const CHAT_FRONT: &str = "127.0.0.1:31085";
 /// the chat stack's own WireGuard peer (aviary on Fly): machines reach e2e/aviary's front through it
-const CHAT_PEER: &str = "jarvis2-e2e-kernel-chat";
 const CHAT_GATEWAY_HEALTH: &str = "127.0.0.1:29084";
 
 /// How Fly machines reach this run. On a Fly machine of the sessions' org (a session): straight over Fly's private
@@ -102,7 +108,7 @@ fn net() -> Net {
         // router's fabric listener and the front listen on the bridge's address
         let front = format!("{}:31085", fakehermit::BRIDGE_IP);
         return Net {
-            machine_url: format!("http://{PEER}._peer.internal:8081"),
+            machine_url: format!("http://{}._peer.internal:8081", peer()),
             machine_addr: MACHINES.into(),
             chat_url: format!("http://{front}"),
             front_addr: front,
@@ -128,12 +134,56 @@ fn net() -> Net {
         };
     }
     Net {
-        machine_url: format!("http://{PEER}._peer.internal:8081"),
+        machine_url: format!("http://{}._peer.internal:8081", peer()),
         machine_addr: MACHINES.into(),
-        chat_url: format!("http://{CHAT_PEER}._peer.internal:8081"),
+        chat_url: format!("http://{}._peer.internal:8081", chat_peer()),
         front_addr: CHAT_FRONT.into(),
         peers: true,
     }
+}
+
+/// this run's start and process, once: the part of its peers' names that is its own
+fn run_tag() -> &'static str {
+    static TAG: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    TAG.get_or_init(|| format!("{}-{:x}", unix_now(), std::process::id()))
+}
+
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// the peer the machines reach the router through
+fn peer() -> String {
+    format!("{PEER_PREFIX}{}", run_tag())
+}
+
+/// the peer the machines reach the chat front through (aviary)
+fn chat_peer() -> String {
+    format!("{PEER_PREFIX}chat-{}", run_tag())
+}
+
+/// when the run that named a peer started (None: not this harness's peer, e.g. production's jarvis4-box)
+fn peer_started(name: &str) -> Option<u64> {
+    let rest = name.strip_prefix(PEER_PREFIX)?;
+    let rest = rest.strip_prefix("chat-").unwrap_or(rest);
+    let (secs, id) = rest.split_once('-')?;
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    secs.parse().ok()
+}
+
+/// a crashed run's peer: this harness's, and started longer ago than any run lasts
+fn leftover_peer(name: &str, now: u64) -> bool {
+    peer_started(name).is_some_and(|s| now.saturating_sub(s) > LEFTOVER_AFTER_SECS)
+}
+
+/// the peer a machine's JARVIS2_URL names
+fn url_peer(url: &str) -> Option<&str> {
+    url.strip_prefix("http://")?
+        .strip_suffix("._peer.internal:8081")
 }
 
 fn murl() -> String {
@@ -238,9 +288,9 @@ impl Cleanup {
             return;
         }
         sweep(&self.token);
-        for p in [PEER, CHAT_PEER] {
+        for p in [peer(), chat_peer()] {
             let _ = Command::new("flyctl")
-                .args(["wireguard", "remove", ORG, p])
+                .args(["wireguard", "remove", ORG, &p])
                 .env("FLY_API_TOKEN", &self.token)
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
@@ -250,8 +300,9 @@ impl Cleanup {
     }
 }
 
-/// every machine in jarvis4-sessions whose JARVIS2_URL names this run's peer, destroyed with its volumes (earlier runs'
-/// leftovers at the start, this run's own at the end). Never one naming another peer: production's name jarvis2-box.
+/// every machine in jarvis4-sessions whose JARVIS2_URL names this run's peer or a crashed run's (`leftover_peer`),
+/// destroyed with its volumes (at the start and at the end). Never one of a run still going, nor production's
+/// (jarvis4-box), nor a peer this harness did not name.
 fn sweep(token: &str) {
     let c = reqwest::blocking::Client::new();
     let Ok(r) = c.get(format!("{MAPI}/machines")).bearer_auth(token).send() else {
@@ -261,9 +312,11 @@ fn sweep(token: &str) {
         return;
     };
     let want = murl();
+    let now = unix_now();
     for m in ms.as_array().into_iter().flatten() {
         let env_url = m["config"]["env"]["JARVIS2_URL"].as_str().unwrap_or("");
-        if m["state"] == "destroyed" || env_url != want {
+        let leftover = url_peer(env_url).is_some_and(|p| leftover_peer(p, now));
+        if m["state"] == "destroyed" || (env_url != want && !leftover) {
             continue;
         }
         let Some(id) = m["id"].as_str() else { continue };
@@ -573,17 +626,32 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
     let wg_chat = w.join("wg-chat.conf");
     let net = net();
     if net.peers && !only_chat() {
-        let mut peers = vec![(PEER, &wg)];
+        // a crashed run's peers (its machines go in the sweep)
+        if let Ok(o) = fly(&["wireguard", "list", ORG, "--json"]).output() {
+            let now = unix_now();
+            let list: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap_or_default();
+            for n in list
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|p| p["Name"].as_str())
+            {
+                if leftover_peer(n, now) {
+                    let _ = fly(&["wireguard", "remove", ORG, n])
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .status();
+                    println!("e2e-kernel: removed leftover peer {n}");
+                }
+            }
+        }
+        let mut peers = vec![(peer(), &wg)];
         if aviary() {
-            peers.push((CHAT_PEER, &wg_chat));
+            peers.push((chat_peer(), &wg_chat));
         }
         for (p, conf) in peers {
-            let _ = fly(&["wireguard", "remove", ORG, p])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
             run_ok(
-                fly(&["wireguard", "create", ORG, "lhr", p])
+                fly(&["wireguard", "create", ORG, "lhr", &p])
                     .arg(conf)
                     .stdout(Stdio::null()),
                 "the WireGuard peer",
@@ -833,4 +901,47 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
     }
     println!("e2e-kernel: ok");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_runs_peers_are_its_own_and_parse_back_to_its_start() {
+        // two runs overlapping (2026-11-20: every aviary replica that overlapped another failed) never share a peer
+        let (p, c) = (peer(), chat_peer());
+        assert_ne!(p, c);
+        assert!(p.starts_with(PEER_PREFIX) && c.starts_with(PEER_PREFIX));
+        let start = peer_started(&p).expect("this harness's peer");
+        assert_eq!(peer_started(&c), Some(start));
+        assert!(unix_now().abs_diff(start) < 60);
+    }
+
+    #[test]
+    fn only_a_crashed_runs_peer_is_a_leftover() {
+        let now = 1_795_170_000;
+        let running = format!("{PEER_PREFIX}{}-1a2b", now - 30 * 60);
+        let crashed = format!("{PEER_PREFIX}chat-{}-1a2b", now - 4 * 3600);
+        assert!(!leftover_peer(&running, now));
+        assert!(leftover_peer(&crashed, now));
+        // production's and any peer this harness did not name are never touched
+        for other in [
+            "jarvis4-box",
+            "jarvis2-box",
+            "jarvis4-gw-b",
+            "jarvis2-e2e-kernel",
+            "e2e-kernel-chat",
+        ] {
+            assert!(!leftover_peer(other, now), "{other}");
+        }
+        assert_eq!(
+            url_peer(&format!("http://{crashed}._peer.internal:8081")),
+            Some(crashed.as_str())
+        );
+        assert_eq!(
+            url_peer("http://jarvis4-box._peer.internal:8081"),
+            Some("jarvis4-box")
+        );
+    }
 }

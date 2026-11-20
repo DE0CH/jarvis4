@@ -12,7 +12,7 @@ spec:
   interval: 1m
   url: https://github.com/DE0CH/aviary
   ref:
-    tag: "deploy-2e5a09af4ad7"  # written by aviary's deploy run
+    tag: "deploy-bebb0ee21f2d"  # written by aviary's deploy run
   # the chat's folder only (the repository holds much more)
   ignore: |
     /*
@@ -33,7 +33,7 @@ spec:
   serviceAccountName: flux-services
   # written by aviary's deploy run (each image's tag: the last commit that changed its part)
   images:
-    - { name: pigeon, newName: ghcr.io/de0ch/pigeon, newTag: "0ce66f3b83c3" }
-    - { name: magpie, newName: ghcr.io/de0ch/magpie, newTag: "0ce66f3b83c3" }
-    - { name: pigeon-app, newName: ghcr.io/de0ch/pigeon-app, newTag: "42670083acbf" }
-    - { name: hermit-jarvis, newName: ghcr.io/de0ch/hermit-jarvis, newTag: "ff7979b485dc" }
+    - { name: pigeon, newName: ghcr.io/de0ch/pigeon, newTag: "967feb9d7c9f" }
+    - { name: magpie, newName: ghcr.io/de0ch/magpie, newTag: "967feb9d7c9f" }
+    - { name: pigeon-app, newName: ghcr.io/de0ch/pigeon-app, newTag: "6443d42be685" }
+    - { name: hermit-jarvis, newName: ghcr.io/de0ch/hermit-jarvis, newTag: "4146be41d541" }

@@ -7,7 +7,7 @@
   "prompt": { "instructions": "/etc/hermit/config/system-prompt.md", "rules": "/etc/hermit/config/sandbox-rules.md",
               "title": "/etc/hermit/config/title-system.md" },
   "sandbox": {
-    "image": "ghcr.io/de0ch/jarvis4-session-fabric:sha-240d7fe70f67@sha256:a49fb5fa27bc008b582ba003b3cec8e8c1bf74949d8385a88f1eeaa955d14dec",
+    "image": "ghcr.io/de0ch/jarvis4-session-fabric:sha-7b34a72fe951@sha256:67c7f56c3a6ccd795b3c769cf17c50b595241fb26ded390c8d86d2b46730f2d4",
     "cpu": 1, "memory": "3.5Gi", "pids": 32768, "openFiles": 65536,
     "maxActive": 10, "idleMinutes": 525600, "maxLifetimeHours": 8760, "lifetimeGraceMinutes": 60,
     "capacityWaitSeconds": 300, "hostWaitSeconds": 600, "supervisorWaitSeconds": 3600, "startDeadlineSeconds": 4200,
@@ -27,7 +27,7 @@
     "directEgress": true,
     "freeze": { "bucket": "jarvis4-fabric-images-795109470764" },
     "gateway": { "name": "jarvis4-fabric-gw", "url": "https://10.204.0.1:7443", "endpoint": "[2a01:4f8:c013:c93e::1]:51821" },
-    "sandboxd": "aviary-0ce66f3b83c3",
+    "sandboxd": "aviary-967feb9d7c9f",
     "runsc": "precopy-20261102.1",
     "cpuFeatures": "3dnowprefetch,abm,adx,aes,apic,avx,avx2,bmi1,bmi2,clflush,clwb,cmov,cx16,cx8,de,f16c,fma,fpu,fsgsbase,fxsr,ht,hypervisor,lahf_lm,lm,mca,mce,mmx,movbe,msr,mtrr,nx,osxsave,pae,pat,pclmulqdq,pdpe1gb,pge,pni,popcnt,pse,pse36,rdrand,rdseed,rdtscp,sep,smap,smep,sse,sse2,sse4_1,sse4_2,ssse3,syscall,tsc,vme,x2apic,xgetbv1,xsave,xsavec,xsaveopt",
     "cpuOvercommit": 1, "spareSlots": 0, "minAvailableMemory": "256Mi",
@@ -37,13 +37,13 @@
     "aws": {
       "region": "eu-central-1", "launchTemplate": "jarvis4-fabric-host", "maxHosts": 5, "diskGiB": 220,
       "subnet": "subnet-08dafb7a50104d442", "tags": { "app": "jarvis4-fabric-host", "hermit": "jarvis4" },
-      "imageBucket": "jarvis4-fabric-images-795109470764",
+      "imageBucket": "jarvis4-fabric-images-795109470764", "pruneImages": true,
       "fallbackHost": { "memory": "15.5Gi", "reserve": "1Gi", "cpus": 4 }
     }
   },
   "ops": {
     "timeZone": "Asia/Hong_Kong",
-    "deployments": [ "hermit-fabric" ],
+    "deployments": [ "hermit" ],
     "podNodePrefix": "jarvis2-cluster-",
     "budgetWatch": 0.8
   }
