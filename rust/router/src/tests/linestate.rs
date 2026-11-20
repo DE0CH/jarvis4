@@ -103,6 +103,7 @@ fn the_router_keeps_the_newest_line_state_before_the_answer_goes_on() {
 
 #[test]
 fn a_recovered_core_with_the_same_key_keeps_its_sessions() {
+    // its own session ids: corechange.rs remembers a tried destroy by session id across routers
     let r = new_test_router();
     r.records_off
         .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -114,7 +115,7 @@ fn a_recovered_core_with_the_same_key_keeps_its_sessions() {
         .key
         .doc(&json!({"kind": "succession-cert", "line": "L1"}));
     r.st.do_(|d| {
-        for (id, state, m) in [("s1", "paused", ""), ("s2", "started", "m2")] {
+        for (id, state, m) in [("ls1", "paused", ""), ("ls2", "started", "lm2")] {
             d.sessions.insert(
                 id.into(),
                 crate::state::Session {
@@ -145,7 +146,7 @@ fn a_recovered_core_with_the_same_key_keeps_its_sessions() {
     }
     r.core_change_tick();
     r.st.do_(|d| {
-        for id in ["s1", "s2"] {
+        for id in ["ls1", "ls2"] {
             assert!(
                 d.sessions.get(id).is_some_and(|s| !s.old_core),
                 "{id} was taken for an earlier core's"
@@ -156,7 +157,7 @@ fn a_recovered_core_with_the_same_key_keeps_its_sessions() {
     lc.lock().unwrap_or_else(|e| e.into_inner()).key = TestKey::new();
     r.core_change_tick();
     assert!(
-        r.st.do_(|d| d.sessions.get("s2").is_some_and(|s| s.old_core)),
+        r.st.do_(|d| d.sessions.get("ls2").is_some_and(|s| s.old_core)),
         "after a Reset the sessions aren't marked as the earlier core's"
     );
 }
