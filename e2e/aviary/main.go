@@ -1049,6 +1049,9 @@ func main() {
 		waitFor("the 4 GB written", 10*time.Minute, func() bool {
 			return strings.Contains(magpieText(), "E2E-BIG-DONE "+token)
 		})
+		// the silence rule judges only a sandbox ready longer than its silence (hermit's 90 s, from ready_at): past
+		// it, the frozen snapshot (about a minute for 4 GB here) spans the janitor's 30 s passes
+		time.Sleep(100 * time.Second)
 	}
 	if runner == "fabric" {
 		step("a frozen fabric session's destroy: thawed for its final snapshot, no force needed")
