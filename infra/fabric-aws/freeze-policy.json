@@ -23,6 +23,17 @@
       "Effect": "Allow",
       "Action": "s3:DeleteObject",
       "Resource": "arn:aws:s3:::jarvis4-fabric-images-795109470764/images/*"
+    },
+    {
+      "Sid": "ListImages",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::jarvis4-fabric-images-795109470764",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": "images/*"
+        }
+      }
     }
   ]
 }

@@ -37,7 +37,7 @@
     "aws": {
       "region": "eu-central-1", "launchTemplate": "jarvis4-fabric-host", "maxHosts": 5, "diskGiB": 220,
       "subnet": "subnet-08dafb7a50104d442", "tags": { "app": "jarvis4-fabric-host", "hermit": "jarvis4" },
-      "imageBucket": "jarvis4-fabric-images-795109470764",
+      "imageBucket": "jarvis4-fabric-images-795109470764", "pruneImages": true,
       "fallbackHost": { "memory": "15.5Gi", "reserve": "1Gi", "cpus": 4 }
     }
   },
