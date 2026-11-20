@@ -501,20 +501,18 @@ fn destroy_archives_the_logs() {
         b.contains("uploading the archive") && b.contains("supervisor started"),
         "entries {b}"
     );
-    assert!(
+    // the record is written a moment before the logs leave the database (flows.rs destroy: finish, then the drops)
+    wait_for("the logs out of the database", || {
         rg.st
             .read_log("s1", LOG_SUPERVISOR)
             .unwrap_or_default()
-            .is_empty(),
-        "the supervisor log stayed in the database"
-    );
-    assert!(
-        rg.st
-            .read_log("s1", LOG_LIFECYCLE)
-            .unwrap_or_default()
-            .is_empty(),
-        "the lifecycle log stayed in the database"
-    );
+            .is_empty()
+            && rg
+                .st
+                .read_log("s1", LOG_LIFECYCLE)
+                .unwrap_or_default()
+                .is_empty()
+    });
 }
 
 /// the supervisor's pause/resume of the Claude process: queued for the machine, and an operation of its own
