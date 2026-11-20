@@ -1,0 +1,20 @@
+[package]
+name = "ios-ci"
+description = "The app's CI stand-ins and the phone replica's throwaway Jarvis 4 (ios.yml, transitions.yml)"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "ios-ci"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+rand = "0.8"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "json"] }
+serde_json = "1.0"
+
+[lints]
+workspace = true

@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::Sha256;
 use std::collections::BTreeMap;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 pub const REMOTE_HOLDER: &str = "remote";
@@ -158,6 +158,18 @@ pub fn parse_remote(harness: &str, id: &str, stdout: &str) -> RemoteInfo {
         }
     }
     info
+}
+
+/// tests: the key instead of JARVIS2_TUNNEL_KEY
+pub static TUNNEL_KEY: RwLock<Option<String>> = RwLock::new(None);
+
+/// the key the tunnel proofs are made with (JARVIS2_TUNNEL_KEY)
+pub fn tunnel_key() -> String {
+    TUNNEL_KEY
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+        .unwrap_or_else(|| std::env::var("JARVIS2_TUNNEL_KEY").unwrap_or_default())
 }
 
 pub fn tunnel_proof(key: &str, id: &str) -> String {
@@ -379,10 +391,7 @@ pub fn register_remote(reg: &mut Registrar) {
             Ok(s) => s,
             Err(e) => return write_error(w, 403, &format!("{e:#}")),
         };
-        let p = tunnel_proof(
-            &std::env::var("JARVIS2_TUNNEL_KEY").unwrap_or_default(),
-            &sid,
-        );
+        let p = tunnel_proof(&tunnel_key(), &sid);
         if p.is_empty() {
             return write_error(w, 404, "the router has no JARVIS2_TUNNEL_KEY");
         }

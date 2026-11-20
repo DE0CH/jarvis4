@@ -1,5 +1,5 @@
 //! e2e-kernel: a kernel line's life on real Fly machines, with nothing of production's touched. It builds the nine
-//! kernel components and the router of this tree, runs them here with a throwaway box key and root key (each
+//! kernel components and the router of this tree (rust/router), runs them here with a throwaway box key and root key (each
 //! component on its own loopback address, named `<role>-blue.kernel.e2e` in the router's own /etc/hosts), the
 //! machines' way back to the router over a throwaway WireGuard peer of the Fly org (served by `router m-gateway`, as
 //! on the cluster), and the session image; e2e/kernel plays the iPhone: the roster, a Reset with the public TEST master
@@ -533,14 +533,25 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
             &format!("building the {r}"),
         )?;
     }
+    // the router (rust/router), as its image builds it: the router profile (a panicking request recovered)
     run_ok(
-        Command::new("go")
-            .args(["build", "-o"])
-            .arg(w.join("router"))
-            .arg(".")
-            .current_dir(root.join("router")),
+        Command::new("cargo")
+            .args([
+                "build",
+                "--profile",
+                "router",
+                "--locked",
+                "-p",
+                "jarvis-router",
+            ])
+            .current_dir(root.join("rust")),
         "building the router",
     )?;
+    let target = std::env::var("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| root.join("rust").join("target"));
+    std::fs::copy(target.join("router").join("router"), w.join("router"))
+        .context("the router binary")?;
     run_ok(
         Command::new("go")
             .args(["build", "-o"])

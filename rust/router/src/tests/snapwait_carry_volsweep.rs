@@ -26,14 +26,15 @@ fn progress(i: i64) -> String {
 /// the stall window, and arrives
 #[test]
 fn a_snapshot_making_progress_is_waited_for() {
-    let rg = Rig::with(|c| c.snapshot_stall = Duration::from_secs(1)); // ten report intervals
+    // twenty report intervals: a loaded test box's hiccup of a second isn't a stall (ten flaked with 360 tests at once)
+    let rg = Rig::with(|c| c.snapshot_stall = Duration::from_secs(2));
     rg.running_m2(false);
     rg.pause("s1").unwrap_or_else(|e| panic!("{e:#}"));
     wait_for("asked", || rg.snapshot_awaited("m2"));
     let m = rg.machine("m2");
     let h = rg.machine_handler();
-    for i in 1..=30 {
-        // 3 s, three stall windows
+    for i in 1..=40 {
+        // 4 s, two stall windows
         let (code, _) = m.do_(&h, "POST", "/m/snapshot-progress", &progress(i));
         assert_eq!(code, 200);
         std::thread::sleep(Duration::from_millis(100));
@@ -129,8 +130,10 @@ fn a_machine_gone_silent_during_its_snapshot() {
     let rg = Rig::with(|c| c.snapshot_stall = Duration::from_secs(60));
     let _dms = capture_dm(&rg);
     rg.running_m2(false); // its last report is fresh: it is asked
+    // 1 s, not 0: the pause's own look at the last report (whole seconds past the limit) took a loaded box's
+    // second-long hiccup for a machine silent before it was asked
     rg.silent_after_secs
-        .store(0, std::sync::atomic::Ordering::SeqCst);
+        .store(1, std::sync::atomic::Ordering::SeqCst);
     let t0 = Instant::now();
     rg.pause("s1")
         .and_then(|()| rg.wait_action_end("s1", "failed"))

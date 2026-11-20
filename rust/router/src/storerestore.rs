@@ -79,7 +79,7 @@ impl Router {
         if i.pending.is_empty() || i.signature.is_empty() {
             return Err(BadRequest("pending, signature and shares (the phone's)".into()).into());
         }
-        let b = crate::backups::backup_bucket_from_env().ok_or_else(|| {
+        let b = self.backup_bucket().ok_or_else(|| {
             anyhow!("the router has no backup credential (BACKUP_READ_ACCESS_KEY): nothing is restored without its backups")
         })?;
         let sc = self.store_core();

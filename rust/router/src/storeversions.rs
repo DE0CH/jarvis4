@@ -501,7 +501,7 @@ impl Router {
                 ));
             }
         };
-        let b = crate::backups::backup_bucket_from_env().ok_or_else(|| {
+        let b = self.backup_bucket().ok_or_else(|| {
             anyhow!("the router has no backup credential (BACKUP_READ_ACCESS_KEY): nothing is restored without its backups")
         })?;
         let vs = self.store_versions(&p.store)?;

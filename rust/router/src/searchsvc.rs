@@ -66,9 +66,19 @@ static SEARCH_CLIENT: LazyLock<reqwest::blocking::Client> = LazyLock::new(|| {
         .unwrap_or_default()
 });
 
+/// the iCloud index (ICLOUD_INDEX_URL; a test's fake)
+pub static ICLOUD_INDEX_BASE: LazyLock<std::sync::RwLock<String>> = LazyLock::new(|| {
+    std::sync::RwLock::new(crate::router::env(
+        "ICLOUD_INDEX_URL",
+        "http://10.77.0.3:30091",
+    ))
+});
+
 fn service_base(_svc: &str) -> (String, &'static str) {
     (
-        crate::router::env("ICLOUD_INDEX_URL", "http://10.77.0.3:30091")
+        ICLOUD_INDEX_BASE
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
             .trim_end_matches('/')
             .to_string(),
         "the iCloud index",

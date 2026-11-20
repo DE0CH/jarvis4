@@ -380,7 +380,7 @@ fixes, 34–40 carried over from the old app and still true, 41–43 the web pag
     GitHub CI, not on a Hetzner box"). The job `replica` runs on the `xcode-27` runner: the Release build on the
     iPhone18,3 / iOS 27.0 simulator, Face ID enrolled and driven, Keychain, background and relaunch, every flow of
     `ReplicaUITests` recorded, against this commit's real core and router on the same runner and real Fly session
-    machines that reach the router over the run's own WireGuard peer (`ios/ci/replica-stack.sh`; the setup session's
+    machines that reach the router over the run's own WireGuard peer (`rust/ios-ci` replica; the setup session's
     answers: `rust/replica-setup`). TestFlight needs it in the same run, so every push to main touching the app
     ships once the walkthrough, the interop test and the replica pass; no session runs anything and nothing is
     dispatched by hand. Its secrets sit in the GitHub environment `replica` (main only), which only that job names.

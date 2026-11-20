@@ -751,3 +751,128 @@ fn bypass_as_an_api_call_follows_its_grant() {
         g.explanation
     );
 }
+
+/// a signed GET as the machine signs it, its raw answer (sessionops_test.go's mxRaw)
+fn raw_get(h: &crate::nethttp::Handler, m: &TestMachine, path: &str) -> (u16, Vec<u8>) {
+    let (ts, sig) = signed_headers(&m.key, "GET", path, b"", crate::util::unix_now());
+    let mut req = crate::nethttp::Req::new("GET", path, b"")
+        .with_header("X-Machine", &m.id)
+        .with_header("X-Time", &ts)
+        .with_header("X-Sig", &sig);
+    let mut w = crate::nethttp::W::recorder();
+    h(&mut w, &mut req);
+    (w.status(), w.recorded.clone().unwrap_or_default())
+}
+
+#[test]
+fn idempotent_create_and_attachments() {
+    let rg = OpsRig::new();
+    let r = rg.t.r.clone();
+    // stage two files
+    for (name, body) in [("my photo.png", "PNG"), ("notes.txt", "text")] {
+        let (code, out) = app_do(
+            &r,
+            "POST",
+            "/api/uploads",
+            body,
+            &[("x-upload-id", "up1"), ("x-upload-name", name)],
+        );
+        assert_eq!(code, 200, "{out}");
+    }
+    let (code, _) = app_do(
+        &r,
+        "POST",
+        "/api/uploads",
+        "x",
+        &[("x-upload-id", "../bad")],
+    );
+    assert_eq!(code, 400, "a bad upload id was accepted");
+    let req = r#"{"requestId":"req-1","label":"x","harness":"claude","apiProxy":true,
+		"attachments":{"uploadId":"up1","files":[{"name":"my photo.png"},{"name":"notes.txt"}]}}"#;
+    let (code, out) = app_do(&r, "POST", "/api/sessions", req, &[]);
+    assert!(code == 200 && !out["id"].is_null(), "{code} {out}");
+    let id = out["id"].as_str().unwrap_or_default().to_string();
+    let (code, out) = app_do(&r, "POST", "/api/sessions", req, &[]);
+    assert!(
+        code == 200 && out["id"] == id.as_str(),
+        "a repeat made another session: {code} {out}"
+    );
+    let n = r.st.read(|d| {
+        d.sessions
+            .values()
+            .filter(|s| s.request_id == "req-1")
+            .count()
+    });
+    assert_eq!(n, 1, "sessions for one requestId");
+    wait_for("approval", || {
+        r.st.read(|d| {
+            d.approvals.values().any(|a| {
+                a.session == id
+                    && a.options.get("attachments").map(String::as_str) == Some("2 file(s)")
+                    && a.options.get("apiProxy").map(String::as_str) == Some("on")
+            })
+        })
+    });
+    // another session can't take the same upload
+    let (code, out) = app_do(
+        &r,
+        "POST",
+        "/api/sessions",
+        r#"{"requestId":"req-2","attachments":{"uploadId":"up1","files":[{"name":"notes.txt"}]}}"#,
+        &[],
+    );
+    assert_eq!(code, 400, "{out}");
+    // the first machine's env names them
+    let mut s = rg.session(&id);
+    let e = r.machine_env(&s);
+    assert!(
+        e.get("SESSION_ATTACHMENTS_JSON").map(String::as_str)
+            == Some(
+                r#"[{"name":"my_photo.png","isImage":true},{"name":"notes.txt","isImage":false}]"#
+            )
+            && e.get("SESSION_API_PROXY").map(String::as_str) == Some("1"),
+        "{e:?}"
+    );
+    // the session's machine fetches them; another machine can't
+    r.st.do_(|d| {
+        if let Some(x) = d.sessions.get_mut(&id) {
+            x.machine_id = "mX".into();
+            x.state = "initialising".into();
+        }
+        d.machines.insert("mX".into(), id.clone());
+    });
+    let (mx, my) = (new_test_machine(&r, "mX"), new_test_machine(&r, "mY"));
+    let h = rg.machine_handler();
+    let (code, out) = mx.do_(&h, "GET", "/m/attachments", "");
+    assert!(
+        code == 200 && out["files"].as_array().map_or(0, Vec::len) == 2,
+        "{code} {out}"
+    );
+    assert_eq!(
+        my.do_(&h, "GET", "/m/attachments", "").0,
+        404,
+        "another machine"
+    );
+    let (code, b) = raw_get(&h, &mx, "/m/attachments/my_photo.png");
+    assert!(
+        code == 200 && b == b"PNG",
+        "{code} {:?}",
+        String::from_utf8_lossy(&b)
+    );
+    assert_eq!(mx.do_(&h, "GET", "/m/attachments/other.txt", "").0, 404);
+    assert_eq!(mx.do_(&h, "DELETE", "/m/attachments", "").0, 200);
+    let keys = r.objects.list("uploads/up1/").unwrap_or_default();
+    assert!(
+        keys.is_empty(),
+        "the staged files are still there: {keys:?}"
+    );
+    // once certified (a resume), no attachment env
+    s.cert = Some(crate::types::Doc {
+        payload: "{}".into(),
+        sig: String::new(),
+    });
+    assert!(
+        !r.machine_env(&s).contains_key("SESSION_ATTACHMENTS_JSON"),
+        "attachments on a later start"
+    );
+}

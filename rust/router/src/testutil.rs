@@ -114,13 +114,23 @@ pub fn new_test_router_with(
     core: Option<&str>,
     policy: crate::policy::Policy,
 ) -> TestRouter {
+    new_test_router_on_objects(f, core, policy, None)
+}
+
+/// the same on these objects (None: memory)
+pub fn new_test_router_on_objects(
+    f: impl FnOnce(&mut Config),
+    core: Option<&str>,
+    policy: crate::policy::Policy,
+    objects: Option<Arc<dyn crate::objstore::ObjStore>>,
+) -> TestRouter {
     let db = TestDb::new();
     let dir = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
     let st = test_state(&db, dir.path());
     let mut cfg = test_config(dir.path());
     f(&mut cfg);
     let core = Arc::new(CoreClient::new(core.unwrap_or("http://127.0.0.1:9")));
-    let r = Router::new(cfg, Arc::new(st), core, policy);
+    let r = Router::new_on(cfg, Arc::new(st), core, policy, objects);
     TestRouter { r, db, dir }
 }
 
@@ -212,15 +222,19 @@ impl Default for TestKey {
     }
 }
 
-/// waits up to 4 s for ok (Go's waitFor)
+/// waits up to 20 s for ok (Go's waitFor waited 4 s, but Go ran a package's tests one at a time: here every test runs
+/// at once, and a resume on a loaded box outlasted 4 s)
 pub fn wait_for(what: &str, ok: impl Fn() -> bool) {
-    for _ in 0..200 {
+    let end = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while std::time::Instant::now() < end {
         if ok() {
             return;
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
-    panic!("timed out waiting for {what}");
+    if !ok() {
+        panic!("timed out waiting for {what}");
+    }
 }
 
 /// a JSON body as a map (Go's body helper)
@@ -494,6 +508,9 @@ pub struct FakeCore {
     pub srv: TestServer,
 }
 
+/// a test's answer for some paths of the fake core (true: answered)
+pub type CoreHook = Arc<dyn Fn(&mut W, &TestKey, &str, &[u8]) -> bool + Send + Sync>;
+
 /// the fake core's answer to one call (body: the request's, read)
 pub fn fake_core_answer(k: &TestKey, w: &mut W, path: &str, body: &[u8]) {
     use crate::nethttp::write_json;
@@ -542,6 +559,22 @@ impl FakeCore {
                 .push(req.path.clone());
             let b = req.read_body(16 << 20);
             fake_core_answer(&k, w, &req.path, &b);
+        });
+        FakeCore { key, calls, srv }
+    }
+
+    /// a core signing with key whose hook answers some paths itself (true: answered); the rest as the fake core's
+    pub fn hooked(key: Arc<TestKey>, hook: CoreHook) -> FakeCore {
+        let calls: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
+        let (k, c) = (key.clone(), calls.clone());
+        let srv = TestServer::handler(move |w, req| {
+            c.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(req.path.clone());
+            let b = req.read_body(16 << 20);
+            if !hook(w, &k, &req.path, &b) {
+                fake_core_answer(&k, w, &req.path, &b);
+            }
         });
         FakeCore { key, calls, srv }
     }
@@ -726,11 +759,24 @@ impl Rig {
 
     /// the same with the router's policy (Go's tests set r.policy after newRig)
     pub fn with_policy(f: impl FnOnce(&mut Config), policy: crate::policy::Policy) -> Rig {
+        Rig::build(f, policy, None)
+    }
+
+    /// the rig on these objects (snapdirect_test.go's directMem)
+    pub fn with_objects(objects: Arc<dyn crate::objstore::ObjStore>) -> Rig {
+        Rig::build(|_| {}, Default::default(), Some(objects))
+    }
+
+    fn build(
+        f: impl FnOnce(&mut Config),
+        policy: crate::policy::Policy,
+        objects: Option<Arc<dyn crate::objstore::ObjStore>>,
+    ) -> Rig {
         use serde_json::json;
         crate::storagebox::PUT_BACKOFF_MS.store(1, std::sync::atomic::Ordering::Relaxed);
         let dav = MemDav::new();
         let core = FakeCore::new();
-        let t = new_test_router_with(
+        let t = new_test_router_on_objects(
             |c| {
                 c.no_access = false;
                 c.snapshot_stall = std::time::Duration::from_secs(1);
@@ -739,6 +785,7 @@ impl Rig {
             },
             Some(&core.srv.url),
             policy,
+            objects,
         );
         *t.r.box_override.write().unwrap_or_else(|e| e.into_inner()) =
             Some(Some(Arc::new(dav.storage_box())));
@@ -1095,8 +1142,15 @@ pub struct V2Core {
     pub srv: TestServer,
 }
 
+/// a test's own answer for some paths of the v2 core (true: answered); the rest go to the v2 core's
+pub type V2Hook = Arc<dyn Fn(&mut W, &TestKey, &str, &serde_json::Value) -> bool + Send + Sync>;
+
 impl V2Core {
     pub fn new(key: Arc<TestKey>) -> V2Core {
+        V2Core::with_hook(key, None)
+    }
+
+    pub fn with_hook(key: Arc<TestKey>, hook: Option<V2Hook>) -> V2Core {
         use crate::nethttp::write_json;
         use serde_json::json;
         let st: Arc<std::sync::Mutex<V2State>> = Arc::default();
@@ -1104,6 +1158,11 @@ impl V2Core {
         let srv = TestServer::handler(move |w, req| {
             let b: serde_json::Value =
                 serde_json::from_slice(&req.read_body(16 << 20)).unwrap_or(serde_json::Value::Null);
+            if let Some(h) = &hook
+                && h(w, &key, &req.path, &b)
+            {
+                return;
+            }
             let (refuse, kill_err) = {
                 let mut g = s2.lock().unwrap_or_else(|e| e.into_inner());
                 g.bodies
@@ -1182,7 +1241,34 @@ impl Rig {
         (rg, vc)
     }
 
-    fn core(&self) -> &Arc<CoreClient> {
+    /// the rig on a v2 core whose hook answers some paths itself
+    pub fn v2_hooked(hook: V2Hook) -> (Rig, V2Core) {
+        let rg = Rig::new();
+        let vc = V2Core::with_hook(rg.core.key.clone(), Some(hook));
+        rg.core().set_url(&vc.srv.url);
+        (rg, vc)
+    }
+
+    /// s1 failed with its machine m1 still there (failedsession_test.go's failedWithMachine)
+    pub fn failed_with_machine(&self, msg: &str) {
+        let cert = self.v2_cert("m1", r#"{"v":1}"#);
+        let started = crate::state::Started {
+            id: "m1".into(),
+            signing_key: self.mkey.public(),
+            ..Default::default()
+        };
+        self.st.do_(|d| {
+            if let Some(s) = d.sessions.get_mut("s1") {
+                s.state = "failed".into();
+                s.error = msg.into();
+                s.machine_id = "m1".into();
+                s.cert = Some(cert.clone());
+            }
+            d.started.insert("m1".into(), started.clone());
+        });
+    }
+
+    pub fn core(&self) -> &Arc<CoreClient> {
         &self.t.r.core
     }
 
@@ -1304,8 +1390,21 @@ impl Drop for ExecAnswerer {
 }
 
 pub fn answer_execs(r: &Arc<Router>, machine: &str, code: i64) -> ExecAnswerer {
+    answer_execs_with(r, machine, move |_, _| crate::grants::ExecResult {
+        code,
+        ..Default::default()
+    })
+}
+
+/// plays the machine for r.exec with answer(holder name, command) (remote_test.go's fakeMachine)
+pub fn answer_execs_with(
+    r: &Arc<Router>,
+    machine: &str,
+    answer: impl Fn(&str, &str) -> crate::grants::ExecResult + Send + 'static,
+) -> ExecAnswerer {
     let cmds: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
     let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let pubs = r.holder_public_keys().unwrap_or_default();
     let (r, machine, c2, s2) = (r.clone(), machine.to_string(), cmds.clone(), stop.clone());
     let th = std::thread::spawn(move || {
         while !s2.load(std::sync::atomic::Ordering::SeqCst) {
@@ -1315,14 +1414,19 @@ pub fn answer_execs(r: &Arc<Router>, machine: &str, code: i64) -> ExecAnswerer {
             };
             let it: crate::grants::ExecItem = serde_json::from_str(&b).unwrap_or_default();
             let req: serde_json::Value = serde_json::from_str(&it.request).unwrap_or_default();
+            let cmd = req["cmd"].as_str().unwrap_or_default().to_string();
+            let holder = req["holder"].as_str().unwrap_or_default();
+            let name = pubs
+                .iter()
+                .find(|(_, k)| k.as_str() == holder)
+                .map(|(n, _)| n.clone())
+                .unwrap_or_default();
             c2.lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .push(req["cmd"].as_str().unwrap_or_default().to_string());
-            r.exec_result(crate::grants::ExecResult {
-                id: req["id"].as_str().unwrap_or_default().to_string(),
-                code,
-                ..Default::default()
-            });
+                .push(cmd.clone());
+            let mut res = answer(&name, &cmd);
+            res.id = req["id"].as_str().unwrap_or_default().to_string();
+            r.exec_result(res);
         }
     });
     ExecAnswerer {
@@ -1350,4 +1454,17 @@ pub fn add_grant_kind(r: &Router, session: &str, holder: &str, kind: &str) {
     r.st.do_(|d| {
         d.grants.insert(id.clone(), g.clone());
     });
+}
+
+/// a global step or limit set for one test, put back when dropped (the caller holds serial())
+pub struct U64Set(&'static std::sync::atomic::AtomicU64, u64);
+
+pub fn set_u64(a: &'static std::sync::atomic::AtomicU64, v: u64) -> U64Set {
+    U64Set(a, a.swap(v, std::sync::atomic::Ordering::SeqCst))
+}
+
+impl Drop for U64Set {
+    fn drop(&mut self) {
+        self.0.store(self.1, std::sync::atomic::Ordering::SeqCst);
+    }
 }

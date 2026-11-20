@@ -10,7 +10,7 @@ use serde_json::Value;
 use std::sync::Arc;
 
 /// an account's sign-in through the app routes, as Deyao does it (start → the page → paste code#state)
-fn sign_in(r: &Router, start_path: &str, start_body: &str) -> (u16, Value) {
+pub fn sign_in(r: &Router, start_path: &str, start_body: &str) -> (u16, Value) {
     let (code, out) = app_do(r, "POST", start_path, start_body, &[]);
     if code != 200 {
         return (code, out);

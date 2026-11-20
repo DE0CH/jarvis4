@@ -717,7 +717,7 @@ impl Router {
         a.id = rand_id();
         a.created = GoTime::now();
         if a.origin.is_none() {
-            a.origin = crate::inbox::take_origin(&a.session); // inbox.rs: the caller the handler noted
+            a.origin = self.take_origin(&a.session); // inbox.rs: the caller the handler noted
         }
         #[derive(Deserialize, Default)]
         #[serde(default)]

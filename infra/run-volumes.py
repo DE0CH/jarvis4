@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""run-volumes.py — delete a throwaway run's leftover Fly volumes (ios/ci/replica-stack.sh down, infra/e2e.sh cleanup).
+"""run-volumes.py — delete a throwaway run's leftover Fly volumes (rust/ios-ci replica down, infra/e2e.sh cleanup).
 
 A test run (the phone replica, the e2e) runs its own core, which makes a `jarvis4_state` volume with every session
 machine (core/volumes.go). The run's sweep of machines (by the peer their JARVIS2_URL names) deletes the volumes those

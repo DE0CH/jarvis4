@@ -789,7 +789,7 @@ pub fn run_key(id: &str, ext: &str) -> String {
 }
 
 /// keep TASK_KEEP_RUNS runs (never an unfinished one); → the runs dropped (their files go with them)
-fn prune_runs(i: &mut TaskInstance) -> Vec<String> {
+pub(crate) fn prune_runs(i: &mut TaskInstance) -> Vec<String> {
     let mut n = 0;
     let mut gone = vec![];
     i.runs.retain(|x| {
@@ -917,7 +917,7 @@ fn from_ms(m: i64) -> GoTime {
 }
 
 /// the next slot after now (ms)
-fn next_slot(s: &TaskSchedule, now: GoTime) -> Result<i64> {
+pub(crate) fn next_slot(s: &TaskSchedule, now: GoTime) -> Result<i64> {
     let (hh, mm, tz) = slot_parts(s)?;
     Ok(next_time_of_day(hh, mm, &tz, now))
 }
@@ -941,7 +941,7 @@ fn last_slot(s: &TaskSchedule, now: GoTime) -> Option<i64> {
 
 /// the slot the schedule should fire for at now (ms), or None: the latest slot, after `since`, missed by no more than
 /// the grace period, and not fired already
-fn due_slot(s: &TaskSchedule, now: GoTime) -> Option<i64> {
+pub(crate) fn due_slot(s: &TaskSchedule, now: GoTime) -> Option<i64> {
     if !s.enabled {
         return None;
     }
@@ -1541,7 +1541,7 @@ impl Router {
         )
     }
 
-    fn save_schedule(&self, id: &str, b: &Map<String, Value>) -> Result<Value> {
+    pub(crate) fn save_schedule(&self, id: &str, b: &Map<String, Value>) -> Result<Value> {
         let now = GoTime::now();
         let new_id = crate::util::rand_id()[..8].to_string();
         self.st.do_(|d| {

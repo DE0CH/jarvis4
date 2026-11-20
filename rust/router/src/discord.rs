@@ -32,7 +32,7 @@ use std::time::Duration;
 pub const DISCORD_API: &str = "https://discord.com/api/v10";
 const DISCORD_UA: &str = "jarvis4-router (https://github.com/DE0CH/jarvis4, 1.0)";
 /// Discord: 2 name/topic edits per 10 min per channel
-const DISCORD_EDIT_WINDOW: time::Duration = time::Duration::minutes(10);
+pub const DISCORD_EDIT_WINDOW: time::Duration = time::Duration::minutes(10);
 const DISCORD_EDITS_PER_WIN: usize = 2;
 pub const DISCORD_MSG_LIMIT: usize = 2000;
 const DISCORD_TICK_EVERY: Duration = Duration::from_secs(60);
@@ -367,6 +367,12 @@ impl DiscordClient {
         Ok(true)
     }
 
+    /// tests: what a restarted router knows of its channels (nothing)
+    #[cfg(test)]
+    pub fn forget_names(&self) {
+        self.lock().names.clear();
+    }
+
     pub fn delete_channel(&self, id: &str) -> Result<bool> {
         let r = self.req("DELETE", &format!("/channels/{id}"), None);
         self.lock().names.remove(id);
@@ -620,6 +626,15 @@ static DISCORD_EXPORTS: LazyLock<
 pub type ExportDone = Box<dyn FnOnce(Option<String>) + Send>;
 
 impl Router {
+    /// the Discord client: a test's own, else the global one
+    pub fn disc(&self) -> Option<Arc<DiscordClient>> {
+        self.disc_hook
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .or_else(disc)
+    }
+
     /// a message to Deyao's Discord DM; without a bot token it only logs
     pub fn dm(&self, text: &str) {
         if let Some(h) = self
@@ -635,7 +650,7 @@ impl Router {
             h(text);
             return;
         }
-        if let Some(d) = disc() {
+        if let Some(d) = self.disc() {
             let text = text.to_string();
             std::thread::spawn(move || {
                 if let Err(e) = d.send(&d.dm, &text) {
@@ -674,7 +689,7 @@ impl Router {
     /// channels follow their sessions' titles; a running session without one (Discord was down when it started) gets
     /// one, so its destroy has something to export (its env can't change: it keeps DMing)
     pub fn discord_tick(&self) {
-        let Some(disc) = disc().filter(|d| d.channels) else {
+        let Some(disc) = self.disc().filter(|d| d.channels) else {
             return;
         };
         let list: Vec<Session> = self.st.do_(|d| d.sessions.values().cloned().collect());
@@ -726,7 +741,7 @@ impl Router {
     /// discord_destroy). The returned done(archived) notes whether the archive holding it reached the Storage Box.
     pub fn discord_export(&self, s: &Session, tmp: &Path) -> (Option<PathBuf>, ExportDone) {
         let none: ExportDone = Box::new(|_| {});
-        let Some(disc) = disc() else {
+        let Some(disc) = self.disc() else {
             return (None, none);
         };
         if s.discord_channel.is_empty() {
@@ -772,7 +787,7 @@ fn exports()
 /// machine's env as LOBSTER_CHANNEL. Best effort: Discord being down mustn't stop a session (the session's
 /// lobster-send then DMs).
 pub fn discord_env(r: &Arc<Router>, s: &Session, e: &mut BTreeMap<String, String>) {
-    let Some(disc) = disc().filter(|d| d.channels) else {
+    let Some(disc) = r.disc().filter(|d| d.channels) else {
         return;
     };
     if crate::tasks::is_task_harness(&s.harness) {
@@ -800,7 +815,7 @@ pub fn discord_env(r: &Arc<Router>, s: &Session, e: &mut BTreeMap<String, String
 
 /// the destroy hook: the channel goes once its archive holds it; otherwise it is kept and Deyao told
 pub fn discord_destroy(r: &Arc<Router>, s: &Session) {
-    let Some(disc) = disc().filter(|d| d.channels) else {
+    let Some(disc) = r.disc().filter(|d| d.channels) else {
         return;
     };
     if s.discord_channel.is_empty() {

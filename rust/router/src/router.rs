@@ -140,6 +140,10 @@ pub struct Router {
     pub next: crate::nextcore::NextCores,
     /// archive.rs: the Storage Box this router uses instead of the env's (tests: Some(None) = none)
     pub box_override: RwLock<Option<Option<Arc<crate::storagebox::StorageBox>>>>,
+    /// backups.rs: this router's backup bucket instead of the env's (tests)
+    pub backup_override: RwLock<Option<crate::backups::BackupBucket>>,
+    /// inbox.rs: the callers noted for approvals the router files later, on a thread
+    pub origins: crate::inbox::Origins,
     /// flows.rs SILENT_AFTER_SECS for this router (tests shorten it): a machine silent this long isn't waited for
     pub silent_after_secs: std::sync::atomic::AtomicI64,
     /// schedule.rs: tests catch deliveries here (vouch.rs deliver_vouched otherwise)
@@ -150,6 +154,8 @@ pub struct Router {
     pub records_off: std::sync::atomic::AtomicBool,
     /// discord.rs: this router's DMs go here instead of the bot (tests)
     pub dm_hook: RwLock<Option<crate::discord::DmHook>>,
+    /// tests: this router's own Discord client instead of the global one (tests run side by side)
+    pub disc_hook: RwLock<Option<Arc<crate::discord::DiscordClient>>>,
     pub muxes: OnceLock<(Arc<Mux>, Arc<Mux>)>,
     /// http.rs: every app route's pattern (apicalls.rs classifies them)
     pub app_patterns: OnceLock<BTreeMap<String, bool>>,
@@ -168,14 +174,27 @@ impl Router {
         core: Arc<CoreClient>,
         policy: crate::policy::Policy,
     ) -> Arc<Router> {
-        let objects: Arc<dyn crate::objstore::ObjStore> = match crate::objstore::objects_from_env()
-        {
-            Err(e) => {
-                crate::logf!("objects: {e:#}");
-                std::process::exit(1);
-            }
-            Ok(Some(o)) => o,
-            Ok(None) => Arc::new(crate::objstore::MemObjects::default()),
+        Router::new_on(cfg, st, core, policy, None)
+    }
+
+    /// a router on these objects (None: the bucket of the env, else memory)
+    pub fn new_on(
+        cfg: Config,
+        st: Arc<State>,
+        core: Arc<CoreClient>,
+        policy: crate::policy::Policy,
+        objects: Option<Arc<dyn crate::objstore::ObjStore>>,
+    ) -> Arc<Router> {
+        let objects: Arc<dyn crate::objstore::ObjStore> = match objects {
+            Some(o) => o,
+            None => match crate::objstore::objects_from_env() {
+                Err(e) => {
+                    crate::logf!("objects: {e:#}");
+                    std::process::exit(1);
+                }
+                Ok(Some(o)) => o,
+                Ok(None) => Arc::new(crate::objstore::MemObjects::default()),
+            },
         };
         let kernel = KernelClient::new(&cfg.kernel_url).map(Arc::new);
         let r = Arc::new(Router {
@@ -200,7 +219,10 @@ impl Router {
             me: OnceLock::new(),
             next: crate::nextcore::NextCores::from_env(),
             box_override: RwLock::new(None),
+            backup_override: RwLock::new(None),
+            origins: Default::default(),
             dm_hook: RwLock::new(None),
+            disc_hook: RwLock::new(None),
             records_off: std::sync::atomic::AtomicBool::new(false),
             deliver_hook: RwLock::new(None),
             resume_failed_hook: RwLock::new(None),

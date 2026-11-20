@@ -25,8 +25,8 @@ pub type Rows = BTreeMap<String, BTreeMap<String, String>>;
 
 /// the state_changes row every version has (tbl); how many versions back the table goes; the most records a
 /// catch-up reads one by one
-const CHANGES_MARKER: &str = "*";
-const CHANGES_KEPT: i64 = 5000;
+pub(crate) const CHANGES_MARKER: &str = "*";
+pub(crate) const CHANGES_KEPT: i64 = 5000;
 const CATCH_UP_MOST: usize = 2000;
 
 fn enc<T: serde::Serialize>(v: &T) -> String {

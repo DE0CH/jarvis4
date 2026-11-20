@@ -47,6 +47,16 @@ struct AccountStoreState {
 static ACCOUNT_STORES: LazyLock<Mutex<BTreeMap<String, AccountStoreState>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
+/// tests: what was last written of a store, and when it is tried again
+#[cfg(test)]
+pub fn account_store_state(store: &str) -> Option<(String, GoTime)> {
+    ACCOUNT_STORES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(store)
+        .map(|s| (s.written.clone(), s.retry))
+}
+
 /// a new line's stores plus its account's store (when certs name it)
 pub fn with_account_store(stores: &[String], account: &str) -> Vec<String> {
     with_account_store_if(*CLAUDE_STORE_IN_CERT, stores, account)

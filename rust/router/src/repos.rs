@@ -217,7 +217,10 @@ impl Router {
     }
 
     /// read-modify-write under the lock (two adds at once used to drop one in Jarvis 1)
-    fn update_repos(&self, f: impl FnOnce(Vec<RepoEntry>) -> Vec<RepoEntry>) -> Result<()> {
+    pub(crate) fn update_repos(
+        &self,
+        f: impl FnOnce(Vec<RepoEntry>) -> Vec<RepoEntry>,
+    ) -> Result<()> {
         let _g = self.ops.repos_mu.lock().unwrap_or_else(|e| e.into_inner());
         let next = f(self.read_repos());
         self.st.write_doc(
