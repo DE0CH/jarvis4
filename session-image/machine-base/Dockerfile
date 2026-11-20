@@ -21,6 +21,29 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 # crane: aviary-sandbox fetches aviary's sandbox image onto the volume with it (a fly-preload volume already has it)
 RUN curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz" \
   | tar -xz -C /usr/local/bin crane && crane version
+# the other harnesses' runtimes, for their launchers inside aviary's image (bound in as /opt/jarvis-harness:
+# aviary-sandbox HARNESS_DIRS; on the PATH below): OpenCode and the Paseo daemon (Paseo's bundled Claude Agent SDK binary
+# becomes a link to aviary's Claude Code, /usr/local/bin/claude in the sandbox), and claw from the release forks.json
+# pins (checked by sha256). OpenClaw and dsh fetch their pinned bundles on first use (session-image/bin/openclaw,
+# dsh-runtime) into the home.
+COPY forks.json /usr/local/share/forks.json
+RUN npm install --prefix /opt/jarvis-harness -g opencode-ai@1.18.31 @getpaseo/cli@0.8.0 && npm cache clean --force \
+ && rm -rf /root/.npm /opt/jarvis-harness/lib/node_modules/opencode-ai/node_modules/opencode-linux-x64 \
+      /opt/jarvis-harness/lib/node_modules/opencode-ai/node_modules/opencode-linux-x64-baseline \
+ && f=/opt/jarvis-harness/lib/node_modules/@getpaseo/cli/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude \
+ && rm -f "$f" && ln -s /usr/local/bin/claude "$f" \
+ && url="$(python3 -c 'import json;print(json.load(open("/usr/local/share/forks.json"))["claw"]["url"])')" \
+ && sum="$(python3 -c 'import json;print(json.load(open("/usr/local/share/forks.json"))["claw"]["sha256"])')" \
+ && curl -fsSL -o /opt/jarvis-harness/bin/claw "$url" && echo "$sum  /opt/jarvis-harness/bin/claw" | sha256sum -c - \
+ && chmod 755 /opt/jarvis-harness/bin/claw && /opt/jarvis-harness/bin/opencode --version
+COPY openclaw-claw-harness /usr/local/lib/openclaw-claw-harness
+COPY harness-opencode.sh harness-paseo-claude.sh harness-openclaw.sh harness-dsh.sh opencode-instructions.py \
+     opencode-transcript.py openclaw-transcript dsh-profile-patch.py dsh-transcript.py dsh-send.py /usr/local/bin/
+COPY paseo-front.js api-proxy.js dsh-front.js /usr/local/lib/
+RUN chmod 755 /usr/local/bin/harness-opencode.sh /usr/local/bin/harness-paseo-claude.sh /usr/local/bin/harness-openclaw.sh \
+      /usr/local/bin/harness-dsh.sh /usr/local/bin/opencode-instructions.py /usr/local/bin/opencode-transcript.py \
+      /usr/local/bin/openclaw-transcript /usr/local/bin/dsh-profile-patch.py /usr/local/bin/dsh-transcript.py \
+      /usr/local/bin/dsh-send.py
 # user claude, uid 1000 (the sandbox's agent is uid 1000 too), passwordless sudo
 RUN userdel -r ubuntu 2>/dev/null; useradd -m -u 1000 -s /bin/bash claude \
  && echo 'claude ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-claude \
@@ -43,5 +66,5 @@ RUN rm -f /etc/ssh/ssh_host_* && echo chendeyao000 > /etc/ssh/jarvis-principals 
 RUN mkdir -p /etc/jarvis && echo "the agent's tools are aviary's sandbox image" > /etc/jarvis/machine-base
 USER claude
 WORKDIR /home/claude
-ENV PATH=/home/claude/.local/bin:/usr/local/bin:/usr/bin:/bin
+ENV PATH=/home/claude/.local/bin:/usr/local/bin:/opt/jarvis-harness/bin:/usr/bin:/bin
 # no ENTRYPOINT: session-image/Dockerfile's is jarvis-machine boot

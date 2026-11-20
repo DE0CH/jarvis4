@@ -860,7 +860,7 @@ fn inner(p: &Paths, boot: &str, wd: &str) -> Result<ExitCode, String> {
 
 /// What a harness launcher run inside the sandbox (`--run`) needs of the machine besides TOOLS, bound read-only at the
 /// same path where the machine has it (docs/PLAN-one-image.md "Every harness in the sandbox")
-pub const HARNESS_FILES: [&str; 24] = [
+pub const HARNESS_FILES: [&str; 23] = [
     "/usr/local/bin/harness-claude.sh",
     "/usr/local/bin/harness-opencode.sh",
     "/usr/local/bin/harness-paseo-claude.sh",
@@ -879,7 +879,6 @@ pub const HARNESS_FILES: [&str; 24] = [
     "/usr/local/bin/jarvis-channel-send",
     "/usr/local/bin/openclaw",
     "/usr/local/bin/dsh-runtime",
-    "/usr/local/bin/claw",
     "/usr/local/lib/paseo-front.js",
     "/usr/local/lib/api-proxy.js",
     "/usr/local/lib/cf-tunnel-agent.js",
@@ -888,8 +887,14 @@ pub const HARNESS_FILES: [&str; 24] = [
 ];
 
 /// The machine's directories a launcher run inside the sandbox reads, rbound at the same path (Claude Code's managed
-/// settings and the Jarvis channel's config, the runtime pins and task templates)
-pub const HARNESS_DIRS: [&str; 2] = ["/etc/claude-code", "/opt/jarvis"];
+/// settings and the Jarvis channel's config, the runtime pins and task templates, the harnesses' runtimes:
+/// session-image/machine-base)
+pub const HARNESS_DIRS: [&str; 4] = [
+    "/etc/claude-code",
+    "/opt/jarvis",
+    "/opt/jarvis-harness",
+    "/usr/local/lib/openclaw-claw-harness",
+];
 
 /// `--run WORKDIR -- CMD [ARG...]` → (WORKDIR, CMD and its arguments)
 pub fn run_args(args: &[String]) -> Result<(String, Vec<String>), String> {
