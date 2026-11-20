@@ -48,6 +48,16 @@ authorisation and signature.
   source on first read (a network block device), the full copy in the background; cross-region forks hydrate more
   slowly. So a golden volume per region, and a session forks its region's. To measure before relying on it (a
   throwaway app): time to usable, read speed while hydrating, cross-region.
+- **Measured on Fly (2026-11-20, a throwaway app, medium guest = shared 4 CPUs / 4 GB, aviary's image 3,390 MB in
+  35,635 files):** today's way, `crane export | tar -x` onto an empty volume, 117 s. A fork of a volume holding it, same
+  region (lhr): the fork call 21 s, the machine up in 4-8 s, `claude --version` from the image 1.2 s (0.1 s after),
+  `import pandas` 3.7 s, a full read of the image 101 s while hydrating, the copy done within about 2 min. Across
+  regions (lhr → ams): 19 s, 8 s, 4.3 s, 12.7 s, 163 s, done within about 4 min. Fly refuses `size_gb` on a fork ("not
+  currently supported") and extends a volume only once it is no longer hydrating, so a session forks the golden only
+  when the golden is at least its disk (the router asks for goldens at its sessions' usual disk); a golden can't be
+  deleted while a fork of it hydrates ("volume is being used for fork"), so its deletion waits for a later turn. The
+  org's machine cap counts stopped machines (claude-env lessons/58): the test hit "reached its machine limit" at its
+  fourth machine.
 - **Objects.** A machine object is `<runner>-<id>` and `doc.Object.Runner()` splits at the first `-`, so the new
   runner's objects are `flypreload-<Fly machine id>` (the New session option is still called `fly-preload`).
 
@@ -57,7 +67,7 @@ authorisation and signature.
 |---|---|---|
 | The agent's tools in aviary's image, test first (`testing/sandbox-tools`, ci.yml `sandbox-tools`) | DE0CH/aviary `claude/sandbox-tools` | written, not pushed |
 | Size the YYC AMI builder disk (bake.rs `VolumeSize=16`) and the hosts' "16 GiB for system and image" to the grown image, from CI's measurement | DE0CH/aviary | open |
-| Fly fork measurement on a throwaway app | a session with `infra` | open |
+| Fly fork measurement on a throwaway app | a session with `infra` | done (above) |
 | kernel: signer `preloader` (`doc.ByPreloader`, the notarizer's rows for `flypreload-*` objects, the spawner's rows exclude them), role in the roster, `kernel/cmd/preloader` | `kernel/` | written, tests pass (b17e113) |
 | preloader: its Fly app and token (`POST /fly-token`), golden volumes per (region, session image digest), `POST /golden`, spawn = fork of the golden (an empty volume when none yet), init/kill/destroy as the spawner's Fly path | `kernel/spawner` (shared code), `kernel/cmd/preloader` | written, tests pass (b17e113); to merge with `wip/spawner-runner-record` (runner from the record: map `fly-preload` → object `flypreload`) |
 | machine: `JARVIS2_RUNNER=fly-preload` → object `flypreload-<id>`, cert checked against the preloader | `rust/machine`, `rust/doc`, kerneltest vectors | written, tests pass (f2d839c) |

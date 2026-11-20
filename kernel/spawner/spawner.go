@@ -426,7 +426,7 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 		if !ok {
 			return nil, serve.Fail(503, "this preloader's Fly can't fork volumes")
 		}
-		run = preloadRunner{Fly: sp.fly, pre: pre, golden: sp.readyGolden(in.Region, c.Source.Image)}
+		run = preloadRunner{Fly: sp.fly, pre: pre, golden: sp.readyGolden(in.Region, c.Source.Image, in.DiskGB)}
 	case "aws":
 		if sp.aws == nil {
 			return nil, serve.Fail(503, "this spawner has no AWS runner")

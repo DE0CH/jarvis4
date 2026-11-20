@@ -492,7 +492,7 @@ func (f *FakeFly) Inspect(id string) (spawner.FlyMachine, error) {
 }
 
 // ForkVolume: the preloader's fork (spawner.Preloads): a new volume, recorded as a copy of source
-func (f *FakeFly) ForkVolume(source, region string, sizeGB int, guest map[string]any) (string, error) {
+func (f *FakeFly) ForkVolume(source, region string, guest map[string]any) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !f.vols[source] {

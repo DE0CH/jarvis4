@@ -37,8 +37,9 @@ const PreloadFlyApp = "jarvis4-sessions-preload"
 
 // Preloads: what the preloader needs of Fly beyond the spawner's calls
 type Preloads interface {
-	// ForkVolume: a new volume in region, a copy of source (lazy: usable at once), of sizeGB (at least source's)
-	ForkVolume(source, region string, sizeGB int, guest map[string]any) (string, error)
+	// ForkVolume: a new volume in region, a copy of source (lazy: usable at once) of source's size: Fly takes no
+	// size_gb on a fork ("not currently supported", measured 2026-11-20) and extends a volume only once its copy is done
+	ForkVolume(source, region string, guest map[string]any) (string, error)
 	// CreateGolden: a machine of image that runs `aviary-sandbox --fetch` on volume and stops
 	CreateGolden(image, region, volume string) (string, error)
 }
@@ -55,7 +56,8 @@ type Golden struct {
 	Error   string `json:"error,omitempty"`
 }
 
-// GoldenInput: POST /golden
+// GoldenInput: POST /golden. DiskGB is the size of every session volume forked from it: the router asks for its
+// sessions' usual disk (a session with a bigger disk gets an empty volume)
 type GoldenInput struct {
 	Region string `json:"region"`
 	Image  string `json:"image"`
@@ -72,11 +74,13 @@ var goldenGuest = map[string]any{"cpu_kind": "shared", "cpus": 2, "memory_mb": 2
 
 func goldenKey(region, image string) string { return region + " " + imageDigest(image) }
 
-// readyGolden: the ready golden volume for a spawn of image in region (nil: none yet, the spawn gets an empty volume)
-func (sp *Spawner) readyGolden(region, image string) *Golden {
+// readyGolden: the ready golden volume for a spawn of image in region with a disk of diskGB (nil: none, or one smaller
+// than the disk, since a fork can't be made bigger at once: the spawn gets an empty volume). One per region: a fork
+// across regions works but hydrates slower (measured 2026-11-20, lhr → ams: claude --version 4.3 s against 1.2 s).
+func (sp *Spawner) readyGolden(region, image string, diskGB int) *Golden {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
-	if g := sp.goldens[goldenKey(region, image)]; g != nil && g.State == "ready" {
+	if g := sp.goldens[goldenKey(region, image)]; g != nil && g.State == "ready" && g.SizeGB >= diskGB {
 		c := *g
 		return &c
 	}
@@ -234,7 +238,7 @@ func (p preloadRunner) Create(in CreateInput) (string, string, error) {
 	var vid string
 	var err error
 	if p.golden != nil {
-		vid, err = p.pre.ForkVolume(p.golden.Volume, in.Region, max(in.DiskGB, p.golden.SizeGB), in.Guest)
+		vid, err = p.pre.ForkVolume(p.golden.Volume, in.Region, in.Guest)
 	} else {
 		vid, err = p.Fly.CreateVolume(in.Region, in.DiskGB, in.Guest)
 	}

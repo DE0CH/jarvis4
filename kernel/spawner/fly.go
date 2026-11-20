@@ -298,13 +298,13 @@ func (f *FlyAPI) Inspect(id string) (FlyMachine, error) {
 	return fm, nil
 }
 
-// ForkVolume: Fly's volume fork (source_volume_id): a new volume holding source's data, usable at once (its blocks are
-// read from source until the copy is done). Its backups are off, as CreateVolume's.
-func (f *FlyAPI) ForkVolume(source, region string, sizeGB int, guest map[string]any) (string, error) {
+// ForkVolume: Fly's volume fork (source_volume_id): a new volume holding source's data, of its size, usable at once
+// (its blocks are read from source until the copy is done, "hydrating"). Its backups are off, as CreateVolume's.
+func (f *FlyAPI) ForkVolume(source, region string, guest map[string]any) (string, error) {
 	var v struct {
 		ID string `json:"id"`
 	}
-	body := map[string]any{"name": volumeName, "region": region, "size_gb": sizeGB, "source_volume_id": source, "encrypted": true,
+	body := map[string]any{"name": volumeName, "region": region, "source_volume_id": source, "encrypted": true,
 		"snapshot_retention": 1, "auto_backup_enabled": false, "require_unique_zone": false, "compute": guest}
 	if err := f.call("POST", "/volumes", body, &v); err != nil {
 		return "", err

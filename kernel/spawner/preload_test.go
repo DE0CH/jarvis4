@@ -33,7 +33,7 @@ func (f *preFly) CreateVolume(region string, size int, guest map[string]any) (st
 	return v, err
 }
 
-func (f *preFly) ForkVolume(source, region string, size int, guest map[string]any) (string, error) {
+func (f *preFly) ForkVolume(source, region string, guest map[string]any) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !f.vols[source] {
@@ -42,8 +42,8 @@ func (f *preFly) ForkVolume(source, region string, size int, guest map[string]an
 	f.n++
 	v := fmt.Sprintf("vol_%d", f.n)
 	f.vols[v] = true
-	f.sizes[v] = size
-	f.forks = append(f.forks, fork{source, v, size})
+	f.sizes[v] = f.sizes[source]
+	f.forks = append(f.forks, fork{source, v, f.sizes[source]})
 	return v, nil
 }
 
@@ -133,7 +133,7 @@ func TestThePreloaderMakesOnlyFlyPreloadMachines(t *testing.T) {
 
 // a golden volume: begun (its volume and the machine that fills it), still making while that machine runs, ready once
 // it stops with exit 0 (the machine destroyed, the volume kept); then a fly-preload spawn in that region is a fork of
-// it at least as big, named flypreload-<id> in the preloader's cert, which the notarizer takes
+// its size, named flypreload-<id> in the preloader's cert, which the notarizer takes
 func TestAFlyPreloadSessionStartsOnAForkOfTheGoldenVolume(t *testing.T) {
 	r, fly := newPreloadRig(t)
 	g := mg(t, r.sp, GoldenInput{Region: "lhr", Image: img, DiskGB: 20})
@@ -178,6 +178,13 @@ func TestAFlyPreloadSessionStartsOnAForkOfTheGoldenVolume(t *testing.T) {
 		t.Fatal(err, c)
 	}
 	r.notarize(d)
+	// a disk bigger than the golden volume: an empty volume (Fly can't make a fork bigger at once)
+	cert, nz = r.source()
+	in = r.input(cert, nz)
+	in.Runner, in.DiskGB = "fly-preload", 30
+	if _, err := r.sp.Spawn(in); err != nil || len(fly.forks) != 1 {
+		t.Fatalf("a disk bigger than the golden: %v, forks %+v", err, fly.forks)
+	}
 	// another region has no golden yet: an empty volume, as the plain fly runner
 	cert, nz = r.source()
 	in = r.input(cert, nz)
