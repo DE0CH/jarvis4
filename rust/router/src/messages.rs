@@ -920,6 +920,11 @@ impl Router {
         self.st.do_(|d| d.message_rules.remove(id).is_some())
     }
 
+    /// approved messages being delivered now (tests wait for none: Go's messageWG)
+    pub fn messages_in_flight() -> usize {
+        MESSAGE_RUN.lock().unwrap_or_else(|e| e.into_inner()).len()
+    }
+
     pub fn kick_message(self: &Arc<Self>, id: &str) {
         if !MESSAGE_RUN
             .lock()

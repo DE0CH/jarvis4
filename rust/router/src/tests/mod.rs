@@ -15,6 +15,7 @@ mod devices;
 mod linestate;
 mod live_lastsnap;
 mod machines_claim;
+mod messages;
 mod outcomes;
 mod peermsg;
 mod r2_livepush;
