@@ -176,7 +176,10 @@ image's `/etc/resolv.conf` names public resolvers.
 
 ## Costs
 
-AWS eu-central-1 on demand: m7i.xlarge USD 0.2415/h per host (two sessions), each host at least 15 min, plus its
+AWS eu-central-1 on demand: m7i.xlarge USD 0.2415/h per host (four sessions), billed by the second after its first
+minute. The fabric is lazy (Deyao, 2026-11-20: save cost aggressively): no spare slots, no warm-up hints (only
+YYC AI's pigeon sends them), and an empty host goes 60 s after its launch at the earliest (`minHostLifetimeSeconds`;
+YYC AI keeps 15 min), its lone frozen sandboxes pushed to S3 first. Plus its
 public IPv4 USD 0.005/h and gp3 disk USD 0.0952 per GB-month while it runs; traffic out of AWS USD 0.09/GB (the
 JuiceFS data written to Hetzner included).
 

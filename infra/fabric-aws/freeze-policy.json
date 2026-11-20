@@ -10,8 +10,19 @@
     {
       "Sid": "FrozenImages",
       "Effect": "Allow",
-      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject", "s3:AbortMultipartUpload"],
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:AbortMultipartUpload"
+      ],
       "Resource": "arn:aws:s3:::jarvis4-fabric-images-795109470764/frozen/*"
+    },
+    {
+      "Sid": "UnusedImages",
+      "Effect": "Allow",
+      "Action": "s3:DeleteObject",
+      "Resource": "arn:aws:s3:::jarvis4-fabric-images-795109470764/images/*"
     }
   ]
 }
