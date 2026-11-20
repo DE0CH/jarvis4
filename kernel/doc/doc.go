@@ -20,14 +20,15 @@ import (
 // ---- objects ---------------------------------------------------------------------------------------------------
 
 // Object: "sink", "source-<32 hex>" or a machine: "fly-<Fly machine id>", "aws-<EC2 instance id>" (DECISIONS: the
-// AWS runner, docs/PLAN-aws.md) or "fabric-x<the sandbox's id at the fabric hermit, 32 hex>" (docs/PLAN-fabric.md)
+// AWS runner, docs/PLAN-aws.md), "fabric-x<the sandbox's id at the fabric hermit, 32 hex>" (docs/PLAN-fabric.md) or
+// "flypreload-<Fly machine id>" (a machine the preloader made on a preloaded volume, docs/PLAN-one-image.md)
 type Object string
 
 const Sink Object = "sink"
 
 var (
 	sourceRE  = regexp.MustCompile(`^source-[0-9a-f]{32}$`)
-	machineRE = regexp.MustCompile(`^(fly-[0-9a-f]{8,32}|aws-i-[0-9a-f]{8,17}|fabric-x[0-9a-f]{32})$`)
+	machineRE = regexp.MustCompile(`^((fly|flypreload)-[0-9a-f]{8,32}|aws-i-[0-9a-f]{8,17}|fabric-x[0-9a-f]{32})$`)
 	imageRE   = regexp.MustCompile(`^[a-z0-9./-]+(:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@sha256:[0-9a-f]{64}$`)
 	hex64RE   = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
@@ -45,7 +46,7 @@ func (o Object) Kind() string {
 	return ""
 }
 
-// Runner: where a machine object runs, "fly", "aws" or "fabric" ("" for the sink and a source)
+// Runner: where a machine object runs, "fly", "flypreload", "aws" or "fabric" ("" for the sink and a source)
 func (o Object) Runner() string {
 	if o.Kind() != "machine" {
 		return ""
@@ -95,6 +96,9 @@ const (
 	BySpawner  = "spawner"
 	ByIdentity = "identity"
 	ByGullible = "gullible"
+	// ByPreloader: the preloader, the spawner's counterpart for the fly-preload runner (docs/PLAN-one-image.md): the
+	// same rows of the table, for flypreload-* machines only, which the spawner may not sign for
+	ByPreloader = "preloader"
 )
 
 // Cert: a succession cert (pred → succ with pair), signed by Signer

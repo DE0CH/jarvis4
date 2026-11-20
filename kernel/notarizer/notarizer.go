@@ -110,10 +110,18 @@ func rule(c doc.Cert) error {
 		ok = true
 	case doc.ByIPhone:
 		ok = pk == "sink" && sk == "source" || pk == "source" && sk == "machine"
-	case doc.BySpawner:
+	case doc.BySpawner, doc.ByPreloader:
+		// the same rows for both, each for its own machines: the preloader's are flypreload-*, the spawner's the rest
 		ok = pk == "source" && sk == "machine" || pk == "machine" && sk == "source"
 		if ok && !c.Pair.Leq(perm.Top()) || ok && !perm.Top().Leq(c.Pair) {
-			return fmt.Errorf("the spawner attests Fly facts only: its pair is ⊤")
+			return fmt.Errorf("the %s attests Fly facts only: its pair is ⊤", c.Signer)
+		}
+		m := c.Succ
+		if pk == "machine" {
+			m = c.Pred
+		}
+		if ok && (m.Runner() == "flypreload") != (c.Signer == doc.ByPreloader) {
+			return fmt.Errorf("%s is not the %s's machine", m, c.Signer)
 		}
 	case doc.ByIdentity:
 		ok = pk == "machine" && same
@@ -199,7 +207,7 @@ func (n *Notarizer) Notarize(in Input) (sig.Doc, error) {
 		if !n.defined[c.Pred] {
 			return sig.Doc{}, serve.Fail(409, "%s was never defined", c.Pred)
 		}
-		first := c.Signer == doc.BySpawner || c.Signer == doc.ByIPhone // the table's "first successor" rows
+		first := c.Signer == doc.BySpawner || c.Signer == doc.ByPreloader || c.Signer == doc.ByIPhone // the table's "first successor" rows
 		if first && n.succeeded[c.Pred] {
 			return sig.Doc{}, serve.FailBecause(409, ReasonHasSuccessor, "%s already has a successor", c.Pred)
 		}

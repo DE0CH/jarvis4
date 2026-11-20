@@ -37,7 +37,7 @@ import (
 )
 
 // Roles: every kernel component (a copy has one of each)
-var Roles = []string{"notary", "notarizer", "mover", "merger", "spawner", "identity", "gullible", "minter", "secrets"}
+var Roles = []string{"notary", "notarizer", "mover", "merger", "spawner", "preloader", "identity", "gullible", "minter", "secrets"}
 
 // Copy: one kernel copy's running components
 type Copy struct {
@@ -115,7 +115,7 @@ func (k *Kernel) startCopy(t testing.TB, name string) *Copy {
 		k.Copies[name] = cp
 	}
 	cp.URL = map[string]string{}
-	for _, role := range Roles[:8] {
+	for _, role := range Roles[:len(Roles)-1] { // secrets (last) is started apart
 		c, err := sig.NewComponent(role)
 		if err != nil {
 			t.Fatal(err)
@@ -141,6 +141,12 @@ func (k *Kernel) startCopy(t testing.TB, name string) *Copy {
 			merger.Register(s, merger.New(c.Signer, trust))
 		case "spawner":
 			sp, err := spawner.Open(filepath.Join(cp.dir, "spawner"), c, trust, k.Fly, nil, k.env, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			spawner.Register(s, sp)
+		case "preloader":
+			sp, err := spawner.OpenRole(spawner.PreloaderRole, filepath.Join(cp.dir, "preloader"), c, trust, k.Fly, nil, k.env, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -189,7 +195,7 @@ func (k *Kernel) Other() string {
 func (k *Kernel) Release(t testing.TB) *Copy {
 	cp := k.startCopy(t, k.Other())
 	cp.retired = nil
-	for _, role := range Roles[:8] {
+	for _, role := range Roles[:len(Roles)-1] { // secrets (last) is started apart
 		cp.retired = append(cp.retired, k.identityAt(k.Active, role))
 	}
 	cp.retired = append(cp.retired, k.Copies[k.Active].retired...)
@@ -296,7 +302,7 @@ func (k *Kernel) Flip(t testing.TB) {
 		}
 		handoffs[role] = h
 	}
-	for _, role := range []string{"notarizer", "spawner", "secrets"} {
+	for _, role := range []string{"notarizer", "spawner", "preloader", "secrets"} {
 		if _, err := postTo(k.Copies[to].URL[role], "/takeover", map[string]any{"handoff": handoffs[role]}); err != nil {
 			t.Fatalf("%s's takeover: %v", role, err)
 		}
