@@ -7,6 +7,7 @@
 // to nothing shows why in amber, and the count heads the page.
 // Below the Fly orgs: the Hetzner runners (project "runners", router/runners.go), each with the session that owns it;
 // one with no session, a session that is gone or a paused session nothing will wake shows why in amber and has Delete.
+// Then a link to the fabric's operator page (router/fabricops.go).
 import { api, ago, REGION, sessionTitle, type Machine, type FlyAppView, type FlyOrgView, type FlyVolumeView, type Runner, type RunnersView } from "../lib/api";
 import { useStore, getStore, ask, exclusive, pend, failed, setTab, loadMachines, toast } from "../lib/store";
 import { BadgeList, Callout, Card, Flex, Heading, Lbl, Muted, P, Pill, Row, Rows, Spinner } from "../ui/kit";
@@ -196,6 +197,20 @@ function RunnersSection({ rv }: { rv: RunnersView }) {
   );
 }
 
+// the fabric's hosts, sandboxes and scaler: its hermit's own operator page, as YYC AI's admins see theirs
+// (router/fabricops.go; Deyao, 2026-11-20), opened in a tab of its own
+function FabricSection() {
+  return (
+    <Flex dir="column" mt={6} data={{ fabricOps: "1" }}>
+      <Lbl mt={0}>The fabric (AWS eu-central-1)</Lbl>
+      <Rows>
+        <Row label="Hosts, sandboxes, scaler" id="fabric-ops"><a href="/api/fabric/ops/" target="_blank" rel="noopener">Open the fabric's operator page</a></Row>
+      </Rows>
+      <Muted mt={1}>The fabric hermit's own page (status, hosts and their slots, live and frozen sandboxes, the scaler, errors). Its cost is under Settings, Spend.</Muted>
+    </Flex>
+  );
+}
+
 export function Machines() {
   const ms = useStore((s) => s.machines), fo = useStore((s) => s.flyOrgs), rv = useStore((s) => s.hzRunners);
   if (!ms.loaded) return ms.err ? <P size={2} color="red">{"Could not list machines: " + ms.err}</P> : <Flex gap={2} align="center"><Spinner /><Muted>Loading…</Muted></Flex>;
@@ -213,6 +228,7 @@ export function Machines() {
       {!!ms.err && <P size={2} color="red" mt={2}>{"Could not refresh: " + ms.err}</P>}
       {fo.orgs.map((o) => <OrgSection key={o.org} o={o} />)}
       {!!rv && <RunnersSection rv={rv} />}
+      <FabricSection />
     </>
   );
 }

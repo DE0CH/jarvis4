@@ -2,7 +2,7 @@
 name = "jarvis-tools"
 version = "0.1.0"
 edition = "2024"
-description = "A Jarvis 4 session's own tools: schedule-wakeup, schedule-cron (its router crons), retire-session, time-machine, aviary-sandbox, session-entrypoint and workspace-layer"
+description = "A Jarvis 4 session's own tools: schedule-wakeup, schedule-cron (its router crons), retire-session, time-machine, jarvis-tail, aviary-sandbox, session-entrypoint and workspace-layer"
 
 [[bin]]
 name = "jarvis-tools"

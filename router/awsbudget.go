@@ -38,6 +38,15 @@ import (
 // awsBudgetRegions: the session regions (kernel/spawner/aws.go AWSRegions; infra/aws builds nothing elsewhere)
 var awsBudgetRegions = []string{"eu-west-2", "ap-southeast-1", "ap-northeast-1"}
 
+// awsFabricRegion: the fabric's hosts (docs/PLAN-fabric.md): listed beside the session regions, and everything in it,
+// with the fabric's buckets, is the fabric's part of the AWS spend (nothing else of Jarvis 4 runs there)
+const awsFabricRegion = "eu-central-1"
+
+// awsListRegions: every region the estimate lists
+func awsListRegions() []string {
+	return append(append([]string{}, awsBudgetRegions...), awsFabricRegion)
+}
+
 // awsInstanceRates: USD an hour, on-demand Linux, shared tenancy, for every instance type kernel/spawner/aws.go
 // instanceType uses, per region. From AWS's Price List API (pricing:GetProducts, service AmazonEC2, read 2026-11-04;
 // the same figures as aws.amazon.com/ec2/pricing/on-demand). A type not listed is priced at the dearest listed (the
@@ -49,6 +58,8 @@ var awsInstanceRates = map[string]map[string]float64{
 		"r7i.2xlarge": 0.6384, "r7i.4xlarge": 1.2768, "r7i.8xlarge": 2.5536},
 	"ap-northeast-1": {"t3.medium": 0.0544, "t3.large": 0.1088, "m7i.xlarge": 0.2604, "m7i.2xlarge": 0.5208,
 		"r7i.2xlarge": 0.6384, "r7i.4xlarge": 1.2768, "r7i.8xlarge": 2.5536},
+	// the fabric's hosts and its AMI builder (Price List API, read 2026-11-20)
+	awsFabricRegion: {"t3.large": 0.096, "m7i.xlarge": 0.2415},
 }
 
 // awsStorageRates: USD per GB-month, from the Price List API (read 2026-11-04; aws.amazon.com/ebs/pricing): gp3
@@ -59,7 +70,12 @@ var awsStorageRates = map[string]struct{ GP3, Snapshot float64 }{
 	"eu-west-2":      {0.0928, 0.053},
 	"ap-southeast-1": {0.096, 0.05},
 	"ap-northeast-1": {0.096, 0.05},
+	awsFabricRegion:  {0.0952, 0.054}, // read 2026-11-20
 }
+
+// awsS3Rates: S3 Standard, USD per GB-month for the first 50 TB (Price List API AmazonS3 TimedStorage-ByteHrs, read
+// 2026-11-20), for the buckets of AWS_BUDGET_BUCKETS
+var awsS3Rates = map[string]float64{awsFabricRegion: 0.0245}
 
 // awsIPv4PerHour: a public IPv4 address, in use or idle, every region (Price List API AmazonVPC
 // PublicIPv4:InUseAddress / IdleAddress, read 2026-11-04; aws.amazon.com/vpc/pricing)
@@ -113,11 +129,18 @@ type awsSnapshot struct {
 
 type awsAddress struct{ Region, PublicIP string }
 
+// awsBucket: one bucket of AWS_BUDGET_BUCKETS and the bytes it holds
+type awsBucket struct {
+	Region, Name string
+	Bytes        int64
+}
+
 type awsInventory struct {
 	Instances []awsInstance
 	Volumes   []awsVolume
 	Snapshots []awsSnapshot
 	Addresses []awsAddress
+	Buckets   []awsBucket
 }
 
 // awsCoster: AWS read only (the real one: awsCostAPI; tests: a fake)
@@ -137,7 +160,11 @@ type awsBurn struct {
 	Snapshots    int
 	SnapshotGB   float64
 	IPv4         int
+	BucketGB     float64
 	UnknownTypes []string
+	// the fabric's part of RatePerHour (awsFabricRegion and its buckets), its running hosts and its buckets' GB
+	FabricRatePerHour float64
+	FabricRunning     int
 }
 
 func awsBurnRate(inv awsInventory) awsBurn {
@@ -153,8 +180,12 @@ func awsBurnRate(inv awsInventory) awsBurn {
 		}
 		b.RatePerHour += p
 		b.Running++
+		if in.Region == awsFabricRegion {
+			b.FabricRatePerHour += p
+			b.FabricRunning++
+		}
 		if in.PublicIP != "" {
-			ips[in.PublicIP] = true
+			ips[in.PublicIP] = in.Region == awsFabricRegion
 		}
 	}
 	for _, v := range inv.Volumes {
@@ -163,6 +194,9 @@ func awsBurnRate(inv awsInventory) awsBurn {
 		}
 		gp3, _ := awsStorageRate(v.Region)
 		b.RatePerHour += float64(v.SizeGB) * gp3 / hoursPerMonth
+		if v.Region == awsFabricRegion {
+			b.FabricRatePerHour += float64(v.SizeGB) * gp3 / hoursPerMonth
+		}
 		b.Volumes++
 		b.VolumeGB += v.SizeGB
 	}
@@ -176,16 +210,33 @@ func awsBurnRate(inv awsInventory) awsBurn {
 		}
 		_, snap := awsStorageRate(s.Region)
 		b.RatePerHour += gb * snap / hoursPerMonth
+		if s.Region == awsFabricRegion {
+			b.FabricRatePerHour += gb * snap / hoursPerMonth
+		}
 		b.Snapshots++
 		b.SnapshotGB += gb
 	}
 	for _, a := range inv.Addresses { // Elastic IPs: billed attached or not; an attached one is its instance's address
 		if a.PublicIP != "" {
-			ips[a.PublicIP] = true
+			ips[a.PublicIP] = ips[a.PublicIP] || a.Region == awsFabricRegion
 		}
 	}
 	b.IPv4 = len(ips)
 	b.RatePerHour += float64(b.IPv4) * awsIPv4PerHour
+	for _, fabric := range ips {
+		if fabric {
+			b.FabricRatePerHour += awsIPv4PerHour
+		}
+	}
+	for _, k := range inv.Buckets {
+		gb := float64(k.Bytes) / (1 << 30)
+		rate := gb * awsS3Rates[k.Region] / hoursPerMonth
+		b.BucketGB += gb
+		b.RatePerHour += rate
+		if k.Region == awsFabricRegion {
+			b.FabricRatePerHour += rate
+		}
+	}
 	sort.Strings(b.UnknownTypes)
 	return b
 }
@@ -203,7 +254,10 @@ type awsCostAPI struct {
 	id, secret string
 	http       *http.Client
 	ec2        func(region string) string // endpoints (vars: tests point them at a fake)
+	s3         func(region, bucket string) string
 	sts, ce    string
+	buckets    []awsBucket // AWS_BUDGET_BUCKETS: the buckets counted (Bytes: their last listing)
+	bucketsAt  time.Time
 	now        func() time.Time
 
 	mu      sync.Mutex
@@ -215,6 +269,7 @@ type awsCostAPI struct {
 func newAWSCostAPI(id, secret string) *awsCostAPI {
 	return &awsCostAPI{id: id, secret: secret, http: &http.Client{Timeout: 30 * time.Second},
 		ec2: func(region string) string { return "https://ec2." + region + ".amazonaws.com/" },
+		s3:  func(region, bucket string) string { return "https://" + bucket + ".s3." + region + ".amazonaws.com/" },
 		sts: "https://sts.amazonaws.com/", ce: "https://ce.us-east-1.amazonaws.com/", now: time.Now,
 		last: map[string]awsInventory{}, slowAt: map[string]time.Time{}}
 }
@@ -419,7 +474,7 @@ func (a *awsCostAPI) Inventory(now time.Time) (awsInventory, error) {
 			firstErr = err
 		}
 	}
-	for _, region := range awsBudgetRegions {
+	for _, region := range awsListRegions() {
 		a.mu.Lock()
 		cur, slowAt := a.last[region], a.slowAt[region]
 		a.mu.Unlock()
@@ -459,7 +514,86 @@ func (a *awsCostAPI) Inventory(now time.Time) (awsInventory, error) {
 		all.Snapshots = append(all.Snapshots, cur.Snapshots...)
 		all.Addresses = append(all.Addresses, cur.Addresses...)
 	}
+	// the buckets, as slowly as snapshots: a listing is a request per 1000 objects (USD 0.005 per 1000 requests)
+	a.mu.Lock()
+	due := now.Sub(a.bucketsAt) >= awsSnapshotEvery
+	a.mu.Unlock()
+	if due {
+		ok := true
+		for i := range a.buckets {
+			n, err := a.bucketBytes(a.buckets[i].Region, a.buckets[i].Name)
+			if err != nil {
+				keep(err)
+				ok = false
+				continue
+			}
+			a.mu.Lock()
+			a.buckets[i].Bytes = n
+			a.mu.Unlock()
+		}
+		if ok {
+			a.mu.Lock()
+			a.bucketsAt = now
+			a.mu.Unlock()
+		}
+	}
+	a.mu.Lock()
+	all.Buckets = append(all.Buckets, a.buckets...)
+	a.mu.Unlock()
 	return all, firstErr
+}
+
+// bucketBytes: the bytes a bucket holds (S3 ListObjectsV2, every page; the read-only key's s3:ListBucket)
+func (a *awsCostAPI) bucketBytes(region, bucket string) (int64, error) {
+	var total int64
+	token := ""
+	for {
+		q := url.Values{"list-type": {"2"}, "max-keys": {"1000"}}
+		if token != "" {
+			q.Set("continuation-token", token)
+		}
+		req, _ := http.NewRequest("GET", a.s3(region, bucket)+"?"+q.Encode(), nil)
+		awsSignV4(req, nil, a.id, a.secret, region, "s3", a.now())
+		resp, err := a.http.Do(req)
+		if err != nil {
+			return 0, err
+		}
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+		resp.Body.Close()
+		if resp.StatusCode/100 != 2 {
+			msg := strings.TrimSpace(string(b))
+			return 0, fmt.Errorf("s3 %s: HTTP %d %s", bucket, resp.StatusCode, msg[:min(300, len(msg))])
+		}
+		var r struct {
+			Truncated bool   `xml:"IsTruncated"`
+			Next      string `xml:"NextContinuationToken"`
+			Contents  []struct {
+				Size int64 `xml:"Size"`
+			} `xml:"Contents"`
+		}
+		if err := xml.Unmarshal(b, &r); err != nil {
+			return 0, err
+		}
+		for _, c := range r.Contents {
+			total += c.Size
+		}
+		if !r.Truncated || r.Next == "" {
+			return total, nil
+		}
+		token = r.Next
+	}
+}
+
+// awsBudgetBuckets: AWS_BUDGET_BUCKETS ("region/bucket,…"; the fabric's image bucket), the buckets the estimate counts
+func awsBudgetBuckets(v string) []awsBucket {
+	var out []awsBucket
+	for _, it := range strings.Split(v, ",") {
+		region, name, ok := strings.Cut(strings.TrimSpace(it), "/")
+		if ok && region != "" && name != "" {
+			out = append(out, awsBucket{Region: region, Name: name})
+		}
+	}
+	return out
 }
 
 // Account: the key's own account (STS GetCallerIdentity: needs no permission)
@@ -535,7 +669,9 @@ func awsCosterFromEnv() awsCoster {
 	if id == "" || secret == "" {
 		return nil
 	}
-	return newAWSCostAPI(id, secret)
+	a := newAWSCostAPI(id, secret)
+	a.buckets = awsBudgetBuckets(os.Getenv("AWS_BUDGET_BUCKETS"))
+	return a
 }
 
 // ---- the tick's AWS part ------------------------------------------------------------------------------
@@ -602,8 +738,8 @@ func (p *awsBudgetPart) view(r *Router, s BudgetState) map[string]any {
 	other, owned := []map[string]string{}, []map[string]string{}
 	r.st.Do(func(d *persisted) {
 		for _, in := range p.inv.Instances {
-			if in.State == "terminated" || in.State == "shutting-down" {
-				continue
+			if in.State == "terminated" || in.State == "shutting-down" || in.Region == awsFabricRegion {
+				continue // the fabric's hosts are its hermit's (the fabric part of the view)
 			}
 			if ss := d.Sessions[d.Machines[in.ID]]; ss != nil && ss.MachineID == in.ID {
 				continue
@@ -623,7 +759,11 @@ func (p *awsBudgetPart) view(r *Router, s BudgetState) map[string]any {
 		"ratePerHour": p.burn.RatePerHour, "perMonth": p.burn.RatePerHour * hoursPerMonth, "running": p.burn.Running,
 		"volumes": p.burn.Volumes, "volumeGb": p.burn.VolumeGB, "snapshots": p.burn.Snapshots,
 		"snapshotGb": math.Round(p.burn.SnapshotGB*10) / 10, "publicIpv4": p.burn.IPv4, "account": p.acct,
-		"regions": awsBudgetRegions, "other": other, "owned": owned, "error": nil, "billedError": nil}
+		"regions": awsListRegions(), "other": other, "owned": owned, "error": nil, "billedError": nil,
+		"bucketGb": math.Round(p.burn.BucketGB*10) / 10,
+		// the fabric's part (docs/PLAN-fabric.md): its hosts, disks, AMI snapshots, addresses and image bucket
+		"fabric": map[string]any{"estimateUsd": s.FabricUSD, "ratePerHour": p.burn.FabricRatePerHour,
+			"perMonth": p.burn.FabricRatePerHour * hoursPerMonth, "hosts": p.burn.FabricRunning, "region": awsFabricRegion}}
 	if p.err != "" {
 		v["error"] = p.err
 	}

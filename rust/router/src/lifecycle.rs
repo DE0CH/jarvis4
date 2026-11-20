@@ -733,16 +733,19 @@ impl Router {
         };
         let from = started.add(-LC_LEAD);
         let h = LcHandle::new(Some(self.clone()), run.clone(), false);
+        let session = run.lock().op.session.clone();
+        let runner = self.runner_of_session(&session);
         for m in &machines {
-            if crate::awsrunner::is_aws_machine(m) {
-                if (hooks.aws_on)() {
-                    self.lc_poll_aws(run, m, started, &hooks);
+            match runner.as_str() {
+                "aws" => {
+                    if (hooks.aws_on)() {
+                        self.lc_poll_aws(run, m, started, &hooks);
+                    }
+                    continue;
                 }
-                continue;
-            }
-            if crate::fabricrunner::is_fabric_machine(m) {
-                // no machine on Fly: the router's own steps and the supervisor's lines are its log
-                continue;
+                "fly" => {}
+                // the fabric: no machine on Fly, the router's own steps and the supervisor's lines are its log
+                _ => continue,
             }
             if !(hooks.fly_on)() {
                 continue;

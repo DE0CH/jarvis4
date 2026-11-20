@@ -16,6 +16,7 @@ mod inbox;
 mod leases;
 mod linestate;
 mod live_lastsnap;
+mod livetail;
 mod machines_claim;
 mod messages;
 mod outcomes;
