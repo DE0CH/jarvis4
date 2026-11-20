@@ -260,7 +260,7 @@ fn write_private(p: &Path, s: &str) -> Result<()> {
 
 /// merge.yml: decide, then act
 fn merge(gh: &Gh) -> Result<()> {
-    let (branch, sha) = (env("GATE_BRANCH")?, env("GATE_SHA")?);
+    let (branch, tested) = (env("GATE_BRANCH")?, env("GATE_SHA")?);
     let base = gh.default_branch()?;
     if branch == base {
         return Ok(());
@@ -292,6 +292,22 @@ fn merge(gh: &Gh) -> Result<()> {
             conclusion: r["conclusion"].as_str().unwrap_or("").into(),
         })
         .collect();
+    // the branch's head decides, whichever of its commits this run finished on (decide.rs decides_for)
+    let head = match gh.call(
+        reqwest::Method::GET,
+        &format!("/git/ref/heads/{branch}"),
+        None,
+    )? {
+        (200, v) => v["object"]["sha"].as_str().map(String::from),
+        _ => None,
+    };
+    let Some(sha) = decide::decides_for(&tested, head.as_deref(), &runs) else {
+        println!(
+            "{branch} at {tested}: the branch is gone or was just pushed again; its newer commit's runs decide"
+        );
+        return Ok(());
+    };
+    let current = true;
     let cmp = gh.get(&format!("/compare/{base}...{sha}"))?;
     let mut commits: std::collections::BTreeSet<String> = cmp["commits"]
         .as_array()
@@ -303,14 +319,6 @@ fn merge(gh: &Gh) -> Result<()> {
         .unwrap_or_default();
     commits.insert(sha.clone());
     let runs = decide::latest(&runs, &commits, OWN);
-    let current = match gh.call(
-        reqwest::Method::GET,
-        &format!("/git/ref/heads/{branch}"),
-        None,
-    )? {
-        (200, v) => v["object"]["sha"] == sha.as_str(),
-        _ => false,
-    };
     let pr = gh.open_pr(&branch)?;
     let rel = match cmp["status"].as_str() {
         Some("ahead") => Rel::Ahead,
@@ -319,7 +327,7 @@ fn merge(gh: &Gh) -> Result<()> {
         _ => Rel::Diverged,
     };
     let action = decide::decide(&branch, &runs, current, pr.is_some(), rel);
-    println!("{branch} at {sha}: {action:?}");
+    println!("{branch} at {sha} (a run on {tested} finished): {action:?}");
     // GATE_DRY=1: the decision only (a check from a session against a repo's real runs)
     if std::env::var("GATE_DRY").is_ok_and(|v| v == "1") {
         for r in &runs {
