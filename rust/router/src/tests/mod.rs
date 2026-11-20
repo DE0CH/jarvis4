@@ -13,6 +13,7 @@ mod content_drain;
 mod core_mq_sealed;
 mod db;
 mod devices;
+mod discord;
 mod inbox;
 mod leases;
 mod linestate;

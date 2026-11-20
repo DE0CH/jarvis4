@@ -150,6 +150,8 @@ pub struct Router {
     pub records_off: std::sync::atomic::AtomicBool,
     /// discord.rs: this router's DMs go here instead of the bot (tests)
     pub dm_hook: RwLock<Option<crate::discord::DmHook>>,
+    /// tests: this router's own Discord client instead of the global one (tests run side by side)
+    pub disc_hook: RwLock<Option<Arc<crate::discord::DiscordClient>>>,
     pub muxes: OnceLock<(Arc<Mux>, Arc<Mux>)>,
     /// http.rs: every app route's pattern (apicalls.rs classifies them)
     pub app_patterns: OnceLock<BTreeMap<String, bool>>,
@@ -201,6 +203,7 @@ impl Router {
             next: crate::nextcore::NextCores::from_env(),
             box_override: RwLock::new(None),
             dm_hook: RwLock::new(None),
+            disc_hook: RwLock::new(None),
             records_off: std::sync::atomic::AtomicBool::new(false),
             deliver_hook: RwLock::new(None),
             resume_failed_hook: RwLock::new(None),
