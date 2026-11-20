@@ -1253,3 +1253,96 @@ impl Default for OpsRig {
         OpsRig::new()
     }
 }
+
+/// a request to the public listener with headers (NoAccess routers only; sessionops_test.go's appDo)
+pub fn app_do(
+    r: &Router,
+    method: &str,
+    target: &str,
+    body: &str,
+    hdr: &[(&str, &str)],
+) -> (u16, serde_json::Value) {
+    let h = r.arc().handler();
+    let mut req = Req::new(method, target, body.as_bytes());
+    for (k, v) in hdr {
+        req = req.with_header(k, v);
+    }
+    let mut w = W::recorder();
+    h(&mut w, &mut req);
+    (
+        w.status(),
+        serde_json::from_str(&w.body_text()).unwrap_or(serde_json::Value::Null),
+    )
+}
+
+/// plays the machine for r.exec: records each command and answers with code, until the guard goes
+/// (sessionops_test.go's answerExecs)
+pub struct ExecAnswerer {
+    pub cmds: Arc<std::sync::Mutex<Vec<String>>>,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    th: Option<std::thread::JoinHandle<()>>,
+}
+
+impl ExecAnswerer {
+    pub fn cmds(&self) -> Vec<String> {
+        self.cmds.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+}
+
+impl Drop for ExecAnswerer {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        if let Some(th) = self.th.take() {
+            let _ = th.join();
+        }
+    }
+}
+
+pub fn answer_execs(r: &Arc<Router>, machine: &str, code: i64) -> ExecAnswerer {
+    let cmds: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (r, machine, c2, s2) = (r.clone(), machine.to_string(), cmds.clone(), stop.clone());
+    let th = std::thread::spawn(move || {
+        while !s2.load(std::sync::atomic::Ordering::SeqCst) {
+            let Some(b) = mq_wait_kind(&r, &machine, "exec", std::time::Duration::from_millis(50))
+            else {
+                continue;
+            };
+            let it: crate::grants::ExecItem = serde_json::from_str(&b).unwrap_or_default();
+            let req: serde_json::Value = serde_json::from_str(&it.request).unwrap_or_default();
+            c2.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(req["cmd"].as_str().unwrap_or_default().to_string());
+            r.exec_result(crate::grants::ExecResult {
+                id: req["id"].as_str().unwrap_or_default().to_string(),
+                code,
+                ..Default::default()
+            });
+        }
+    });
+    ExecAnswerer {
+        cmds,
+        stop,
+        th: Some(th),
+    }
+}
+
+/// a stored grant as if the phone had signed it (the machine's checks are tested in rust/machine/;
+/// sessionops_test.go's addGrant)
+pub fn add_grant_kind(r: &Router, session: &str, holder: &str, kind: &str) {
+    let id = crate::util::rand_id();
+    let g = crate::grants::StoredGrant {
+        id: id.clone(),
+        session: session.into(),
+        holder: holder.into(),
+        kind: kind.into(),
+        ends: jarvis_go::GoTime::now().add_std(std::time::Duration::from_secs(300)),
+        doc: Some(Doc {
+            payload: "{}".into(),
+            sig: String::new(),
+        }),
+    };
+    r.st.do_(|d| {
+        d.grants.insert(id.clone(), g.clone());
+    });
+}
