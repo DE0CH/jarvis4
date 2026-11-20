@@ -11,7 +11,8 @@ has SSH or a reachable k8s API: they change only through git, and a box git can'
 `git push` to main. The `images` workflow builds the core, router and session images, then pins them by digest in
 `k8s/control/apps/` (and signs the session image for the phone, `SESSION_IMAGE_SIG`); `services.yml` builds and pins
 the services box's images in `k8s/services/apps/`. Each box's Flux applies its own tree within a minute.
-The session image stands on its base, `session-image/base/` (every tool, harness launcher and the entrypoint: add a
+The session image stands on its base, `session-image/base/` (every tool and harness launcher; the entrypoint and the workspace layer are
+Rust in `session-image/tools/`, built into the session image: add a
 tool a session should always have to `session-image/base/Dockerfile` and push). The workflow's `base` job rebuilds the base
 only when that directory changed since the base pinned in `session-image/Dockerfile` (`ARG BASE=…jarvis2-session:base-sha-<12>@sha256:…`),
 or on `gh workflow run images -R DE0CH/jarvis2 -f base=true` (newer tools, the latest claude CLI); it takes 20-30 min,

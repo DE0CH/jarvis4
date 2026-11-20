@@ -5,14 +5,18 @@
 //!   retire-session                  check the session can go, then ask the router to destroy it (retire.rs)
 //!   time-machine                    a fabric session waits frozen until a time or anything that arrives (timemachine.rs)
 //!   aviary-sandbox                  (as root) an aviary session's sandbox in aviary's own image (aviary_sandbox.rs)
+//!   session-entrypoint              the session's steps before its harness, then the harness (entrypoint.rs)
+//!   workspace-layer                 the multi-repo workspace's CLAUDE.md, links and settings (workspace_layer.rs)
 //! or `jarvis-tools <tool> …`. Every router call goes to `$JARVIS_URL/api/sessions/$SESSION_ID/…`: the machine's local
 //! proxy signs it with the machine key and forwards it to the router (/m/api).
 
 mod aviary;
 mod aviary_sandbox;
+mod entrypoint;
 mod retire;
 mod schedule;
 mod timemachine;
+mod workspace_layer;
 
 use serde_json::Value;
 use std::process::ExitCode;
@@ -81,13 +85,15 @@ fn main() -> ExitCode {
         ),
         "aviary-sandbox" => (aviary_sandbox::run(&args), aviary_sandbox::TAG),
         "time-machine" => (timemachine::run(&args), "ERROR"),
+        "session-entrypoint" => (entrypoint::run(), entrypoint::TAG),
+        "workspace-layer" => (workspace_layer::run(&args), workspace_layer::TAG),
         "retire-session" => (
             retire::run(args.first().is_some_and(|a| a == "--check")),
             "BLOCKED",
         ),
         _ => (
             Err(
-                "usage: jarvis-tools schedule-wakeup|schedule-cron|retire-session|time-machine|aviary-sandbox …"
+                "usage: jarvis-tools schedule-wakeup|schedule-cron|retire-session|time-machine|aviary-sandbox|workspace-layer|session-entrypoint …"
                     .into(),
             ),
             "ERROR",

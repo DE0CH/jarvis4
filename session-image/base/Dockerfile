@@ -176,9 +176,7 @@ RUN pip3 install --no-cache-dir --break-system-packages asyncvnc "camoufox[geoip
 # Hugging Face tokenizers.
 RUN pip3 install --no-cache-dir --break-system-packages "psycopg[binary]" psycopg-pool openpyxl opencc jieba pillow-heif \
       reportlab weasyprint markdown tokenizers
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY harness-claude.sh /usr/local/bin/harness-claude.sh
-COPY workspace-layer.sh /usr/local/bin/workspace-layer.sh
 COPY pull-secrets /usr/local/bin/pull-secrets
 COPY session-secret /usr/local/bin/session-secret
 COPY content-sync /usr/local/bin/content-sync
@@ -204,7 +202,7 @@ COPY opencode-transcript.py /usr/local/bin/opencode-transcript.py
 COPY paseo-front.js /usr/local/lib/paseo-front.js
 COPY api-proxy.js /usr/local/lib/api-proxy.js
 COPY cf-tunnel-agent.js /usr/local/lib/cf-tunnel-agent.js
-# Deyao's ssh into the session (jarvis-ssh, started by entrypoint.sh): sshd on 127.0.0.1:2222 behind the session's
+# Deyao's ssh into the session (jarvis-ssh, started by session-entrypoint): sshd on 127.0.0.1:2222 behind the session's
 # <id>-ssh tunnel, Cloudflare Access's short-lived certificates only (ssh-ca.pub; principal = his Access email's local
 # part). No host key in the image: each machine makes its own.
 COPY sshd_config /etc/ssh/jarvis_sshd_config
@@ -244,7 +242,7 @@ COPY harness-dsh.sh /usr/local/bin/harness-dsh.sh
 COPY dsh-profile-patch.py dsh-transcript.py dsh-send.py /usr/local/bin/
 COPY dsh-front.js /usr/local/lib/dsh-front.js
 RUN chmod +x /usr/local/bin/harness-dsh.sh /usr/local/bin/dsh-profile-patch.py /usr/local/bin/dsh-transcript.py /usr/local/bin/dsh-send.py
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/harness-claude.sh /usr/local/bin/workspace-layer.sh /usr/local/bin/pull-secrets /usr/local/bin/session-secret /usr/local/bin/content-sync /usr/local/bin/set-permission-mode
+RUN chmod +x /usr/local/bin/harness-claude.sh /usr/local/bin/pull-secrets /usr/local/bin/session-secret /usr/local/bin/content-sync /usr/local/bin/set-permission-mode
 USER claude
 WORKDIR /home/claude
 # Native claude binary for the claude user.
@@ -253,4 +251,4 @@ WORKDIR /home/claude
 ARG CLAUDE_REFRESH=2026-10-30
 RUN echo "claude cli refresh ${CLAUDE_REFRESH}" && curl -fsSL https://claude.ai/install.sh | bash && ~/.local/bin/claude --version
 ENV PATH=/home/claude/.local/bin:/opt/cargo/bin:/usr/local/bin:/usr/bin:/bin
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+# no ENTRYPOINT: the session image's is jarvis-machine boot, whose keeper starts session-entrypoint (jarvis-tools)

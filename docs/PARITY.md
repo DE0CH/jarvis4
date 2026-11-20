@@ -71,8 +71,8 @@ snapshots, live transcripts, task results).
 - Claude Code + Paseo (`paseo-claude`): new in Jarvis 4 (Deyao, 2026-10-20; DECISIONS 204), no Jarvis 1 counterpart. Brings `tunnel`, runs on a Claude account; the only harness besides `claude` whose running session switches accounts (no restart: its API proxy sends the new pair). Differences from `claude`: no Remote Control (the Paseo app and web UI instead), no claude.ai MCP connectors, Jarvis messages wait for the agent to be idle.
 - Claude Code · aviary (`aviary`): new in Jarvis 4 (Deyao, 2026-11-11; DE0CH/aviary jarvis/hermit/README.md), no Jarvis 1 counterpart:
   YYC AI's supervisor, pigeon and magpie, dogfooded. It replaced `cloudcli` (CloudCLI + the Jarvis 4 Chat app).
-- Session image: Jarvis 4 builds all of it. The base (tools, harnesses, entrypoint, supervisor, workspace layer, api-proxy,
-  content-sync, pull-secrets, session-secret) is `session-image/base/`, carried over from Jarvis 1's `selfhost/session-image/` (DECISIONS 100-102);
+- Session image: Jarvis 4 builds all of it. The base (tools, harnesses, supervisor, api-proxy,
+  content-sync, pull-secrets, session-secret) is `session-image/base/` (the entrypoint and the workspace layer are Rust in `session-image/tools/`), carried over from Jarvis 1's `selfhost/session-image/` (DECISIONS 100-102);
   Jarvis 1's image is no longer used. Fork pins (Jarvis 1's `fork-pin.yml`): present (`.github/workflows/fork-pin.yml`; the
   forks run it on every build, DECISIONS 156).
 - Workspace layer: to verify. on-start hooks: present.

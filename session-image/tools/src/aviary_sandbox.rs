@@ -33,7 +33,7 @@
 //!                            machine's ~/.harness, where the machine's own ~/.claude (its login, the transcript
 //!                            mirror) lives
 //!   /workspace               the harness's working directory WORKDIR: the one repo (~/workspace/<repo>), or
-//!                            ~/workspace with several (workspace-layer.sh), or the empty ~/workspace
+//!                            ~/workspace with several (workspace-layer), or the empty ~/workspace
 //!   /run/jarvis              the machine's (session-secret's socket, the ssh agent)
 //!   /run/jarvis-transcripts  the machine's transcript mirror, for harness-aviary.sh's copy out of the FUSE mount
 //!   /usr/local/bin/…         Jarvis's session commands ([`TOOLS`]), read-only binds of the machine's: without

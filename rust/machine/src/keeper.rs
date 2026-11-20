@@ -13,8 +13,9 @@
 //!                                 OOM-protected
 //!   supervisor-normal             root, user claude's file access, yes (backoff 1 s … 1 min)
 //!                                 the session's memory cgroup
-//!   the harness (entrypoint.sh    user claude                      yes (backoff 1 s … 1 min), with the same
-//!   → harness-*.sh)                                                conversation resumed
+//!   the harness                   user claude                      yes (backoff 1 s … 1 min), with the same
+//!   (session-entrypoint                                            conversation resumed
+//!   → harness-*.sh)
 //!
 //! A dead harness never ends the machine: the keeper logs how it ended and its uptime, kills what is left of its process
 //! group, and starts it again after the backoff with the secrets the supervisor holds now and JARVIS_HARNESS_START=n.
@@ -46,8 +47,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-/// Jarvis 1's entrypoint: the harness
-pub const BASE_ENTRY: &str = "/usr/local/bin/entrypoint.sh";
+/// the session's steps before its harness, then the harness (session-image/tools/src/entrypoint.rs)
+pub const BASE_ENTRY: &str = "/usr/local/bin/session-entrypoint";
 const HARNESS_BACKOFF0: Duration = Duration::from_secs(1);
 
 /// tests: the harness's entry, its first backoff and the secrets it starts with

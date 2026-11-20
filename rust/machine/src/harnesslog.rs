@@ -1,4 +1,4 @@
-//! The harness's own words in the supervisor log (Deyao, 2026-10-26): the harness launcher (entrypoint.sh,
+//! The harness's own words in the supervisor log (Deyao, 2026-10-26): the harness launcher (session-entrypoint,
 //! harness-*.sh) writes its steps to stdout as tagged lines ("[dsh] dsh web exited …", "[entrypoint] …"). The keeper
 //! copies those lines, and only those, into the supervisor log (tag "harness"), from where they go the way every
 //! supervisor line goes: through the secret redactor, to the router, shown only to Deyao's login. Anything else on the

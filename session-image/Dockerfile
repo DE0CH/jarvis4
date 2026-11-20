@@ -1,7 +1,7 @@
 # Jarvis 4 session image: the base (session-image/base/: tools, harnesses, entrypoint, supervisor, carried over from
 # Jarvis 1's session image) with Jarvis 4's machine side in front of it. jarvis-machine is the entry point: it makes the machine's key pairs, waits
 # for the core's init (which prints them), takes the core's key from its Fly config (the core sets it), checks the succession cert, restores the predecessor's snapshot, pulls the secrets,
-# then runs the base's entrypoint as its child (the keeper: rust/machine/src/keeper.rs). The base is pinned by digest in BASE below; moving it is a visible commit (the
+# then runs session-entrypoint (jarvis-tools) as its child (the keeper: rust/machine/src/keeper.rs). The base is pinned by digest in BASE below; moving it is a visible commit (the
 # images workflow's pin job writes it after building a changed session-image/base/, and builds this image from that
 # new base in the same run through --build-arg BASE).
 ARG BASE=ghcr.io/de0ch/jarvis4-session:base-sha-57c2af9a2632@sha256:79fd8749c8e66fc6d37e1e770db401a4d04d187689f0561472c5f7f53d23a582
@@ -28,7 +28,8 @@ RUN set -eu; \
     printf '%s  /aviary-gateway\n' "$sum" | sha256sum -c -; \
     install -D -m 755 /aviary-gateway /out/aviary-gateway
 
-# the session's own tools (session-image/tools/: schedule-wakeup, schedule-cron, retire-session, aviary-sandbox), one
+# the session's own tools (session-image/tools/: schedule-wakeup, schedule-cron, retire-session, time-machine,
+# aviary-sandbox, session-entrypoint, workspace-layer), one
 # Rust binary built and tested here so a session runs it and never builds it (Deyao, 2026-11-17: shell scripts are
 # banned). aviary-sandbox's own test needs root and mounts: images.yml runs it (cargo test -- --ignored under sudo)
 FROM rust:1.99.1-bookworm AS tools
@@ -73,7 +74,7 @@ COPY --chmod=644 session-image/claude-code/managed-settings.json session-image/c
 RUN printf '#!/bin/sh\nexec /usr/local/bin/jarvis-machine init\n' > /usr/local/bin/jarvis2-init \
  && chmod 755 /usr/local/bin/jarvis2-init \
  && ln -s /usr/local/bin/jarvis-machine /usr/local/bin/jarvis \
- && for t in schedule-wakeup schedule-cron retire-session time-machine aviary-sandbox; do ln -sfn /usr/local/bin/jarvis-tools /usr/local/bin/$t; done \
+ && for t in schedule-wakeup schedule-cron retire-session time-machine aviary-sandbox session-entrypoint workspace-layer; do ln -sfn /usr/local/bin/jarvis-tools /usr/local/bin/$t; done \
  && chmod -R a+rX,go-w /opt/jarvis/tasks
 USER claude
 # what the harness reads as user claude must be readable by it (see /etc/claude-code above): every directory searchable,

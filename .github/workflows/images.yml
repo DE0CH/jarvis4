@@ -1,7 +1,7 @@
 name: images
 # Jarvis 4's kernel, router and session images to GHCR (ghcr.io/de0ch/jarvis4-*), tagged sha-<12> and latest, and the
 # pin job's commit that moves k8s/cluster/ onto them by digest (Flux rolls them out on the one cluster). The router
-# image carries the app's web export. The session image's base (session-image/base/: the tools, harnesses, entrypoint)
+# image carries the app's web export. The session image's base (session-image/base/: the tools and harnesses)
 # is built only when that directory changed since the base it pins (or on a dispatch with base=true), pushed as
 # jarvis4-session:base-sha-<12>, and pinned in session-image/Dockerfile's BASE by the pin job.
 on:
