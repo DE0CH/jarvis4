@@ -1304,8 +1304,21 @@ impl Drop for ExecAnswerer {
 }
 
 pub fn answer_execs(r: &Arc<Router>, machine: &str, code: i64) -> ExecAnswerer {
+    answer_execs_with(r, machine, move |_, _| crate::grants::ExecResult {
+        code,
+        ..Default::default()
+    })
+}
+
+/// plays the machine for r.exec with answer(holder name, command) (remote_test.go's fakeMachine)
+pub fn answer_execs_with(
+    r: &Arc<Router>,
+    machine: &str,
+    answer: impl Fn(&str, &str) -> crate::grants::ExecResult + Send + 'static,
+) -> ExecAnswerer {
     let cmds: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
     let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let pubs = r.holder_public_keys().unwrap_or_default();
     let (r, machine, c2, s2) = (r.clone(), machine.to_string(), cmds.clone(), stop.clone());
     let th = std::thread::spawn(move || {
         while !s2.load(std::sync::atomic::Ordering::SeqCst) {
@@ -1315,14 +1328,19 @@ pub fn answer_execs(r: &Arc<Router>, machine: &str, code: i64) -> ExecAnswerer {
             };
             let it: crate::grants::ExecItem = serde_json::from_str(&b).unwrap_or_default();
             let req: serde_json::Value = serde_json::from_str(&it.request).unwrap_or_default();
+            let cmd = req["cmd"].as_str().unwrap_or_default().to_string();
+            let holder = req["holder"].as_str().unwrap_or_default();
+            let name = pubs
+                .iter()
+                .find(|(_, k)| k.as_str() == holder)
+                .map(|(n, _)| n.clone())
+                .unwrap_or_default();
             c2.lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .push(req["cmd"].as_str().unwrap_or_default().to_string());
-            r.exec_result(crate::grants::ExecResult {
-                id: req["id"].as_str().unwrap_or_default().to_string(),
-                code,
-                ..Default::default()
-            });
+                .push(cmd.clone());
+            let mut res = answer(&name, &cmd);
+            res.id = req["id"].as_str().unwrap_or_default().to_string();
+            r.exec_result(res);
         }
     });
     ExecAnswerer {

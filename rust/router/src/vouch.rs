@@ -536,10 +536,7 @@ impl Router {
         if let Ok(n) = get("JARVIS2_LIVE_SYNC_SECONDS").parse::<i64>() {
             out["liveSyncSeconds"] = json!(n);
         }
-        let p = crate::remote::tunnel_proof(
-            &std::env::var("JARVIS2_TUNNEL_KEY").unwrap_or_default(),
-            &sid,
-        );
+        let p = crate::remote::tunnel_proof(&crate::remote::tunnel_key(), &sid);
         if !p.is_empty() {
             out["tunnelProof"] = json!(p);
         }
