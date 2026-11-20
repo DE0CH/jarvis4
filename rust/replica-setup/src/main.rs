@@ -1,6 +1,6 @@
 //! replica-setup MSG — the setup session's answer to one message from the phone replica's UI test (ReplicaUITests,
 //! through ios/ci/replica-host.py's /relay), printed on stdout. It runs on the same runner as the test stack
-//! (ios/ci/replica-stack.sh, whose W/env the workflow step sources, so infra/setup.py points at it):
+//! (rust/ios-ci replica up, whose W/env the workflow step sources, so infra/setup.py points at it):
 //!   reset-done  after the app's Reset: the stores written with infra/setup.py (dummy values; the harness's tunnel;
 //!               github-deploy-keys = the replica test repo's token; the core's Fly token, 6 h) → "filled"
 //!   repo-added  the test repo has its one deploy key now (the app shows the repo added) → "ok"

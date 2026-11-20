@@ -26,7 +26,7 @@ Jarvis2/<feature>    Sessions (split view, detail, terminal WebView, grants, sch
                      Previous, Search, Stores, Tasks, Settings (usage, Fly, repos, machines), Setup (Reset or recover)
 UITests/             UITestKit (helpers, blank checks), Jarvis4UITests (walkthrough), TransitionsUITests, ReplicaUITests
 interop/             swift run Interop / Rehearse: the Security files (symlinks) against the real core
-ci/                  standins.sh (keys, S3 stand-in, core + router), standin.py, replica-stack.sh (the replica's Jarvis 4),
+ci/                  standin.py (keys, the seeded bucket); the stand-ins and the replica's Jarvis 4 are rust/ios-ci,
                      replica-host.py (Face ID, the setup session's answers: rust/replica-setup)
 ```
 
@@ -67,10 +67,10 @@ ci/                  standins.sh (keys, S3 stand-in, core + router), standin.py,
   recorded (`results` artifact: screenshots per step, `walkthrough-*.mov`).
 - **Transitions** (`transitions.yml`): every tab, push, pop, edge swipe, sheet, background and relaunch; fails on a
   blank screen over 1.5 s or a near-uniform screenshot.
-- **Interop** (`ios.yml` interop): `ios/ci/standins.sh W` then `swift run Interop` in `ios/interop` (also on Linux
+- **Interop** (`ios.yml` interop): `ios-ci standins W` (rust/ios-ci) then `swift run Interop` in `ios/interop` (also on Linux
   with a swift.org toolchain and swift-crypto).
 - **Phone replica** (`ios.yml` job `replica`, main only, about 70 min on the `xcode-27` runner): the Release build
-  against a real throwaway Jarvis 4 on the runner (`ios/ci/replica-stack.sh`: this commit's core and router, real Fly
+  against a real throwaway Jarvis 4 on the runner (`rust/ios-ci` replica: this commit's core and router, real Fly
   session machines over the run's own WireGuard peer), Face ID driven by `ios/ci/replica-host.py`, the setup session's
   answers by `rust/replica-setup` (built in the job). Secrets: GitHub environment `replica` (REPLICA_FLY_TOKEN, REPLICA_REPO_TOKEN for
   `DE0CH/jarvis4-replica-test`). docs/RUNBOOK.md "The phone replica".

@@ -1162,6 +1162,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ios-ci"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "rand 0.8.8",
+ "regex",
+ "reqwest",
+ "serde_json",
+]
+
+[[package]]
 name = "ip_network"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

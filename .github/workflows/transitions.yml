@@ -7,7 +7,7 @@ name: transitions
 on:
   workflow_dispatch:
   push:
-    paths: [ios/Jarvis4/App/**, ios/Jarvis4/Review/**, ios/Jarvis4/Setup/**, ios/UITests/TransitionsUITests.swift, ios/UITests/UITestKit.swift, .github/workflows/transitions.yml]
+    paths: [ios/Jarvis4/App/**, ios/Jarvis4/Review/**, ios/Jarvis4/Setup/**, ios/UITests/TransitionsUITests.swift, ios/UITests/UITestKit.swift, rust/ios-ci/**, .github/workflows/transitions.yml]
 concurrency:
   group: transitions-${{ github.ref }}
   cancel-in-progress: false
@@ -19,10 +19,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version: "1.25" }
+      - name: ios-ci (rust/ios-ci, the stand-ins and the replica's stack), built
+        run: |
+          cd rust && (rustup show active-toolchain || rustup toolchain install) && cargo build --release --locked -p ios-ci
+          echo "IOS_CI=$PWD/target/release/ios-ci" >> "$GITHUB_ENV"
       - name: stand-ins
         run: |
           W="$RUNNER_TEMP/w"
-          NO_CORE=1 bash ios/ci/standins.sh "$W"
+          NO_CORE=1 "$IOS_CI" standins "$W"
           mkdir -p out
           echo '{"harnesses":{"claude":{"stores":["claude-login"]},"opencode":{"stores":[]}}}' > "$W/policy.json"
       - run: brew install xcodegen
@@ -49,7 +53,7 @@ jobs:
               touch "$RUNNER_TEMP/try-start"
               kill $(cat "$W/core.pid" "$W/router.pid" 2>/dev/null) 2>/dev/null || true; pkill -x core || true; sleep 1
               rm -rf data-$a && mkdir -p data-$a
-              (nohup "$W/core-loop.sh" "$PWD/out/core-$a.log" > /dev/null 2>&1 & echo $! > "$W/core.pid")
+              (nohup "$IOS_CI" core-loop "$W" "$PWD/out/core-$a.log" > /dev/null 2>&1 & echo $! > "$W/core.pid")
               for i in $(seq 30); do curl -sf http://127.0.0.1:8090/key > /dev/null && break; sleep 1; done
               DBURL="$(bash infra/test-postgres.sh fresh router_$a)"  # the router's records (router/statedb.go)
               (set -a; . "$W/router-backup.env"; set +a

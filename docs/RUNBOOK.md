@@ -759,7 +759,7 @@ Storage Box copies. Nothing else waits on it; the router reports search unreacha
 
 - Unit: `go test ./...` in core/ and router/, `cargo test` in rust/ (the machine: rust/machine) (the core's guarantees are tested in core/).
 - The app's crypto against the real core and router: the `ios` workflow's interop job (`ios/interop`, runs on
-  Linux too with swift-crypto: `ios/ci/standins.sh W`, then `swift run Interop` with the `INTEROP_*` env).
+  Linux too with swift-crypto: `ios-ci standins W` (rust/ios-ci), then `swift run Interop` with the `INTEROP_*` env).
 - App code that needs no simulator (ResumeOnce: a continuation answered at most once): `swift run Units` in
   `ios/interop` (the interop job runs it first).
 - The iOS app on a simulator: the `ios` workflow (compile both flavours, the walkthrough in light and dark against a
@@ -817,7 +817,7 @@ The `ios` workflow's job `replica` (main only, about 70 minutes, on GitHub's fre
 outside GitHub and Fly): the app's Release build (the TestFlight configuration of the native app in `ios/`; only
 `JARVIS_BASE` = the runner's router and `JARVIS_KEYS_REF` = this run's keys branch differ) on an iPhone 17 simulator
 (Deyao's iPhone18,3) on iOS 27.0, Face ID enrolled and driven by `ios/ci/replica-host.py`, against a real throwaway
-Jarvis 4 on the same runner (`ios/ci/replica-stack.sh`):
+Jarvis 4 on the same runner (`rust/ios-ci` replica):
 
 - this commit's core and router, built from source (the real core, not the fakefly build), the core started again
   whenever it ends (a Reset or the app's restart-and-recover wipes it, as Kubernetes starts an empty one); the router

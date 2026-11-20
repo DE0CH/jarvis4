@@ -6,7 +6,7 @@ name: ios
 # only when the walkthrough, the interop test and the replica of this very commit pass.
 on:
   push:
-    paths: [ios/**, core/**, kernel/**, router/**, tasks/**, infra/setup.py, infra/fly-token.sh, infra/fly-read-token.sh, infra/run-volumes.py, infra/run_volumes_test.py, infra/test-postgres.sh, e2e/testdata/**, policy/**, tools/**, .github/workflows/ios.yml, .github/actions/ios-simulator/**, rust/replica-setup/**]
+    paths: [ios/**, core/**, kernel/**, router/**, tasks/**, infra/setup.py, infra/fly-token.sh, infra/fly-read-token.sh, infra/run-volumes.py, infra/run_volumes_test.py, infra/test-postgres.sh, e2e/testdata/**, policy/**, tools/**, .github/workflows/ios.yml, .github/actions/ios-simulator/**, rust/replica-setup/**, rust/ios-ci/**, rust/router/**, rust/Cargo.lock]
   workflow_dispatch:
 # one group per ref: a newer push replaces the run still waiting to start (only the newest queued run is kept), and
 # never cancels one in progress
@@ -46,8 +46,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version: "1.25" }
+      - name: ios-ci (rust/ios-ci, the stand-ins and the replica's stack), built
+        run: |
+          cd rust && (rustup show active-toolchain || rustup toolchain install) && cargo build --release --locked -p ios-ci
+          echo "IOS_CI=$PWD/target/release/ios-ci" >> "$GITHUB_ENV"
       - name: stand-ins (keys, S3 with seeded backups, core, router)
-        run: bash ios/ci/standins.sh "$RUNNER_TEMP/w"
+        run: '"$IOS_CI" standins "$RUNNER_TEMP/w"'
       - name: swift run Units (app code that needs no simulator, e.g. ResumeOnce)
         working-directory: ios/interop
         run: swift run Units
@@ -101,10 +105,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version: "1.25" }
+      - name: ios-ci (rust/ios-ci, the stand-ins and the replica's stack), built
+        run: |
+          cd rust && (rustup show active-toolchain || rustup toolchain install) && cargo build --release --locked -p ios-ci
+          echo "IOS_CI=$PWD/target/release/ios-ci" >> "$GITHUB_ENV"
       - name: stand-ins (keys + their server, S3 with seeded backups, the core and router binaries)
         run: |
           W="$RUNNER_TEMP/w"
-          NO_CORE=1 bash ios/ci/standins.sh "$W"
+          NO_CORE=1 "$IOS_CI" standins "$W"
           mkdir -p out
           # the test policy: the claude harness brings claude-login
           echo '{"harnesses":{"claude":{"stores":["claude-login"]},"opencode":{"stores":[]}}}' > "$W/policy.json"
@@ -141,10 +149,10 @@ jobs:
             for try in 1 2; do
               # a fresh core, router, backup bucket (as seeded), keychain and app for each attempt
               kill $(cat "$W/core.pid" "$W/router.pid" 2>/dev/null) 2>/dev/null || true; pkill -x core || true; sleep 1
-              "$W/s3-fresh.sh"
+              "$IOS_CI" s3-fresh "$W"
               rm -rf data-$a && mkdir -p data-$a
               # the core runs again whenever it ends, as under Kubernetes: the walkthrough's Reset wipes it
-              (nohup "$W/core-loop.sh" "$PWD/out/core-$a.log" > /dev/null 2>&1 & echo $! > "$W/core.pid")
+              (nohup "$IOS_CI" core-loop "$W" "$PWD/out/core-$a.log" > /dev/null 2>&1 & echo $! > "$W/core.pid")
               for i in $(seq 30); do curl -sf http://127.0.0.1:8090/key > /dev/null && break; sleep 1; done
               DBURL="$(bash infra/test-postgres.sh fresh router_$a)"  # the router's records (router/statedb.go)
               (set -a; . "$W/router-backup.env"; set +a
@@ -259,7 +267,7 @@ jobs:
     # router address and the keys' git ref differ) on the simulator matching Deyao's iPhone (iPhone 17 = iPhone18,3,
     # iOS 27.0, Xcode 27.0: .github/actions/ios-simulator), Face ID enrolled and driven by ios/ci/replica-host.py, every
     # flow tapped by ReplicaUITests (recorded; a blank screen or a stuck state fails it) against a real throwaway Jarvis 4
-    # on this runner (ios/ci/replica-stack.sh: this commit's core and router, real Fly session machines reaching the
+    # on this runner (rust/ios-ci replica: this commit's core and router, real Fly session machines reaching the
     # router over a WireGuard peer of their own) and a real GitHub repo's deploy keys. The setup session's part is
     # rust/replica-setup on the same runner. Secrets: the `replica` environment (main only).
     needs: compile
@@ -293,14 +301,18 @@ jobs:
       - run: brew install xcodegen flyctl rclone
       - name: The teardown's volume sweep (infra/run-volumes.py) against a fake Fly
         run: python3 -I infra/run_volumes_test.py
+      - name: ios-ci (rust/ios-ci, the stand-ins and the replica's stack), built
+        run: |
+          cd rust && (rustup show active-toolchain || rustup toolchain install) && cargo build --release --locked -p ios-ci
+          echo "IOS_CI=$PWD/target/release/ios-ci" >> "$GITHUB_ENV"
       - name: Earlier runs' leftovers (machines, peers, the test repo's deploy keys)
         env: { GH_TOKEN: "${{ secrets.REPLICA_REPO_TOKEN }}" }
         run: |
-          bash ios/ci/replica-stack.sh sweep
+          "$IOS_CI" replica sweep
           for k in $(gh api "repos/$REPLICA_REPO/keys" -q '.[].id'); do gh api -X DELETE "repos/$REPLICA_REPO/keys/$k" && echo "deploy key $k removed"; done
           [ "$(gh api "repos/$REPLICA_REPO/keys" -q length)" = 0 ]
       - name: The throwaway Jarvis 4 (core, router, WireGuard peer, backup bucket)
-        run: bash ios/ci/replica-stack.sh up "$RUNNER_TEMP/stack"
+        run: '"$IOS_CI" replica up "$RUNNER_TEMP/stack"'
       - name: The keys branch (the Release build reads the throwaway box and setup keys from it)
         run: |
           B="replica-keys-$REPLICA_RUN"
@@ -390,7 +402,7 @@ jobs:
         if: always()
         env: { GH_TOKEN: "${{ secrets.REPLICA_REPO_TOKEN }}" }
         run: |
-          bash ios/ci/replica-stack.sh down "$RUNNER_TEMP/stack" || true
+          "$IOS_CI" replica down "$RUNNER_TEMP/stack" || true
           [ -n "${KEYS_REF:-}" ] && git push -q origin --delete "$KEYS_REF" && echo "branch $KEYS_REF deleted" || true
           for k in $(gh api "repos/$REPLICA_REPO/keys" -q '.[].id' 2>/dev/null); do gh api -X DELETE "repos/$REPLICA_REPO/keys/$k" && echo "deploy key $k removed"; done || true
       - uses: actions/upload-artifact@v4

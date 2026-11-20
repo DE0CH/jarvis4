@@ -2,7 +2,7 @@
 # Each crate replaces its Go part in one cut once it passes that part's tests and the e2e replica.
 [workspace]
 resolver = "3"
-members = ["sig", "doc", "go", "machine", "e2e-kernel", "router", "replica-setup", "gate"]
+members = ["sig", "doc", "go", "machine", "e2e-kernel", "router", "replica-setup", "gate", "ios-ci"]
 
 [workspace.package]
 edition = "2024"
