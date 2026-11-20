@@ -88,7 +88,7 @@ const (
 // Machine: one the spawner made
 type Machine struct {
 	ID      string     `json:"id"`
-	Runner  string     `json:"runner,omitempty"` // "aws", or "" for Fly (state from before the AWS runner)
+	Runner  string     `json:"runner,omitempty"` // the runner that made it: "aws", "fabric", "fly" ("" = fly: state from before the AWS runner)
 	Source  doc.Object `json:"source"`
 	Content doc.Source `json:"content"`          // the source's image and settings (its snapshot is the predecessor's)
 	Volume  string     `json:"volume,omitempty"` // its volume, until Fly deleted it
@@ -192,8 +192,8 @@ func (sp *Spawner) save() error {
 	return os.Rename(tmp, filepath.Clean(sp.path))
 }
 
-// flyFail: a runner call that failed, answered with its reason
-func flyFail(what string, err error) error {
+// runnerFail: a call to runner (fly, aws or fabric) that failed, answered with its reason, named by that runner
+func runnerFail(runner, what string, err error) error {
 	switch {
 	case errors.Is(err, errNoToken):
 		return serve.FailBecause(503, ReasonNoFlyToken, "%v", err)
@@ -204,15 +204,9 @@ func flyFail(what string, err error) error {
 	case errors.Is(err, errNotYet):
 		return serve.FailBecause(409, ReasonNotStarted, "%v", err)
 	}
-	var fe *FabricError
-	if errors.As(err, &fe) {
-		return serve.FailBecause(502, ReasonFabric, "fabric %s: %v", what, err)
-	}
-	var ae *AWSError
-	if errors.As(err, &ae) {
-		return serve.FailBecause(502, ReasonAWS, "aws %s: %v", what, err)
-	}
-	return serve.FailBecause(502, ReasonFly, "fly %s: %v", what, err)
+	runner = orFly(runner)
+	reason := map[string]string{"fly": ReasonFly, "aws": ReasonAWS, "fabric": ReasonFabric}[runner]
+	return serve.FailBecause(502, reason, "%s %s: %v", runner, what, err)
 }
 
 func orFly(runner string) string {
@@ -222,26 +216,22 @@ func orFly(runner string) string {
 	return runner
 }
 
-// runnerOf: the runner of a machine id: an EC2 instance id (i-…) is AWS's, x<32 hex> (a sandbox's id) the fabric's,
-// anything else Fly's (a Fly machine id is hex only)
-func runnerOf(id string) string {
-	switch {
-	case strings.HasPrefix(id, "i-"):
-		return "aws"
-	case fabricIDRE.MatchString(id):
-		return "fabric"
-	}
-	return "fly"
-}
+// validRunner: a runner the spawner knows by name
+func validRunner(r string) bool { return r == "fly" || r == "aws" || r == "fabric" }
 
-// runner: the API of a machine id's runner
-func (sp *Spawner) runner(id string) Runner {
-	switch r := runnerOf(id); {
-	case r == "aws" && sp.aws != nil:
-		return sp.aws
-	case r == "fabric" && sp.fabric != nil:
-		return sp.fabric
-	case r == "fabric":
+// runner: the API of a runner by its name (the one a machine's record names, never read from its id: Deyao,
+// 2026-11-20, there are more than two kinds)
+func (sp *Spawner) runner(name string) Runner {
+	switch orFly(name) {
+	case "aws":
+		if sp.aws != nil {
+			return sp.aws
+		}
+		return noAWS{}
+	case "fabric":
+		if sp.fabric != nil {
+			return sp.fabric
+		}
 		return noFabric{}
 	}
 	return flyRunner{sp.fly}
@@ -256,6 +246,15 @@ func (noFabric) Init(string) (MachineKeys, error)           { return MachineKeys
 func (noFabric) Destroy(string) error                       { return errNoFabric }
 func (noFabric) DeleteVolume(string) error                  { return errNoFabric }
 
+// noAWS: the runner of an AWS machine on a spawner without the AWS runner: every call fails, none reaches Fly
+type noAWS struct{}
+
+func (noAWS) Create(CreateInput) (string, string, error) { return "", "", errNoAWSCredentials }
+func (noAWS) Inspect(string) (FlyMachine, error)         { return FlyMachine{}, errNoAWSCredentials }
+func (noAWS) Init(string) (MachineKeys, error)           { return MachineKeys{}, errNoAWSCredentials }
+func (noAWS) Destroy(string) error                       { return errNoAWSCredentials }
+func (noAWS) DeleteVolume(string) error                  { return errNoAWSCredentials }
+
 // machineImageDigest: the digest of the image a machine of this runner may run: the fabric's image on the fabric,
 // the session image elsewhere; "" for any other reference
 func machineImageDigest(runner, ref string) string {
@@ -266,7 +265,7 @@ func machineImageDigest(runner, ref string) string {
 }
 
 // object: the machine's object, "<runner>-<id>"
-func object(id string) doc.Object { return doc.Object(runnerOf(id) + "-" + id) }
+func object(m *Machine) doc.Object { return doc.Object(orFly(m.Runner) + "-" + m.ID) }
 
 // serving: a call may go on (callers hold op shared)
 func (sp *Spawner) serving() error { return sp.cont.Serving() }
@@ -463,12 +462,9 @@ func (sp *Spawner) Spawn(in SpawnInput) (any, error) {
 		if errors.As(err, &ae) && ae.Code == "InsufficientInstanceCapacity" {
 			return nil, serve.FailBecause(502, ReasonHostFull, "aws create: %v", err)
 		}
-		return nil, flyFail("create", err)
+		return nil, runnerFail(in.Runner, "create", err)
 	}
-	runner := ""
-	if r := runnerOf(id); r != "fly" {
-		runner = r
-	}
+	runner := orFly(in.Runner)
 	m := &Machine{ID: id, Runner: runner, Source: c.Succ, Content: *c.Source, Volume: vid}
 	if in.Fabric != nil && runner == "fabric" {
 		m.Conversation = in.Fabric.Conversation
@@ -517,22 +513,22 @@ func (sp *Spawner) Init(id string) (sig.Doc, error) {
 	case m.Cert != nil:
 		return *m.Cert, nil
 	}
-	fm, err := sp.runner(id).Inspect(id)
+	fm, err := sp.runner(m.Runner).Inspect(id)
 	if err != nil {
-		return sig.Doc{}, flyFail("inspect", err)
+		return sig.Doc{}, runnerFail(m.Runner, "inspect", err)
 	}
 	if fm.State != "started" {
 		return sig.Doc{}, serve.FailBecause(409, ReasonNotStarted, "machine %s is %s, not started", id, fm.State)
 	}
-	if d := machineImageDigest(runnerOf(id), m.Content.Image); d == "" || reportedDigest(fm.Image) != d {
+	if d := machineImageDigest(orFly(m.Runner), m.Content.Image); d == "" || reportedDigest(fm.Image) != d {
 		return sig.Doc{}, serve.FailBecause(409, ReasonWrongImage, "machine %s runs %s, not its source's %s", id, fm.Image, m.Content.Image)
 	}
-	k, err := sp.runner(id).Init(id)
+	k, err := sp.runner(m.Runner).Init(id)
 	if err != nil {
-		return sig.Doc{}, flyFail("init", err)
+		return sig.Doc{}, runnerFail(m.Runner, "init", err)
 	}
 	keys := doc.Keys{SigningKey: k.SigningKey, EncryptionKey: k.EncryptionKey}
-	c := doc.Cert{Kind: "succession", Pred: m.Source, Succ: object(id), Pair: perm.Top(),
+	c := doc.Cert{Kind: "succession", Pred: m.Source, Succ: object(m), Pair: perm.Top(),
 		Machine: &doc.Machine{Keys: keys, Image: fm.Image}, Signer: doc.BySpawner, IssuedAt: doc.Now()}
 	if err := c.Check(); err != nil {
 		return sig.Doc{}, serve.Fail(502, "machine %s: %v", id, err)
@@ -567,17 +563,18 @@ var hex64RE = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // destroyOnFly: the machine destroyed, as its runner says (single calls: a destroy, then a look) → its volume as
 // Fly listed it ("" on AWS)
-func (sp *Spawner) destroyOnFly(id string) (string, error) {
-	run := sp.runner(id)
+func (sp *Spawner) destroyOnFly(m *Machine) (string, error) {
+	id := m.ID
+	run := sp.runner(m.Runner)
 	fm, err := run.Inspect(id)
 	if err != nil {
-		return "", flyFail("inspect", err)
+		return "", runnerFail(m.Runner, "inspect", err)
 	}
 	vol := fm.Volume
 	if fm.State != "destroyed" {
 		derr := run.Destroy(id)
 		if fm, err = run.Inspect(id); err != nil {
-			return "", flyFail("inspect", err)
+			return "", runnerFail(m.Runner, "inspect", err)
 		}
 		if fm.State != "destroyed" {
 			return "", serve.FailBecause(409, ReasonNotDestroyed, "machine %s is %s, not destroyed yet (destroy: %v)", id, fm.State, derr)
@@ -594,7 +591,7 @@ func (sp *Spawner) dropVolume(m *Machine) string {
 	if v == "" {
 		return ""
 	}
-	if err := sp.runner(m.ID).DeleteVolume(v); err != nil {
+	if err := sp.runner(m.Runner).DeleteVolume(v); err != nil {
 		if code, _ := flyStatus(err); code != 404 {
 			log.Printf("machine %s: volume %s: delete: %v (the router kills it again)", m.ID, v, err)
 			return v
@@ -633,7 +630,7 @@ func (sp *Spawner) Kill(id string, snap *Snapshot) (any, error) {
 			}
 			sum = snap.Sha256
 		}
-		if _, err := sp.destroyOnFly(id); err != nil {
+		if _, err := sp.destroyOnFly(m); err != nil {
 			return nil, err
 		}
 		var d sig.Doc
@@ -649,7 +646,7 @@ func (sp *Spawner) Kill(id string, snap *Snapshot) (any, error) {
 			if sum != "" {
 				src.Snapshot = sum
 			}
-			c := doc.Cert{Kind: "succession", Pred: object(id), Succ: doc.NewSource(b), Pair: perm.Top(),
+			c := doc.Cert{Kind: "succession", Pred: object(m), Succ: doc.NewSource(b), Pair: perm.Top(),
 				Source: &src, Signer: doc.BySpawner, IssuedAt: doc.Now()}
 			if err := c.Check(); err != nil {
 				return nil, err
@@ -678,9 +675,10 @@ func (sp *Spawner) Kill(id string, snap *Snapshot) (any, error) {
 }
 
 // Destroy: a machine the spawner made that never came up (a spawn whose answer was lost, also one made just before a
-// restart that the state never recorded: Fly's metadata names its source) destroyed → {kind: "destroyed", id,
-// volumeLeft}, no cert. A machine with a cert is killed instead (409 came-up).
-func (sp *Spawner) Destroy(id string) (any, error) {
+// restart that the state never recorded: its runner's metadata names its source) destroyed → {kind: "destroyed", id,
+// volumeLeft}, no cert. A machine with a cert is killed instead (409 came-up). runner: where the router found a
+// machine the spawner has no record of ("" = fly); a recorded machine's own runner is the one used.
+func (sp *Spawner) Destroy(id, runner string) (any, error) {
 	sp.op.RLock()
 	defer sp.op.RUnlock()
 	if err := sp.serving(); err != nil {
@@ -694,19 +692,19 @@ func (sp *Spawner) Destroy(id string) (any, error) {
 	}
 	if m == nil || !m.Killed {
 		if m == nil {
-			fm, err := sp.runner(id).Inspect(id)
+			if !validRunner(orFly(runner)) {
+				return nil, serve.Fail(400, "runner: aws, fabric or fly")
+			}
+			fm, err := sp.runner(runner).Inspect(id)
 			if err != nil {
-				return nil, flyFail("inspect", err)
+				return nil, runnerFail(runner, "inspect", err)
 			}
 			if fm.Source == "" {
 				return nil, serve.FailBecause(404, ReasonUnknown, "machine %s isn't one the spawner made", id)
 			}
-			m = &Machine{ID: id, Source: doc.Object(fm.Source)}
-			if r := runnerOf(id); r != "fly" {
-				m.Runner = r
-			}
+			m = &Machine{ID: id, Runner: orFly(runner), Source: doc.Object(fm.Source)}
 		}
-		vol, err := sp.destroyOnFly(id)
+		vol, err := sp.destroyOnFly(m)
 		if err != nil {
 			return nil, err
 		}
@@ -832,8 +830,9 @@ func Register(s *serve.Server, sp *Spawner) {
 		return sp.Kill(in.ID, in.Snapshot)
 	})
 	serve.Handle(s, "POST /destroy", func(in struct {
-		ID string `json:"id"`
+		ID     string `json:"id"`
+		Runner string `json:"runner,omitempty"` // where the router found it ("" = fly), for a machine with no record
 	}) (any, error) {
-		return sp.Destroy(in.ID)
+		return sp.Destroy(in.ID, in.Runner)
 	})
 }
