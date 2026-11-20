@@ -21,14 +21,27 @@ pub fn aws_read_endpoint(region: &str) -> String {
     }
 }
 
+/// tests: the read key instead of AWS_READ_ACCESS_KEY_ID / AWS_READ_SECRET_ACCESS_KEY
+pub static AWS_READ_KEY: std::sync::RwLock<Option<(String, String)>> = std::sync::RwLock::new(None);
+
+/// the router's read-only AWS key (id, secret)
+pub fn aws_read_key() -> (String, String) {
+    AWS_READ_KEY
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+        .unwrap_or_else(|| {
+            (
+                std::env::var("AWS_READ_ACCESS_KEY_ID").unwrap_or_default(),
+                std::env::var("AWS_READ_SECRET_ACCESS_KEY").unwrap_or_default(),
+            )
+        })
+}
+
 /// the router has its read-only AWS key
 pub fn aws_read_on() -> bool {
-    !std::env::var("AWS_READ_ACCESS_KEY_ID")
-        .unwrap_or_default()
-        .is_empty()
-        && !std::env::var("AWS_READ_SECRET_ACCESS_KEY")
-            .unwrap_or_default()
-            .is_empty()
+    let (id, secret) = aws_read_key();
+    !id.is_empty() && !secret.is_empty()
 }
 
 /// EC2's refusal (its error code, e.g. UnauthorizedOperation, InvalidInstanceID.NotFound)
@@ -52,8 +65,7 @@ pub fn ec2_read<T: serde::de::DeserializeOwned>(
     region: &str,
     params: &[(&str, &str)],
 ) -> Result<T> {
-    let id = std::env::var("AWS_READ_ACCESS_KEY_ID").unwrap_or_default();
-    let secret = std::env::var("AWS_READ_SECRET_ACCESS_KEY").unwrap_or_default();
+    let (id, secret) = aws_read_key();
     if id.is_empty() || secret.is_empty() {
         return Err(anyhow!(
             "the router has no AWS read key (AWS_READ_ACCESS_KEY_ID)"

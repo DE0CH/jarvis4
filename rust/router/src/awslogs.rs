@@ -65,6 +65,11 @@ pub fn aws_log_labels(instance: &str, region: &str, session: &str, source: &str)
     jarvis_go::marshal(&l) // keys sorted: the same set, the same string
 }
 
+/// the shipper (AWS_LOG_SHIPPER_URL; "" = none)
+pub fn shipper_url() -> String {
+    queue_url(&mut AWS_LOGS.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
 fn queue_url(q: &mut AwsLogQueue) -> String {
     q.url
         .get_or_insert_with(|| std::env::var("AWS_LOG_SHIPPER_URL").unwrap_or_default())
@@ -215,11 +220,7 @@ impl Router {
     /// each live session instance's new console lines to the shipper, and the notable ones (an OOM kill, a panic,
     /// Ignition failing, the power-off) into the session's running lifecycle operation. Only on the leader.
     pub fn console_tick(self: &Arc<Self>) {
-        if !crate::awsread::aws_read_on()
-            || std::env::var("AWS_LOG_SHIPPER_URL")
-                .unwrap_or_default()
-                .is_empty()
-        {
+        if !crate::awsread::aws_read_on() || shipper_url().is_empty() {
             return;
         }
         let mut st = CONSOLE.lock().unwrap_or_else(|e| e.into_inner());
@@ -315,6 +316,18 @@ struct ConsoleState {
 
 static CONSOLE: LazyLock<Mutex<ConsoleState>> =
     LazyLock::new(|| Mutex::new(ConsoleState::default()));
+
+/// tests: the console reads start over
+#[cfg(test)]
+pub fn console_reset() {
+    *CONSOLE.lock().unwrap_or_else(|e| e.into_inner()) = ConsoleState::default();
+}
+
+/// tests: the console reads are off (a refusal) until then
+#[cfg(test)]
+pub fn console_off_until() -> Option<GoTime> {
+    CONSOLE.lock().unwrap_or_else(|e| e.into_inner()).off_until
+}
 
 /// the machine's keys line on the console (kernel/spawner keysMark): shipped, never a lifecycle entry
 pub const KEYS_LINE_MARK: &str = "JARVIS2-KEYS ";

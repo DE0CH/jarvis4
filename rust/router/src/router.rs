@@ -172,14 +172,27 @@ impl Router {
         core: Arc<CoreClient>,
         policy: crate::policy::Policy,
     ) -> Arc<Router> {
-        let objects: Arc<dyn crate::objstore::ObjStore> = match crate::objstore::objects_from_env()
-        {
-            Err(e) => {
-                crate::logf!("objects: {e:#}");
-                std::process::exit(1);
-            }
-            Ok(Some(o)) => o,
-            Ok(None) => Arc::new(crate::objstore::MemObjects::default()),
+        Router::new_on(cfg, st, core, policy, None)
+    }
+
+    /// a router on these objects (None: the bucket of the env, else memory)
+    pub fn new_on(
+        cfg: Config,
+        st: Arc<State>,
+        core: Arc<CoreClient>,
+        policy: crate::policy::Policy,
+        objects: Option<Arc<dyn crate::objstore::ObjStore>>,
+    ) -> Arc<Router> {
+        let objects: Arc<dyn crate::objstore::ObjStore> = match objects {
+            Some(o) => o,
+            None => match crate::objstore::objects_from_env() {
+                Err(e) => {
+                    crate::logf!("objects: {e:#}");
+                    std::process::exit(1);
+                }
+                Ok(Some(o)) => o,
+                Ok(None) => Arc::new(crate::objstore::MemObjects::default()),
+            },
         };
         let kernel = KernelClient::new(&cfg.kernel_url).map(Arc::new);
         let r = Arc::new(Router {

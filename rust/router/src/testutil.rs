@@ -114,13 +114,23 @@ pub fn new_test_router_with(
     core: Option<&str>,
     policy: crate::policy::Policy,
 ) -> TestRouter {
+    new_test_router_on_objects(f, core, policy, None)
+}
+
+/// the same on these objects (None: memory)
+pub fn new_test_router_on_objects(
+    f: impl FnOnce(&mut Config),
+    core: Option<&str>,
+    policy: crate::policy::Policy,
+    objects: Option<Arc<dyn crate::objstore::ObjStore>>,
+) -> TestRouter {
     let db = TestDb::new();
     let dir = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
     let st = test_state(&db, dir.path());
     let mut cfg = test_config(dir.path());
     f(&mut cfg);
     let core = Arc::new(CoreClient::new(core.unwrap_or("http://127.0.0.1:9")));
-    let r = Router::new(cfg, Arc::new(st), core, policy);
+    let r = Router::new_on(cfg, Arc::new(st), core, policy, objects);
     TestRouter { r, db, dir }
 }
 
@@ -212,15 +222,19 @@ impl Default for TestKey {
     }
 }
 
-/// waits up to 4 s for ok (Go's waitFor)
+/// waits up to 20 s for ok (Go's waitFor waited 4 s, but Go ran a package's tests one at a time: here every test runs
+/// at once, and a resume on a loaded box outlasted 4 s)
 pub fn wait_for(what: &str, ok: impl Fn() -> bool) {
-    for _ in 0..200 {
+    let end = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while std::time::Instant::now() < end {
         if ok() {
             return;
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
-    panic!("timed out waiting for {what}");
+    if !ok() {
+        panic!("timed out waiting for {what}");
+    }
 }
 
 /// a JSON body as a map (Go's body helper)
@@ -745,11 +759,24 @@ impl Rig {
 
     /// the same with the router's policy (Go's tests set r.policy after newRig)
     pub fn with_policy(f: impl FnOnce(&mut Config), policy: crate::policy::Policy) -> Rig {
+        Rig::build(f, policy, None)
+    }
+
+    /// the rig on these objects (snapdirect_test.go's directMem)
+    pub fn with_objects(objects: Arc<dyn crate::objstore::ObjStore>) -> Rig {
+        Rig::build(|_| {}, Default::default(), Some(objects))
+    }
+
+    fn build(
+        f: impl FnOnce(&mut Config),
+        policy: crate::policy::Policy,
+        objects: Option<Arc<dyn crate::objstore::ObjStore>>,
+    ) -> Rig {
         use serde_json::json;
         crate::storagebox::PUT_BACKOFF_MS.store(1, std::sync::atomic::Ordering::Relaxed);
         let dav = MemDav::new();
         let core = FakeCore::new();
-        let t = new_test_router_with(
+        let t = new_test_router_on_objects(
             |c| {
                 c.no_access = false;
                 c.snapshot_stall = std::time::Duration::from_secs(1);
@@ -758,6 +785,7 @@ impl Rig {
             },
             Some(&core.srv.url),
             policy,
+            objects,
         );
         *t.r.box_override.write().unwrap_or_else(|e| e.into_inner()) =
             Some(Some(Arc::new(dav.storage_box())));

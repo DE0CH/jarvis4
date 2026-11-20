@@ -201,6 +201,16 @@ pub fn state_word(s: &str) -> String {
 static AWS_SEEN: LazyLock<Mutex<BTreeMap<String, Instance>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
+/// tests: what the newest listing saw of an instance (None: forget it)
+#[cfg(test)]
+pub fn aws_seen_set(id: &str, i: Option<Instance>) {
+    let mut g = AWS_SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    match i {
+        Some(i) => g.insert(id.to_string(), i),
+        None => g.remove(id),
+    };
+}
+
 /// the region the newest listing saw the instance in ("" when it didn't)
 pub fn aws_region_of_instance(id: &str) -> String {
     AWS_SEEN
