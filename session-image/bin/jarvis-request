@@ -311,7 +311,8 @@ def show(o):
         line += f" HTTP {o['status']}"
     line += " at " + o["at"]
     if not o.get("delivered"):
-        line += " (not yet delivered to this session)"
+        # the last attempt's error says why (e.g. "the machine didn't answer within 60 s"): the router tries again
+        line += " (not yet delivered to this session" + (": " + o["error"] if o.get("error") else "") + ")"
     elif o.get("error"):
         line += " (" + o["error"] + ")"
     print(line)
