@@ -66,7 +66,10 @@ class JarvisUITestCase: XCTestCase {
   /// something the app draws is on screen: a navigation bar, the tab bar, or an alert
   var somethingDrawn: Bool { app.navigationBars.firstMatch.exists || app.tabBars.firstMatch.exists || app.alerts.firstMatch.exists }
   /// after a transition: `target` must come up within `s` seconds, and the screen may never be blank (nothing drawn)
-  /// for longer than `blank` seconds on the way
+  /// for longer than `blank` seconds on the way. One look a second: each look is an accessibility snapshot made on the
+  /// app's main thread (0.3-0.7 s on CI's simulator once a WebView is on screen), and looking every 150 ms kept that
+  /// thread busy, so WebKit's navigation step there waited: the terminal page's body came 21 s after its headers and
+  /// "the terminal page didn't come up within 30 s" (ios run 44784534776, 2026-11-20; the page loaded 3 s after).
   @discardableResult func arrives(_ target: XCUIElement, _ s: TimeInterval, _ what: String, blank: TimeInterval = 1.5) -> Bool {
     let until = Date().addingTimeInterval(s)
     var blankSince: Date?
@@ -78,7 +81,7 @@ class JarvisUITestCase: XCTestCase {
         XCTFail("[\(tag)] blank screen for over \(blank) s on the way to \(what)")
         return target.waitForExistence(timeout: max(0, until.timeIntervalSinceNow))
       }
-      usleep(150_000)
+      usleep(1_000_000)
     }
     XCTFail("[\(tag)] \(what) didn't come up within \(Int(s)) s")
     note("tree-\(what)", app.debugDescription)

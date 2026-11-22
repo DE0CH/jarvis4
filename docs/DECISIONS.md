@@ -3245,3 +3245,24 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      live sync's state file and merge it before each pass, so supervisor-core's rounds don't make supervisor-normal
      send the same transcripts again. *Change*: if reading a session's tail should need its stores, check the
      direction as peer messages do (`peerDirection`).
+
+278. **The gate carries a branch home after its session has ended** (Deyao, 2026-11-22: "branches outlive a
+     session"; the repair session fixes the meta issues only). Three rules in `rust/gate`: (a) a finished run
+     decides for the branch's head, whichever of its commits it ran on (`decides_for`; claude/jarvis-tail stayed
+     pending for good when its slow iOS run finished on an older commit); (b) a red the branch shares with main is
+     run once more before the branch counts as red (`rerun`: every red run broke, `failure`/`timed_out`, on its first
+     attempt, in a workflow whose newest passed-or-broke run on main broke too; `rerun-failed-jobs` with merge.yml's
+     `actions: write`; a workflow-token re-run does trigger `merge` when it ends, probed on claude-env 2026-11-22);
+     (c) after every landing, every branch whose head is in main is deleted, not only the landed one (merged `wip/`
+     copies and branches merged another way had piled up: 40 across claude-env, aviary, jarvis4 and deyao-ai).
+     *Change*: a repo whose merge.yml still says `actions: read` keeps its reds as they are (the re-run is refused
+     and logged) until it is vendored again; branch protection, not the gate, would keep a long-lived branch that
+     sits in main.
+279. **An object read that a reset cuts off goes on from where it broke** (Deyao, 2026-11-22: "the router
+     retries"). The router reaches the bucket's IPv4 through WARP, which resets long reads now and then; on
+     2026-11-21 that failed four Destroys ("fetching the snapshot: … connection reset by peer") and a pause (the
+     snapshot's read-back), each waiting for someone to try again. `s3Objects.Get` (router/objstore.go
+     `resumingObject`; the Rust port's `Resuming`) re-requests the object from the byte it reached, up to 5 times
+     (2, 4, 6, 8, 10 s apart), so every caller (archive, read-back, facts, downloads) gets it without a retry of its
+     own. An S3 error answer is not retried. *Change*: if WARP's resets get worse, reach the bucket over IPv6
+     (2a01:4f8:b001::1) instead of retrying more.
