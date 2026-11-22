@@ -602,6 +602,82 @@ pub fn send_to_harness(harness: &str, mode: &str, from: &str, text: &str) -> Res
     }
 }
 
+/// the machine's aviary-gateway (harness-aviary.sh starts it; harness-send posts there too); tests give their own
+pub const AVIARY_GATEWAY: &str = "http://127.0.0.1:3128";
+pub static TEST_AVIARY_GATEWAY: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+/// Whether the harness can be interrupted for a message ([`interrupt_harness`]): Claude Code in its tmux pane and
+/// aviary. The others (Paseo, OpenClaw, opencode, dsh) take every message as [`send_to_harness`] gives it.
+pub fn interrupts(harness: &str) -> bool {
+    harness == "aviary" || !via_harness_send(harness)
+}
+
+/// A Jarvis message that interrupts the running turn instead of joining it at the next tool result, as every other
+/// Jarvis message does (Deyao, 2026-11-20: the memory and disk watchdog is time-sensitive, and the running tool call
+/// may be what fills the machine).
+///
+///   - aviary: posted to the machine's aviary-gateway with `interrupt` (hermit-jarvis → magpie's `interruptRunning`:
+///     the running turn gets the person's stop and the message runs next, as a turn of its own); not through the
+///     inbox spool, whose loop waits on a running turn;
+///   - Claude Code: a turn on its pane is stopped with Esc, as a person stops it, then the message goes in through
+///     the Jarvis channel as usual and starts the next turn;
+///   - the other harnesses have no interrupt: the message goes in as [`send_to_harness`] sends it.
+pub fn interrupt_harness(harness: &str, mode: &str, from: &str, text: &str) -> Result<()> {
+    if harness == "aviary" {
+        return aviary_interrupt(text);
+    }
+    if interrupts(harness) {
+        stop_claude_turn(Duration::from_secs(15));
+    }
+    send_to_harness(harness, mode, from, text)
+}
+
+fn aviary_interrupt(text: &str) -> Result<()> {
+    let base = TEST_AVIARY_GATEWAY
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+        .unwrap_or_else(|| AVIARY_GATEWAY.into());
+    let id = format!("jarvis-{}", hex::encode(rand::random::<[u8; 16]>()));
+    let body = serde_json::json!({"id": id, "text": text, "interrupt": true});
+    let (status, out) = crate::https::post_local_json(
+        &format!("{base}/jarvis/deliver"),
+        &body,
+        Duration::from_secs(40),
+    )?;
+    match status {
+        200 | 202 => Ok(()),
+        _ => bail!("aviary-gateway answered {status}: {}", out.trim()),
+    }
+}
+
+/// Stops the turn Claude Code's pane shows running (its spinner line): Esc, then up to `wait` for the spinner to go.
+/// Nothing when no turn shows (idle, or an open dialog, which the message then waits behind). Whether it stopped one.
+pub fn stop_claude_turn(wait: Duration) -> bool {
+    use crate::claudelogin::{RC_TYPING, pane_text, send_keys};
+    use crate::stall::turn_on_screen;
+    let _typing = RC_TYPING.lock().unwrap_or_else(|e| e.into_inner());
+    if !turn_on_screen(&pane_text()) {
+        return false;
+    }
+    if let Err(e) = send_keys(&["Escape"]) {
+        logf!("interrupt: Esc not sent: {e:#}");
+        return false;
+    }
+    let deadline = std::time::Instant::now() + wait;
+    while std::time::Instant::now() < deadline {
+        util::sleep(Duration::from_millis(250));
+        if !turn_on_screen(&pane_text()) {
+            return true;
+        }
+    }
+    logf!(
+        "interrupt: the turn still shows {}s after Esc; the message goes in anyway",
+        wait.as_secs()
+    );
+    true
+}
+
 /// The text into the Claude host's input box as the user's prompt: harness-send queues it and harness-claude.sh's
 /// typing loop types it and presses Enter once no dialog is up
 pub fn type_into_host(text: &str) -> Result<()> {

@@ -72,6 +72,7 @@ pub fn register_features(reg: &mut Registrar) {
     crate::leases::register_leases(reg); // shared-device leases (before sessionapi.rs's /m/api/ catch-all)
     crate::timemachine::register_time_machine(reg); // a fabric session waits frozen (before the /m/api/ catch-all)
     crate::watches::register_watches(reg); // conditional wakeups
+    crate::livetail::register_live_tail(reg); // a session's tail now (before the /m/api/ catch-all)
     crate::sessionapi::register_session_api(reg); // wakeups, crons, /m/api
     crate::jarvis1import::register_jarvis1_import(reg); // paused Jarvis 1 sessions as new lines
     crate::archive::register_archive(reg); // archive.rs, restore.rs (budget.rs needs no routes: /api/state)

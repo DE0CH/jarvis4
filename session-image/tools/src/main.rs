@@ -4,6 +4,7 @@
 //!                                   sandbox a wakeup is a magpie schedule instead (aviary.rs)
 //!   retire-session                  check the session can go, then ask the router to destroy it (retire.rs)
 //!   time-machine                    a fabric session waits frozen until a time or anything that arrives (timemachine.rs)
+//!   jarvis-tail                     another session's conversation as it is now (tail.rs)
 //!   aviary-sandbox                  (as root) an aviary session's sandbox in aviary's own image (aviary_sandbox.rs)
 //!   session-entrypoint              the session's steps before its harness, then the harness (entrypoint.rs)
 //!   workspace-layer                 the multi-repo workspace's CLAUDE.md, links and settings (workspace_layer.rs)
@@ -15,6 +16,7 @@ mod aviary_sandbox;
 mod entrypoint;
 mod retire;
 mod schedule;
+mod tail;
 mod timemachine;
 mod workspace_layer;
 
@@ -85,6 +87,7 @@ fn main() -> ExitCode {
         ),
         "aviary-sandbox" => (aviary_sandbox::run(&args), aviary_sandbox::TAG),
         "time-machine" => (timemachine::run(&args), "ERROR"),
+        "jarvis-tail" => (tail::run(&args), "ERROR"),
         "session-entrypoint" => (entrypoint::run(), entrypoint::TAG),
         "workspace-layer" => (workspace_layer::run(&args), workspace_layer::TAG),
         "retire-session" => (
@@ -93,7 +96,7 @@ fn main() -> ExitCode {
         ),
         _ => (
             Err(
-                "usage: jarvis-tools schedule-wakeup|schedule-cron|retire-session|time-machine|aviary-sandbox|workspace-layer|session-entrypoint …"
+                "usage: jarvis-tools schedule-wakeup|schedule-cron|retire-session|time-machine|jarvis-tail|aviary-sandbox|workspace-layer|session-entrypoint …"
                     .into(),
             ),
             "ERROR",

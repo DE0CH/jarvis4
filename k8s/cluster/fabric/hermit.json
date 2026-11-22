@@ -7,9 +7,9 @@
   "prompt": { "instructions": "/etc/hermit/config/system-prompt.md", "rules": "/etc/hermit/config/sandbox-rules.md",
               "title": "/etc/hermit/config/title-system.md" },
   "sandbox": {
-    "image": "ghcr.io/de0ch/jarvis4-session-fabric:sha-240d7fe70f67@sha256:a49fb5fa27bc008b582ba003b3cec8e8c1bf74949d8385a88f1eeaa955d14dec",
+    "image": "ghcr.io/de0ch/jarvis4-session-fabric:sha-c041ad2c83b3@sha256:a160959c5595501a12cb7bf2e129fabb585dba1ccfbdaeae00efd8c3a0420db6",
     "cpu": 1, "memory": "3.5Gi", "pids": 32768, "openFiles": 65536,
-    "maxActive": 10, "idleMinutes": 525600, "maxLifetimeHours": 8760, "lifetimeGraceMinutes": 60,
+    "maxActive": 10, "idleMinutes": 525600, "maxLifetimeHours": 8760, "lifetimeGraceMinutes": 60, "silenceSeconds": 31536000,
     "capacityWaitSeconds": 300, "hostWaitSeconds": 600, "supervisorWaitSeconds": 3600, "startDeadlineSeconds": 4200,
     "poolVictimIdleSeconds": 120, "reserveSeconds": 120, "activityEverySeconds": 15,
     "workspace": { "quotaGiB": 50, "quotaInodes": 5000000 },
@@ -27,23 +27,23 @@
     "directEgress": true,
     "freeze": { "bucket": "jarvis4-fabric-images-795109470764" },
     "gateway": { "name": "jarvis4-fabric-gw", "url": "https://10.204.0.1:7443", "endpoint": "[2a01:4f8:c013:c93e::1]:51821" },
-    "sandboxd": "aviary-0ce66f3b83c3",
+    "sandboxd": "aviary-5b06648e24e2",
     "runsc": "precopy-20261102.1",
     "cpuFeatures": "3dnowprefetch,abm,adx,aes,apic,avx,avx2,bmi1,bmi2,clflush,clwb,cmov,cx16,cx8,de,f16c,fma,fpu,fsgsbase,fxsr,ht,hypervisor,lahf_lm,lm,mca,mce,mmx,movbe,msr,mtrr,nx,osxsave,pae,pat,pclmulqdq,pdpe1gb,pge,pni,popcnt,pse,pse36,rdrand,rdseed,rdtscp,sep,smap,smep,sse,sse2,sse4_1,sse4_2,ssse3,syscall,tsc,vme,x2apic,xgetbv1,xsave,xsavec,xsaveopt",
     "cpuOvercommit": 1, "spareSlots": 0, "minAvailableMemory": "256Mi",
-    "minHostLifetimeSeconds": 900, "hostDeadSeconds": 30, "gatewayDeadSeconds": 120, "gatewaySettleSeconds": 120,
+    "minHostLifetimeSeconds": 60, "hostDeadSeconds": 30, "gatewayDeadSeconds": 120, "gatewaySettleSeconds": 120,
     "bootTimeoutSeconds": 480, "orphanInstanceSeconds": 600, "jfsRetireSeconds": 120,
     "migration": { "downtimeMs": 100, "maxRounds": 20, "maxDowntimeMs": 500, "idleCpu": 0.05, "minAgeSeconds": 315360000 },
     "aws": {
       "region": "eu-central-1", "launchTemplate": "jarvis4-fabric-host", "maxHosts": 5, "diskGiB": 220,
       "subnet": "subnet-08dafb7a50104d442", "tags": { "app": "jarvis4-fabric-host", "hermit": "jarvis4" },
-      "imageBucket": "jarvis4-fabric-images-795109470764",
+      "imageBucket": "jarvis4-fabric-images-795109470764", "pruneImages": true,
       "fallbackHost": { "memory": "15.5Gi", "reserve": "1Gi", "cpus": 4 }
     }
   },
   "ops": {
-    "timeZone": "Asia/Hong_Kong",
-    "deployments": [ "hermit-fabric" ],
+    "timeZone": "Asia/Hong_Kong", "chat": false,
+    "deployments": [ "hermit" ],
     "podNodePrefix": "jarvis2-cluster-",
     "budgetWatch": 0.8
   }

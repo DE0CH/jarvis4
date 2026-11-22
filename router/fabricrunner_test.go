@@ -223,16 +223,26 @@ func sessionByID(r *Router, id string) (s Session) {
 	return
 }
 
-// A fabric session is said to be one wherever the app shows where it runs: its log names the fabric, not Fly
-// (Deyao, 2026-11-20: "still says fly machine"), and its card shows the fabric's sandbox and hosts.
-func TestAFabricMachineIsNamedTheFabric(t *testing.T) {
-	x := "x01a1f71ecb6d71d6b5be4c4e404255df"
-	for id, want := range map[string]string{x: "the fabric", "i-0123456789abcdef0": "AWS", "683dde7ea60478": "Fly", "x01a1f71e": "Fly", "xzz1f71ecb6d71d6b5be4c4e404255df0": "Fly"} {
-		if got := runnerName(id); got != want {
-			t.Errorf("runnerName(%q) = %q, want %q", id, got, want)
+// Where a session's machine runs is the session's runner, never read from the machine's id (Deyao, 2026-11-20:
+// "there are more than 2 types"): its log names that runner, and its card shows the fabric's sandbox and hosts.
+func TestTheRunnerIsTheSessions(t *testing.T) {
+	t.Setenv("FABRIC_HERMIT_URL", "http://hermit")
+	r := newTestRouter(t)
+	r.st.Do(func(d *persisted) {
+		// ids of every shape on every runner: the id says nothing
+		for sid, x := range map[string][2]string{"sA": {"aws", "683dde7ea60478"}, "sB": {"fabric", "i-0123456789abcdef0"}, "sC": {"fly", "x01a1f71ecb6d71d6b5be4c4e404255df"}} {
+			d.Sessions[sid] = &Session{ID: sid, Runner: x[0], MachineID: x[1]}
+			d.Machines[x[1]] = sid
+		}
+	})
+	for sid, want := range map[string]string{"sA": "AWS", "sB": "the fabric", "sC": "Fly", "nope": "its runner"} {
+		if got := runnerLabel(r.runnerOfSession(sid)); got != want {
+			t.Errorf("session %s: %q, want %q", sid, got, want)
 		}
 	}
-	t.Setenv("FABRIC_HERMIT_URL", "http://hermit")
+	if r.runnerOfMachine("683dde7ea60478") != "aws" || r.runnerOfMachine("i-0123456789abcdef0") != "fabric" || r.runnerOfMachine("unknown") != "" {
+		t.Error("a machine's runner is its session's")
+	}
 	v := sessionView(&Session{ID: "s1", Runner: "fabric", Size: "small", Region: "lhr"}, &persisted{})
 	if v["runner"] != "fabric" || v["region"] != fabricRegion || v["guest"] != fabricGuest {
 		t.Fatalf("fabric session view: runner %v region %v guest %v", v["runner"], v["region"], v["guest"])

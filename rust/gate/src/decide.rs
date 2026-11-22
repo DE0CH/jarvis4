@@ -14,6 +14,8 @@ pub struct Run {
     pub path: String,
     /// the commit it ran on
     pub sha: String,
+    /// what started it: push | pull_request | …
+    pub event: String,
     pub id: u64,
     /// queued | in_progress | completed | …
     pub status: String,
@@ -52,20 +54,37 @@ fn passed(conclusion: &str) -> bool {
     matches!(conclusion, "success" | "skipped" | "neutral")
 }
 
-/// the newest run of each workflow on any of the branch's own commits (`commits`: those since it left main, the head
-/// among them), the gate's own runs left out. A later commit that doesn't start a workflow (its paths untouched)
-/// carries that workflow's last result on the branch: a red iOS run stays red under a README-only push, and a change
-/// the workflow reads starts a newer run. Run ids grow with time; a re-run keeps its id and its newest result.
+/// each workflow's runs that count: those on the newest of the branch's own commits it ran on (`commits`: those
+/// since it left main, the head among them), the newest of each event there, the gate's own runs left out. A later
+/// commit that doesn't start a workflow (its paths untouched) carries that workflow's last result on the branch: a red
+/// iOS run stays red under a README-only push, and a change the workflow reads starts a newer run. On one commit a
+/// push run and a pull_request run are two runs of the workflow and both count (2026-11-20: the pull_request run,
+/// newer and skipping the replica jobs, went green while the push run's replica was still going, and the gate merged
+/// a red fabric-host into aviary's main). Run ids grow with time; a re-run keeps its id and its newest result.
 pub fn latest(runs: &[Run], commits: &std::collections::BTreeSet<String>, own: &str) -> Vec<Run> {
-    let mut by: std::collections::BTreeMap<&str, &Run> = std::collections::BTreeMap::new();
+    use std::collections::BTreeMap;
     // a run held for approval never ran: GitHub holds the pull_request runs of a pull request the gate opened with the
     // workflow token ("action_required"); the same commit's push run is the one that counts
-    for r in runs
+    let counted: Vec<&Run> = runs
         .iter()
         .filter(|r| r.path != own && commits.contains(&r.sha) && r.conclusion != "action_required")
+        .collect();
+    let mut newest: BTreeMap<&str, &Run> = BTreeMap::new();
+    for r in &counted {
+        if newest.get(r.path.as_str()).is_none_or(|o| r.id > o.id) {
+            newest.insert(&r.path, r);
+        }
+    }
+    let mut by: BTreeMap<(&str, &str), &Run> = BTreeMap::new();
+    for r in counted
+        .into_iter()
+        .filter(|r| newest[r.path.as_str()].sha == r.sha)
     {
-        if by.get(r.path.as_str()).is_none_or(|o| r.id > o.id) {
-            by.insert(&r.path, r);
+        if by
+            .get(&(r.path.as_str(), r.event.as_str()))
+            .is_none_or(|o| r.id > o.id)
+        {
+            by.insert((&r.path, &r.event), r);
         }
     }
     by.into_values().cloned().collect()
@@ -126,9 +145,14 @@ mod tests {
     }
 
     fn on(sha: &str, path: &str, id: u64, status: &str, conclusion: &str) -> Run {
+        by("push", sha, path, id, status, conclusion)
+    }
+
+    fn by(event: &str, sha: &str, path: &str, id: u64, status: &str, conclusion: &str) -> Run {
         Run {
             path: format!(".github/workflows/{path}"),
             sha: sha.into(),
+            event: event.into(),
             id,
             status: status.into(),
             conclusion: conclusion.into(),
@@ -267,6 +291,47 @@ mod tests {
             decide("claude/x", &l, true, true, Rel::Ahead),
             Action::Wait(_)
         ));
+    }
+
+    #[test]
+    fn a_commits_push_run_still_going_waits_under_its_green_pull_request_run() {
+        // aviary 44e9fab2f2: the pull_request run (newer, its replica jobs skipped) green, the push run's replica
+        // still going, then red
+        let runs = vec![
+            by("push", "c1", "ci.yml", 10, "in_progress", ""),
+            by("pull_request", "c1", "ci.yml", 17, "completed", "success"),
+            by("push", "c1", "branch.yml", 11, "completed", "success"),
+        ];
+        let l = latest(&runs, &commits(&["c1"]), ".github/workflows/merge.yml");
+        assert!(matches!(
+            decide("claude/x", &l, true, true, Rel::Ahead),
+            Action::Wait(w) if w == "1 of 3 workflows still running"
+        ));
+        let mut done = runs.clone();
+        done[0] = by("push", "c1", "ci.yml", 10, "completed", "failure");
+        let l = latest(&done, &commits(&["c1"]), ".github/workflows/merge.yml");
+        assert!(matches!(
+            decide("claude/x", &l, true, true, Rel::Ahead),
+            Action::Fail(_)
+        ));
+    }
+
+    #[test]
+    fn an_older_commits_pull_request_run_gives_way_to_a_newer_push() {
+        let runs = vec![
+            by("pull_request", "c1", "ci.yml", 5, "completed", "failure"),
+            by("push", "c1", "ci.yml", 4, "completed", "failure"),
+            by("push", "c2", "ci.yml", 9, "completed", "success"),
+        ];
+        let l = latest(
+            &runs,
+            &commits(&["c1", "c2"]),
+            ".github/workflows/merge.yml",
+        );
+        assert_eq!(
+            l,
+            vec![by("push", "c2", "ci.yml", 9, "completed", "success")]
+        );
     }
 
     #[test]

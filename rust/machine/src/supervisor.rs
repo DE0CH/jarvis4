@@ -196,7 +196,19 @@ pub fn run_command(c: &Client, cmd: &str) {
                 logf!("resume-harness: {e:#}");
             }
         }
+        "live-sync" => {
+            // livesync.rs: the router wants this session's tail now (router/livetail.go)
+            if booted() {
+                let c = c.clone();
+                std::thread::spawn(move || crate::livesync::live_round(&c));
+            }
+        }
         "snapshot" | "snapshot-full" => {
+            if booted() && !FROZEN.load(Ordering::SeqCst) {
+                // the .live copies end where the snapshot does, so a paused session's tail is its last word
+                let n = crate::livesync::live_syncer_for(c).once();
+                logf!("snapshot: {n} changed transcripts sent first");
+            }
             if cmd == "snapshot-full" {
                 FULL_SNAPSHOT.store(true, Ordering::SeqCst); // the session ends with this machine (a destroy)
             }

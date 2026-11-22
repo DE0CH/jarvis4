@@ -751,7 +751,7 @@ func (r *Router) Respond(id, signature string) (*Doc, string, error) {
 	r.st.Do(func(d *persisted) {
 		delete(d.Approvals, id)
 		if a.Kind == "new-session" { // outcomes.go: the core's approval, by the phone, of exactly the proposal
-			noteOutcome(d, a.Origin, a.Kind, a.Session, outcomeApproved, 0, ans)
+			noteOutcome(d, a.Origin, a.Kind, approvalRef(a), outcomeApproved, 0, ans)
 		}
 	})
 	go func() {
@@ -796,7 +796,7 @@ func (r *Router) respondAddStore(a *Approval, signature string) (*Doc, string, e
 	if cur == nil {
 		r.st.Do(func(d *persisted) {
 			delete(d.Approvals, a.ID)
-			noteOutcome(d, a.Origin, a.Kind, a.Session, outcomeDropped, 0, nil)
+			noteOutcome(d, a.Origin, a.Kind, approvalRef(a), outcomeDropped, 0, nil)
 		})
 		return nil, "", fmt.Errorf("the session no longer runs on the machine this store was asked for")
 	}
@@ -823,7 +823,7 @@ func (r *Router) respondAddStore(a *Approval, signature string) (*Doc, string, e
 			// this very challenge was answered before (the same store asked for twice from one cert): it is in already
 			r.st.Do(func(d *persisted) {
 				delete(d.Approvals, a.ID)
-				noteOutcome(d, a.Origin, a.Kind, a.Session, outcomeApproved, 0, cur)
+				noteOutcome(d, a.Origin, a.Kind, approvalRef(a), outcomeApproved, 0, cur)
 			})
 			return cur, a.Session, nil
 		}
@@ -857,7 +857,7 @@ func (r *Router) respondAddStore(a *Approval, signature string) (*Doc, string, e
 	}
 	r.st.Do(func(d *persisted) {
 		delete(d.Approvals, a.ID)
-		noteOutcome(d, a.Origin, a.Kind, a.Session, outcomeApproved, 0, ans) // the machine's new cert names the store
+		noteOutcome(d, a.Origin, a.Kind, approvalRef(a), outcomeApproved, 0, ans) // the machine's new cert names the store
 		d.Certs[a.Machine] = ans
 		if s := d.Sessions[a.Session]; s != nil {
 			s.Cert, s.Stores = ans, c.Stores
@@ -947,7 +947,7 @@ func (r *Router) RejectAs(id, outcome string) error {
 		a = d.Approvals[id]
 		delete(d.Approvals, id)
 		if a != nil {
-			noteOutcome(d, a.Origin, a.Kind, a.Session, outcome, 0, nil)
+			noteOutcome(d, a.Origin, a.Kind, approvalRef(a), outcome, 0, nil)
 		}
 	})
 	if a == nil {

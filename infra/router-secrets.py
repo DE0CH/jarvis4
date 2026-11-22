@@ -57,7 +57,8 @@ manifest so it restarts with the new Secret. SRC is `env:VAR` (default `env:KEY`
                  password: the database owner, made at initdb (the same password is JARVIS4_DB_ROUTER_PASSWORD in the
                  infra store, for the router's own copy; docs/STATE.md)
   --part router-fabric  router-fabric.enc.yaml, Secret router-secrets-fabric — FABRIC_HERMIT_TOOLS_TOKEN,
-                 FABRIC_HERMIT_MAGPIE_TOKEN (router/fabricrunner.go)
+                 FABRIC_HERMIT_MAGPIE_TOKEN (router/fabricrunner.go), FABRIC_HERMIT_ADMIN_TOKEN (router/fabricops.go:
+                 the operator page), e.g. =env:FABRIC_TOKEN_TOOLS / FABRIC_TOKEN_MAGPIE_ROUTER / FABRIC_TOKEN_ADMIN
   --part fabric  k8s/cluster/fabric/secrets/hermit.enc.yaml, Secret hermit in jarvis4-fabric — the fabric hermit's env
                  (HERMIT_*: database, token keys, its callers' tokens, the fabric's TLS, the AWS scaler's key, JuiceFS)
                  (JFS_BUCKET, JFS_ACCESS_KEY, JFS_SECRET_KEY are left from the old JuiceFS sidecar: the next rewrite of

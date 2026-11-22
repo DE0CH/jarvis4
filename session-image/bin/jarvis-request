@@ -48,7 +48,7 @@ this session as the caller, from the machine's key) and the reason given here, a
   jarvis-request list              this session's requests still waiting
   jarvis-request outcomes          what became of this session's requests (approved, denied, lapsed, dropped, failed)
   jarvis-request wait ID [--timeout SECONDS]
-                                    block until the request (an Inbox id, or for add-store this session's id) has an
+                                    block until the request (its Inbox id, the `id` its filing answered) has an
                                     outcome here, then print it (no timeout unless given; exit 0 approved, 1 anything
                                     else, 2 still waiting at the timeout): for a request whose filing command ended
                                     before the decision (the session paused meanwhile)

@@ -293,6 +293,7 @@ func (r *Router) buildHandlers() {
 	device("POST /api/core/wipe", "/wipe")
 	r.registerBackups(app)
 	r.registerKernel(app)      // kernelline.go
+	r.registerFabricOps(app)   // fabricops.go: the fabric hermit's operator page, read only
 	r.registerRoster(app, mux) // roster.go
 	r.registerLineState(app)
 	app("GET /api/policy", func(w http.ResponseWriter, req *http.Request) { writeJSON(w, 200, r.policy) })
