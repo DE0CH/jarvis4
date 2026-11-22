@@ -7,6 +7,14 @@
 //! share a port (2026-11-18: a second session's gateway found 3128 taken on the box's loopback). The router's fabric
 //! listener and the e2e front listen on the bridge's address, where on the fabric the gateway leads. No cgroup limits.
 //!
+//! hermit's silence rule (aviary crates/hermit/src/janitor.rs step 3) runs as on the fabric: every 30 s each ready
+//! sandbox whose supervisor has answered once and has been ready longer than `sandbox.silenceSeconds` of the
+//! deployment's hermit.json (FH_HERMIT_JSON; absent = hermit's 90 s) gets two health checks on its `:7070`, 5 s apart,
+//! with the control token this hermit names (`GET /v1/sandbox/self`), and is released when neither is answered. The
+//! fabric hermit gets no activity report from a session (its supervisor reports to hermit-jarvis), so its ready time is
+//! the measure, as there (2026-11-20: a destroy's final snapshot stopped the supervisor and hermit released the
+//! sandbox mid-snapshot).
+//!
 //!   GET    /v1/sandbox-token-keys                    caller tools: the Ed25519 key its sandbox tokens are signed with
 //!   PUT    /v1/conversations/{cid}/sandbox {person}  caller magpie: the conversation's sandbox, started if none
 //!   GET    /v1/conversations/{cid}/sandbox           caller magpie: its state (404 no_sandbox when none)
@@ -32,6 +40,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// What it is run with (environment of `e2e-kernel fake-hermit`).
 pub struct Cfg {
@@ -51,7 +60,13 @@ pub struct Cfg {
     pub tools: String,
     /// The caller gateway's token (hermit-jarvis's `FABRIC_HERMIT_GATEWAY_TOKEN`); empty: none.
     pub gateway: String,
+    /// hermit.json `sandbox.silenceSeconds` (hermit's 90 s when absent)
+    pub silence: Duration,
 }
+
+/// hermit's janitor period and the gap between a silence's two health checks (aviary crates/hermit/src/lib.rs Timings)
+const JANITOR: Duration = Duration::from_secs(30);
+const HEALTH_GAP: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
 struct Sbx {
@@ -62,6 +77,10 @@ struct Sbx {
     state: &'static str,
     /// each freeze's number: a thaw at `until` acts only on the freeze that set it
     frozen_gen: u64,
+    /// its address on the bridge (10.89.0.<ip>), 0 before its start picks one
+    ip: u8,
+    /// when its supervisor first answered a health check (hermit's `ready`)
+    answered: Option<Instant>,
 }
 
 struct St {
@@ -244,6 +263,9 @@ fn start(st: &Arc<Mutex<St>>, s: Sbx) {
                 let tok = token(&g, &s)?;
                 let ip = g.next_ip;
                 g.next_ip = g.next_ip.wrapping_add(1).max(10);
+                if let Some(x) = g.by_cid.get_mut(&s.cid).filter(|x| x.id == s.id) {
+                    x.ip = ip;
+                }
                 (
                     g.cfg.work.clone(),
                     g.cfg.rootfs.clone(),
@@ -652,6 +674,8 @@ fn handle(st: &Arc<Mutex<St>>, q: &Req) -> (u16, serde_json::Value) {
                 person,
                 state: "starting",
                 frozen_gen: 0,
+                ip: 0,
+                answered: None,
             };
             g.by_cid.insert((*cid).to_owned(), s.clone());
             let out = sandbox_json(&g, &s);
@@ -755,6 +779,93 @@ fn handle(st: &Arc<Mutex<St>>, q: &Req) -> (u16, serde_json::Value) {
     }
 }
 
+/// whether a supervisor's answer to `GET /v1/health` is hermit's "answering": 200 with `ok: true`
+fn health_ok(resp: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(resp);
+    let Some((head, body)) = text.split_once("\r\n\r\n") else {
+        return false;
+    };
+    head.starts_with("HTTP/1.1 200")
+        && serde_json::from_str::<serde_json::Value>(body.trim())
+            .is_ok_and(|v| v["ok"] == serde_json::Value::Bool(true))
+}
+
+/// one health check of the sandbox's supervisor (2 s, as hermit's)
+fn health(s: &Sbx) -> bool {
+    let addr = std::net::SocketAddr::from(([10, 89, 0, s.ip], 7070));
+    let t = Duration::from_secs(2);
+    let Ok(mut c) = TcpStream::connect_timeout(&addr, t) else {
+        return false;
+    };
+    let _ = c.set_read_timeout(Some(t));
+    let _ = c.set_write_timeout(Some(t));
+    // the control token this hermit names for the sandbox is its id (`GET /v1/sandbox/self` hashes it)
+    let req = format!(
+        "GET /v1/health HTTP/1.1\r\nHost: 10.89.0.{}:7070\r\nAuthorization: Bearer {}\r\nConnection: close\r\n\r\n",
+        s.ip, s.id
+    );
+    if c.write_all(req.as_bytes()).is_err() {
+        return false;
+    }
+    let mut resp = Vec::new();
+    let _ = c.take(1 << 16).read_to_end(&mut resp);
+    health_ok(&resp)
+}
+
+/// hermit's janitor, its silence rule only (see the head of this file)
+fn janitor(st: &Arc<Mutex<St>>) {
+    loop {
+        std::thread::sleep(JANITOR);
+        let (silence, ready): (Duration, Vec<Sbx>) = {
+            let g = st.lock().unwrap_or_else(|e| e.into_inner());
+            let v = g
+                .by_cid
+                .values()
+                .filter(|s| s.state == "ready" && s.ip != 0)
+                .cloned()
+                .collect();
+            (g.cfg.silence, v)
+        };
+        for s in ready {
+            let Some(at) = s.answered else {
+                if health(&s) {
+                    let mut g = st.lock().unwrap_or_else(|e| e.into_inner());
+                    if let Some(x) = g.by_cid.get_mut(&s.cid).filter(|x| x.id == s.id) {
+                        x.answered = Some(Instant::now());
+                    }
+                }
+                continue;
+            };
+            if at.elapsed() < silence {
+                continue;
+            }
+            if health(&s) || {
+                std::thread::sleep(HEALTH_GAP);
+                health(&s)
+            } {
+                eprintln!(
+                    "fake-hermit: {} ({}) supervisor not reporting",
+                    s.name, s.id
+                );
+                continue;
+            }
+            let still = {
+                let g = st.lock().unwrap_or_else(|e| e.into_inner());
+                g.by_cid
+                    .get(&s.cid)
+                    .is_some_and(|x| x.id == s.id && x.state == "ready")
+            };
+            if still {
+                eprintln!(
+                    "fake-hermit: {} ({}) lost: unhealthy (two health checks unanswered)",
+                    s.name, s.id
+                );
+                release(st, &s);
+            }
+        }
+    }
+}
+
 /// Serves until killed.
 pub fn serve(cfg: Cfg) -> Result<()> {
     let rng = SystemRandom::new();
@@ -770,6 +881,10 @@ pub fn serve(cfg: Cfg) -> Result<()> {
         by_cid: HashMap::new(),
         next_ip: 10,
     }));
+    {
+        let st = st.clone();
+        std::thread::spawn(move || janitor(&st));
+    }
     for c in l.incoming() {
         let Ok(mut c) = c else { continue };
         let st = st.clone();
@@ -801,6 +916,23 @@ mod tests {
     }
 
     #[test]
+    fn a_health_answer_counts_only_as_200_with_ok_true() {
+        let r = |head: &str, body: &str| {
+            format!("{head}\r\ncontent-type: application/json\r\n\r\n{body}")
+        };
+        assert!(health_ok(
+            r("HTTP/1.1 200 OK", r#"{"ok":true,"ready":false}"#).as_bytes()
+        ));
+        assert!(!health_ok(
+            r("HTTP/1.1 200 OK", r#"{"ok":false}"#).as_bytes()
+        ));
+        assert!(!health_ok(
+            r("HTTP/1.1 401 Unauthorized", r#"{"ok":true}"#).as_bytes()
+        ));
+        assert!(!health_ok(b""));
+    }
+
+    #[test]
     fn a_token_is_hermits() {
         let rng = SystemRandom::new();
         let pkcs8 = Ed25519KeyPair::generate_pkcs8(&rng).expect("a key");
@@ -820,6 +952,7 @@ mod tests {
                 admin: String::new(),
                 tools: String::new(),
                 gateway: String::new(),
+                silence: Duration::from_secs(90),
             },
             key,
             rng,
@@ -833,6 +966,8 @@ mod tests {
             person: "jarvis4@deyaochen.com".into(),
             state: "ready",
             frozen_gen: 0,
+            ip: 10,
+            answered: None,
         };
         let t = token(&st, &s).expect("a token");
         let p: Vec<&str> = t.split('.').collect();

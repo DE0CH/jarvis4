@@ -422,6 +422,12 @@ fn main() {
     }
 }
 
+/// hermit.json's `sandbox.silenceSeconds`, hermit's 90 s when absent
+fn silence_seconds(hermit_json: &[u8]) -> Result<u64> {
+    let v: serde_json::Value = serde_json::from_slice(hermit_json).context("hermit.json")?;
+    Ok(v["sandbox"]["silenceSeconds"].as_u64().unwrap_or(90))
+}
+
 /// `e2e-kernel fake-hermit`, its settings in FH_* (set by the fabric run)
 fn fake_hermit() -> Result<()> {
     let v = |k: &str| std::env::var(k).with_context(|| format!("{k} isn't set"));
@@ -449,6 +455,7 @@ fn fake_hermit() -> Result<()> {
         admin: v("FH_ADMIN")?,
         tools: v("FH_TOOLS")?,
         gateway: std::env::var("FH_GATEWAY").unwrap_or_default(),
+        silence: std::time::Duration::from_secs(silence_seconds(&fs::read(v("FH_HERMIT_JSON")?)?)?),
     })
 }
 
@@ -688,7 +695,12 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
                 .env("FH_MAGPIE", &fabric_tokens.0)
                 .env("FH_ADMIN", &fabric_tokens.1)
                 .env("FH_TOOLS", &fabric_tokens.2)
-                .env("FH_GATEWAY", &fabric_tokens.3),
+                .env("FH_GATEWAY", &fabric_tokens.3)
+                // the fabric hermit's own settings (its silence rule)
+                .env(
+                    "FH_HERMIT_JSON",
+                    root.join("k8s/cluster/fabric/hermit.json"),
+                ),
             "fake-hermit",
         )?;
     }

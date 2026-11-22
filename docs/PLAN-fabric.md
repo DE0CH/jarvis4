@@ -30,7 +30,7 @@ What was built (2026-11-17/18):
 | router: a destroy asks a fabric machine for its whole state (`snapshot-full`, so the archive holds the files), then deletes the conversation's files at hermit (`DELETE /v1/workspaces/{cid}`, `FABRIC_HERMIT_MAGPIE_TOKEN`) | pushed, tests pass |
 | the source image: a fabric session's sources name `FABRIC_SESSION_IMAGE` with `FABRIC_SESSION_IMAGE_SIG` (router), the iPhone app accepts the fabric repo (`KernelChecks.fabricImageRepo`) | pushed; the app needs a TestFlight build; CI pins and signs it (images.yml `fabric-pin`) once the router's manifest has `FABRIC_SESSION_IMAGE` |
 | image `jarvis4-session-fabric` (images.yml job `fabric`, `session-image/fabric/`), `aviary-sandbox`'s bind mode, the env-fetching entrypoint | pushed; bind mode tested (`session-image/tools/tests/aviary_sandbox.rs`); the new GHCR package must be made public (github-web) before hosts can pull it |
-| hermit-jarvis: the fabric hermit's control hashes in the descriptor (`DE0CH/aviary jarvis/hermit/src/fabric.rs`, `FABRIC_HERMIT_URL`, `FABRIC_HERMIT_GATEWAY_TOKEN`) | pushed, tests pass (the flow unchanged). No activity forwarding: the fabric hermit's janitor keeps a sandbox whose supervisor answers its health (`silence_check`), and its `idleMinutes`/`maxLifetimeHours` are set past any session |
+| hermit-jarvis: the fabric hermit's control hashes in the descriptor (`DE0CH/aviary jarvis/hermit/src/fabric.rs`, `FABRIC_HERMIT_URL`, `FABRIC_HERMIT_GATEWAY_TOKEN`) | pushed, tests pass (the flow unchanged). No activity forwarding: the fabric hermit's `idleMinutes`/`maxLifetimeHours`/`silenceSeconds` are set past any session |
 | infra: AWS eu-central-1 (AMI, launch template, scaler and AMI-CI users, image bucket, `fabric-ami.yml`), the gateway server, the fabric bucket and its fenced key, the fabric hermit with its database and JuiceFS on the cluster | done 2026-11-17; smoke test passed (`k8s/cluster/fabric/smoke.yaml`: a sandbox asked as the spawner asks, an AWS host in about a minute, the fabric image under gVisor, the console read live, released) |
 | the kernel release (the spawner's fabric runner, its env and network rule), then the router's `FABRIC_HERMIT_URL` and the first fabric session | done 2026-11-18 |
 | hermit's `/jfs` through the JuiceFS CSI driver (k8s/cluster/juicefs-csi, fabric/juicefs.yaml), as YYC AI's | done 2026-11-19 (the FUSE sidecar on an emptyDir got every hermit pod evicted once a session's files were on the volume: lessons/146 in claude-env) |
@@ -132,7 +132,11 @@ accepted hermit and its hosts as trusted like Fly.
 - nothing else: the fabric hermit's janitor keeps a sandbox whose supervisor answers its health, and its idle and
   lifetime limits are past any session's, so Jarvis 4's own pause stays the one that ends a sandbox.
 
-The fabric hermit's `hermit.json` leaves pausing to Jarvis 4: `idleMinutes` and `maxLifetimeHours` past any session,
+The fabric hermit's `hermit.json` leaves pausing to Jarvis 4: `idleMinutes`, `maxLifetimeHours` and `silenceSeconds`
+past any session (the fabric hermit gets no activity report, so its silence rule would health-check every sandbox each
+janitor pass, and a final snapshot stops the supervisor that answers: 2026-11-20 a destroy's sandbox was released
+mid-snapshot; the replica's fake hermit runs the same rule from this file, and e2e/aviary destroys a session past 90 s with 4 GB
+in its workspace: without the setting it fails as production did),
 long `supervisorWaitSeconds` and `startDeadlineSeconds` (the supervisor comes up only after the machine's cert), and
 a `fabric.migration.minAgeSeconds` no sandbox reaches (a direct connection does not survive a move).
 
