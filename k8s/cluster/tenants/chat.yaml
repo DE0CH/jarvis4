@@ -12,7 +12,7 @@ spec:
   interval: 1m
   url: https://github.com/DE0CH/aviary
   ref:
-    tag: "deploy-7b5686ce3c06"  # written by aviary's deploy run
+    tag: "deploy-43368e1a6ae5"  # written by aviary's deploy run
   # the chat's folder only (the repository holds much more)
   ignore: |
     /*
