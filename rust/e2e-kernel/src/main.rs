@@ -361,6 +361,23 @@ fn run_ok(c: &mut Command, what: &str) -> Result<()> {
     Ok(())
 }
 
+/// `f` until it succeeds, at most 5 tries 3 s apart: a network request (a registry read, an image pull), the one
+/// thing a run may fail on by itself, is tried again.
+pub(crate) fn network<T>(what: &str, mut f: impl FnMut() -> Result<T>) -> Result<T> {
+    let mut tries = 0;
+    loop {
+        tries += 1;
+        match f() {
+            Ok(v) => return Ok(v),
+            Err(e) if tries < 5 => {
+                eprintln!("e2e-kernel: {what} failed (try {tries} of 5): {e:#}");
+                std::thread::sleep(Duration::from_secs(3));
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
 fn output(c: &mut Command, what: &str) -> Result<String> {
     let o = c
         .stderr(Stdio::inherit())
@@ -472,10 +489,12 @@ fn fabric_image(root: &Path) -> Result<(String, PathBuf, PathBuf)> {
         .ok()
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "ghcr.io/de0ch/jarvis4-session-fabric:latest".into());
-    let pinned = output(
-        Command::new(root.join("infra/image-digest.sh")).arg(&image),
-        "the fabric image's digest",
-    )?;
+    let pinned = network("the fabric image's digest", || {
+        output(
+            Command::new(root.join("infra/image-digest.sh")).arg(&image),
+            "the fabric image's digest",
+        )
+    })?;
     let digest = pinned
         .rsplit_once("@sha256:")
         .map(|(_, d)| d.to_owned())
@@ -495,19 +514,23 @@ fn fabric_image(root: &Path) -> Result<(String, PathBuf, PathBuf)> {
             .status();
         fs::create_dir_all(&rootfs)?;
         eprintln!("e2e-kernel: unpacking {pinned} (once per digest)");
-        run_ok(
-            Command::new("sh").arg("-c").arg(format!(
-                "crane export '{pinned}' - | sudo -n tar -x -C '{}'",
-                rootfs.display()
-            )),
-            "unpacking the fabric image",
-        )?;
+        network("unpacking the fabric image", || {
+            run_ok(
+                Command::new("bash").arg("-c").arg(format!(
+                    "set -o pipefail; crane export '{pinned}' - | sudo -n tar -x -C '{}'",
+                    rootfs.display()
+                )),
+                "unpacking the fabric image",
+            )
+        })?;
         fs::write(
             &config,
-            output(
-                Command::new("crane").args(["config", &pinned]),
-                "the image's config",
-            )?,
+            network("the image's config", || {
+                output(
+                    Command::new("crane").args(["config", &pinned]),
+                    "the image's config",
+                )
+            })?,
         )?;
         fs::write(dir.join(".done"), "")?;
     }

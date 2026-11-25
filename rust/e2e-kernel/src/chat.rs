@@ -181,30 +181,35 @@ pub fn up(
         .context("aviary.json release")?
         .trim_start_matches("aviary-")
         .to_owned();
-    let digest = String::from_utf8(
-        Command::new("crane")
+    let digest = crate::network("magpie's digest", || {
+        let o = Command::new("crane")
             .args(["digest", &format!("ghcr.io/de0ch/magpie:{tag}")])
-            .output()?
-            .stdout,
-    )?
-    .trim()
-    .to_owned();
+            .output()?;
+        let d = String::from_utf8(o.stdout)?.trim().to_owned();
+        if !o.status.success() || !d.starts_with("sha256:") {
+            bail!("crane digest ghcr.io/de0ch/magpie:{tag}: {} {d:?}", o.status);
+        }
+        Ok(d)
+    })?;
     let image = format!("ghcr.io/de0ch/magpie:{tag}@{digest}");
     let mroot = cache.join(format!("magpie-{}", digest.trim_start_matches("sha256:")));
     if !mroot.join("usr/local/bin/magpie").exists() {
         let tmp = mroot.with_extension("tmp");
         quiet_sudo(&["rm", "-rf", &tmp.to_string_lossy()]);
         fs::create_dir_all(&tmp)?;
-        let st = Command::new("sh")
-            .arg("-c")
-            .arg(format!(
-                "crane export '{image}' - | sudo -n tar -x -C '{}'",
-                tmp.display()
-            ))
-            .status()?;
-        if !st.success() {
-            bail!("unpacking magpie: {st}");
-        }
+        crate::network("unpacking magpie", || {
+            let st = Command::new("bash")
+                .arg("-c")
+                .arg(format!(
+                    "set -o pipefail; crane export '{image}' - | sudo -n tar -x -C '{}'",
+                    tmp.display()
+                ))
+                .status()?;
+            if !st.success() {
+                bail!("unpacking magpie: {st}");
+            }
+            Ok(())
+        })?;
         sudo(&["mv", &tmp.to_string_lossy(), &mroot.to_string_lossy()])?;
     }
     // magpie's network namespace: 10.88.0.1 (here) ↔ 10.88.0.2 (magpie)
