@@ -3126,9 +3126,9 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      marked missed with that text and a DM sent at once; the 5-attempt DMs, a missed run's reason, a watch's last
      error and a failed Run now all say it in those words (`knownError`). A core line's start still waits out the limit
      up to 3 h first (`machineLimitWait`), as before.
-268. **The Fly + AWS cap is USD 100 a month** (Deyao, 2026-11-17: "Increase fly + aws budget to 100usd"). The one pool
-     of entry 248 pauses every running session at USD 100 (`FLY_BUDGET_USD`) and DMs at USD 90 (`FLY_BUDGET_WARN_USD`,
-     the same 90 % as the old 45/50). Only the router's env in k8s/cluster/router/router.yaml changed; the code's
+268. **The Fly + AWS cap is USD 150 a month** (Deyao, 2026-11-25: "raise aws + fly cap to 150usd"). The one pool
+     of entry 248 pauses every running session at USD 150 (`FLY_BUDGET_USD`) and DMs at USD 135 (`FLY_BUDGET_WARN_USD`,
+     the same 90 % as before). Only the router's env in k8s/cluster/router/router.yaml changed; the code's
      defaults stay 50/45.
 269. **Jarvis 4 is rewritten in Rust, part by part; the machine first** (Deyao, 2026-11-17: rewrite all of Jarvis 4 from
      Go into Rust, the same wire formats, "part by part": machine, core, router, kernel last, as a kernel release needs

@@ -76,9 +76,9 @@ spec:
             # each session's channel goes under the Discord category "Jarvis 4" (guild 1482150592414486748)
             - { name: DISCORD_SESSIONS_CATEGORY, value: "Jarvis 4" }
             # the one cap on Fly (app jarvis4-sessions) + AWS session spend (router/budget.go, awsbudget.go): DM at
-            # USD 90, every running session paused at USD 100 a month (Deyao, 2026-11-17; was 45/50 from 2026-10-21)
-            - { name: FLY_BUDGET_USD, value: "100" }
-            - { name: FLY_BUDGET_WARN_USD, value: "90" }
+            # USD 135, every running session paused at USD 150 a month (Deyao, 2026-11-25)
+            - { name: FLY_BUDGET_USD, value: "150" }
+            - { name: FLY_BUDGET_WARN_USD, value: "135" }
             - { name: BROWSERBASE_BUDGET_USD, value: "10" }
             - { name: BROWSERBASE_BUDGET_WARN_USD, value: "8" }
             # the fabric runner (router/fabricrunner.go, docs/PLAN-fabric.md): its listener for the fabric machines
