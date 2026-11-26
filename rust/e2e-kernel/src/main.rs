@@ -48,6 +48,7 @@ const PEER_PREFIX: &str = "e2e-kernel-";
 const LEFTOVER_AFTER_SECS: u64 = 3 * 3600;
 /// the sessions' Fly app
 const SESSIONS_APP: &str = "jarvis4-sessions";
+const APP: &str = "jarvis4-sessions";
 const MAPI: &str = "https://api.machines.dev/v1/apps/jarvis4-sessions";
 const ROLES: [&str; 9] = [
     "notary",
@@ -298,6 +299,7 @@ impl Cleanup {
                 .status();
             return;
         }
+        save_machine_logs(&self.token, &logs);
         sweep(&self.token);
         for p in [peer(), chat_peer()] {
             let _ = Command::new("flyctl")
@@ -314,6 +316,55 @@ impl Cleanup {
 /// every machine in jarvis4-sessions whose JARVIS2_URL names this run's peer or a crashed run's (`leftover_peer`),
 /// destroyed with its volumes (at the start and at the end). Never one of a run still going, nor production's
 /// (jarvis4-box), nor a peer this harness did not name.
+/// This run's machines' own logs, saved as `machine-<id>.log` before the sweep destroys them (Fly keeps a machine's
+/// recent lines, a destroyed one's too): without them a session that never answered left no account of its boot
+/// (aviary's replica, 2026-11-25: "the session never answered in 10 min", and no machine log in e2e-aviary-logs).
+/// The list and each machine's logs are network calls, tried again while they fail.
+fn save_machine_logs(token: &str, logs: &Path) {
+    let c = reqwest::blocking::Client::new();
+    let mut machines = None;
+    for attempt in 0..5u32 {
+        let listed = c
+            .get(format!("{MAPI}/machines?include_deleted=true"))
+            .bearer_auth(token)
+            .send()
+            .ok()
+            .filter(|r| r.status().is_success())
+            .and_then(|r| r.json::<serde_json::Value>().ok());
+        if listed.is_some() {
+            machines = listed;
+            break;
+        }
+        std::thread::sleep(Duration::from_secs(3 << attempt));
+    }
+    let Some(machines) = machines else {
+        println!("e2e-kernel: no machine list for the logs");
+        return;
+    };
+    let want = murl();
+    for m in machines.as_array().into_iter().flatten() {
+        if m["config"]["env"]["JARVIS2_URL"].as_str() != Some(want.as_str()) {
+            continue;
+        }
+        let Some(id) = m["id"].as_str() else { continue };
+        let mut saved = false;
+        for attempt in 0..5u32 {
+            let out = Command::new("flyctl")
+                .args(["logs", "--app", APP, "-i", id, "--no-tail"])
+                .env("FLY_API_TOKEN", token)
+                .output();
+            if let Some(o) = out.ok().filter(|o| o.status.success()) {
+                saved = fs::write(logs.join(format!("machine-{id}.log")), &o.stdout).is_ok();
+                break;
+            }
+            std::thread::sleep(Duration::from_secs(3 << attempt));
+        }
+        if !saved {
+            println!("e2e-kernel: no logs of machine {id}");
+        }
+    }
+}
+
 fn sweep(token: &str) {
     let c = reqwest::blocking::Client::new();
     let Ok(r) = c.get(format!("{MAPI}/machines")).bearer_auth(token).send() else {
