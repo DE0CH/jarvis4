@@ -23,6 +23,7 @@ mod failedsession;
 mod handover;
 mod inbox;
 mod jarvis1import;
+mod kerneldisk;
 mod kernelflip;
 mod kernelline;
 mod leases;
