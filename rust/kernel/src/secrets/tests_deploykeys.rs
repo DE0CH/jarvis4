@@ -25,12 +25,14 @@ struct GhState {
     seen: Vec<String>,
 }
 
+type OnAdd = Box<dyn Fn() + Send + Sync>;
+
 #[derive(Default, Clone)]
 struct TestGitHub {
     token: String,
     st: Arc<Mutex<GhState>>,
     /// runs inside an add (another add finishing meanwhile)
-    on_add: Arc<Mutex<Option<Box<dyn Fn() + Send + Sync>>>>,
+    on_add: Arc<Mutex<Option<OnAdd>>>,
 }
 
 impl TestGitHub {
