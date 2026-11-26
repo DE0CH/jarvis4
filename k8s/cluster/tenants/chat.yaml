@@ -12,7 +12,7 @@ spec:
   interval: 1m
   url: https://github.com/DE0CH/aviary
   ref:
-    tag: "deploy-c4535a18f715"  # written by aviary's deploy run
+    tag: "deploy-555bf7e6c5fd"  # written by aviary's deploy run
   # the chat's folder only (the repository holds much more)
   ignore: |
     /*
@@ -36,4 +36,4 @@ spec:
     - { name: pigeon, newName: ghcr.io/de0ch/pigeon, newTag: "436b230499ff" }
     - { name: magpie, newName: ghcr.io/de0ch/magpie, newTag: "436b230499ff" }
     - { name: pigeon-app, newName: ghcr.io/de0ch/pigeon-app, newTag: "0e685080334a" }
-    - { name: hermit-jarvis, newName: ghcr.io/de0ch/hermit-jarvis, newTag: "9e39bbb3aae5" }
+    - { name: hermit-jarvis, newName: ghcr.io/de0ch/hermit-jarvis, newTag: "23df70f350b4" }
