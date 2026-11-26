@@ -14,6 +14,8 @@ pub mod crypto;
 pub mod deploykeys;
 pub mod http;
 pub mod keys;
+#[cfg(test)]
+mod tests;
 
 use crate::minter::{MintError, Request as MintRequest};
 use continuity::{LineStateDoc, MODE_HANDED_OFF, MODE_SERVING};
