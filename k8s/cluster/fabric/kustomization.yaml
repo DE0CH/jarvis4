@@ -10,7 +10,7 @@ resources:
   - secrets
 images:
   # the aviary release (one commit for hermit and sandboxd: hermit.json fabric.sandboxd names the same release)
-  - { name: hermit, newName: ghcr.io/de0ch/hermit, newTag: "6e60b5199194", digest: sha256:4cfde1e2355ed26aafdb1d326f52dab2321114a07f233899a6e9e1000626ebb6 }
+  - { name: hermit, newName: ghcr.io/de0ch/hermit, newTag: "0b5fbb2153a3", digest: sha256:5713013506ab7ef9ac3c9ff5c56a4488123b8de9cf079564559dc30b6a3e7ca2 }
 configMapGenerator:
   - name: hermit-config
     namespace: jarvis4-fabric
