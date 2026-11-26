@@ -1,6 +1,6 @@
 {
-  "release": "aviary-d972b770cc94",
-  "sandbox": "ghcr.io/de0ch/hermit-sandbox@sha256:f8d71720ea2bd23b39b98c250933a2b395222d701d7bf456d02ced6575ac6d55",
+  "release": "aviary-f25dead87e46",
+  "sandbox": "ghcr.io/de0ch/hermit-sandbox@sha256:f1653af079fda2bb35e7d52622acce8b5bf7158638d59bf557ccf5f8527cec8f",
   "gateway": "jarvis-d972b770cc94",
   "gateway_sha256": "216e759937455584c0018cd1b4ea7362b475231516e3b845be485808a53fe27c"
 }
