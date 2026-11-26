@@ -3,6 +3,7 @@
 
 pub mod files;
 pub mod flip;
+pub mod kerneltest;
 pub mod kt;
 pub mod merger;
 pub mod minter;
