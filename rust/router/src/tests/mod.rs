@@ -5,6 +5,7 @@ mod apicalls;
 mod archive;
 mod autopilot;
 mod awslogs;
+mod backups;
 mod batch2;
 mod batches;
 mod budget;

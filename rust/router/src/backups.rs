@@ -90,6 +90,18 @@ pub struct BackupObject {
     pub body: String,
 }
 
+/// one client for every call to the backup buckets: its connections are kept and reused. A client per call made a
+/// new connection for every object, and a GET /api/backups of all of them (one per store and key) took minutes through
+/// WARP until the app gave up (2026-11-26; Go's one http.Client kept its connections)
+static BUCKET_CLIENT: std::sync::LazyLock<reqwest::blocking::Client> =
+    std::sync::LazyLock::new(|| {
+        reqwest::blocking::Client::builder()
+            .connect_timeout(Duration::from_secs(30))
+            .pool_max_idle_per_host(4)
+            .build()
+            .unwrap_or_default()
+    });
+
 impl BackupBucket {
     /// a SigV4-signed, path-style GET of /<bucket>/<key>?<query>
     pub fn get(&self, key: &str, query: &BTreeMap<&str, &str>) -> Result<Vec<u8>> {
@@ -174,7 +186,7 @@ impl BackupBucket {
             u.push_str(&q);
         }
         let m = reqwest::Method::from_bytes(method.as_bytes())?;
-        let resp = reqwest::blocking::Client::new()
+        let resp = BUCKET_CLIENT
             .request(m, &u)
             .timeout(Duration::from_secs(60))
             .header("x-amz-content-sha256", &payload)
