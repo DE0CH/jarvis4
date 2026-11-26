@@ -124,7 +124,7 @@ const (
 	volumeName = "jarvis4_state"
 )
 
-// ---- machine sizes (the same block is in rust/router/src/sizes.rs, core/fly.go and machine/deliver.go, and its guest part in kernel/spawner/fly.go; TestSizeBlocksMatch) ----
+// ---- machine sizes (the same block is in router/sizes.go, core/fly.go and machine/deliver.go, and its guest part in kernel/spawner/fly.go; TestSizeBlocksMatch) ----
 
 // The sizes: small (2 GB), medium (4 GB), large (8 GB), then every doubling past large, named by its memory ("16gb",
 // "32gb", …). Upgrade moves a session one step up, and there is no last step: a guest Fly can't make is Fly's to
