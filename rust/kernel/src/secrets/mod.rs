@@ -236,6 +236,27 @@ impl Secrets {
         }
     }
 
+    /// a secrets serving with these keys (a test's boot keys: the vectors of a Go secrets' handoff to them)
+    pub fn with_keys(
+        root_pub: &str,
+        signer: Signer,
+        agreement: Opener,
+        m: Option<Box<dyn MinterApi>>,
+    ) -> Secrets {
+        let s = Secrets::new(root_pub, m);
+        {
+            let mut g = s.lock();
+            g.signer = signer;
+            g.agreement = agreement;
+        }
+        s
+    }
+
+    /// the values of an open unlock of store (None: not unlocked)
+    pub fn unlocked_values(&self, store: &str) -> Option<BTreeMap<String, String>> {
+        self.lock().unlocked.get(store).map(|u| u.values.clone())
+    }
+
     pub(crate) fn lock(&self) -> MutexGuard<'_, Inner> {
         self.mu.lock().unwrap_or_else(|e| e.into_inner())
     }
