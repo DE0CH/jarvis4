@@ -15,12 +15,12 @@
 
 use crate::autopilot::Liveness;
 use crate::http::Registrar;
-use crate::nethttp::write_json;
 use crate::router::Router;
 use crate::state::Session;
 use crate::types::Volume;
 use anyhow::{Result, anyhow};
 use jarvis_go::GoTime;
+use jarvis_nethttp::write_json;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::sync::Arc;

@@ -4,8 +4,8 @@
 use crate::core::CoreClient;
 use crate::kernel::KernelClient;
 use crate::linestate::LineKeeper;
-use crate::nethttp::Mux;
 use crate::state::State;
+use jarvis_nethttp::Mux;
 use std::collections::BTreeMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, OnceLock, RwLock};

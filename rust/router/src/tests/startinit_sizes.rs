@@ -37,7 +37,7 @@ impl SplitCore {
         let key = Arc::new(TestKey::new());
         let s2 = st.clone();
         let srv = TestServer::handler(move |w, req| {
-            use crate::nethttp::write_json;
+            use jarvis_nethttp::write_json;
             let b: Value = serde_json::from_slice(&req.read_body(1 << 20)).unwrap_or(Value::Null);
             let mut c = s2.lock().unwrap_or_else(|e| e.into_inner());
             c.calls.push(req.path.clone());
@@ -363,7 +363,7 @@ fn upgrade_a_fly_refusal_goes_back_to_the_old_size() {
             } else {
                 "no Fly in tests"
             };
-            return crate::nethttp::write_json(
+            return jarvis_nethttp::write_json(
                 w,
                 502,
                 &key.doc(&json!({"kind": "error", "error": msg})),

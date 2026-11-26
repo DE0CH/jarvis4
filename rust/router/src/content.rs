@@ -18,10 +18,10 @@
 //! The box is Apache mod_dav: PROPFIND with Depth infinity is refused, so a store is walked one level at a time.
 
 use crate::http::Registrar;
-use crate::nethttp::{Req, W, write_json};
 use crate::router::Router;
 use crate::storagebox::{DavEntry, StorageBox};
 use anyhow::{Result, anyhow};
+use jarvis_nethttp::{Req, W, write_json};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};

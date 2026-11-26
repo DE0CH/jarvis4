@@ -23,16 +23,16 @@ fn repo_core(r: &Router, repo: &str) -> (Successions, TestServer) {
                 let p = format!(
                     r#"{{"kind":"deploy-key-added","repo":"{repo}","sensitive":false,"fingerprint":"SHA256:abc"}}"#
                 );
-                crate::nethttp::write_json(w, 200, &json!({"payload": p, "sig": "s"}));
+                jarvis_nethttp::write_json(w, 200, &json!({"payload": p, "sig": "s"}));
             }
             "/succession" => {
                 s2.lock().unwrap_or_else(|e| e.into_inner()).push(b.clone());
                 let p = jarvis_go::marshal(
                     &json!({"kind": "challenge", "nonce": "c".repeat(64), "request": b}),
                 );
-                crate::nethttp::write_json(w, 200, &json!({"payload": p, "sig": "s"}));
+                jarvis_nethttp::write_json(w, 200, &json!({"payload": p, "sig": "s"}));
             }
-            _ => crate::nethttp::write_error(w, 404, "404 page not found"),
+            _ => jarvis_nethttp::write_error(w, 404, "404 page not found"),
         }
     });
     r.core.set_url(&srv.url);

@@ -11,13 +11,13 @@ use serde_json::json;
 use std::time::Duration;
 
 fn raw(
-    h: &crate::nethttp::Handler,
+    h: &jarvis_nethttp::Handler,
     method: &str,
     target: &str,
     body: &str,
 ) -> (u16, serde_json::Value, String) {
-    let mut w = crate::nethttp::W::recorder();
-    let mut req = crate::nethttp::Req::new(method, target, body.as_bytes());
+    let mut w = jarvis_nethttp::W::recorder();
+    let mut req = jarvis_nethttp::Req::new(method, target, body.as_bytes());
     h(&mut w, &mut req);
     let t = w.body_text();
     (w.status(), serde_json::from_str(&t).unwrap_or_default(), t)
@@ -41,17 +41,17 @@ fn content_paths() {
 /// a GET a machine signs (no body), its answer whole: the headers too (sessionops_test.go's mxRaw)
 fn mx_raw(
     m: &TestMachine,
-    h: &crate::nethttp::Handler,
+    h: &jarvis_nethttp::Handler,
     method: &str,
     target: &str,
-) -> crate::nethttp::W {
+) -> jarvis_nethttp::W {
     let path = target.split_once('?').map_or(target, |(p, _)| p);
     let (ts, sig) = signed_headers(&m.key, method, path, b"", crate::util::unix_now());
-    let mut req = crate::nethttp::Req::new(method, target, b"")
+    let mut req = jarvis_nethttp::Req::new(method, target, b"")
         .with_header("X-Machine", &m.id)
         .with_header("X-Time", &ts)
         .with_header("X-Sig", &sig);
-    let mut w = crate::nethttp::W::recorder();
+    let mut w = jarvis_nethttp::W::recorder();
     h(&mut w, &mut req);
     w
 }

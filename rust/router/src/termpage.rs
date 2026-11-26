@@ -17,7 +17,7 @@ pub fn register_term_page(reg: &mut Registrar) {
     reg.app("GET /term/{id}", |_, w, req| {
         let id = req.path_value("id");
         if !TERM_ID_RE.is_match(&id) {
-            return crate::nethttp::not_found(w);
+            return jarvis_nethttp::not_found(w);
         }
         w.set_header("Content-Type", "text/html; charset=utf-8");
         w.set_header("Cache-Control", "no-store");

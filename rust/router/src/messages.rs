@@ -24,7 +24,6 @@ use crate::inbox::{
     ApiCall, BadRequest, Caller, Forbidden, InboxItem, Origin, RequestParams, inbox_session_name,
     write_request_err,
 };
-use crate::nethttp::write_json;
 use crate::outcomes::{
     OUTCOME_APPROVED, OUTCOME_DENIED, OUTCOME_DROPPED, OUTCOME_FAILED, OUTCOME_LAPSED, note_outcome,
 };
@@ -34,6 +33,7 @@ use crate::state::{Persisted, Session};
 use crate::vouch::{Delivery, DeliveryResult, attested};
 use anyhow::{Result, anyhow};
 use jarvis_go::GoTime;
+use jarvis_nethttp::write_json;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};

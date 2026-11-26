@@ -184,7 +184,7 @@ fn replayed_call_keeps_its_caller() {
         session: "sR".into(),
     };
     let mut req =
-        crate::nethttp::Req::new("POST", "/api/sessions", b"").with_header("cf-access-token", "x");
+        jarvis_nethttp::Req::new("POST", "/api/sessions", b"").with_header("cf-access-token", "x");
     assert_eq!(app_caller(&req).kind, "app");
     req.ctx.insert(
         crate::apicalls::ON_BEHALF_KEY.into(),

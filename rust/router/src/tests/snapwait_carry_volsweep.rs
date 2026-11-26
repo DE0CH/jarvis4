@@ -164,8 +164,8 @@ fn carry_core(old: bool) -> (TestServer, Arc<Mutex<Vec<Value>>>) {
         c.lock()
             .unwrap_or_else(|e| e.into_inner())
             .push(input.clone());
-        let doc = |w: &mut crate::nethttp::W, v: Value| {
-            crate::nethttp::write_json(
+        let doc = |w: &mut jarvis_nethttp::W, v: Value| {
+            jarvis_nethttp::write_json(
                 w,
                 200,
                 &json!({"payload": jarvis_go::marshal(&v), "sig": "s"}),
@@ -182,7 +182,7 @@ fn carry_core(old: bool) -> (TestServer, Arc<Mutex<Vec<Value>>>) {
                 w,
                 json!({"kind": "carry", "carry": format!("forwarded-{carry}")}),
             ),
-            _ => crate::nethttp::not_found(w),
+            _ => jarvis_nethttp::not_found(w),
         }
     });
     (srv, calls)

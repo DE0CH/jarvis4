@@ -1,4 +1,4 @@
-//! What the router's handlers were written against, Go's net/http, over hyper: a ServeMux with Go 1.22's patterns
+//! What the router's and the kernel's handlers are written against, Go's net/http, over hyper: a ServeMux with Go 1.22's patterns
 //! ("GET /api/sessions/{id}/pause", "{rest...}", a trailing "/" for a subtree; the most specific pattern wins; a path
 //! that matches only under another method is 405 with Allow), a request whose body is read as a plain std::io::Read,
 //! and a ResponseWriter whose headers go when the first byte is written (or the handler ends), every write after that

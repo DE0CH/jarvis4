@@ -2,13 +2,13 @@
 use crate::autopilot::Liveness;
 use crate::grants::ExecResult;
 use crate::harness::{default_model, proxy_login_harness, session_model};
-use crate::nethttp::{Req, W};
 use crate::policy::{HarnessPolicy, Policy};
 use crate::registry::Registry;
 use crate::remote::{CHAT_URL, TUNNEL_KEY, parse_remote, tunnel_proof};
 use crate::router::Router;
 use crate::testutil::*;
 use jarvis_go::GoTime;
+use jarvis_nethttp::{Req, W};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;

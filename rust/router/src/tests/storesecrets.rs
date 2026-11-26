@@ -1,8 +1,8 @@
 //! storesecrets_test.go: on a box with no core (NO_CORE=1) the store routes reach the kernel's serving secrets
 use super::storedocs::{FakeBucket, write_body};
-use crate::nethttp::{write_error, write_json};
 use crate::router::Router;
 use crate::testutil::*;
+use jarvis_nethttp::{write_error, write_json};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};

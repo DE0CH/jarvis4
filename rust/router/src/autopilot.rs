@@ -16,12 +16,12 @@
 use crate::flows::NewSession;
 use crate::grants::ExecResult;
 use crate::http::Registrar;
-use crate::nethttp::write_json;
 pub use crate::registry::{Refusal, Registry};
 use crate::router::Router;
 use crate::state::{Persisted, Session};
 use anyhow::Result;
 use jarvis_go::GoTime;
+use jarvis_nethttp::write_json;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
@@ -324,7 +324,7 @@ pub fn register_autopilot(reg: &mut Registrar) {
         if !session.is_empty()
             && let Err(e) = r.st.put_screen(&session, machine, &i)
         {
-            crate::nethttp::write_error(w, 503, &format!("{e:#}"));
+            jarvis_nethttp::write_error(w, 503, &format!("{e:#}"));
             return;
         }
         write_json(w, 200, &json!({"ok": true}));
@@ -362,7 +362,7 @@ pub fn register_autopilot(reg: &mut Registrar) {
                     true
                 });
                 if !found {
-                    crate::nethttp::write_error(w, 404, "no such session");
+                    jarvis_nethttp::write_error(w, 404, "no such session");
                     return;
                 }
                 let mut out = json!({"ok": true});

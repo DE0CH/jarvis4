@@ -1,0 +1,24 @@
+[package]
+name = "jarvis-nethttp"
+description = "Go's net/http over hyper, as Jarvis 4's servers were written against it: a ServeMux with Go 1.22's patterns, a request read as std::io::Read, a ResponseWriter that streams (the router and the kernel's components)"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+jarvis-go = { path = "../go" }
+anyhow = "1"
+bytes = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "server"] }
+percent-encoding = "2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+tokio-util = { version = "0.7", features = ["io"] }
+url = "2"
+
+[lints]
+workspace = true

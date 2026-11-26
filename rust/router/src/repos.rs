@@ -12,12 +12,12 @@
 use crate::core::Doc;
 use crate::http::Registrar;
 use crate::inbox::{ApiCall, Caller, InboxRequest, Origin, REQUEST_KIND_REPO, RequestParams};
-use crate::nethttp::{W, write_json};
 use crate::router::Router;
 use crate::uploads::HttpStatusErr;
 use anyhow::{Result, anyhow};
 use base64::Engine;
 use jarvis_go::GoTime;
+use jarvis_nethttp::{W, write_json};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};

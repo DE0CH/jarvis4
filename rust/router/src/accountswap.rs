@@ -21,11 +21,11 @@ use crate::claudelogin::LoginHub;
 use crate::ctx::Ctx;
 use crate::http::Registrar;
 use crate::inbox::{ApiCall, Origin, RequestParams};
-use crate::nethttp::{Req, write_json};
 use crate::router::{Router, bad};
 use crate::sessionops::WakeJob;
 use crate::state::{Persisted, Session};
 use anyhow::{Result, anyhow};
+use jarvis_nethttp::{Req, write_json};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -493,7 +493,7 @@ pub fn register_account_switch(reg: &mut Registrar) {
 
 /// POST /api/sessions/{id}/account (the app) and POST /api/remotes/{id}/account (hermit-jarvis: the chat's model menu,
 /// devices.rs): the switch, answered at once
-pub fn account_switch_route(r: &Arc<Router>, w: &mut crate::nethttp::W, req: &mut Req) {
+pub fn account_switch_route(r: &Arc<Router>, w: &mut jarvis_nethttp::W, req: &mut Req) {
     {
         let b = req.read_body(1 << 16);
         let i: AccountSwitchIn = if b.is_empty() {

@@ -24,11 +24,11 @@
 //! the router read back.
 
 use crate::http::{Registrar, write_err};
-use crate::nethttp::{W, write_json};
 use crate::objstore::ObjDirect;
 use crate::router::Router;
 use crate::snapstore::{Snap, snap_ingest, snap_key};
 use crate::snapwait::MovedReader;
+use jarvis_nethttp::{W, write_json};
 use serde::Deserialize;
 use serde_json::json;
 use std::time::{Duration, Instant};

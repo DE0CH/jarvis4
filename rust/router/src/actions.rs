@@ -8,9 +8,9 @@
 
 use crate::http::{Registrar, write_err};
 use crate::inbox::{ApiCall, Caller, Origin};
-use crate::nethttp::{Req, W, write_json};
 use crate::router::Router;
 use anyhow::{Result, anyhow};
+use jarvis_nethttp::{Req, W, write_json};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -45,7 +45,7 @@ fn act(
         let sid = match r.actions_session(machine) {
             Ok(s) => s,
             Err(e) => {
-                crate::nethttp::write_error(w, 403, &format!("{e:#}"));
+                jarvis_nethttp::write_error(w, 403, &format!("{e:#}"));
                 return;
             }
         };

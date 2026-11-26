@@ -10,7 +10,7 @@
 
 use crate::fabricrunner::env;
 use crate::http::Registrar;
-use crate::nethttp::{Req, W, write_json};
+use jarvis_nethttp::{Req, W, write_json};
 use serde_json::json;
 use std::io::Read;
 use std::sync::LazyLock;

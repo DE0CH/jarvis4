@@ -70,7 +70,6 @@ pub mod memory;
 pub mod messages;
 pub mod mgateway;
 pub mod mq;
-pub mod nethttp;
 pub mod neverbooted;
 pub mod nextcore;
 pub mod objstore;
@@ -248,7 +247,7 @@ fn main() {
     // probe) and the machines' one (only m-gateway reaches it, mgateway). Every replica serves both: the records are in
     // Postgres, the machines' queue too (mq.rs), the jobs carry on anywhere (jobs.rs).
     let stopping = Arc::new(AtomicBool::new(false));
-    let mut public = crate::nethttp::Mux::new();
+    let mut public = jarvis_nethttp::Mux::new();
     let s2 = stopping.clone();
     public.handle(
         "GET /readyz",
@@ -258,12 +257,12 @@ fn main() {
             } else {
                 (200, "serving")
             };
-            crate::nethttp::write_json(w, code, &serde_json::json!({"state": state}));
+            jarvis_nethttp::write_json(w, code, &serde_json::json!({"state": state}));
         }),
     );
     public.handle("/", r.handler());
     let public = Arc::new(public);
-    let public_h: crate::nethttp::Handler = Arc::new(move |w, req| public.serve(w, req));
+    let public_h: jarvis_nethttp::Handler = Arc::new(move |w, req| public.serve(w, req));
     let machine_h = r.machine_handler();
     let fabric = std::env::var("FABRIC_MACHINE_ADDR").unwrap_or_default();
     let fabric_h = (!fabric.is_empty() && crate::fabricrunner::fabric_enabled()).then(|| {
@@ -283,7 +282,7 @@ fn main() {
     {
         let stop = stop.clone();
         servers.push(rt.spawn(async move {
-            if let Err(e) = crate::nethttp::serve(&a, h, stop).await {
+            if let Err(e) = jarvis_nethttp::serve(&a, h, stop).await {
                 fatal(format!("{a}: {e:#}"));
             }
         }));

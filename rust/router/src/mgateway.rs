@@ -335,14 +335,14 @@ pub async fn command() -> Result<()> {
     };
     let ln = tokio::net::TcpListener::bind(&bind).await?;
     let stop = tokio_util::sync::CancellationToken::new();
-    let h: crate::nethttp::Handler = Arc::new(|w, req| {
+    let h: jarvis_nethttp::Handler = Arc::new(|w, req| {
         if req.method == "GET" && req.path == "/healthz" {
             w.write_str("ok\n");
         } else {
-            crate::nethttp::not_found(w);
+            jarvis_nethttp::not_found(w);
         }
     });
-    tokio::spawn(crate::nethttp::serve_listener(ln, h, stop.clone()));
+    tokio::spawn(jarvis_nethttp::serve_listener(ln, h, stop.clone()));
     let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     tokio::select! {
         _ = term.recv() => {}

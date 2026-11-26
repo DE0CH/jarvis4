@@ -1,7 +1,7 @@
 //! snapsafe_test.go
-use crate::nethttp::{Req, W, write_json};
 use crate::router::Router;
 use crate::testutil::*;
+use jarvis_nethttp::{Req, W, write_json};
 use serde_json::{Value, json};
 use sha2::Digest;
 use std::sync::{Arc, Mutex};

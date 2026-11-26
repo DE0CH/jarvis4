@@ -1,9 +1,9 @@
 //! storerestore_test.go
 use super::storedocs::{BucketState, store_router};
-use crate::nethttp::{write_error, write_json};
 use crate::storedocs::backup_sha;
 use crate::storerestore::REQUEST_KIND_RESTORE;
 use crate::testutil::*;
+use jarvis_nethttp::{write_error, write_json};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 

@@ -14,9 +14,9 @@
 use crate::core::{CoreClient, Doc};
 use crate::ctx::Ctx;
 use crate::http::Registrar;
-use crate::nethttp::{Req, W, write_error, write_json};
 use crate::router::Router;
 use anyhow::{Result, anyhow, bail};
+use jarvis_nethttp::{Req, W, write_error, write_json};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use std::sync::{Arc, Mutex, RwLock};

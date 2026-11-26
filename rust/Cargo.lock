@@ -1235,6 +1235,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "jarvis-kernel"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "jarvis-doc",
+ "jarvis-go",
+ "jarvis-nethttp",
+ "jarvis-sig",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "time",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "jarvis-machine"
 version = "0.0.0"
 dependencies = [
@@ -1277,6 +1295,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "jarvis-nethttp"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "jarvis-go",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "url",
+]
+
+[[package]]
 name = "jarvis-router"
 version = "0.0.0"
 dependencies = [
@@ -1298,6 +1335,7 @@ dependencies = [
  "include_dir",
  "jarvis-doc",
  "jarvis-go",
+ "jarvis-nethttp",
  "jarvis-sig",
  "jiff",
  "minlz",

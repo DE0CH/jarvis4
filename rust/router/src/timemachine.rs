@@ -13,10 +13,10 @@
 //! (timemachine.rs, ported with its later fixes: 4c8b49a0, 0e549d2e.)
 
 use crate::http::Registrar;
-use crate::nethttp::write_json;
 use crate::router::Router;
 use anyhow::{Result, anyhow};
 use jarvis_go::GoTime;
+use jarvis_nethttp::write_json;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::{Arc, RwLock};

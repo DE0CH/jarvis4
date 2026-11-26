@@ -11,10 +11,10 @@
 //! source.
 
 use crate::http::Registrar;
-use crate::nethttp::write_json;
 use crate::router::Router;
 use anyhow::{Result, anyhow};
 use jarvis_go::GoTime;
+use jarvis_nethttp::write_json;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -392,7 +392,7 @@ pub fn register_machine_output(reg: &mut Registrar) {
     // POST /m/machine-output {"source":"machine"|"journal","lines":[{"at","text"}]}: an AWS machine's output
     reg.m("POST /m/machine-output", |r, w, _, machine, body| {
         if r.runner_of_machine(machine) != "aws" {
-            crate::nethttp::write_error(w, 404, "only an AWS machine pushes its output: Fly ships its machines' (jarvis2-log-shipper)");
+            jarvis_nethttp::write_error(w, 404, "only an AWS machine pushes its output: Fly ships its machines' (jarvis2-log-shipper)");
             return;
         }
         #[derive(Deserialize, Default)]
@@ -410,7 +410,7 @@ pub fn register_machine_output(reg: &mut Registrar) {
         let mut i: In = match jarvis_go::unmarshal(body) {
             Ok(i) => i,
             Err(e) => {
-                crate::nethttp::write_error(w, 400, &format!("not JSON: {e}"));
+                jarvis_nethttp::write_error(w, 400, &format!("not JSON: {e}"));
                 return;
             }
         };
@@ -418,11 +418,11 @@ pub fn register_machine_output(reg: &mut Registrar) {
             i.source = "machine".into();
         }
         if i.source != "machine" && i.source != "journal" {
-            crate::nethttp::write_error(w, 400, r#"source: "machine" or "journal""#);
+            jarvis_nethttp::write_error(w, 400, r#"source: "machine" or "journal""#);
             return;
         }
         if i.lines.len() > MACHINE_OUT_LINES {
-            crate::nethttp::write_error(w, 400, &format!("at most {MACHINE_OUT_LINES} lines per push"));
+            jarvis_nethttp::write_error(w, 400, &format!("at most {MACHINE_OUT_LINES} lines per push"));
             return;
         }
         let session = r.st.do_(|d| d.machines.get(machine).cloned().unwrap_or_default());

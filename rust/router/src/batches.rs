@@ -11,11 +11,11 @@ use crate::inbox::{
     ApiCall, BadRequest, Caller, Forbidden, InboxItem, InboxRequest, Origin, RequestIn,
     RequestParams, SignedRequest,
 };
-use crate::nethttp::{W, write_json};
 use crate::router::Router;
 use crate::state::{Approval, Persisted};
 use anyhow::Result;
 use jarvis_go::GoTime;
+use jarvis_nethttp::{W, write_json};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -840,7 +840,7 @@ impl Router {
 
     pub fn serve_batch(self: &Arc<Self>, w: &mut W, id: &str, only: Option<&Caller>) {
         match self.inbox_batch_full(id, only) {
-            None => crate::nethttp::write_error(
+            None => jarvis_nethttp::write_error(
                 w,
                 404,
                 "this batch is gone (answered, denied or expired)",

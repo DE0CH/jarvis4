@@ -6,9 +6,9 @@
 //! hermit-jarvis, the aviary harness's hermit (DE0CH/aviary jarvis/hermit/README.md), at a machine's boot. A path under /m is refused: a
 //! signature meant for the router itself is never checked for anyone else.
 
-use crate::nethttp::{Req, W, write_error, write_json};
 use crate::router::Router;
 use jarvis_go::GoTime;
+use jarvis_nethttp::{Req, W, write_error, write_json};
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::LazyLock;

@@ -19,7 +19,6 @@
 
 use crate::autopilot::Liveness;
 use crate::http::Registrar;
-use crate::nethttp::write_json;
 use crate::router::Router;
 use crate::sizes::{
     core_takes_size, next_size, size_label, size_mem_gb, size_text, upgrade_target,
@@ -28,6 +27,7 @@ use crate::state::{Persisted, Session};
 use crate::vouch::Delivery;
 use anyhow::{Result, anyhow};
 use jarvis_go::GoTime;
+use jarvis_nethttp::write_json;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::sync::Arc;

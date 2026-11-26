@@ -9,9 +9,9 @@
 //! router env: ICLOUD_INDEX_URL (default http://10.77.0.3:30091).
 
 use crate::http::Registrar;
-use crate::nethttp::{Req, W, write_error, write_json};
 use crate::router::Router;
 use anyhow::{Result, anyhow};
+use jarvis_nethttp::{Req, W, write_error, write_json};
 use serde_json::json;
 use std::sync::LazyLock;
 use std::time::Duration;

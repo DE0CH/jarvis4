@@ -1,9 +1,9 @@
 //! storedocs_test.go
 use crate::backups::BackupBucket;
-use crate::nethttp::{write_error, write_json};
 use crate::router::Router;
 use crate::storedocs::backup_sha;
 use crate::testutil::*;
+use jarvis_nethttp::{write_error, write_json};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};

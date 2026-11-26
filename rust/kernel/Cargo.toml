@@ -1,0 +1,25 @@
+[package]
+name = "jarvis-kernel"
+description = "Jarvis 4's kernel (kernel/ in Go until its cut): the nine components, each a binary of its own (notary, notarizer, mover, merger, spawner, identity, gullible, minter, secrets)"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+jarvis-sig = { path = "../sig" }
+jarvis-doc = { path = "../doc" }
+jarvis-go = { path = "../go" }
+jarvis-nethttp = { path = "../nethttp" }
+anyhow = "1"
+rand_core = { version = "0.6", features = ["getrandom"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+time = "0.3"
+tokio-util = { version = "0.7" }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

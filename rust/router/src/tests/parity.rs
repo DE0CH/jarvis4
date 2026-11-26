@@ -4,12 +4,12 @@
 use crate::archive::RepoChange;
 use crate::archivetar::ARCHIVES_ROOT;
 use crate::livearchive::LiveCopy;
-use crate::nethttp::{Handler, Req, W};
 use crate::oneshot::one_shot_lost_dm;
 use crate::searchsvc::ICLOUD_INDEX_BASE;
 use crate::testutil::*;
 use crate::titles::session_title;
 use crate::types::ArchiveInfo;
+use jarvis_nethttp::{Handler, Req, W};
 use serde_json::{Map, Value, json};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};

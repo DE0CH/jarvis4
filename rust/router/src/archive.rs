@@ -8,12 +8,12 @@
 use crate::core::{CoreError, Doc};
 use crate::http::{Registrar, write_err};
 use crate::inbox::{ApiCall, Origin};
-use crate::nethttp::write_json;
 use crate::router::Router;
 use crate::state::{Record, Session};
 use crate::storagebox::StorageBox;
 use anyhow::{Result, anyhow};
 use jarvis_go::GoTime;
+use jarvis_nethttp::write_json;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::io::Read;
@@ -448,13 +448,13 @@ pub fn register_archive(reg: &mut Registrar) {
     });
     reg.app("GET /api/sessions/{id}/tail", |r, w, req| {
         match r.paused_tail(&req.path_value("id")) {
-            Err((st, e)) => crate::nethttp::write_error(w, st, &format!("{e:#}")),
+            Err((st, e)) => jarvis_nethttp::write_error(w, st, &format!("{e:#}")),
             Ok(t) => write_json(w, 200, &t),
         }
     });
     reg.app("GET /api/records/{id}/tail", |r, w, req| {
         match r.record_tail(&req.path_value("id")) {
-            Err((st, e)) => crate::nethttp::write_error(w, st, &format!("{e:#}")),
+            Err((st, e)) => jarvis_nethttp::write_error(w, st, &format!("{e:#}")),
             Ok(t) => write_json(w, 200, &t),
         }
     });
@@ -506,11 +506,11 @@ pub fn register_archive(reg: &mut Registrar) {
             return;
         }
         let Some(s) = r.restore_files_for(machine) else {
-            crate::nethttp::write_error(w, 404, "no restore for this machine");
+            jarvis_nethttp::write_error(w, 404, "no restore for this machine");
             return;
         };
         match r.snap_open(&s) {
-            Err(_) => crate::nethttp::write_error(w, 404, "no restore snapshot"),
+            Err(_) => jarvis_nethttp::write_error(w, 404, "no restore snapshot"),
             Ok(rd) => {
                 w.set_header("X-Snapshot-Sig", &s.sig);
                 w.set_header("Content-Type", "application/gzip");

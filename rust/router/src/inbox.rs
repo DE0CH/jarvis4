@@ -5,11 +5,11 @@
 //! to a secure page, and Deny just drops it. The approvals the router already holds are listed in the same Inbox.
 
 use crate::http::{Registrar, write_err};
-use crate::nethttp::{Req, W, write_json};
 use crate::router::Router;
 use crate::state::{Approval, Persisted};
 use anyhow::{Result, anyhow};
 use jarvis_go::GoTime;
+use jarvis_nethttp::{Req, W, write_json};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
@@ -504,11 +504,11 @@ pub fn write_denied(w: &mut W, err: Result<()>) {
 
 pub fn write_request_err(w: &mut W, err: &anyhow::Error) {
     if let Some(t) = err.downcast_ref::<TooMany>() {
-        crate::nethttp::write_error(w, 429, &t.0);
+        jarvis_nethttp::write_error(w, 429, &t.0);
     } else if let Some(b) = err.downcast_ref::<BadRequest>() {
-        crate::nethttp::write_error(w, 400, &b.0);
+        jarvis_nethttp::write_error(w, 400, &b.0);
     } else if let Some(f) = err.downcast_ref::<Forbidden>() {
-        crate::nethttp::write_error(w, 403, &f.0);
+        jarvis_nethttp::write_error(w, 403, &f.0);
     } else {
         write_err(w, err);
     }
@@ -1015,13 +1015,13 @@ impl Router {
             match jarvis_go::unmarshal(body) {
                 Ok(i) => i,
                 Err(e) => {
-                    crate::nethttp::write_error(w, 400, &format!("bad JSON: {e}"));
+                    jarvis_nethttp::write_error(w, 400, &format!("bad JSON: {e}"));
                     return;
                 }
             }
         };
         let Some((kind, p)) = intent(intent_name, &i) else {
-            crate::nethttp::write_error(w, 404, &format!("no such request: {intent_name}"));
+            jarvis_nethttp::write_error(w, 404, &format!("no such request: {intent_name}"));
             return;
         };
         let p = own_session(&c, kind, p, &i);
@@ -1099,7 +1099,7 @@ fn setup_only(
             &req.header("X-Setup-Sig"),
             &b,
         ) {
-            crate::nethttp::write_error(w, 401, &format!("{e:#}"));
+            jarvis_nethttp::write_error(w, 401, &format!("{e:#}"));
             return;
         }
         f(r, w, req, &b)
@@ -1113,7 +1113,7 @@ fn own(
 ) {
     reg.m(pattern, move |r, w, req, machine, body| {
         match r.machine_session(machine) {
-            Err(e) => crate::nethttp::write_error(w, 403, &format!("{e:#}")),
+            Err(e) => jarvis_nethttp::write_error(w, 403, &format!("{e:#}")),
             Ok(sid) => f(r, w, req, &sid, body),
         }
     });
@@ -1132,7 +1132,7 @@ pub fn register_inbox(reg: &mut Registrar) {
     });
     reg.app("GET /api/requests/{id}", |r, w, req| {
         match r.inbox_item(&req.path_value("id")) {
-            None => crate::nethttp::write_error(
+            None => jarvis_nethttp::write_error(
                 w,
                 404,
                 "this request is gone (answered, denied or expired)",
@@ -1156,14 +1156,14 @@ pub fn register_inbox(reg: &mut Registrar) {
         if r.is_peer_request(&id) {
             // an upward peer message (peermsg.rs): one tap delivers it
             match r.approve_peer(&id) {
-                Err(e) if is_gone(&e) => crate::nethttp::write_error(w, 404, &format!("{e:#}")),
+                Err(e) if is_gone(&e) => jarvis_nethttp::write_error(w, 404, &format!("{e:#}")),
                 Err(e) => write_err(w, &e),
                 Ok(out) => write_json(w, 200, &out),
             }
             return;
         }
         match r.approve_call(&id, req) {
-            Err(e) if is_gone(&e) => crate::nethttp::write_error(w, 404, &format!("{e:#}")),
+            Err(e) if is_gone(&e) => jarvis_nethttp::write_error(w, 404, &format!("{e:#}")),
             Err(e) => write_err(w, &e),
             Ok(res) => {
                 let mut out = json!({"ok": res.state == "done", "state": res.state, "status": res.status, "error": res.error});
@@ -1179,7 +1179,7 @@ pub fn register_inbox(reg: &mut Registrar) {
     reg.app("GET /api/requests/calls/{id}", |r, w, req| {
         let id = req.path_value("id");
         match r.call_followups_of(&id) {
-            None => crate::nethttp::write_error(
+            None => jarvis_nethttp::write_error(
                 w,
                 404,
                 &format!("no approved call {id} (or its result is over 10m0s old)"),
@@ -1343,7 +1343,7 @@ pub fn register_inbox(reg: &mut Registrar) {
             let expl = match clean_explanation(&i.explanation, true) {
                 Ok(e) => e,
                 Err(e) => {
-                    crate::nethttp::write_error(w, 400, &format!("{e:#}"));
+                    jarvis_nethttp::write_error(w, 400, &format!("{e:#}"));
                     return;
                 }
             };

@@ -16,8 +16,8 @@
 use crate::flows::wait_text;
 use crate::http::Registrar;
 use crate::lifecycle::{LcOp, LcRec, parse_at};
-use crate::nethttp::{write_error, write_json};
 use crate::router::Router;
+use jarvis_nethttp::{write_error, write_json};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};

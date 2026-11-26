@@ -1,8 +1,8 @@
 //! linestate_test.go
 use crate::core::CoreClient;
 use crate::linestate::{LINE_SEQ_HEADER, LineKeeper};
-use crate::nethttp::write_json;
 use crate::testutil::*;
+use jarvis_nethttp::write_json;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 
@@ -13,7 +13,7 @@ struct LineCore {
     master: String,
 }
 
-fn line_core_answer(lc: &LineCore, w: &mut crate::nethttp::W, path: &str) {
+fn line_core_answer(lc: &LineCore, w: &mut jarvis_nethttp::W, path: &str) {
     if lc.seq > 0 {
         w.set_header(LINE_SEQ_HEADER, &lc.seq.to_string());
     }

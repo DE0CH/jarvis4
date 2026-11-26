@@ -3,12 +3,12 @@
 //! web page.
 
 use crate::core::{CoreClient, CoreError, Doc};
-use crate::nethttp::{Mux, Req, W, write_json};
 use crate::router::Router;
 use crate::state::{Approval, Persisted, Record, Session, StateWriteError};
 use anyhow::{Result, anyhow};
 use base64::Engine;
 use jarvis_go::GoTime;
+use jarvis_nethttp::{Mux, Req, W, write_json};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -608,7 +608,7 @@ impl Registrar {
                 &req.header("X-Setup-Sig"),
                 &b,
             ) {
-                crate::nethttp::write_error(w, 401, &format!("{e:#}"));
+                jarvis_nethttp::write_error(w, 401, &format!("{e:#}"));
                 return;
             }
             f(r, w, req, &b)
@@ -627,7 +627,7 @@ impl Registrar {
                 &req.header("X-Setup-Sig"),
                 &b,
             ) {
-                crate::nethttp::write_error(w, 401, &format!("{e:#}"));
+                jarvis_nethttp::write_error(w, 401, &format!("{e:#}"));
                 return;
             }
             let body = if method == "GET" { None } else { Some(&b[..]) };
@@ -645,7 +645,7 @@ impl Registrar {
             let b = req.read_body(1 << 16);
             let input: Option<Value> = serde_json::from_slice(&b).ok();
             let (Some(k), Some(input)) = (&r.kernel, input) else {
-                crate::nethttp::write_error(w, 400, "{sealed}, on a box with a kernel");
+                jarvis_nethttp::write_error(w, 400, "{sealed}, on a box with a kernel");
                 return;
             };
             match k.call("spawner", "POST", path, Some(&input)) {
@@ -669,7 +669,7 @@ impl Registrar {
         // the router's own health, for an operator with no way into the box: secret NAMES present, image, core up
         self.setup_route("GET /setup/status", |r, w, req| {
             if let Err(e) = r.check_setup_sig(&req.method, &req.path, &req.header("X-Setup-Time"), &req.header("X-Setup-Sig"), b"") {
-                crate::nethttp::write_error(w, 401, &format!("{e:#}"));
+                jarvis_nethttp::write_error(w, 401, &format!("{e:#}"));
                 return;
             }
             let present: Vec<&str> = [
@@ -719,7 +719,7 @@ impl Registrar {
         // the kernel's spawner: its identity, and the Fly token sealed to it (infra/setup.py kernel-fly-token)
         self.setup_route("GET /setup/kernel/spawner/identity", |r, w, _| {
             let Some(k) = &r.kernel else {
-                crate::nethttp::write_error(w, 503, "this box runs no kernel");
+                jarvis_nethttp::write_error(w, 503, "this box runs no kernel");
                 return;
             };
             match k.call("spawner", "GET", "/identity", None) {
@@ -752,7 +752,7 @@ impl Registrar {
             let b = req.read_body(16 << 20);
             r.keep_claim_device(&b);
             let Some(c) = r.core_for(req) else {
-                crate::nethttp::write_error(w, 404, "there is no next core");
+                jarvis_nethttp::write_error(w, 404, "there is no next core");
                 return;
             };
             match c.raw("POST", "/claim", Some(&b)) {
@@ -782,11 +782,11 @@ impl Registrar {
                 &req.header("X-Setup-Sig"),
                 b"",
             ) {
-                crate::nethttp::write_error(w, 401, &format!("{e:#}"));
+                jarvis_nethttp::write_error(w, 401, &format!("{e:#}"));
                 return;
             }
             match r.core_cert() {
-                None => crate::nethttp::write_error(
+                None => jarvis_nethttp::write_error(
                     w,
                     404,
                     "no claim kept for the running core (empty, or claimed elsewhere)",
@@ -824,7 +824,7 @@ impl Registrar {
         self.app("GET /api/auth/start", |_, w, req| {
             let redirect = req.query("redirect");
             if !redirect.starts_with("jarvis2://") {
-                crate::nethttp::write_error(w, 400, "only jarvis2:// redirects");
+                jarvis_nethttp::write_error(w, 400, "only jarvis2:// redirects");
                 return;
             }
             let mut tok = req.header("Cf-Access-Jwt-Assertion");
@@ -944,7 +944,7 @@ impl Registrar {
                 .do_(|d| d.sessions.get(&id).and_then(|s| s.cert.clone()))
             {
                 None => {
-                    crate::nethttp::write_error(w, 404, "the session has no certified machine yet")
+                    jarvis_nethttp::write_error(w, 404, "the session has no certified machine yet")
                 }
                 Some(c) => write_json(w, 200, &c),
             }
@@ -1151,7 +1151,7 @@ impl Registrar {
         self.app("POST /api/core/unlock/finish", |r, w, req| {
             let b = req.read_body(1 << 20);
             let Some(c) = r.stores_for(req) else {
-                crate::nethttp::write_error(w, 404, "there is no next core");
+                jarvis_nethttp::write_error(w, 404, "there is no next core");
                 return;
             };
             match c.raw("POST", "/unlock/finish", Some(&b)) {
@@ -1177,7 +1177,7 @@ impl Registrar {
         // ---- machines --------------------------------------------------------------------------------------
         self.m("GET /m/kernel/boot", |r, w, _, machine, _| {
             match r.kernel_boot(machine) {
-                Err(e) => crate::nethttp::write_error(w, 404, &format!("{e:#}")),
+                Err(e) => jarvis_nethttp::write_error(w, 404, &format!("{e:#}")),
                 Ok(out) => write_json(w, 200, &out),
             }
         });
@@ -1200,18 +1200,18 @@ impl Registrar {
                 (cert, pred)
             });
             match cert {
-                None => crate::nethttp::write_error(w, 404, "no cert yet"),
+                None => jarvis_nethttp::write_error(w, 404, "no cert yet"),
                 Some(c) => write_json(w, 200, &json!({"cert": c, "predecessorCert": pred})),
             }
         });
         self.m("GET /m/snapshot", |r, w, req, machine, _| {
             let (s, signed) = match r.snapshot_for(machine) {
                 // snapdirect.rs
-                Err(why) => return crate::nethttp::write_error(w, 404, &why),
+                Err(why) => return jarvis_nethttp::write_error(w, 404, &why),
                 Ok(x) => x,
             };
             match r.snap_open(&s) {
-                Err(e) => crate::nethttp::write_error(w, 404, &format!(": {e:#}")),
+                Err(e) => jarvis_nethttp::write_error(w, 404, &format!(": {e:#}")),
                 Ok(rd) => {
                     if signed {
                         w.set_header("X-Snapshot-Sig", &s.sig);
@@ -1243,7 +1243,7 @@ impl Registrar {
             let sig = req.header("X-Snapshot-Sig");
             if sig.is_empty() {
                 let _ = std::fs::remove_file(tmp);
-                crate::nethttp::write_error(w, 400, "X-Snapshot-Sig missing");
+                jarvis_nethttp::write_error(w, 400, "X-Snapshot-Sig missing");
                 return;
             }
             let res = std::fs::File::open(tmp)
@@ -1287,7 +1287,7 @@ impl Registrar {
                 return;
             }
             let Some(cert) = r.st.do_(|d| d.certs.get(machine).cloned()) else {
-                crate::nethttp::write_error(w, 404, "no cert");
+                jarvis_nethttp::write_error(w, 404, "no cert");
                 return;
             };
             // carry.rs: the line's carried secrets go with the pull; a pull that goes through answers the next blob
@@ -1362,7 +1362,7 @@ impl Registrar {
             let keep = match jarvis_go::unmarshal::<In>(body) {
                 Ok(In { keep: Some(k) }) => k,
                 _ => {
-                    crate::nethttp::write_error(w, 400, "{keep: [stores]}");
+                    jarvis_nethttp::write_error(w, 400, "{keep: [stores]}");
                     return;
                 }
             };

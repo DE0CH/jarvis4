@@ -21,12 +21,12 @@
 //! ```
 
 use crate::http::AppFn;
-use crate::nethttp::write_json;
 use crate::router::Router;
 use crate::state::Session;
 use anyhow::{Result, anyhow};
 use base64::Engine;
 use jarvis_go::GoTime;
+use jarvis_nethttp::write_json;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -270,7 +270,7 @@ impl Router {
             }
             if req.method != "GET" {
                 w.set_header("Allow", "GET, HEAD");
-                return crate::nethttp::write_error(w, 405, "Method Not Allowed");
+                return jarvis_nethttp::write_error(w, 405, "Method Not Allowed");
             }
             let auth = req.header("Authorization");
             let Some(tok) = auth.strip_prefix("Bearer ") else {

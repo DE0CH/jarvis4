@@ -5,17 +5,17 @@ use jarvis_go::GoTime;
 use sha2::Digest;
 
 fn app(
-    h: &crate::nethttp::Handler,
+    h: &jarvis_nethttp::Handler,
     method: &str,
     target: &str,
     body: &str,
     hdr: &[(&str, &str)],
 ) -> (u16, String) {
-    let mut req = crate::nethttp::Req::new(method, target, body.as_bytes());
+    let mut req = jarvis_nethttp::Req::new(method, target, body.as_bytes());
     for (k, v) in hdr {
         req = req.with_header(k, v);
     }
-    let mut w = crate::nethttp::W::recorder();
+    let mut w = jarvis_nethttp::W::recorder();
     h(&mut w, &mut req);
     (w.status(), w.body_text())
 }

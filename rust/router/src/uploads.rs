@@ -14,11 +14,11 @@
 
 use crate::core::Doc;
 use crate::http::Registrar;
-use crate::nethttp::{W, write_json};
 use crate::router::{Router, bad};
 use crate::state::{Persisted, Session};
 use anyhow::{Result, anyhow};
 use jarvis_go::GoTime;
+use jarvis_nethttp::{W, write_json};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
@@ -353,7 +353,7 @@ impl Router {
     fn serve_attachment(
         &self,
         w: &mut W,
-        req: &crate::nethttp::Req,
+        req: &jarvis_nethttp::Req,
         upload: &str,
         name: &str,
         no_store: bool,

@@ -1,9 +1,9 @@
 //! Small helpers the router's files share (Go's standard library calls they replaced: io.ReadAll(io.LimitReader),
 //! crypto/rand, path.Clean, http.ServeContent, http.Redirect, http.FileServer, os.MkdirAll and friends).
 
-use crate::nethttp::{Req, W};
 use anyhow::Result;
 use jarvis_go::GoTime;
+use jarvis_nethttp::{Req, W};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -281,7 +281,7 @@ pub fn serve_content(w: &mut W, req: &Req, modtime: GoTime, mut rd: impl Read, s
             &format!("bytes {start}-{}/{size}", start + len - 1),
         );
         if std::io::copy(&mut (&mut rd).take(start as u64), &mut std::io::sink()).is_err() {
-            return crate::nethttp::write_error(w, 500, "reading the body");
+            return jarvis_nethttp::write_error(w, 500, "reading the body");
         }
     }
     if size >= 0 {
@@ -350,7 +350,7 @@ pub fn serve_web(w: &mut W, req: &mut Req, dir: &str) {
         f = f.join("index.html");
     }
     let Ok(file) = std::fs::File::open(&f) else {
-        return crate::nethttp::not_found(w);
+        return jarvis_nethttp::not_found(w);
     };
     let meta = file.metadata().ok();
     let size = meta.as_ref().map_or(-1, |m| m.len() as i64);

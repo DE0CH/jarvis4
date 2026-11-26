@@ -344,7 +344,7 @@ fn mem_upgrade_offers_only_sizes_the_core_starts() {
         if *l2.lock().unwrap_or_else(|e| e.into_inner()) {
             id.insert("sizeLadder".into(), 1.into());
         }
-        crate::nethttp::write_json(w, 200, &id);
+        jarvis_nethttp::write_json(w, 200, &id);
     });
     let t = new_test_router();
     let r = t.r.clone();

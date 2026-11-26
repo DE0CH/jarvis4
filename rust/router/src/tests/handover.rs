@@ -3,8 +3,8 @@
 //! (handover.rs, DECISIONS 193).
 use crate::flows::{INIT_STEP_MS, KILL_STEP_MS, KILL_TRANSIENT_STEP_MS};
 use crate::handover::{NextMachine, SPARE_MAX_AGE_MS, SPARE_STARTED};
-use crate::nethttp::write_json;
 use crate::testutil::*;
+use jarvis_nethttp::write_json;
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};

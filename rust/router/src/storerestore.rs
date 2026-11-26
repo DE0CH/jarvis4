@@ -17,11 +17,11 @@
 use crate::core::{CoreError, Doc};
 use crate::http::Registrar;
 use crate::inbox::BadRequest;
-use crate::nethttp::{W, write_error, write_json};
 use crate::router::Router;
 use crate::storedocs::{backup_sha, write_write_err};
 use anyhow::{Result, anyhow};
 use jarvis_go::GoTime;
+use jarvis_nethttp::{W, write_error, write_json};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;

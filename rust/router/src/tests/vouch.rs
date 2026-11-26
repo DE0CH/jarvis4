@@ -299,7 +299,7 @@ fn an_attachment_is_signed_by_hash_and_attested_into_the_input_log() {
     let vurl = vc.srv.url.clone();
     let proxy = TestServer::handler(move |w, req| {
         if req.path == "/input-log" {
-            return crate::nethttp::write_json(w, 404, &json!({"error": "no such route"}));
+            return jarvis_nethttp::write_json(w, 404, &json!({"error": "no such route"}));
         }
         let b = req.read_body(16 << 20);
         let resp = reqwest::blocking::Client::new()
@@ -323,10 +323,10 @@ fn an_attachment_is_signed_by_hash_and_attested_into_the_input_log() {
     rg.t.r.core.set_url(&proxy.url);
     let h = rg.handler();
     let photo = "\u{89}PNG the photo";
-    let mut req = crate::nethttp::Req::new("POST", "/api/uploads", photo.as_bytes())
+    let mut req = jarvis_nethttp::Req::new("POST", "/api/uploads", photo.as_bytes())
         .with_header("x-upload-id", "upA")
         .with_header("x-upload-name", "IMG 1.png");
-    let mut w = crate::nethttp::W::recorder();
+    let mut w = jarvis_nethttp::W::recorder();
     h(&mut w, &mut req);
     assert_eq!(w.status(), 200, "{}", w.body_text());
     let (code, out) = call(
@@ -352,8 +352,8 @@ fn an_attachment_is_signed_by_hash_and_attested_into_the_input_log() {
         "signed config {c:?}"
     );
     let get = |target: &str| {
-        let mut w = crate::nethttp::W::recorder();
-        let mut req = crate::nethttp::Req::new("GET", target, b"");
+        let mut w = jarvis_nethttp::W::recorder();
+        let mut req = jarvis_nethttp::Req::new("GET", target, b"");
         h(&mut w, &mut req);
         w
     };

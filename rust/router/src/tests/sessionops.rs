@@ -388,7 +388,7 @@ fn repos_follow_the_core() {
                     .unwrap_or_default();
                 w.write(format!(r#"{{"payload":{p},"sig":"s"}}"#).as_bytes());
             }
-            _ => crate::nethttp::not_found(w),
+            _ => jarvis_nethttp::not_found(w),
         }
     });
     r.core.set_url(&core.url);
@@ -449,7 +449,7 @@ fn repos_follow_the_core() {
     let (_, out) = app_do(&r, "GET", "/api/repos", "", &[]);
     assert_eq!(out["repos"].as_array().map(Vec::len), Some(0), "{out}");
     // a core from before deploy keys: a plain sentence
-    let nf = TestServer::handler(|w, _| crate::nethttp::not_found(w));
+    let nf = TestServer::handler(|w, _| jarvis_nethttp::not_found(w));
     r.core.set_url(&nf.url);
     let (code, out) = app_do(
         &r,
@@ -753,13 +753,13 @@ fn bypass_as_an_api_call_follows_its_grant() {
 }
 
 /// a signed GET as the machine signs it, its raw answer (sessionops_test.go's mxRaw)
-fn raw_get(h: &crate::nethttp::Handler, m: &TestMachine, path: &str) -> (u16, Vec<u8>) {
+fn raw_get(h: &jarvis_nethttp::Handler, m: &TestMachine, path: &str) -> (u16, Vec<u8>) {
     let (ts, sig) = signed_headers(&m.key, "GET", path, b"", crate::util::unix_now());
-    let mut req = crate::nethttp::Req::new("GET", path, b"")
+    let mut req = jarvis_nethttp::Req::new("GET", path, b"")
         .with_header("X-Machine", &m.id)
         .with_header("X-Time", &ts)
         .with_header("X-Sig", &sig);
-    let mut w = crate::nethttp::W::recorder();
+    let mut w = jarvis_nethttp::W::recorder();
     h(&mut w, &mut req);
     (w.status(), w.recorded.clone().unwrap_or_default())
 }

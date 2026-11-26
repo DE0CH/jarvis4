@@ -41,9 +41,9 @@ use crate::claudelogin::{
     LoginErr, LoginHub, account_email, account_uuid, is_login_err, login_note,
 };
 use crate::http::{Registrar, null_if_empty};
-use crate::nethttp::{Req, W, write_json};
 use crate::router::Router;
 use anyhow::{Result, anyhow};
+use jarvis_nethttp::{Req, W, write_json};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;

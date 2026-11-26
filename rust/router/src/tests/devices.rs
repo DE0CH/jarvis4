@@ -1,8 +1,8 @@
 use crate::devices::{CfServiceToken, DELETE_DEVICE_TOKEN, MINT_DEVICE_TOKEN};
 use crate::http::AccessClaims;
-use crate::nethttp::{Req, W};
 use crate::testutil::new_test_router_with;
 use jarvis_go::GoTime;
+use jarvis_nethttp::{Req, W};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 

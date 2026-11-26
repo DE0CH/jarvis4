@@ -2,8 +2,8 @@
 //! operator with no way into the cluster: a check script that only prints, through the same call a watch's check
 //! makes. Nothing is written. Transcript search is not Jarvis's (DE0CH/deyao-ai, search.deyaochen.com).
 
-use crate::nethttp::{Req, W, write_json};
 use crate::router::Router;
+use jarvis_nethttp::{Req, W, write_json};
 use serde_json::{Map, json};
 use std::sync::Arc;
 use std::time::Instant;

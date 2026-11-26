@@ -10,11 +10,11 @@
 //!   GET /api/backups → {bucket, objects: [{key, body}]}: every object under stores/, keys/ and sensitive/
 
 use crate::http::Registrar;
-use crate::nethttp::write_json;
 use crate::router::{Router, env};
 use anyhow::{Result, anyhow};
 use hmac::{Hmac, Mac};
 use jarvis_go::GoTime;
+use jarvis_nethttp::write_json;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -336,7 +336,7 @@ impl Router {
 pub fn register_backups(reg: &mut Registrar) {
     reg.app("GET /api/backups", |r, w, _| {
         let Some(b) = r.backup_bucket() else {
-            crate::nethttp::write_error(w, 503, "the router has no read key for the backups (BACKUP_READ_ACCESS_KEY): the setup session installs it with infra/backup-read-key.py install (RUNBOOK, the router's secrets)");
+            jarvis_nethttp::write_error(w, 503, "the router has no read key for the backups (BACKUP_READ_ACCESS_KEY): the setup session installs it with infra/backup-read-key.py install (RUNBOOK, the router's secrets)");
             return;
         };
         match b.all() {
@@ -349,7 +349,7 @@ pub fn register_backups(reg: &mut Registrar) {
                     return;
                 }
                 crate::logf!("GET /api/backups: {e:#}");
-                crate::nethttp::write_error(w, 502, &format!("{e:#}"));
+                jarvis_nethttp::write_error(w, 502, &format!("{e:#}"));
             }
         }
     });
@@ -361,12 +361,12 @@ pub fn register_backups(reg: &mut Registrar) {
         let mut f: BackupExport = match jarvis_go::unmarshal(&b) {
             Ok(f) => f,
             Err(e) => {
-                crate::nethttp::write_error(w, 400, &format!("not an export: {e}"));
+                jarvis_nethttp::write_error(w, 400, &format!("not an export: {e}"));
                 return;
             }
         };
         if let Err(e) = f.check() {
-            crate::nethttp::write_error(w, 400, &format!("{e:#}"));
+            jarvis_nethttp::write_error(w, 400, &format!("{e:#}"));
             return;
         }
         // an export over an API call's body limit comes in parts: a part of the same export adds its objects to the
@@ -392,7 +392,7 @@ pub fn register_backups(reg: &mut Registrar) {
         if let Err(e) =
             r.st.write_doc(BACKUP_FALLBACK_FILE, jarvis_go::marshal(&f).as_bytes())
         {
-            crate::nethttp::write_error(w, 500, &format!("{e:#}"));
+            jarvis_nethttp::write_error(w, 500, &format!("{e:#}"));
             return;
         }
         crate::logf!(

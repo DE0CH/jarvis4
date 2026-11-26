@@ -23,13 +23,13 @@
 use crate::core::Doc;
 use crate::http::Registrar;
 use crate::inbox::Origin;
-use crate::nethttp::write_json;
 use crate::router::Router;
 use crate::state::{Persisted, Session};
 use crate::vouch::{Delivery, SignedRequest};
 use anyhow::{Result, anyhow};
 use base64::Engine;
 use jarvis_go::GoTime;
+use jarvis_nethttp::write_json;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};

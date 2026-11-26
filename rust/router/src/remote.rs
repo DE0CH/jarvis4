@@ -24,11 +24,11 @@
 
 use crate::harness::paseo_harness;
 use crate::http::Registrar;
-use crate::nethttp::{Req, W, write_error, write_json};
 use crate::registry::Registry;
 use crate::router::Router;
 use crate::types::Session;
 use hmac::{Hmac, Mac};
+use jarvis_nethttp::{Req, W, write_error, write_json};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::Sha256;

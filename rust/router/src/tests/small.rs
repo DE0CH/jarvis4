@@ -189,8 +189,8 @@ fn term_page() {
     let t = new_test_router();
     let h = t.handler();
     let get = |path: &str| {
-        let mut w = crate::nethttp::W::recorder();
-        let mut req = crate::nethttp::Req::new("GET", path, b"");
+        let mut w = jarvis_nethttp::W::recorder();
+        let mut req = jarvis_nethttp::Req::new("GET", path, b"");
         h(&mut w, &mut req);
         w
     };
@@ -547,7 +547,7 @@ fn a_slow_body_is_not_refused_as_too_old() {
             body.as_bytes(),
             at,
         );
-        let mut req = crate::nethttp::Req::new("POST", "/m/snapshot-progress", b"")
+        let mut req = jarvis_nethttp::Req::new("POST", "/m/snapshot-progress", b"")
             .with_header("X-Machine", "m2")
             .with_header("X-Time", &ts)
             .with_header("X-Sig", &sig);
@@ -555,7 +555,7 @@ fn a_slow_body_is_not_refused_as_too_old() {
             r: std::io::Cursor::new(body.as_bytes().to_vec()),
             d: delay,
         });
-        let mut w = crate::nethttp::W::recorder();
+        let mut w = jarvis_nethttp::W::recorder();
         h(&mut w, &mut req);
         w.status()
     };

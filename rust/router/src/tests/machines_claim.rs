@@ -242,17 +242,17 @@ fn the_router_keeps_the_claim_for_the_running_core() {
     let ck = Arc::new(TestKey::new());
     let (s2, k2) = (status.clone(), ck.clone());
     let core = TestServer::handler(move |w, req| match req.path.as_str() {
-        "/identity" => crate::nethttp::write_json(
+        "/identity" => jarvis_nethttp::write_json(
             w,
             200,
             &json!({"signingKey": k2.public(), "agreementKey": "a"}),
         ),
-        "/claim" => crate::nethttp::write_json(
+        "/claim" => jarvis_nethttp::write_json(
             w,
             s2.load(std::sync::atomic::Ordering::SeqCst),
             &json!({"payload": "{}", "sig": "x"}),
         ),
-        _ => crate::nethttp::write_json(w, 404, &json!({"error": "no such route"})),
+        _ => jarvis_nethttp::write_json(w, 404, &json!({"error": "no such route"})),
     });
     let t = new_test_router_with(|_| {}, Some(&core.url), Default::default());
     assert!(t.core_cert().is_none(), "a cert before any claim");

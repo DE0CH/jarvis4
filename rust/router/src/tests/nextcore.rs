@@ -1,9 +1,9 @@
 //! nextcore_test.go
-use crate::nethttp::{Req, write_error, write_json};
 use crate::nextcore::{DRAIN_WATCH_EVERY_MS, FLIP_AUTO_FORCE, HttpHandoff};
 use crate::router::Router;
 use crate::testutil::*;
 use crate::types::Doc;
+use jarvis_nethttp::{Req, write_error, write_json};
 use serde_json::{Value, json};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};

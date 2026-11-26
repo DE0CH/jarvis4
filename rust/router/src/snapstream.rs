@@ -19,10 +19,10 @@
 //! POST /m/snapshot (a whole file signed over its hash) stays for older images.
 
 use crate::http::{Registrar, verify_p256, write_err};
-use crate::nethttp::write_json;
 use crate::router::Router;
 use crate::snapwait::MovedReader;
 use anyhow::{Result, anyhow};
+use jarvis_nethttp::write_json;
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::{Arc, LazyLock};
@@ -84,8 +84,8 @@ impl Router {
     /// POST /m/snapshot-stream: checked before a byte is taken, then straight into the bucket
     fn snapshot_stream(
         self: &Arc<Self>,
-        w: &mut crate::nethttp::W,
-        req: &mut crate::nethttp::Req,
+        w: &mut jarvis_nethttp::W,
+        req: &mut jarvis_nethttp::Req,
     ) -> Result<()> {
         let (machine, t, sig) = (
             req.header("X-Machine"),

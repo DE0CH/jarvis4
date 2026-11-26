@@ -23,11 +23,11 @@
 
 use crate::awsread::AwsInstanceView;
 use crate::http::Registrar;
-use crate::nethttp::write_json;
 use crate::router::Router;
 use crate::sessionlog::{LOG_LIFECYCLE, LOG_SUPERVISOR};
 use anyhow::{Result, anyhow};
 use jarvis_go::GoTime;
+use jarvis_nethttp::write_json;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};

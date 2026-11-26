@@ -4,8 +4,8 @@ use crate::claudelogin::{
     is_login_err,
 };
 use crate::ctx::Ctx;
-use crate::nethttp::write_json;
 use crate::testutil::*;
+use jarvis_nethttp::write_json;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -622,11 +622,11 @@ fn login_poll_signed_with_query() {
     let m = new_test_machine(&r, "mA");
     let target = "/m/claude-login?have=0&ack=0&wait=0";
     let (ts, sig) = signed_headers(&m.key, "GET", target, b"", crate::util::unix_now());
-    let mut req = crate::nethttp::Req::new("GET", target, b"")
+    let mut req = jarvis_nethttp::Req::new("GET", target, b"")
         .with_header("X-Machine", "mA")
         .with_header("X-Time", &ts)
         .with_header("X-Sig", &sig);
-    let mut w = crate::nethttp::W::recorder();
+    let mut w = jarvis_nethttp::W::recorder();
     (r.machine_handler())(&mut w, &mut req);
     assert!(
         w.status() == 200 && w.body_text().contains("at-a"),

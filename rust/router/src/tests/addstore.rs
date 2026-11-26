@@ -58,7 +58,7 @@ pub fn add_store_router(held: bool) -> (TestRouter, Arc<Mutex<AddStoreState>>, T
     let srv = TestServer::handler(move |w, req| {
         let input: Value = serde_json::from_slice(&req.read_body(1 << 20)).unwrap_or_default();
         let mut c = s2.lock().unwrap_or_else(|e| e.into_inner());
-        let mut out = |status: u16, v: &Value| crate::nethttp::write_json(w, status, &doc(v));
+        let mut out = |status: u16, v: &Value| jarvis_nethttp::write_json(w, status, &doc(v));
         match req.path.as_str() {
             "/succession" => {
                 let pc = decode(&input["predecessor"]);
@@ -125,7 +125,7 @@ pub fn add_store_router(held: bool) -> (TestRouter, Arc<Mutex<AddStoreState>>, T
                 c.latest.insert(m.clone(), nonce.clone());
                 out(200, &cert(&nonce, &stores, &m));
             }
-            _ => crate::nethttp::write_error(w, 404, "404 page not found"),
+            _ => jarvis_nethttp::write_error(w, 404, "404 page not found"),
         }
     });
     let r = t.r.clone();

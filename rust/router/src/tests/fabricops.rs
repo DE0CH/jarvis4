@@ -1,7 +1,7 @@
 //! fabricops_test.go
 use crate::fabricrunner::FABRIC_ENV;
-use crate::nethttp::{Req, W};
 use crate::testutil::{TestServer, new_test_router, serial};
+use jarvis_nethttp::{Req, W};
 use std::sync::{Arc, Mutex};
 
 /// the fabric's settings put back when dropped

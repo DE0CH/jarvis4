@@ -12,7 +12,7 @@
 //! PROGRESS_NOTE_EVERY.
 
 use crate::http::Registrar;
-use crate::nethttp::write_json;
+use jarvis_nethttp::write_json;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::BTreeMap;

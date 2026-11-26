@@ -6,10 +6,10 @@ use crate::fabricrunner::{
 };
 use crate::kernelline::kernel_object;
 use crate::machines::{FlyMachineDetail, LIST_FLY_MACHINES};
-use crate::nethttp::{Req, W};
 use crate::state::Session;
 use crate::testutil::*;
 use jarvis_go::GoTime;
+use jarvis_nethttp::{Req, W};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};

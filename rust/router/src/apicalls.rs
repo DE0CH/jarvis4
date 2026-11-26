@@ -13,11 +13,11 @@
 use crate::inbox::{
     ApiCall, Caller, InboxItem, InboxRequest, Origin, RequestParams, SignedRequest,
 };
-use crate::nethttp::{Req, W, write_json};
 use crate::router::Router;
 use crate::state::{Approval, Persisted};
 use anyhow::{Result, anyhow};
 use jarvis_go::GoTime;
+use jarvis_nethttp::{Req, W, write_json};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
@@ -276,14 +276,14 @@ impl Router {
         let i: CallIn = match jarvis_go::unmarshal(b) {
             Ok(i) => i,
             Err(e) => {
-                crate::nethttp::write_error(w, 400, &format!("bad JSON: {e}"));
+                jarvis_nethttp::write_error(w, 400, &format!("bad JSON: {e}"));
                 return;
             }
         };
         let (p, args) = match self.check_call(&i) {
             Ok(x) => x,
             Err(e) => {
-                crate::nethttp::write_error(w, 400, &format!("{e:#}"));
+                jarvis_nethttp::write_error(w, 400, &format!("{e:#}"));
                 return;
             }
         };
@@ -502,7 +502,7 @@ impl Router {
                 .map(|x| json!(x))
         });
         match out {
-            None => crate::nethttp::write_error(
+            None => jarvis_nethttp::write_error(
                 w,
                 404,
                 &format!(

@@ -28,11 +28,11 @@
 
 use crate::http::Registrar;
 use crate::kernel::{KERNEL_COPIES, copy_of, is_no_roster, kernel_error};
-use crate::nethttp::{Req, W, write_json};
 use crate::router::Router;
 use anyhow::{Result, anyhow};
 use base64::Engine;
 use jarvis_go::GoTime;
+use jarvis_nethttp::{Req, W, write_json};
 use jarvis_sig::{Doc as SDoc, Identity, Roster};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};

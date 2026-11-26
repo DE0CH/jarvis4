@@ -24,20 +24,20 @@ fn the_router_keeps_what_comes_beside_a_cert() {
             let d = k.doc(
                 &json!({"kind": "succession-cert", "predecessorId": "m1", "machine": {"id": "m2"}}),
             );
-            crate::nethttp::write_json(
+            jarvis_nethttp::write_json(
                 w,
                 200,
                 &json!({"payload": d.payload, "sig": d.sig,
                     "entry": k.doc(&json!({"kind": "input", "seq": 0, "input": "cert", "machine": "m2"})), "carry": "BLOB-M2"}),
             );
         }
-        "/attest" => crate::nethttp::write_json(
+        "/attest" => jarvis_nethttp::write_json(
             w,
             200,
             &k.doc(&json!({"kind": "input", "seq": 1, "input": "wakeup", "machine": "m2"})),
         ),
         // no /input-log, no /carry/forward
-        _ => crate::nethttp::write_json(w, 404, &json!({"error": "no such route"})),
+        _ => jarvis_nethttp::write_json(w, 404, &json!({"error": "no such route"})),
     });
     let t = new_test_router_with(|_| {}, Some(&core.url), Default::default());
     t.save_carry("m1", "BLOB-M1");
@@ -83,9 +83,9 @@ fn deploy_key_relay_for_the_apps_key_pair() {
             serde_json::from_slice(&req.read_body(1 << 20)).unwrap_or_default();
         match req.path.as_str() {
             "/deploy-keys/begin" => {
-                crate::nethttp::write_json(w, 200, &k.doc(&json!({"kind": "deploy-key-begin"})))
+                jarvis_nethttp::write_json(w, 200, &k.doc(&json!({"kind": "deploy-key-begin"})))
             }
-            "/deploy-keys/finish" => crate::nethttp::write_json(
+            "/deploy-keys/finish" => jarvis_nethttp::write_json(
                 w,
                 502,
                 &k.doc(

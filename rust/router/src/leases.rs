@@ -25,12 +25,12 @@
 //! status. Jarvis 1's lease table is separate: Jarvis 4 is the lease authority for Jarvis 4 sessions.
 
 use crate::http::{Registrar, null_if_empty};
-use crate::nethttp::{Req, W, write_json};
 use crate::router::Router;
 use crate::vouch::{Delivery, SignedRequest};
 use anyhow::Result;
 use base64::Engine;
 use jarvis_go::GoTime;
+use jarvis_nethttp::{Req, W, write_json};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, BTreeSet};

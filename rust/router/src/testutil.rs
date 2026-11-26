@@ -6,9 +6,9 @@
 
 use crate::core::{CoreClient, Doc};
 use crate::db::DB;
-use crate::nethttp::{Handler, Req, W};
 use crate::router::{Config, Router};
 use crate::state::State;
+use jarvis_nethttp::{Handler, Req, W};
 use std::sync::Arc;
 
 /// a fresh schema of TEST_DATABASE_URL's database (dropped with this), as a URL whose connections use only it
@@ -172,7 +172,7 @@ impl TestServer {
                 .unwrap_or_else(|e| panic!("{e}"));
             rt.block_on(async move {
                 let ln = tokio::net::TcpListener::from_std(ln).unwrap_or_else(|e| panic!("{e}"));
-                let _ = crate::nethttp::serve_listener(ln, h, s2).await;
+                let _ = jarvis_nethttp::serve_listener(ln, h, s2).await;
             });
         });
         TestServer {
@@ -513,7 +513,7 @@ pub type CoreHook = Arc<dyn Fn(&mut W, &TestKey, &str, &[u8]) -> bool + Send + S
 
 /// the fake core's answer to one call (body: the request's, read)
 pub fn fake_core_answer(k: &TestKey, w: &mut W, path: &str, body: &[u8]) {
-    use crate::nethttp::write_json;
+    use jarvis_nethttp::write_json;
     use serde_json::json;
     match path {
         "/key" => write_json(w, 200, &json!({"signingKey": k.public()})),
@@ -594,7 +594,7 @@ impl FakeCore {
                 st.lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .push(serde_json::from_slice(&b).unwrap_or_default());
-                return crate::nethttp::write_json(
+                return jarvis_nethttp::write_json(
                     w,
                     502,
                     &serde_json::json!({"error": "no Fly in tests"}),
@@ -1151,7 +1151,7 @@ impl V2Core {
     }
 
     pub fn with_hook(key: Arc<TestKey>, hook: Option<V2Hook>) -> V2Core {
-        use crate::nethttp::write_json;
+        use jarvis_nethttp::write_json;
         use serde_json::json;
         let st: Arc<std::sync::Mutex<V2State>> = Arc::default();
         let s2 = st.clone();

@@ -18,12 +18,12 @@
 use crate::core::Doc;
 use crate::http::{Registrar, write_err};
 use crate::inbox::Origin;
-use crate::nethttp::{Req, write_json};
 use crate::router::Router;
 use crate::sessionlog::LOG_INPUT;
 use crate::state::Session;
 use anyhow::{Result, anyhow};
 use base64::Engine;
+use jarvis_nethttp::{Req, write_json};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};

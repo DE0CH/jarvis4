@@ -4,9 +4,9 @@ use crate::jarvis1import::{
     J1_MANIFEST_FILE, J1_PAUSED_ROOT, J1ImportIn, J1ImportManifest, J1Prep, j1_doc, j1_forget,
     j1_prep,
 };
-use crate::nethttp::{Handler, Req, W};
 use crate::storagebox::StorageBox;
 use crate::testutil::*;
+use jarvis_nethttp::{Handler, Req, W};
 use serde_json::{Map, Value, json};
 use sha2::Digest;
 use std::collections::BTreeMap;

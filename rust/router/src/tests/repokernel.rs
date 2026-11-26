@@ -1,8 +1,8 @@
 //! repokernel_test.go: on a box with no core adding a repo goes to the kernel's serving secrets (the same calls
 //! and signed answers): begin and finish are relayed there, never to the core; the signed deploy-key-added puts the
 //! repo on the list; secrets' refusals come back with their status, a GitHub 403 explained.
-use crate::nethttp::write_json;
 use crate::testutil::*;
+use jarvis_nethttp::write_json;
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, Mutex};
