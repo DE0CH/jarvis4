@@ -34,7 +34,6 @@ fn fake_fly_list() -> anyhow::Result<Vec<FlyMachineDetail>> {
             d.config.metadata = BTreeMap::from([(SOURCE_META.to_string(), m.source.clone())]);
             d.config.mounts = vec![FlyMount {
                 volume: m.volume.clone(),
-                ..Default::default()
             }];
             d
         })
