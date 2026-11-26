@@ -212,10 +212,18 @@ fn lapsed_outcomes_wait_for_a_paused_session() {
         .iter()
         .map(|d| (d.outcomes[0].r#ref.clone(), d.outcomes[0].outcome.clone()))
         .collect();
+    // the add-store is told under its own approval's id, never the session's
+    let aid = o
+        .iter()
+        .find(|x| x.kind == "add-store")
+        .map(|x| x.r#ref.clone())
+        .unwrap_or_default();
     assert!(
         seen.get(&rid).map(String::as_str) == Some("lapsed")
-            && seen.get("sa").map(String::as_str) == Some("lapsed"),
-        "{seen:?}"
+            && !aid.is_empty()
+            && aid != "sa"
+            && seen.get(&aid).map(String::as_str) == Some("lapsed"),
+        "{seen:?} (the add-store's ref {aid:?})"
     );
 }
 

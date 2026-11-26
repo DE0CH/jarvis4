@@ -3126,9 +3126,9 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      marked missed with that text and a DM sent at once; the 5-attempt DMs, a missed run's reason, a watch's last
      error and a failed Run now all say it in those words (`knownError`). A core line's start still waits out the limit
      up to 3 h first (`machineLimitWait`), as before.
-268. **The Fly + AWS cap is USD 100 a month** (Deyao, 2026-11-17: "Increase fly + aws budget to 100usd"). The one pool
-     of entry 248 pauses every running session at USD 100 (`FLY_BUDGET_USD`) and DMs at USD 90 (`FLY_BUDGET_WARN_USD`,
-     the same 90 % as the old 45/50). Only the router's env in k8s/cluster/router/router.yaml changed; the code's
+268. **The Fly + AWS cap is USD 150 a month** (Deyao, 2026-11-25: "raise aws + fly cap to 150usd"). The one pool
+     of entry 248 pauses every running session at USD 150 (`FLY_BUDGET_USD`) and DMs at USD 135 (`FLY_BUDGET_WARN_USD`,
+     the same 90 % as before). Only the router's env in k8s/cluster/router/router.yaml changed; the code's
      defaults stay 50/45.
 269. **Jarvis 4 is rewritten in Rust, part by part; the machine first** (Deyao, 2026-11-17: rewrite all of Jarvis 4 from
      Go into Rust, the same wire formats, "part by part": machine, core, router, kernel last, as a kernel release needs
@@ -3205,3 +3205,64 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      Anthropic (an unknown model) until it restarts onto the newest image. A conversation from before keeps its plain
      pick and runs on its session's account; the menu shows the default entry for it until Deyao picks. *Change*: if
      the Jarvis 4 app's switch should win over the chat's pick, make the gateway trust a found account for good.
+275. **The memory and disk watchdog interrupts the turn; every other Jarvis message joins it at the next tool result**
+     (Deyao, 2026-11-20: "jarvis memory and disk watchdog should interrupt the turn and deliver immediately, since it's
+     time sensitive … two categories, one is the normal idle or scheduled message delivery …, and another is to
+     interrupt turn and deliver immediately"; "turn means attached before or after a tool call result, like the
+     default behaviour in claude code for a message"). Normal is what every Jarvis message already did: Claude Code's
+     channel queues it `next` (taken in at the next tool result), aviary's delivery says `joinRunning`, magpie's
+     schedules join the same way. The pressure watch (`rust/machine/src/pressure.rs`) sends through
+     `deliver.rs` `interrupt_harness` instead: on aviary a POST of the machine's aviary-gateway `/jarvis/deliver`
+     with `interrupt: true` (hermit-jarvis → magpie's `interruptRunning`: the running turn gets the person's stop and
+     the message waits, held, then runs as a turn of its own, as the app's "send now" on a queued message), not
+     through the inbox spool, whose loop waits on a running turn; on Claude Code an Esc into the pane when its spinner
+     shows a turn, then the channel as before. The others (Paseo, OpenClaw, opencode, dsh) have no interrupt and take
+     it as any message; the text says it stopped the turn only where it does. When memory and disk come in the same
+     look, only the first message interrupts. *Not chosen*: Claude Code's `priority: "now"` on a stream-json input
+     line (tried on 2.1.325: the running tool call ran to its end first) or on the channel (Claude Code always queues a
+     channel message `next`); a third, wait-for-the-reply's-end category (not what Deyao meant by a turn).
+
+276. **Every store request is answered under its own id** (Deyao, 2026-11-20: "own id per request"). An add-store (also
+     the add-store a repo request becomes when the repo has its key, and a kernel line's) is filed and told under its
+     approval's own id: the filing answers it as `id` (a batch item's `id`), the outcome's `ref` is it (`approvalRef`),
+     and so the outcome text's "(Inbox …)" and the chat card's marker name it. Before, every add-store of a session was
+     told under the session's id, so with two open at once the first outcome ended both commands' waits (a deploy-key
+     batch printed another request's LAPSED as its own) and could settle and read the other's card in the chat. A
+     command already waiting on the session's id when the router changed never sees its outcome (the Inbox's 10
+     minutes bound it); `jarvis-request wait ID` reads it. Other approvals keep the session's id: a proposed session's
+     id is what its proposal answered, and a session has one proposal at a time. *Change*: none expected.
+277. **A session's tail, now** (Deyao, 2026-11-20: "in addition to the transcript search that lags current by some
+     time, have a function to get the tail of a session in a timely manner"; asked who may read one: "Same as
+     transcript search", any session). `jarvis-tail SESSION` (`GET /m/api/tail/{session}`, `router/livetail.go`):
+     for a running session the router sends the `live-sync` command and waits (up to 45 s) for the machine's
+     `POST /m/live-synced`, sent after it has sent every transcript that changed (the live sync's own path, so the
+     `.live` copies and transcript search gain from it too); then it Range-reads the end of the conversation's
+     `.live` copy and parses it as the app's tails, with tool calls and results (clipped to 600 characters) unless
+     `?said=1`. The conversation is the copy whose last entry is newest: one rule, right for every image, and no
+     field the machine must report. Paused, frozen or not answering (an image from before this): the last copy,
+     `stale` with why; the final snapshot now sends a sync round first, so a paused session's copy ends where its
+     snapshot does. Nothing is pushed more often: a round costs only when someone asks. The two supervisors share the
+     live sync's state file and merge it before each pass, so supervisor-core's rounds don't make supervisor-normal
+     send the same transcripts again. *Change*: if reading a session's tail should need its stores, check the
+     direction as peer messages do (`peerDirection`).
+
+278. **The gate carries a branch home after its session has ended** (Deyao, 2026-11-22: "branches outlive a
+     session"; the repair session fixes the meta issues only). Three rules in `rust/gate`: (a) a finished run
+     decides for the branch's head, whichever of its commits it ran on (`decides_for`; claude/jarvis-tail stayed
+     pending for good when its slow iOS run finished on an older commit); (b) a red the branch shares with main is
+     run once more before the branch counts as red (`rerun`: every red run broke, `failure`/`timed_out`, on its first
+     attempt, in a workflow whose newest passed-or-broke run on main broke too; `rerun-failed-jobs` with merge.yml's
+     `actions: write`; a workflow-token re-run does trigger `merge` when it ends, probed on claude-env 2026-11-22);
+     (c) after every landing, every branch whose head is in main is deleted, not only the landed one (merged `wip/`
+     copies and branches merged another way had piled up: 40 across claude-env, aviary, jarvis4 and deyao-ai).
+     *Change*: a repo whose merge.yml still says `actions: read` keeps its reds as they are (the re-run is refused
+     and logged) until it is vendored again; branch protection, not the gate, would keep a long-lived branch that
+     sits in main.
+279. **An object read that a reset cuts off goes on from where it broke** (Deyao, 2026-11-22: "the router
+     retries"). The router reaches the bucket's IPv4 through WARP, which resets long reads now and then; on
+     2026-11-21 that failed four Destroys ("fetching the snapshot: … connection reset by peer") and a pause (the
+     snapshot's read-back), each waiting for someone to try again. `s3Objects.Get` (router/objstore.go
+     `resumingObject`; the Rust port's `Resuming`) re-requests the object from the byte it reached, up to 5 times
+     (2, 4, 6, 8, 10 s apart), so every caller (archive, read-back, facts, downloads) gets it without a retry of its
+     own. An S3 error answer is not retried. *Change*: if WARP's resets get worse, reach the bucket over IPv6
+     (2a01:4f8:b001::1) instead of retrying more.

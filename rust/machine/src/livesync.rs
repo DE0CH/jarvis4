@@ -1,6 +1,8 @@
 //! Live transcript sync: every liveSyncSeconds (default 300) each conversation transcript under ~/.claude/projects that
 //! changed since its last copy goes to the router (POST /m/live-transcript, X-Name = its file name, the whole file),
-//! which puts it at claude-records/.live/<session id>/ for transcript search (router/livesync.go). The machine holds no
+//! which puts it at claude-records/.live/<session id>/ for transcript search (router/livesync.go); the "live-sync" command
+//! runs a round at once and then says so (POST /m/live-synced: a session's tail, now, router/livetail.go), and the
+//! final snapshot sends a round first. The machine holds no
 //! Storage Box credentials. Jarvis's peer-message relays ("You are a delivery relay…") are plumbing and are skipped.
 
 use crate::client::Client;
@@ -155,6 +157,23 @@ impl LiveSyncer {
     /// each of files that changed since its last copy, the newest first; the number sent
     pub fn pass(&self, files: &[PathBuf]) -> usize {
         let mut sent = self.sent.lock().unwrap_or_else(|e| e.into_inner());
+        // supervisor-normal's rounds and supervisor-core's (a live-sync command, the teardown) share the state file:
+        // what the other process sent since is not sent again
+        if let Some(st) = &self.state
+            && let Ok(b) = std::fs::read(st)
+            && let Ok(theirs) = gojson::unmarshal::<BTreeMap<String, String>>(&b)
+        {
+            for (k, v) in theirs {
+                let newer = match (sent.get(&k).and_then(|p| parse(p)), parse(&v)) {
+                    (Some(p), Some(t)) => t > p,
+                    (None, Some(_)) => true,
+                    _ => false,
+                };
+                if newer {
+                    sent.insert(k, v);
+                }
+            }
+        }
         let mut cs: Vec<(PathBuf, std::fs::Metadata, SystemTime)> = files
             .iter()
             .filter_map(|f| {
@@ -211,6 +230,16 @@ impl LiveSyncer {
             logf!("live sync: {e:#}");
         }
         n
+    }
+}
+
+/// the "live-sync" command (router/livetail.go): a round now, then POST /m/live-synced, which the router's tail waits for
+pub fn live_round(c: &Client) {
+    let n = live_syncer_for(c).once();
+    match c.raw("POST", "/m/live-synced", b"{}", &[]) {
+        Ok(r) if r.status == 200 => logf!("live sync asked for: {n} changed transcripts sent"),
+        Ok(r) => logf!("live sync asked for: /m/live-synced HTTP {}", r.status),
+        Err(e) => logf!("live sync asked for: /m/live-synced: {e:#}"),
     }
 }
 

@@ -31,6 +31,9 @@ use std::os::unix::fs::MetadataExt;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+/// how long the router holds a poll of /m/commands open when it has nothing (router/http.go mqNext 50 s)
+pub const COMMANDS_WAIT: Duration = Duration::from_secs(50);
+
 /// supervisor-core, what keeps the control plane alive: the commands (stop, snapshot, Upgrade, pause), execs and
 /// deliveries through the guard, the secrets and deploy keys, the supervisor log and the teardown's uploads. While the
 /// machine boots it answers a snapshot with the predecessor's (or "nothing to snapshot").
@@ -81,10 +84,26 @@ pub fn supervise_core() -> Result<()> {
         /// vouched, core-attested inputs (deliver.rs)
         deliveries: Vec<Delivery>,
     }
+    // the router answers within COMMANDS_WAIT; past that plus a margin the poll is given up and made again (a far end
+    // that holds the connection but never answers, e.g. a gateway's upstream gone), never the client's 10 minutes
+    let mut poll = c.clone();
+    poll.timeout = Some(COMMANDS_WAIT + Duration::from_secs(60));
+    let mut failing = false;
     loop {
-        let out: Out = match c.json::<(), Out>("GET", "/m/commands", None) {
-            Ok(o) => o,
-            Err(_) => {
+        let out: Out = match poll.json::<(), Out>("GET", "/m/commands", None) {
+            Ok(o) => {
+                if failing {
+                    logf!("commands: the router answers again");
+                    failing = false;
+                }
+                o
+            }
+            Err(e) => {
+                if !failing {
+                    // once per run of failures: deliveries wait while this lasts (the router retries them)
+                    logf!("commands: GET /m/commands failed, polling again every 5 s: {e:#}");
+                    failing = true;
+                }
                 util::sleep(Duration::from_secs(5));
                 continue;
             }
@@ -177,7 +196,19 @@ pub fn run_command(c: &Client, cmd: &str) {
                 logf!("resume-harness: {e:#}");
             }
         }
+        "live-sync" => {
+            // livesync.rs: the router wants this session's tail now (router/livetail.go)
+            if booted() {
+                let c = c.clone();
+                std::thread::spawn(move || crate::livesync::live_round(&c));
+            }
+        }
         "snapshot" | "snapshot-full" => {
+            if booted() && !FROZEN.load(Ordering::SeqCst) {
+                // the .live copies end where the snapshot does, so a paused session's tail is its last word
+                let n = crate::livesync::live_syncer_for(c).once();
+                logf!("snapshot: {n} changed transcripts sent first");
+            }
             if cmd == "snapshot-full" {
                 FULL_SNAPSHOT.store(true, Ordering::SeqCst); // the session ends with this machine (a destroy)
             }

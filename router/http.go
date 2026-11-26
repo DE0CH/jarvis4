@@ -293,6 +293,7 @@ func (r *Router) buildHandlers() {
 	device("POST /api/core/wipe", "/wipe")
 	r.registerBackups(app)
 	r.registerKernel(app)      // kernelline.go
+	r.registerFabricOps(app)   // fabricops.go: the fabric hermit's operator page, read only
 	r.registerRoster(app, mux) // roster.go
 	r.registerLineState(app)
 	app("GET /api/policy", func(w http.ResponseWriter, req *http.Request) { writeJSON(w, 200, r.policy) })
@@ -728,7 +729,8 @@ func (r *Router) buildHandlers() {
 		writeJSON(w, 200, d)
 	})
 	m("GET /m/commands", func(w http.ResponseWriter, req *http.Request, machine string, _ []byte) {
-		// mq.go: the machine's oldest untaken row, waiting up to 50 s for one
+		// mq.go: the machine's oldest untaken row, waiting up to 50 s for one (rust/machine/src/supervisor.rs COMMANDS_WAIT:
+		// the machine gives a poll up 60 s past that)
 		it, err := r.mqNext(req.Context(), machine, 50*time.Second)
 		switch {
 		case err != nil && req.Context().Err() != nil:

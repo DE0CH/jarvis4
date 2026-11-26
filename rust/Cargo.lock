@@ -1266,6 +1266,7 @@ dependencies = [
  "sha2 0.10.9",
  "signal-hook",
  "signature",
+ "socket2",
  "ssh-key",
  "tar",
  "thiserror",

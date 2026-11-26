@@ -287,6 +287,14 @@ func reply(req map[string]any) (kind string, content []map[string]any) {
 				"input": map[string]any{"command": "time-machine 20s", "description": "e2e: wait 20 s frozen"}}}
 		}
 		return "wakeup", []map[string]any{{"type": "text", "text": "E2E-WOKE " + token}}
+	case strings.Contains(last, "tool_result") && strings.Contains(last, "E2E-BIG-"+token):
+		return "answer", []map[string]any{{"type": "text", "text": "E2E-BIG-DONE " + token}}
+	case strings.Contains(last, "E2E-BIG "+token):
+		// 4 GB that do not compress in the workspace: the destroy's whole-state snapshot then outlasts the fabric
+		// hermit's janitor pass while the session is frozen for it (2026-11-20: Greeting Exchange's sandbox released
+		// mid-snapshot)
+		return "tool", []map[string]any{{"type": "tool_use", "id": "toolu_e2e_big_" + token, "name": "Bash",
+			"input": map[string]any{"command": "head -c 4G /dev/urandom > e2e-big.bin && ls -l e2e-big.bin && echo E2E-BIG-" + token, "description": "e2e: 4 GB in the workspace"}}}
 	case strings.Contains(last, "E2E-FREEZE "+token):
 		// a fabric session that waits frozen for an hour: its destroy (no force) must thaw it for its final snapshot
 		return "tool", []map[string]any{{"type": "tool_use", "id": "toolu_e2e_freeze_" + token, "name": "Bash",
@@ -1029,6 +1037,22 @@ func main() {
 	// a fabric session destroyed while frozen: no force, so its final snapshot must arrive (2026-11-19: a frozen
 	// machine answered nothing and the destroy failed with "silent since")
 	chatForce := "?force=1"
+	if runner == "fabric" {
+		// 2026-11-20: a destroy's final snapshot froze the session, aviary's supervisor among it, the fabric hermit's
+		// health checks went unanswered and it released the sandbox mid-snapshot; hermit.json's sandbox.silenceSeconds
+		// keeps it. 4 GB in the workspace make the snapshot outlast the hermit's janitor pass.
+		step("a fabric session with 4 GB in its workspace: its destroy's snapshot outlasts the fabric hermit's silence check")
+		body := map[string]any{"clientMessageId": "e2e-big-" + token, "text": "E2E-BIG " + token, "images": []any{}, "files": []any{}}
+		if code, b := call("POST", os.Getenv("E2E_MAGPIE")+"/v1/conversations/"+chatID+"/turns", body, asPigeon()...); code/100 != 2 {
+			log.Fatalf("FAIL: magpie answered %d to the 4 GB message: %s", code, b)
+		}
+		waitFor("the 4 GB written", 10*time.Minute, func() bool {
+			return strings.Contains(magpieText(), "E2E-BIG-DONE "+token)
+		})
+		// the silence rule judges only a sandbox ready longer than its silence (hermit's 90 s, from ready_at): past
+		// it, the frozen snapshot (about a minute for 4 GB here) spans the janitor's 30 s passes
+		time.Sleep(100 * time.Second)
+	}
 	if runner == "fabric" {
 		step("a frozen fabric session's destroy: thawed for its final snapshot, no force needed")
 		body := map[string]any{"clientMessageId": "e2e-freeze-" + token, "text": "E2E-FREEZE " + token, "images": []any{}, "files": []any{}}

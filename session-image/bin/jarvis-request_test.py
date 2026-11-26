@@ -141,4 +141,16 @@ for argv, ans in ((["grant", "status", "--minutes", "5", "--why", "x"], {"ok": T
     sys.stdout = real_stdout
     f.close()
     assert f'"id": "{ans["id"]}"' in seen[-1], (argv[0], seen[-1])
+
+# an outcome not delivered yet shows the last attempt's error (2026-11-20: "not yet delivered" for 6 min hid the
+# router's "the machine didn't answer within 60 s"); a delivered one shows only an error it was given up with
+import contextlib, io
+for o, want in (({"ref": "s1", "kind": "add-store", "outcome": "approved", "at": "T", "error": "the machine refused or failed: the machine didn't answer within 60 s"},
+                 "(not yet delivered to this session: the machine refused or failed: the machine didn't answer within 60 s)"),
+                ({"ref": "s1", "kind": "add-store", "outcome": "approved", "at": "T"}, "(not yet delivered to this session)"),
+                ({"ref": "s1", "kind": "add-store", "outcome": "approved", "at": "T", "delivered": "T2"}, "APPROVED at T")):
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        jr.show(o)
+    assert out.getvalue().rstrip().endswith(want), out.getvalue()
 print("ok")

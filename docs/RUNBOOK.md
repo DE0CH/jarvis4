@@ -57,10 +57,16 @@ They push a branch (`claude/<topic>`; `wip/<topic>` only runs CI), and the gate 
 - `merge.yml` (workflow_run of each of those; GitHub runs main's copy, so a branch can't change it) runs `gate merge`:
   once each CI workflow's newest run on the branch's own commits is over (a later commit that starts no workflow keeps
   the earlier result: a red iOS run stays red under a README push), one red → `gate` red; all green → into main with the deploy key
-  `jarvis-merge` (environment `merge`), the branch deleted: on main's head a fast-forward to that exact commit, on an
+  `jarvis-merge` (environment `merge`), then every branch whose head is in main deleted (the landed one, and a `wip/`
+  copy or anything else whose work reached main another way): on main's head a fast-forward to that exact commit, on an
   older base main merged in and the merge pushed with no further run (Deyao, 2026-11-18: jarvis4's main moves every
   15-30 min, aviary's faster, and re-testing for every move would never land; main's own CI runs on the merge). A
-  conflict turns `gate` red with a comment. The rule is `rust/gate/src/decide.rs` and the git part `land_git`, both
+  conflict turns `gate` red with a comment. The branch's head decides, whichever of its commits the finished run was on
+  (a slow iOS run finishing on an older commit after every run on the head had ended left the head pending for good).
+  A red the branch shares with main (every red run broke on its first attempt in a workflow whose newest run on main
+  broke too: a flaky check like the iPhone walkthrough) is re-run once (`rerun-failed-jobs`, merge.yml's
+  `actions: write`; a re-run started with the workflow token does trigger `merge` when it ends, checked 2026-11-22)
+  before the branch counts as red (Deyao, 2026-11-22: a branch outlives its session, so nobody pushes again). The rule is `rust/gate/src/decide.rs` and the git part `land_git`, both
   tested alone (against local repos).
 - Main's ruleset requires `gate` green for anyone else (a merge in the web page); deploy keys (the pins, the gate) and
   the admin role bypass it.

@@ -274,11 +274,12 @@ func (r *Router) kernelSpawn(sid string) {
 	}
 	op.machine(id)
 	spawned := time.Now()
-	if isAWSMachine(id) {
+	switch runner {
+	case "aws":
 		op.note(id, "the spawner launched EC2 instance "+id+" ("+r.spawnRegion(&s)+"); waiting for its keys (the machine writes them to the instance's serial console once the session image runs)")
-	} else if isFabricMachine(id) {
+	case "fabric":
 		op.note(id, "the spawner got fabric sandbox "+id+" from the fabric hermit; waiting for its keys (the machine writes them to the sandbox's console once the session image runs)")
-	} else {
+	default:
 		op.note(id, "the spawner made Fly machine "+id+"; waiting for its keys")
 	}
 	pred := ""
@@ -430,6 +431,7 @@ func (r *Router) kernelAdopt(op *lcHandle, source doc.Object) (string, string) {
 			}
 		}
 		op.note(m.id, "machine "+m.id+" from "+string(source)+" is a stray of an earlier spawn: asked the spawner to destroy it")
+		// the spawner's /destroy takes no runner until its release (wip/spawner-runner-record): it reads it from the id
 		if _, err := r.kernel.Doc("spawner", "/destroy", map[string]string{"id": m.id}); err != nil {
 			log.Printf("[kernel] stray %s: destroy: %v", m.id, err)
 		}
@@ -746,7 +748,7 @@ func (r *Router) kernelKillDone(id, machine string, destroying bool, serr error,
 			s.NoSnapshot = ""
 		}
 	})
-	r.lcNote(id, machine, "the spawner confirmed the machine destroyed on "+runnerName(machine))
+	r.lcNote(id, machine, "the spawner confirmed the machine destroyed on "+runnerLabel(r.runnerOfSession(id)))
 	*ok = true
 	return true
 }
@@ -1192,20 +1194,9 @@ func (r *Router) respondKernelAdd(a *Approval, signatures string) (*Doc, string,
 			}
 		}
 		if a.Origin != nil {
-			noteOutcome(d, a.Origin, "add-store", a.Session, outcomeApproved, 0, &Doc{Payload: nz2.Payload, Sig: nz2.Sig})
+			noteOutcome(d, a.Origin, "add-store", approvalRef(a), outcomeApproved, 0, &Doc{Payload: nz2.Payload, Sig: nz2.Sig})
 		}
 	})
 	r.send(a.Machine, "refresh-secrets")
 	return &Doc{Payload: md.Payload, Sig: md.Sig}, a.Session, nil
-}
-
-// runnerName: where a machine runs, by its id (an EC2 instance's is i-…, a fabric sandbox's x<32 hex>)
-func runnerName(machine string) string {
-	if isAWSMachine(machine) {
-		return "AWS"
-	}
-	if isFabricMachine(machine) {
-		return "the fabric"
-	}
-	return "Fly"
 }

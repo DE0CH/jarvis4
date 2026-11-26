@@ -1,8 +1,9 @@
 package main
 
 // Reading a Claude Code transcript (JSONL) for people: the last messages and the title (Jarvis 1
-// lib/archive.js parseTranscript). Only what was said: user prompts and assistant text. Tool calls and
-// results, meta lines, sidechains (subagents) and injected <system-reminder>-style blocks are left out. The
+// lib/archive.js parseTranscript). Only what was said: user prompts and assistant text; with tools (the live tail,
+// livetail.go) also each tool call (role "tool": its name and input) and each result (role "result"), clipped. Meta
+// lines, sidechains (subagents) and injected <system-reminder>-style blocks are left out. The
 // title is what the Claude app showed: the last custom-title (a rename), else the last ai-title. A message
 // typed while Claude was mid-turn only exists as a queue-operation enqueue, so those count as user messages
 // too (deduplicated against the user record a normally delivered one also gets).
@@ -51,8 +52,16 @@ func clipText(t string, n int) string {
 	return string(r[:n])
 }
 
+// toolClip: how much of a tool call's input or a result a tail with tools keeps
+const toolClip = 600
+
 // parseTranscript: partialFirstLine when text starts mid-file (a tail read); max messages, clip runes each
 func parseTranscript(text string, partialFirstLine bool, max, clip int) Tail {
+	return parseTranscriptWith(text, partialFirstLine, max, clip, false)
+}
+
+// parseTranscriptWith: parseTranscript, and with tools the tool calls and results as messages of their own
+func parseTranscriptWith(text string, partialFirstLine bool, max, clip int, tools bool) Tail {
 	lines := strings.Split(text, "\n")
 	if partialFirstLine && len(lines) > 0 {
 		lines = lines[1:]
@@ -104,12 +113,19 @@ func parseTranscript(text string, partialFirstLine bool, max, clip int) Tail {
 		if (j.Type != "user" && j.Type != "assistant") || j.IsSidechain || j.IsMeta || j.Message == nil {
 			continue
 		}
+		var calls []msg // with tools: after the message's text, as Claude Code writes them
+		if tools {
+			for _, b := range toolBlocks(j.Message.Content) {
+				calls = append(calls, msg{TailMessage{b.Role, b.Text, j.Timestamp}, false})
+			}
+		}
 		t := contentText(j.Message.Content)
 		for _, re := range injected {
 			t = re.ReplaceAllString(t, "")
 		}
 		t = strings.TrimSpace(t)
 		if t == "" {
+			msgs = append(msgs, calls...)
 			continue
 		}
 		if j.Type == "user" {
@@ -124,6 +140,7 @@ func parseTranscript(text string, partialFirstLine bool, max, clip int) Tail {
 			t = clipText(t, clip) + " …"
 		}
 		msgs = append(msgs, msg{TailMessage{j.Type, t, j.Timestamp}, false})
+		msgs = append(msgs, calls...)
 	}
 	if len(msgs) > max {
 		msgs = msgs[len(msgs)-max:]
@@ -157,6 +174,41 @@ func contentText(raw json.RawMessage) string {
 		}
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+// toolBlocks: a message's tool calls (role "tool": name and input) and results (role "result"), clipped to toolClip
+func toolBlocks(raw json.RawMessage) []TailMessage {
+	var blocks []struct {
+		Type    string          `json:"type"`
+		Name    string          `json:"name"`
+		Input   json.RawMessage `json:"input"`
+		Content json.RawMessage `json:"content"`
+		IsError bool            `json:"is_error"`
+	}
+	if json.Unmarshal(raw, &blocks) != nil {
+		return nil
+	}
+	clip := func(t string) string {
+		t = strings.TrimSpace(t)
+		if len([]rune(t)) > toolClip {
+			return clipText(t, toolClip) + " …"
+		}
+		return t
+	}
+	var out []TailMessage
+	for _, b := range blocks {
+		switch b.Type {
+		case "tool_use":
+			out = append(out, TailMessage{Role: "tool", Text: clip(b.Name + " " + string(b.Input))})
+		case "tool_result":
+			t := contentText(b.Content)
+			if b.IsError {
+				t = "error: " + t
+			}
+			out = append(out, TailMessage{Role: "result", Text: clip(t)})
+		}
+	}
+	return out
 }
 
 // tailOf: the tail of a transcript's text (the whole file or its last bytes)

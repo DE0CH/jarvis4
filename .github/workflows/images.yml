@@ -377,10 +377,9 @@ jobs:
   # the fabric image's pin (docs/PLAN-fabric.md), apart from the pin job so a failed fabric build never holds the
   # session image back: FABRIC_SESSION_IMAGE in the router's manifest (a fabric session's sources name it) with CI's
   # signature for the phone (FABRIC_SESSION_IMAGE_SIG), and every manifest under k8s/cluster/fabric/ that names the
-  # image (the fabric hermit starts that digest). Nothing to do until the router's manifest has the line. A new pin
-  # dispatches fabric-ami, which puts the image in the hosts' bucket: the pin commit says [skip ci], which skips every
-  # push-triggered workflow, fabric-ami included (no image after the first reached the bucket, and every fabric boot
-  # failed on its 403, 2026-11-17).
+  # image (the fabric hermit starts that digest). Nothing to do until the router's manifest has the line. The image goes
+  # to the hosts' bucket first (fabric-aws publish-image), then the pin, then a dispatch of fabric-ami for the AMI: the
+  # pin commit says [skip ci], which skips every push-triggered workflow, fabric-ami included (2026-11-17).
   fabric-pin:
     needs: [fabric, pin]
     permissions:
@@ -394,6 +393,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0, ssh-key: "${{ secrets.PIN_DEPLOY_KEY }}" }
+      # the image goes to the hosts' bucket before the pin: hermit starts a sandbox on the configured image only once
+      # the bucket has it, and on the last one until then, which the spawner refuses (a session's source names the
+      # new one). Pinned first, every new fabric session failed until the publish was done, or for good when it failed
+      # (2026-11-20 06:50, a broken registry stream).
+      - name: free disk space (the fabric image, unpacked)
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h / | tail -1
+      - uses: imjasonh/setup-crane@v0.4
+      - name: fabric-aws from the aviary commit the fabric's hermit pins (crates/fabric-aws)
+        run: |
+          set -euo pipefail
+          aviary=$(yq -r '.images[] | select(.name == "hermit") | .newTag' k8s/cluster/fabric/kustomization.yaml)
+          [[ $aviary =~ ^[0-9a-f]{12}$ ]] || { echo "::error::hermit's newTag '$aviary' is not an aviary <sha12>"; exit 1; }
+          git clone -q --filter=blob:none https://github.com/DE0CH/aviary "$RUNNER_TEMP/aviary"
+          cd "$RUNNER_TEMP/aviary" && git checkout -q "$aviary"
+          rustup toolchain install > /dev/null && cargo build --locked --release -q -p fabric-aws
+          sudo install -m755 target/release/fabric-aws /usr/local/bin/fabric-aws
+      - name: the new fabric image into the hosts' bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.FABRIC_AMI_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.FABRIC_AMI_AWS_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          F="$(infra/image-digest.sh "ghcr.io/de0ch/jarvis4-session-fabric:sha-${GITHUB_SHA::12}")"
+          fabric-aws --config k8s/cluster/fabric/hermit.json publish-image "$F"
       - name: pin the fabric image and sign it for the phone
         id: pin
         env: { CI_IMAGE_KEY: "${{ secrets.CI_IMAGE_KEY }}" }
@@ -421,7 +444,7 @@ jobs:
           git commit -qam "images: pin the fabric image $T [skip ci]"
           for i in 1 2 3 4 5; do git push -q origin HEAD:main && echo "pinned=1" >> "$GITHUB_OUTPUT" && exit 0; git pull -q --rebase origin main; done
           exit 1
-      - name: put the pinned image in the hosts' bucket (fabric-ami)
+      - name: the hosts' AMI follows the pins (fabric-ami; the image is in the bucket already)
         if: steps.pin.outputs.pinned == '1'
         env: { GH_TOKEN: "${{ github.token }}" }
         run: gh workflow run fabric-ami.yml --repo "$GITHUB_REPOSITORY" --ref main

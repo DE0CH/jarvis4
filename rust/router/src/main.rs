@@ -60,6 +60,7 @@ pub mod linestate;
 pub mod livearchive;
 pub mod livepush;
 pub mod livesync;
+pub mod livetail;
 pub mod lockedstore;
 pub mod lostmachine;
 pub mod machines;

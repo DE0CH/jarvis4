@@ -25,6 +25,7 @@ mod leases;
 mod lifecycle;
 mod linestate;
 mod live_lastsnap;
+mod livetail;
 mod machines_claim;
 mod memory;
 mod messages;

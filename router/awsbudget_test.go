@@ -52,6 +52,32 @@ func TestAWSBurnRate(t *testing.T) {
 	}
 }
 
+// the fabric's part of the AWS spend: everything in its region, its image bucket at S3's rate (2026-11-20: hosts in
+// eu-central-1 were not in the estimate at all, and the bucket's 190 GB was counted only by Cost Explorer)
+func TestFabricPart(t *testing.T) {
+	inv := awsInventory{
+		Instances: []awsInstance{
+			{ID: "i-s", Region: "eu-west-2", Type: "t3.medium", State: "running", PublicIP: "1.1.1.1"},
+			{ID: "i-f", Region: "eu-central-1", Type: "m7i.xlarge", State: "running", PublicIP: "2.2.2.2"},
+			{ID: "i-b", Region: "eu-central-1", Type: "t3.large", State: "pending"},
+		},
+		Volumes:   []awsVolume{{Region: "eu-central-1", State: "in-use", SizeGB: 220}, {Region: "eu-west-2", State: "in-use", SizeGB: 40}},
+		Snapshots: []awsSnapshot{{Region: "eu-central-1", State: "completed", VolumeGB: 220, Bytes: 10 << 30}},
+		Buckets:   []awsBucket{{Region: "eu-central-1", Name: "jarvis4-fabric-images", Bytes: 190 << 30}},
+	}
+	b := awsBurnRate(inv)
+	fabric := 0.2415 + 220*0.0952/730 + 10*0.054/730 + 0.005 + 190*0.0245/730
+	all := fabric + 0.0472 + 40*0.0928/730 + 0.005
+	if !near(b.FabricRatePerHour, fabric) || !near(b.RatePerHour, all) || b.FabricRunning != 1 || !near(b.BucketGB, 190) {
+		t.Fatalf("%+v, want fabric %.6f of %.6f", b, fabric, all)
+	}
+	t0 := time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
+	s, _, _ := applySample(&BudgetState{Month: "2026-11", LastSampleAt: &t0}, t0.Add(2*time.Hour), spendSample{AWSRate: all, FabricRate: fabric}, 100, 90)
+	if !near(s.FabricUSD, 2*fabric) || !near(s.AWSUSD, 2*all) {
+		t.Fatalf("%+v", s)
+	}
+}
+
 // Fly and AWS fill one pool; Cost Explorer's figure is a floor under the AWS part
 func TestOnePool(t *testing.T) {
 	t0 := time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC)
@@ -148,6 +174,19 @@ func TestAWSCostAPI(t *testing.T) {
 			t.Errorf("unsigned %s", req.URL)
 		}
 		b, _ := io.ReadAll(req.Body)
+		if req.Method == "GET" && req.URL.Query().Get("list-type") == "2" { // S3 ListObjectsV2, two pages
+			if !strings.Contains(req.Header.Get("Authorization"), "/eu-central-1/s3/aws4_request") {
+				t.Errorf("S3 signed for the wrong scope: %s", req.Header.Get("Authorization"))
+			}
+			if req.URL.Query().Get("continuation-token") == "" {
+				w.Write([]byte(`<ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>t+2/=</NextContinuationToken><Contents><Size>4000000000</Size></Contents><Contents><Size>1000</Size></Contents></ListBucketResult>`))
+			} else if req.URL.Query().Get("continuation-token") == "t+2/=" {
+				w.Write([]byte(`<ListBucketResult><IsTruncated>false</IsTruncated><Contents><Size>2000000000</Size></Contents></ListBucketResult>`))
+			} else {
+				w.WriteHeader(400)
+			}
+			return
+		}
 		if req.Header.Get("X-Amz-Target") == "AWSInsightsIndexService.GetCostAndUsage" {
 			json.Unmarshal(b, &ceBody)
 			w.Write([]byte(`{"ResultsByTime":[{"Total":{"UnblendedCost":{"Amount":"1.4201","Unit":"USD"}}}]}`))
@@ -177,11 +216,16 @@ func TestAWSCostAPI(t *testing.T) {
 	a := newAWSCostAPI("AKID", "secret")
 	a.ec2 = func(string) string { return srv.URL + "/" }
 	a.sts, a.ce = srv.URL+"/", srv.URL+"/"
+	a.s3 = func(string, string) string { return srv.URL + "/" }
+	a.buckets = awsBudgetBuckets("eu-central-1/jarvis4-fabric-images, bad")
 	inv, err := a.Inventory(time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	n := len(awsBudgetRegions)
+	if len(inv.Buckets) != 1 || inv.Buckets[0].Name != "jarvis4-fabric-images" || inv.Buckets[0].Bytes != 6000001000 {
+		t.Fatalf("buckets %+v", inv.Buckets)
+	}
+	n := len(awsListRegions())
 	if len(inv.Instances) != n || inv.Instances[0].Source != "source-x" || inv.Instances[0].PublicIP != "1.2.3.4" ||
 		len(inv.Volumes) != 2*n || len(inv.Snapshots) != n || inv.Snapshots[0].Bytes != 19121831936 {
 		t.Fatalf("%+v", inv)
@@ -209,4 +253,46 @@ func TestAWSCostAPILive(t *testing.T) {
 		err, len(inv.Instances), len(inv.Volumes), len(inv.Snapshots), len(inv.Addresses), b, b.RatePerHour*hoursPerMonth)
 	usd, acct, err := a.Billed(time.Now().UTC().Format("2006-01"))
 	t.Logf("billed USD %.4f in %s (err %v)", usd, acct, err)
+}
+
+// over the cap a fabric session pauses too (its machine is hermit's sandbox, in no Fly or AWS listing), and the
+// fabric's own hosts are neither paused, named as strangers, nor listed as instances with no owner (2026-11-20)
+func TestBudgetCapPausesFabricSessions(t *testing.T) {
+	st, _ := testState(t, t.TempDir())
+	r := NewRouter(Config{}, st, nil, Policy{})
+	st.Do(func(d *persisted) {
+		d.Sessions["sf"] = &Session{ID: "sf", MachineID: "x0123", Label: "on the fabric", State: "frozen", Runner: "fabric",
+			Fabric: &FabricLine{Conversation: "c-sf", Machine: "x0123"}}
+		d.Machines["x0123"] = "sf"
+	})
+	var paused, dms []string
+	budgetPause = func(r *Router, sid string) error { paused = append(paused, sid); return nil }
+	budgetDM = func(r *Router, text string) { dms = append(dms, text) }
+	defer func() {
+		budgetPause = func(r *Router, sid string) error { return r.Pause(sid) }
+		budgetDM = func(r *Router, text string) { r.DM(text) }
+	}()
+	fly := &fakeFly{}
+	aws := &fakeAWS{inv: awsInventory{Instances: []awsInstance{
+		{ID: "i-host", Region: "eu-central-1", Type: "m7i.xlarge", State: "running", PublicIP: "3.3.3.3"},
+	}}}
+	t0 := time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
+	st.Do(func(d *persisted) { d.Budget = &BudgetState{Month: "2026-11", SpentUSD: 99.9} })
+	a, _, err := r.budgetTick(fly, aws, t0, 50, 45)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !a.Enforce || strings.Join(paused, ",") != "sf" {
+		t.Fatalf("%+v %v", a, paused)
+	}
+	if len(dms) != 1 || strings.Contains(dms[0], "i-host") {
+		t.Fatalf("%q", dms)
+	}
+	ap := budgetView.budget["aws"].(map[string]any)
+	if o := ap["other"].([]map[string]string); len(o) != 0 {
+		t.Fatalf("the fabric's host listed as no one's: %v", o)
+	}
+	if f := ap["fabric"].(map[string]any); f["hosts"] != 1 || !near(f["ratePerHour"].(float64), 0.2415+0.005) {
+		t.Fatalf("fabric %v", f)
+	}
 }

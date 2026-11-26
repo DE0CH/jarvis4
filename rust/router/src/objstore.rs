@@ -49,6 +49,65 @@ impl Read for ObjReader {
     }
 }
 
+/// how often one read of an object is taken up again after its connection dropped, and the wait before each (times
+/// the try)
+const RESUMES: u32 = 5;
+const RESUME_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+
+type Opener = Box<dyn FnMut(u64) -> Result<Box<dyn Read + Send>> + Send>;
+
+/// an object's read that a dropped connection doesn't end: a read that fails goes on from the same offset on a new
+/// request (router/objstore.go resumingObject: the bucket's IPv4 through WARP resets a long read now and then; on
+/// 2026-11-21 that failed four Destroys and a pause until someone tried again; Deyao, 2026-11-22)
+pub struct Resuming {
+    cur: Box<dyn Read + Send>,
+    open: Opener,
+    off: u64,
+    tries: u32,
+    wait: std::time::Duration,
+}
+
+impl Resuming {
+    pub fn new(cur: Box<dyn Read + Send>, open: Opener) -> Resuming {
+        Resuming {
+            cur,
+            open,
+            off: 0,
+            tries: 0,
+            wait: RESUME_WAIT,
+        }
+    }
+}
+
+impl Read for Resuming {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        loop {
+            match self.cur.read(buf) {
+                Ok(n) => {
+                    self.off += n as u64;
+                    return Ok(n);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) if self.tries >= RESUMES => return Err(e),
+                Err(e) => {
+                    self.tries += 1;
+                    crate::logf!(
+                        "objects: a read broke at byte {} ({e}): going on from there (try {} of {RESUMES})",
+                        self.off,
+                        self.tries
+                    );
+                    std::thread::sleep(self.wait * self.tries);
+                    match (self.open)(self.off) {
+                        Ok(next) => self.cur = next,
+                        // the broken reader fails again at once, so the next round tries again
+                        Err(oe) => crate::logf!("objects: reopening at byte {}: {oe:#}", self.off),
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub trait ObjStore: Send + Sync {
     /// size -1: unknown (streamed in parts)
     fn put(&self, key: &str, r: &mut dyn Read, size: i64) -> Result<()>;
@@ -99,6 +158,7 @@ pub fn objects_from_env() -> Result<Option<Arc<dyn ObjStore>>> {
 }
 
 /// an S3 bucket, path style, SigV4
+#[derive(Clone)]
 pub struct S3Objects {
     endpoint: String,
     host: String,
@@ -341,6 +401,25 @@ impl S3Objects {
         Ok(rb.send()?)
     }
 
+    /// the object from byte `off` on (a Range request after the first byte)
+    fn get_from(&self, key: &str, off: u64) -> Result<reqwest::blocking::Response> {
+        let (u, hs) = self.sign("GET", key, &[], UNSIGNED);
+        let mut rb = self.http.get(u);
+        for (k, v) in hs {
+            rb = rb.header(k, v);
+        }
+        if off > 0 {
+            rb = rb.header("Range", format!("bytes={off}-"));
+        }
+        let resp = rb.send()?;
+        let st = resp.status().as_u16();
+        if !(200..300).contains(&st) {
+            S3Objects::ok(resp, "get")?;
+            return Err(anyhow!("get: HTTP {st}"));
+        }
+        Ok(resp)
+    }
+
     fn ok(resp: reqwest::blocking::Response, what: &str) -> Result<Vec<u8>> {
         let st = resp.status().as_u16();
         let b = crate::util::read_limited(resp, 16 << 20).unwrap_or_default();
@@ -466,15 +545,18 @@ impl ObjStore for S3Objects {
     }
 
     fn get(&self, key: &str) -> Result<ObjReader> {
-        let resp = self.send("GET", key, &[], None, UNSIGNED)?;
-        let st = resp.status().as_u16();
-        if !(200..300).contains(&st) {
-            S3Objects::ok(resp, "get")?;
-            return Err(anyhow!("get: HTTP {st}"));
-        }
+        let resp = self.get_from(key, 0)?;
         let size = resp.content_length().map_or(-1, |n| n as i64);
+        let (store, key) = (self.clone(), key.to_string());
         Ok(ObjReader {
-            body: Box::new(resp),
+            body: Box::new(Resuming::new(
+                Box::new(resp),
+                Box::new(move |off| {
+                    store
+                        .get_from(&key, off)
+                        .map(|r| Box::new(r) as Box<dyn Read + Send>)
+                }),
+            )),
             size,
         })
     }
@@ -703,6 +785,58 @@ impl Router {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// a body that gives `cut` bytes and then a reset (a cut at its length is the whole body, then its end)
+    struct Cut(std::io::Cursor<Vec<u8>>, usize);
+
+    impl Read for Cut {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.0.position() as usize >= self.1 && self.1 < self.0.get_ref().len() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionReset,
+                    "connection reset by peer",
+                ));
+            }
+            let room = (self.1 - self.0.position() as usize).min(buf.len());
+            self.0.read(&mut buf[..room])
+        }
+    }
+
+    fn resuming(body: &[u8], cuts: usize) -> Resuming {
+        let whole = body.to_vec();
+        let mut opens = 0;
+        let mut r = Resuming::new(
+            Box::new(Cut(std::io::Cursor::new(whole.clone()), whole.len() / 2)),
+            Box::new(move |off| {
+                opens += 1;
+                let rest = whole[off as usize..].to_vec();
+                let cut = if opens < cuts {
+                    rest.len() / 2
+                } else {
+                    rest.len()
+                };
+                Ok(Box::new(Cut(std::io::Cursor::new(rest), cut)) as Box<dyn Read + Send>)
+            }),
+        );
+        r.wait = std::time::Duration::from_millis(1);
+        r
+    }
+
+    #[test]
+    fn an_object_read_cut_off_goes_on_from_where_it_broke() {
+        let body: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+        let mut got = vec![];
+        resuming(&body, 3)
+            .read_to_end(&mut got)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(got, body);
+    }
+
+    #[test]
+    fn an_object_read_that_keeps_breaking_fails_in_the_end() {
+        let mut got = vec![];
+        assert!(resuming(&[7u8; 4096], 1000).read_to_end(&mut got).is_err());
+    }
 
     #[test]
     fn xml_lists() {

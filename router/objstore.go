@@ -99,8 +99,76 @@ func (o *s3Objects) Get(ctx context.Context, key string) (objectReader, error) {
 		}
 		return nil, err
 	}
-	return obj, nil
+	return &resumingObject{ctx: ctx, cur: obj, open: func(off int64) (objectReader, error) {
+		next, err := o.c.GetObject(ctx, o.bucket, key, minio.GetObjectOptions{})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := next.Seek(off, io.SeekStart); err != nil {
+			next.Close()
+			return nil, err
+		}
+		return next, nil
+	}}, nil
 }
+
+// objResumes: how often one read of an object is taken up again after its connection dropped; objResumeWait: the
+// wait before each (times the try)
+var (
+	objResumes    = 5
+	objResumeWait = 2 * time.Second
+)
+
+// resumingObject: an object's read that a dropped connection doesn't end: a read that fails other than at the end, and
+// not with the bucket's own answer (an S3 error), goes on from the same offset on a new request. The router reaches
+// the bucket's IPv4 through WARP, which now and then resets a long read: on 2026-11-21 that failed four Destroys
+// ("fetching the snapshot: … connection reset by peer") and a pause (the snapshot's read-back) until someone tried
+// again (Deyao, 2026-11-22: the router tries again by itself).
+type resumingObject struct {
+	ctx   context.Context
+	open  func(off int64) (objectReader, error)
+	cur   objectReader
+	off   int64
+	tries int
+}
+
+func (r *resumingObject) Read(p []byte) (int, error) {
+	for {
+		n, err := r.cur.Read(p)
+		r.off += int64(n)
+		if err == nil || err == io.EOF || r.ctx.Err() != nil || minio.ToErrorResponse(err).Code != "" || r.tries >= objResumes {
+			return n, err
+		}
+		r.tries++
+		log.Printf("objects: a read broke at byte %d (%v): going on from there (try %d of %d)", r.off, err, r.tries, objResumes)
+		select {
+		case <-time.After(time.Duration(r.tries) * objResumeWait):
+		case <-r.ctx.Done():
+			return n, err
+		}
+		next, oerr := r.open(r.off)
+		if oerr != nil {
+			// the broken reader fails again at once, so the next round tries again (while tries are left)
+			log.Printf("objects: reopening at byte %d: %v", r.off, oerr)
+		} else {
+			r.cur.Close()
+			r.cur = next
+		}
+		if n > 0 {
+			return n, nil
+		}
+	}
+}
+
+func (r *resumingObject) Seek(off int64, whence int) (int64, error) {
+	at, err := r.cur.Seek(off, whence)
+	if err == nil {
+		r.off = at
+	}
+	return at, err
+}
+
+func (r *resumingObject) Close() error { return r.cur.Close() }
 
 func (o *s3Objects) core() minio.Core { return minio.Core{Client: o.c} }
 

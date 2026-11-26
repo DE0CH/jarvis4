@@ -258,9 +258,39 @@ fn write_private(p: &Path, s: &str) -> Result<()> {
     Ok(())
 }
 
+/// one run as the Actions API lists it
+fn run_of(r: &Value) -> Run {
+    Run {
+        path: r["path"].as_str().unwrap_or("").into(),
+        sha: r["head_sha"].as_str().unwrap_or("").into(),
+        event: r["event"].as_str().unwrap_or("").into(),
+        id: r["id"].as_u64().unwrap_or(0),
+        status: r["status"].as_str().unwrap_or("").into(),
+        conclusion: r["conclusion"].as_str().unwrap_or("").into(),
+        attempt: r["run_attempt"].as_u64().unwrap_or(1),
+    }
+}
+
+/// the gated workflows red on main now (decide.rs main_reds), from main's newest 100 completed runs
+fn main_reds(gh: &Gh, base: &str, gated: &[String]) -> Result<std::collections::BTreeSet<String>> {
+    let v = gh.get(&format!(
+        "/actions/runs?branch={base}&status=completed&per_page=100"
+    ))?;
+    let runs: Vec<Run> = v["workflow_runs"]
+        .as_array()
+        .map(|a| a.as_slice())
+        .unwrap_or(&[])
+        .iter()
+        .filter(|r| r["event"] != "workflow_run" && r["head_branch"] == base)
+        .filter(|r| gated.is_empty() || gated.iter().any(|w| r["name"] == w.as_str()))
+        .map(run_of)
+        .collect();
+    Ok(decide::main_reds(&runs))
+}
+
 /// merge.yml: decide, then act
 fn merge(gh: &Gh) -> Result<()> {
-    let (branch, sha) = (env("GATE_BRANCH")?, env("GATE_SHA")?);
+    let (branch, tested) = (env("GATE_BRANCH")?, env("GATE_SHA")?);
     let base = gh.default_branch()?;
     if branch == base {
         return Ok(());
@@ -283,14 +313,24 @@ fn merge(gh: &Gh) -> Result<()> {
         .iter()
         .filter(|r| r["event"] != "workflow_run" && r["head_branch"] == branch.as_str())
         .filter(|r| gated.is_empty() || gated.iter().any(|w| r["name"] == w.as_str()))
-        .map(|r| Run {
-            path: r["path"].as_str().unwrap_or("").into(),
-            sha: r["head_sha"].as_str().unwrap_or("").into(),
-            id: r["id"].as_u64().unwrap_or(0),
-            status: r["status"].as_str().unwrap_or("").into(),
-            conclusion: r["conclusion"].as_str().unwrap_or("").into(),
-        })
+        .map(run_of)
         .collect();
+    // the branch's head decides, whichever of its commits this run finished on (decide.rs decides_for)
+    let head = match gh.call(
+        reqwest::Method::GET,
+        &format!("/git/ref/heads/{branch}"),
+        None,
+    )? {
+        (200, v) => v["object"]["sha"].as_str().map(String::from),
+        _ => None,
+    };
+    let Some(sha) = decide::decides_for(&tested, head.as_deref(), &runs) else {
+        println!(
+            "{branch} at {tested}: the branch is gone or was just pushed again; its newer commit's runs decide"
+        );
+        return Ok(());
+    };
+    let current = true;
     let cmp = gh.get(&format!("/compare/{base}...{sha}"))?;
     let mut commits: std::collections::BTreeSet<String> = cmp["commits"]
         .as_array()
@@ -302,14 +342,6 @@ fn merge(gh: &Gh) -> Result<()> {
         .unwrap_or_default();
     commits.insert(sha.clone());
     let runs = decide::latest(&runs, &commits, OWN);
-    let current = match gh.call(
-        reqwest::Method::GET,
-        &format!("/git/ref/heads/{branch}"),
-        None,
-    )? {
-        (200, v) => v["object"]["sha"] == sha.as_str(),
-        _ => false,
-    };
     let pr = gh.open_pr(&branch)?;
     let rel = match cmp["status"].as_str() {
         Some("ahead") => Rel::Ahead,
@@ -318,7 +350,7 @@ fn merge(gh: &Gh) -> Result<()> {
         _ => Rel::Diverged,
     };
     let action = decide::decide(&branch, &runs, current, pr.is_some(), rel);
-    println!("{branch} at {sha}: {action:?}");
+    println!("{branch} at {sha} (a run on {tested} finished): {action:?}");
     // GATE_DRY=1: the decision only (a check from a session against a repo's real runs)
     if std::env::var("GATE_DRY").is_ok_and(|v| v == "1") {
         for r in &runs {
@@ -339,7 +371,35 @@ fn merge(gh: &Gh) -> Result<()> {
             }
             Ok(())
         }
-        Action::Fail(why) => gh.status(&sha, "failure", &format!("red: {why}")),
+        Action::Fail(why) => {
+            // a red main shares: run once more (decide.rs rerun); its completion runs the gate again
+            let reds = main_reds(gh, &base, &gated).unwrap_or_else(|e| {
+                println!("main's runs: {e:#}");
+                Default::default()
+            });
+            if let Some(ids) = decide::rerun(&runs, &reds) {
+                let mut refused = None;
+                for id in &ids {
+                    if let Err(e) =
+                        gh.post(&format!("/actions/runs/{id}/rerun-failed-jobs"), &json!({}))
+                    {
+                        refused = Some(e);
+                    }
+                }
+                match refused {
+                    None => {
+                        return gh.status(
+                            &sha,
+                            "pending",
+                            &format!("{why}, as on {base}: running it once more"),
+                        );
+                    }
+                    // merge.yml without `actions: write` (vendored before 2026-11-22): the red stands
+                    Some(e) => println!("re-running: {e:#}"),
+                }
+            }
+            gh.status(&sha, "failure", &format!("red: {why}"))
+        }
         Action::Green(why) => gh.status(&sha, "success", &why),
         Action::Merge | Action::MergeIn => {
             gh.status(
@@ -397,6 +457,31 @@ fn land_git(g: &Git, branch: &str, base: &str, sha: &str, n: usize) -> Result<La
     Ok(Landed::Moved)
 }
 
+/// every branch but base whose head is in base: the one just landed, and any other whose work reached main another way
+/// (a wip/ branch pushed again as claude/, a branch merged by hand), so a merged branch never stays behind
+fn merged_branches(g: &Git, base: &str) -> Result<Vec<String>> {
+    g.git(&[
+        "fetch",
+        "-q",
+        "--filter=blob:none",
+        "--prune",
+        "origin",
+        "+refs/heads/*:refs/remotes/origin/*",
+    ])?;
+    let out = g.git(&[
+        "for-each-ref",
+        "--format=%(refname:lstrip=3)",
+        &format!("--merged=refs/remotes/origin/{base}"),
+        "refs/remotes/origin/",
+    ])?;
+    Ok(out
+        .lines()
+        .map(str::trim)
+        .filter(|b| !b.is_empty() && *b != base && *b != "HEAD")
+        .map(String::from)
+        .collect())
+}
+
 /// land_git, then what it means for the gate's status, the pull request and the branch
 fn land(gh: &Gh, branch: &str, base: &str, sha: &str, n: usize, pr: Option<&Value>) -> Result<()> {
     let g = Git::new(&gh.repo)?;
@@ -406,8 +491,11 @@ fn land(gh: &Gh, branch: &str, base: &str, sha: &str, n: usize, pr: Option<&Valu
                 "{base} is now {target}{}",
                 if ff { "" } else { " (a merge)" }
             );
-            if let Err(e) = g.git(&["push", "-q", "origin", "--delete", branch]) {
-                println!("deleting {branch}: {e:#}");
+            for b in merged_branches(&g, base)? {
+                match g.git(&["push", "-q", "origin", "--delete", &b]) {
+                    Ok(_) => println!("deleted {b}: it is in {base}"),
+                    Err(e) => println!("deleting {b}: {e:#}"),
+                }
             }
             Ok(())
         }
@@ -904,5 +992,25 @@ mod land_tests {
             land_git(&o.gate(), "claude/x", "main", &sha, 2).unwrap_or_else(|e| panic!("{e:#}"));
         assert!(matches!(got, Landed::Conflict(_)), "{got:?}");
         assert_eq!(o.main(), other, "main changed after a conflict");
+    }
+
+    #[test]
+    fn after_a_landing_every_branch_in_main_is_listed_to_delete_and_no_other() {
+        let o = Origin::new();
+        let base = o.commit("a", "a");
+        o.push("main");
+        // a wip/ branch pushed again as claude/x, which lands: the wip/ copy is in main too
+        sh(&o.work, &["checkout", "-q", "-b", "wip/x"]);
+        let sha = o.commit("b", "b");
+        o.push("wip/x");
+        o.push("wip/x:claude/x");
+        // work still going: not in main
+        sh(&o.work, &["checkout", "-q", "-b", "claude/y", &base]);
+        o.commit("c", "c");
+        o.push("claude/y");
+        let g = o.gate();
+        land_git(&g, "claude/x", "main", &sha, 2).unwrap_or_else(|e| panic!("{e:#}"));
+        let got = merged_branches(&g, "main").unwrap_or_else(|e| panic!("{e:#}"));
+        assert_eq!(got, vec!["claude/x".to_string(), "wip/x".to_string()]);
     }
 }

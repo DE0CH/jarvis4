@@ -14,11 +14,15 @@ pub struct Run {
     pub path: String,
     /// the commit it ran on
     pub sha: String,
+    /// what started it: push | pull_request | …
+    pub event: String,
     pub id: u64,
     /// queued | in_progress | completed | …
     pub status: String,
     /// success | failure | cancelled | skipped | neutral | timed_out | … ("" until completed)
     pub conclusion: String,
+    /// 1, then 2, 3, … for each re-run of the same run (it keeps its id)
+    pub attempt: u64,
 }
 
 /// how the tested commit stands against main (the compare API's status of main...commit)
@@ -52,23 +56,50 @@ fn passed(conclusion: &str) -> bool {
     matches!(conclusion, "success" | "skipped" | "neutral")
 }
 
-/// the newest run of each workflow on any of the branch's own commits (`commits`: those since it left main, the head
-/// among them), the gate's own runs left out. A later commit that doesn't start a workflow (its paths untouched)
-/// carries that workflow's last result on the branch: a red iOS run stays red under a README-only push, and a change
-/// the workflow reads starts a newer run. Run ids grow with time; a re-run keeps its id and its newest result.
+/// each workflow's runs that count: those on the newest of the branch's own commits it ran on (`commits`: those
+/// since it left main, the head among them), the newest of each event there, the gate's own runs left out. A later
+/// commit that doesn't start a workflow (its paths untouched) carries that workflow's last result on the branch: a red
+/// iOS run stays red under a README-only push, and a change the workflow reads starts a newer run. On one commit a
+/// push run and a pull_request run are two runs of the workflow and both count (2026-11-20: the pull_request run,
+/// newer and skipping the replica jobs, went green while the push run's replica was still going, and the gate merged
+/// a red fabric-host into aviary's main). Run ids grow with time; a re-run keeps its id and its newest result.
 pub fn latest(runs: &[Run], commits: &std::collections::BTreeSet<String>, own: &str) -> Vec<Run> {
-    let mut by: std::collections::BTreeMap<&str, &Run> = std::collections::BTreeMap::new();
+    use std::collections::BTreeMap;
     // a run held for approval never ran: GitHub holds the pull_request runs of a pull request the gate opened with the
     // workflow token ("action_required"); the same commit's push run is the one that counts
-    for r in runs
+    let counted: Vec<&Run> = runs
         .iter()
         .filter(|r| r.path != own && commits.contains(&r.sha) && r.conclusion != "action_required")
+        .collect();
+    let mut newest: BTreeMap<&str, &Run> = BTreeMap::new();
+    for r in &counted {
+        if newest.get(r.path.as_str()).is_none_or(|o| r.id > o.id) {
+            newest.insert(&r.path, r);
+        }
+    }
+    let mut by: BTreeMap<(&str, &str), &Run> = BTreeMap::new();
+    for r in counted
+        .into_iter()
+        .filter(|r| newest[r.path.as_str()].sha == r.sha)
     {
-        if by.get(r.path.as_str()).is_none_or(|o| r.id > o.id) {
-            by.insert(&r.path, r);
+        if by
+            .get(&(r.path.as_str(), r.event.as_str()))
+            .is_none_or(|o| r.id > o.id)
+        {
+            by.insert((&r.path, &r.event), r);
         }
     }
     by.into_values().cloned().collect()
+}
+
+/// The commit a finished run decides for: the branch's head, whichever of the branch's commits the run was on. A slow
+/// workflow (iOS: hours) that finishes on an older commit after every run on the head has ended is the last event
+/// the branch gets; deciding only for its own commit left the head pending for good (2026-11-20, claude/jarvis-tail).
+/// A head with no run of its own yet was only just pushed: its workflows may not be listed, so its own runs decide.
+/// None: nothing to decide now (that, or the branch is gone).
+pub fn decides_for(tested: &str, head: Option<&str>, runs: &[Run]) -> Option<String> {
+    let head = head?;
+    (head == tested || runs.iter().any(|r| r.sha == head)).then(|| head.to_string())
 }
 
 /// branch: the head branch; current: the branch still points at the tested commit; pr_open: its pull request is open
@@ -113,6 +144,46 @@ pub fn decide(branch: &str, runs: &[Run], current: bool, pr_open: bool, rel: Rel
     }
 }
 
+/// a conclusion that means the workflow broke (not cancelled by hand or by a newer push, not skipped)
+fn broke(conclusion: &str) -> bool {
+    matches!(conclusion, "failure" | "timed_out")
+}
+
+/// the workflows red on main: those whose newest run on main that passed or broke broke (`main_runs`: main's
+/// completed runs). A cancelled run says nothing about the workflow, so the run before it decides.
+pub fn main_reds(main_runs: &[Run]) -> std::collections::BTreeSet<String> {
+    let mut newest: std::collections::BTreeMap<&str, &Run> = Default::default();
+    for r in main_runs
+        .iter()
+        .filter(|r| passed(&r.conclusion) || broke(&r.conclusion))
+    {
+        if newest.get(r.path.as_str()).is_none_or(|o| r.id > o.id) {
+            newest.insert(&r.path, r);
+        }
+    }
+    newest
+        .into_values()
+        .filter(|r| broke(&r.conclusion))
+        .map(|r| r.path.clone())
+        .collect()
+}
+
+/// a red the branch shares with main: every run that kept the gate red broke on its first attempt in a workflow that
+/// is red on main too, so it is run once more before the branch counts as red (Deyao, 2026-11-22: a flaky check,
+/// jarvis4's iPhone walkthrough, stopped branches whose session had ended, and nobody pushed again). The runs' ids
+/// to re-run, or None: the red stands (one red of the branch's own, or a second attempt that broke again).
+pub fn rerun(runs: &[Run], main_red: &std::collections::BTreeSet<String>) -> Option<Vec<u64>> {
+    let failed: Vec<&Run> = runs
+        .iter()
+        .filter(|r| r.status == "completed" && !passed(&r.conclusion))
+        .collect();
+    (!failed.is_empty()
+        && failed
+            .iter()
+            .all(|r| broke(&r.conclusion) && r.attempt <= 1 && main_red.contains(&r.path)))
+    .then(|| failed.iter().map(|r| r.id).collect())
+}
+
 pub fn file_name(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
@@ -126,12 +197,18 @@ mod tests {
     }
 
     fn on(sha: &str, path: &str, id: u64, status: &str, conclusion: &str) -> Run {
+        by("push", sha, path, id, status, conclusion)
+    }
+
+    fn by(event: &str, sha: &str, path: &str, id: u64, status: &str, conclusion: &str) -> Run {
         Run {
             path: format!(".github/workflows/{path}"),
             sha: sha.into(),
+            event: event.into(),
             id,
             status: status.into(),
             conclusion: conclusion.into(),
+            attempt: 1,
         }
     }
 
@@ -140,6 +217,71 @@ mod tests {
             run("branch.yml", 1, "completed", "success"),
             run("images.yml", 2, "completed", "success"),
         ]
+    }
+
+    #[test]
+    fn a_run_on_an_older_commit_decides_for_the_head() {
+        let runs = vec![
+            on("old", "ios.yml", 1, "completed", "success"),
+            on("head", "branch.yml", 2, "completed", "success"),
+        ];
+        assert_eq!(
+            decides_for("head", Some("head"), &runs).as_deref(),
+            Some("head")
+        );
+        assert_eq!(
+            decides_for("old", Some("head"), &runs).as_deref(),
+            Some("head"),
+            "a run that finished on an older commit left the head undecided"
+        );
+        // the head was only just pushed: none of its runs is listed yet, so they decide
+        assert_eq!(decides_for("old", Some("newer"), &runs), None);
+        assert_eq!(decides_for("old", None, &runs), None, "the branch is gone");
+    }
+
+    fn reds(paths: &[&str]) -> std::collections::BTreeSet<String> {
+        paths
+            .iter()
+            .map(|p| format!(".github/workflows/{p}"))
+            .collect()
+    }
+
+    #[test]
+    fn main_is_red_where_its_newest_run_that_passed_or_broke_broke() {
+        let main = vec![
+            on("m1", "ios.yml", 1, "completed", "success"),
+            on("m2", "ios.yml", 2, "completed", "failure"),
+            on("m3", "ios.yml", 3, "completed", "cancelled"),
+            on("m1", "images.yml", 4, "completed", "failure"),
+            on("m2", "images.yml", 5, "completed", "success"),
+            on("m2", "web.yml", 6, "completed", "timed_out"),
+        ];
+        assert_eq!(main_reds(&main), reds(&["ios.yml", "web.yml"]));
+    }
+
+    #[test]
+    fn a_red_shared_with_main_is_run_once_more() {
+        let mut runs = green();
+        runs.push(run("ios.yml", 7, "completed", "failure"));
+        assert_eq!(rerun(&runs, &reds(&["ios.yml"])), Some(vec![7]));
+        // main is green there: the red is the branch's own
+        assert_eq!(rerun(&runs, &reds(&["web.yml"])), None);
+        // the second attempt broke again: the red stands
+        runs[2].attempt = 2;
+        assert_eq!(rerun(&runs, &reds(&["ios.yml"])), None);
+    }
+
+    #[test]
+    fn a_red_of_the_branchs_own_beside_a_shared_one_stands() {
+        let mut runs = green();
+        runs.push(run("ios.yml", 7, "completed", "failure"));
+        runs.push(run("images.yml", 8, "completed", "failure"));
+        assert_eq!(rerun(&runs, &reds(&["ios.yml"])), None);
+        // a cancelled run is not a flake to run again
+        let mut c = green();
+        c.push(run("ios.yml", 7, "completed", "cancelled"));
+        assert_eq!(rerun(&c, &reds(&["ios.yml"])), None);
+        assert_eq!(rerun(&green(), &reds(&["ios.yml"])), None, "nothing red");
     }
 
     #[test]
@@ -267,6 +409,47 @@ mod tests {
             decide("claude/x", &l, true, true, Rel::Ahead),
             Action::Wait(_)
         ));
+    }
+
+    #[test]
+    fn a_commits_push_run_still_going_waits_under_its_green_pull_request_run() {
+        // aviary 44e9fab2f2: the pull_request run (newer, its replica jobs skipped) green, the push run's replica
+        // still going, then red
+        let runs = vec![
+            by("push", "c1", "ci.yml", 10, "in_progress", ""),
+            by("pull_request", "c1", "ci.yml", 17, "completed", "success"),
+            by("push", "c1", "branch.yml", 11, "completed", "success"),
+        ];
+        let l = latest(&runs, &commits(&["c1"]), ".github/workflows/merge.yml");
+        assert!(matches!(
+            decide("claude/x", &l, true, true, Rel::Ahead),
+            Action::Wait(w) if w == "1 of 3 workflows still running"
+        ));
+        let mut done = runs.clone();
+        done[0] = by("push", "c1", "ci.yml", 10, "completed", "failure");
+        let l = latest(&done, &commits(&["c1"]), ".github/workflows/merge.yml");
+        assert!(matches!(
+            decide("claude/x", &l, true, true, Rel::Ahead),
+            Action::Fail(_)
+        ));
+    }
+
+    #[test]
+    fn an_older_commits_pull_request_run_gives_way_to_a_newer_push() {
+        let runs = vec![
+            by("pull_request", "c1", "ci.yml", 5, "completed", "failure"),
+            by("push", "c1", "ci.yml", 4, "completed", "failure"),
+            by("push", "c2", "ci.yml", 9, "completed", "success"),
+        ];
+        let l = latest(
+            &runs,
+            &commits(&["c1", "c2"]),
+            ".github/workflows/merge.yml",
+        );
+        assert_eq!(
+            l,
+            vec![by("push", "c2", "ci.yml", 9, "completed", "success")]
+        );
     }
 
     #[test]

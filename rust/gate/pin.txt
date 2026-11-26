@@ -1,1 +1,1 @@
-66c6f5df307cefbae787e064f4d43e763f53001d414f2733465323bf3b163197 https://github.com/DE0CH/jarvis4/releases/download/gate-55b813a43439/gate-x86_64-linux
+e578d130936fa444b8cc1ac042451818dacf135b6178c173fbcbc5721e0ccb2a https://github.com/DE0CH/jarvis4/releases/download/gate-407188729b85/gate-x86_64-linux

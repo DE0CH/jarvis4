@@ -328,6 +328,10 @@ private struct FlySection: View {
           LabeledContent("AWS", value: Fmt.usd(aws["spentUsd"].double ?? 0)).accessibilityIdentifier("budget-aws")
           LabeledContent("AWS estimate", value: Fmt.usd(aws["estimateUsd"].double ?? 0))
           LabeledContent("AWS billed", value: Fmt.usd(aws["billedUsd"].double ?? 0))
+          if !aws["fabric"].isNull {
+            // the fabric's part of the AWS estimate (router/awsbudget.go)
+            LabeledContent("Of which the fabric", value: Fmt.usd(aws["fabric"]["estimateUsd"].double ?? 0))
+          }
           LabeledContent("AWS running", value: "\(aws["running"].int ?? 0)")
           if let e = aws["error"].text { ErrorRow(text: "AWS: \(e)") }
         }
