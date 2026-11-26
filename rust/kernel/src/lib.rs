@@ -11,3 +11,4 @@ pub mod notary;
 pub mod secrets;
 pub mod serve;
 pub mod signers;
+pub mod spawner;
