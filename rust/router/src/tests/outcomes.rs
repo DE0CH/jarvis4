@@ -409,7 +409,7 @@ fn an_approved_add_store_carries_the_new_cert() {
         .unwrap_or_default();
     assert!(
         o.outcome == "approved"
-            && o.r#ref == "s1"
+            && o.r#ref == id
             && cert["stores"]
                 .as_array()
                 .is_some_and(|s| s.iter().any(|x| x == "yyc")),

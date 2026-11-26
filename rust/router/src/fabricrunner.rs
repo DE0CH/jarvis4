@@ -48,7 +48,7 @@ pub struct FabricLine {
 /// FABRIC_SESSION_IMAGE)
 pub static FABRIC_ENV: RwLock<Option<BTreeMap<String, String>>> = RwLock::new(None);
 
-fn env(k: &str) -> String {
+pub(crate) fn env(k: &str) -> String {
     if let Some(m) = FABRIC_ENV
         .read()
         .unwrap_or_else(|e| e.into_inner())

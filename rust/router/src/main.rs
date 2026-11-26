@@ -35,6 +35,7 @@ pub mod devices;
 pub mod discord;
 pub mod disk;
 pub mod drain;
+pub mod fabricops;
 pub mod fabricrunner;
 pub mod failures;
 pub mod features;

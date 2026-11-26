@@ -809,6 +809,12 @@ fn lifecycle_aws_events() {
     }
     aws_set(None);
     add_session(&r, "sA", "started", "i-0abc", false);
+    // an AWS session: its runner says so, not its id
+    r.st.do_(|d| {
+        if let Some(s) = d.sessions.get_mut("sA") {
+            s.runner = "aws".into();
+        }
+    });
     let h = r.lc_begin("sA", "boot");
     h.machine("i-0abc");
     let run = h.run();
@@ -898,6 +904,12 @@ fn lifecycle_aws_running_before() {
         ..Default::default()
     }));
     add_session(&r, "sB", "started", "i-0def", false);
+    // an AWS session: its runner says so, not its id
+    r.st.do_(|d| {
+        if let Some(s) = d.sessions.get_mut("sB") {
+            s.runner = "aws".into();
+        }
+    });
     let h = r.lc_begin("sB", "pause");
     h.machine("i-0def");
     r.lc_poll_once(&h.run());

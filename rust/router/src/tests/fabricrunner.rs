@@ -381,26 +381,51 @@ fn fabric_machine_states() {
     );
 }
 
-/// A fabric session is said to be one wherever the app shows where it runs: its log names the fabric, not Fly
-/// (Deyao, 2026-11-20: "still says fly machine"), and its card shows the fabric's sandbox and hosts.
+/// Where a session's machine runs is the session's runner, never read from the machine's id (Deyao, 2026-11-20:
+/// "there are more than 2 types"): its log names that runner, and its card shows the fabric's sandbox and hosts.
 #[test]
-fn a_fabric_machine_is_named_the_fabric() {
+fn the_runner_is_the_sessions() {
     let _g = serial();
-    let x = "x01a1f71ecb6d71d6b5be4c4e404255df";
-    for (id, want) in [
-        (x, "the fabric"),
-        ("i-0123456789abcdef0", "AWS"),
-        ("683dde7ea60478", "Fly"),
-        ("x01a1f71e", "Fly"),
-        ("xzz1f71ecb6d71d6b5be4c4e404255df0", "Fly"),
+    let _env = fabric_env(&[("FABRIC_HERMIT_URL", "http://hermit")]);
+    let t = new_test_router();
+    let r = t.arc();
+    r.st.do_(|d| {
+        // ids of every shape on every runner: the id says nothing
+        for (sid, runner, m) in [
+            ("sA", "aws", "683dde7ea60478"),
+            ("sB", "fabric", "i-0123456789abcdef0"),
+            ("sC", "fly", "x01a1f71ecb6d71d6b5be4c4e404255df"),
+        ] {
+            d.sessions.insert(
+                sid.into(),
+                Session {
+                    id: sid.into(),
+                    runner: runner.into(),
+                    machine_id: m.into(),
+                    ..Default::default()
+                },
+            );
+            d.machines.insert(m.into(), sid.into());
+        }
+    });
+    for (sid, want) in [
+        ("sA", "AWS"),
+        ("sB", "the fabric"),
+        ("sC", "Fly"),
+        ("nope", "its runner"),
     ] {
         assert_eq!(
-            crate::kernelline::runner_name(id),
+            crate::awsrunner::runner_label(&r.runner_of_session(sid)),
             want,
-            "runner_name({id:?})"
+            "session {sid}"
         );
     }
-    let _env = fabric_env(&[("FABRIC_HERMIT_URL", "http://hermit")]);
+    assert!(
+        r.runner_of_machine("683dde7ea60478") == "aws"
+            && r.runner_of_machine("i-0123456789abcdef0") == "fabric"
+            && r.runner_of_machine("unknown").is_empty(),
+        "a machine's runner is its session's"
+    );
     let d = crate::state::Persisted::default();
     let s = |id: &str, runner: &str| Session {
         id: id.into(),

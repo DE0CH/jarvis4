@@ -807,6 +807,7 @@ impl Registrar {
         });
         crate::backups::register_backups(self);
         crate::kernelline::register_kernel(self);
+        crate::fabricops::register_fabric_ops(self); // the fabric hermit's operator page, read only
         crate::roster::register_roster(self);
         crate::linestate::register_line_state(self);
         self.app("GET /api/policy", |r, w, _| write_json(w, 200, &r.policy));
@@ -1310,7 +1311,8 @@ impl Registrar {
             }
         });
         self.m("GET /m/commands", |r, w, _, machine, _| {
-            // mq.rs: the machine's oldest untaken row, waiting up to 50 s for one
+            // mq.rs: the machine's oldest untaken row, waiting up to 50 s for one (rust/machine/src/supervisor.rs
+            // COMMANDS_WAIT: the machine gives a poll up 60 s past that)
             let empty: Vec<Value> = vec![];
             match r.mq_next(
                 &crate::ctx::Ctx::background(),

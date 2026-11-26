@@ -300,14 +300,15 @@ fn a_repo_that_has_its_key_is_an_add_store_not_a_new_key() {
         "/m/api/requests/repo/add",
         r#"{"repo":"https://github.com/de0ch/claude-env.git","explanation":"push the skill"}"#,
     );
+    // the answer's id is the add-store's own (what its outcome is filed under, what jarvis-request add-repo waits on)
     let as_ = approvals_for(&r, "sA");
     assert!(
         code == 200
             && out["existing"] == true
             && out["store"] == "github-claude-env"
-            && out["id"].is_null()
             && requests() == 0
-            && as_.len() == 1,
+            && as_.len() == 1
+            && out["id"] == as_[0].id.as_str(),
         "{code} {out}, {} requests, approvals {as_:?}",
         requests()
     );

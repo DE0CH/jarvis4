@@ -17,12 +17,23 @@ use jarvis_go::GoTime;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 /// the session regions (kernel/spawner/aws.go AWSRegions; infra/aws builds nothing elsewhere)
 pub const AWS_BUDGET_REGIONS: &[&str] = &["eu-west-2", "ap-southeast-1", "ap-northeast-1"];
+
+/// the fabric's hosts (docs/PLAN-fabric.md): listed beside the session regions, and everything in it, with the fabric's
+/// buckets, is the fabric's part of the AWS spend (nothing else of Jarvis 4 runs there)
+pub const AWS_FABRIC_REGION: &str = "eu-central-1";
+
+/// every region the estimate lists
+pub fn aws_list_regions() -> Vec<&'static str> {
+    let mut v = AWS_BUDGET_REGIONS.to_vec();
+    v.push(AWS_FABRIC_REGION);
+    v
+}
 
 /// USD an hour, on-demand Linux, shared tenancy, for every instance type kernel/spawner/aws.go uses, per region (AWS's
 /// Price List API, read 2026-11-04). A type not listed is priced at the dearest listed (the cap errs high).
@@ -63,6 +74,11 @@ const AWS_INSTANCE_RATES: &[(&str, &[(&str, f64)])] = &[
             ("r7i.8xlarge", 2.5536),
         ],
     ),
+    // the fabric's hosts and its AMI builder (Price List API, read 2026-11-20)
+    (
+        AWS_FABRIC_REGION,
+        &[("t3.large", 0.096), ("m7i.xlarge", 0.2415)],
+    ),
 ];
 
 /// USD per GB-month: gp3 provisioned storage and snapshot data stored (read 2026-11-04)
@@ -70,7 +86,19 @@ const AWS_STORAGE_RATES: &[(&str, f64, f64)] = &[
     ("eu-west-2", 0.0928, 0.053),
     ("ap-southeast-1", 0.096, 0.05),
     ("ap-northeast-1", 0.096, 0.05),
+    (AWS_FABRIC_REGION, 0.0952, 0.054), // read 2026-11-20
 ];
+
+/// S3 Standard, USD per GB-month for the first 50 TB (Price List API AmazonS3 TimedStorage-ByteHrs, read 2026-11-20),
+/// for the buckets of AWS_BUDGET_BUCKETS
+const AWS_S3_RATES: &[(&str, f64)] = &[(AWS_FABRIC_REGION, 0.0245)];
+
+fn aws_s3_rate(region: &str) -> f64 {
+    AWS_S3_RATES
+        .iter()
+        .find(|(r, _)| *r == region)
+        .map_or(0.0, |(_, p)| *p)
+}
 
 /// a public IPv4 address, in use or idle, every region (read 2026-11-04)
 pub const AWS_IPV4_PER_HOUR: f64 = 0.005;
@@ -145,12 +173,21 @@ pub struct AwsAddress {
     pub public_ip: String,
 }
 
+/// one bucket of AWS_BUDGET_BUCKETS and the bytes it holds
+#[derive(Debug, Clone, Default)]
+pub struct AwsBucket {
+    pub region: String,
+    pub name: String,
+    pub bytes: i64,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct AwsInventory {
     pub instances: Vec<AwsInstance>,
     pub volumes: Vec<AwsVolume>,
     pub snapshots: Vec<AwsSnapshot>,
     pub addresses: Vec<AwsAddress>,
+    pub buckets: Vec<AwsBucket>,
 }
 
 /// AWS read only (the real one: AwsCostApi; tests: a fake)
@@ -171,12 +208,17 @@ pub struct AwsBurn {
     pub snapshots: i64,
     pub snapshot_gb: f64,
     pub ipv4: i64,
+    pub bucket_gb: f64,
     pub unknown_types: Vec<String>,
+    /// the fabric's part of rate_per_hour (AWS_FABRIC_REGION and its buckets), its running hosts
+    pub fabric_rate_per_hour: f64,
+    pub fabric_running: i64,
 }
 
 pub fn aws_burn_rate(inv: &AwsInventory) -> AwsBurn {
     let mut b = AwsBurn::default();
-    let mut ips = BTreeSet::new();
+    // by address: whether it is the fabric's
+    let mut ips: BTreeMap<String, bool> = BTreeMap::new();
     for i in &inv.instances {
         if i.state != "running" {
             continue; // pending is not billed yet; stopped instances bill only their volumes
@@ -187,8 +229,12 @@ pub fn aws_burn_rate(inv: &AwsInventory) -> AwsBurn {
         }
         b.rate_per_hour += p;
         b.running += 1;
+        if i.region == AWS_FABRIC_REGION {
+            b.fabric_rate_per_hour += p;
+            b.fabric_running += 1;
+        }
         if !i.public_ip.is_empty() {
-            ips.insert(i.public_ip.clone());
+            ips.insert(i.public_ip.clone(), i.region == AWS_FABRIC_REGION);
         }
     }
     for v in &inv.volumes {
@@ -197,6 +243,9 @@ pub fn aws_burn_rate(inv: &AwsInventory) -> AwsBurn {
         }
         let (gp3, _) = aws_storage_rate(&v.region);
         b.rate_per_hour += v.size_gb as f64 * gp3 / HOURS_PER_MONTH;
+        if v.region == AWS_FABRIC_REGION {
+            b.fabric_rate_per_hour += v.size_gb as f64 * gp3 / HOURS_PER_MONTH;
+        }
         b.volumes += 1;
         b.volume_gb += v.size_gb;
     }
@@ -211,17 +260,31 @@ pub fn aws_burn_rate(inv: &AwsInventory) -> AwsBurn {
         };
         let (_, snap) = aws_storage_rate(&s.region);
         b.rate_per_hour += gb * snap / HOURS_PER_MONTH;
+        if s.region == AWS_FABRIC_REGION {
+            b.fabric_rate_per_hour += gb * snap / HOURS_PER_MONTH;
+        }
         b.snapshots += 1;
         b.snapshot_gb += gb;
     }
     for a in &inv.addresses {
         // Elastic IPs: billed attached or not; an attached one is its instance's address
         if !a.public_ip.is_empty() {
-            ips.insert(a.public_ip.clone());
+            let fabric = ips.get(&a.public_ip).copied().unwrap_or(false);
+            ips.insert(a.public_ip.clone(), fabric || a.region == AWS_FABRIC_REGION);
         }
     }
     b.ipv4 = ips.len() as i64;
     b.rate_per_hour += b.ipv4 as f64 * AWS_IPV4_PER_HOUR;
+    b.fabric_rate_per_hour += ips.values().filter(|f| **f).count() as f64 * AWS_IPV4_PER_HOUR;
+    for k in &inv.buckets {
+        let gb = k.bytes as f64 / (1u64 << 30) as f64;
+        let rate = gb * aws_s3_rate(&k.region) / HOURS_PER_MONTH;
+        b.bucket_gb += gb;
+        b.rate_per_hour += rate;
+        if k.region == AWS_FABRIC_REGION {
+            b.fabric_rate_per_hour += rate;
+        }
+    }
     b.unknown_types.sort();
     b
 }
@@ -323,6 +386,10 @@ pub struct AwsCostApi {
     secret: String,
     http: reqwest::blocking::Client,
     pub ec2: fn(&str) -> String,
+    /// S3's endpoint for (region, bucket)
+    pub s3: fn(&str, &str) -> String,
+    /// AWS_BUDGET_BUCKETS: the buckets counted (st.buckets holds their last listing)
+    pub buckets: Vec<AwsBucket>,
     pub sts: String,
     pub ce: String,
     st: Mutex<CostState>,
@@ -335,6 +402,9 @@ struct CostState {
     last: BTreeMap<String, AwsInventory>,
     /// by region: when snapshots and addresses were last listed
     slow_at: BTreeMap<String, GoTime>,
+    /// the buckets' bytes by "region/name", and when they were last all listed
+    bucket_bytes: BTreeMap<String, i64>,
+    buckets_at: GoTime,
 }
 
 #[derive(Deserialize, Default)]
@@ -360,6 +430,8 @@ impl AwsCostApi {
                 .build()
                 .unwrap_or_else(|e| panic!("{e}")),
             ec2: |r| format!("https://ec2.{r}.amazonaws.com/"),
+            s3: |r, b| format!("https://{b}.s3.{r}.amazonaws.com/"),
+            buckets: vec![],
             sts: "https://sts.amazonaws.com/".into(),
             ce: "https://ce.us-east-1.amazonaws.com/".into(),
             st: Mutex::new(CostState::default()),
@@ -643,6 +715,71 @@ impl AwsCostApi {
         Ok(out)
     }
 
+    /// the bytes a bucket holds (S3 ListObjectsV2, every page; the read-only key's s3:ListBucket)
+    fn bucket_bytes(&self, region: &str, bucket: &str) -> Result<i64> {
+        #[derive(Deserialize, Default)]
+        #[serde(default)]
+        struct C {
+            #[serde(rename = "Size")]
+            size: i64,
+        }
+        #[derive(Deserialize, Default)]
+        #[serde(default)]
+        struct R {
+            #[serde(rename = "IsTruncated")]
+            truncated: bool,
+            #[serde(rename = "NextContinuationToken")]
+            next: String,
+            #[serde(rename = "Contents")]
+            contents: Vec<C>,
+        }
+        let mut total = 0i64;
+        let mut token = String::new();
+        loop {
+            // the query as Go's url.Values.Encode: sorted, escaped (the signature covers it as sent)
+            let mut q: Vec<(&str, &str)> = vec![("list-type", "2"), ("max-keys", "1000")];
+            if !token.is_empty() {
+                q.push(("continuation-token", &token));
+            }
+            q.sort();
+            let query = url::form_urlencoded::Serializer::new(String::new())
+                .extend_pairs(q)
+                .finish();
+            let u = format!("{}?{query}", (self.s3)(region, bucket));
+            let hs = aws_sign_v4(
+                "GET",
+                &u,
+                &[],
+                b"",
+                &self.id,
+                &self.secret,
+                region,
+                "s3",
+                GoTime::now(),
+            );
+            let mut req = self.http.get(&u);
+            for (k, v) in hs {
+                req = req.header(k, v);
+            }
+            let resp = req.send()?;
+            let status = resp.status().as_u16();
+            let b = crate::util::read_limited(resp, 32 << 20)?;
+            if status / 100 != 2 {
+                let msg = String::from_utf8_lossy(&b).trim().to_string();
+                return Err(anyhow!(
+                    "s3 {bucket}: HTTP {status} {}",
+                    jarvis_go::fmt::clip_bytes(&msg, 300)
+                ));
+            }
+            let r: R = quick_xml::de::from_reader(&b[..])?;
+            total += r.contents.iter().map(|c| c.size).sum::<i64>();
+            if !r.truncated || r.next.is_empty() {
+                return Ok(total);
+            }
+            token = r.next;
+        }
+    }
+
     /// the key's own account (STS GetCallerIdentity: needs no permission)
     pub fn account(&self) -> Result<String> {
         let a = self
@@ -693,14 +830,14 @@ impl AwsCoster for AwsCostApi {
                 first = Some(e);
             }
         };
-        for region in AWS_BUDGET_REGIONS {
+        for region in aws_list_regions() {
             let (mut cur, mut slow_at) = self
                 .st
                 .lock()
                 .map(|g| {
                     (
-                        g.last.get(*region).cloned().unwrap_or_default(),
-                        g.slow_at.get(*region).copied().unwrap_or_default(),
+                        g.last.get(region).cloned().unwrap_or_default(),
+                        g.slow_at.get(region).copied().unwrap_or_default(),
                     )
                 })
                 .unwrap_or_default();
@@ -740,6 +877,43 @@ impl AwsCoster for AwsCostApi {
             all.volumes.extend(cur.volumes);
             all.snapshots.extend(cur.snapshots);
             all.addresses.extend(cur.addresses);
+        }
+        // the buckets, as slowly as snapshots: a listing is a request per 1000 objects (USD 0.005 per 1000 requests)
+        let due = self
+            .st
+            .lock()
+            .map(|g| now.sub(&g.buckets_at) >= AWS_SNAPSHOT_EVERY)
+            .unwrap_or(true);
+        if due {
+            let mut ok = true;
+            for k in &self.buckets {
+                match self.bucket_bytes(&k.region, &k.name) {
+                    Ok(n) => {
+                        if let Ok(mut g) = self.st.lock() {
+                            g.bucket_bytes.insert(format!("{}/{}", k.region, k.name), n);
+                        }
+                    }
+                    Err(e) => {
+                        keep(e);
+                        ok = false;
+                    }
+                }
+            }
+            if ok && let Ok(mut g) = self.st.lock() {
+                g.buckets_at = now;
+            }
+        }
+        if let Ok(g) = self.st.lock() {
+            all.buckets.extend(self.buckets.iter().map(|k| {
+                AwsBucket {
+                    bytes: g
+                        .bucket_bytes
+                        .get(&format!("{}/{}", k.region, k.name))
+                        .copied()
+                        .unwrap_or(0),
+                    ..k.clone()
+                }
+            }));
         }
         (all, first)
     }
@@ -813,7 +987,23 @@ pub fn aws_coster_from_env() -> Option<Box<dyn AwsCoster>> {
     if id.is_empty() || secret.is_empty() {
         return None;
     }
-    Some(Box::new(AwsCostApi::new(&id, &secret)))
+    let mut a = AwsCostApi::new(&id, &secret);
+    a.buckets = aws_budget_buckets(&std::env::var("AWS_BUDGET_BUCKETS").unwrap_or_default());
+    Some(Box::new(a))
+}
+
+/// AWS_BUDGET_BUCKETS ("region/bucket,…"; the fabric's image bucket): the buckets the estimate counts
+pub fn aws_budget_buckets(v: &str) -> Vec<AwsBucket> {
+    v.split(',')
+        .filter_map(|it| {
+            let (region, name) = it.trim().split_once('/')?;
+            (!region.is_empty() && !name.is_empty()).then(|| AwsBucket {
+                region: region.into(),
+                name: name.into(),
+                bytes: 0,
+            })
+        })
+        .collect()
 }
 
 // ---- the tick's AWS part -------------------------------------------------------------------------------------
@@ -902,8 +1092,11 @@ impl AwsBudgetPart {
         let (mut other, mut owned) = r.st.do_(|d| {
             let (mut other, mut owned): (Vec<Value>, Vec<Value>) = (vec![], vec![]);
             for i in &self.inv.instances {
-                if i.state == "terminated" || i.state == "shutting-down" {
-                    continue;
+                if i.state == "terminated"
+                    || i.state == "shutting-down"
+                    || i.region == AWS_FABRIC_REGION
+                {
+                    continue; // the fabric's hosts are its hermit's (the fabric part of the view)
                 }
                 let mine = d
                     .machines
@@ -931,8 +1124,13 @@ impl AwsBudgetPart {
             "perMonth": self.burn.rate_per_hour * HOURS_PER_MONTH, "running": self.burn.running,
             "volumes": self.burn.volumes, "volumeGb": self.burn.volume_gb, "snapshots": self.burn.snapshots,
             "snapshotGb": (self.burn.snapshot_gb * 10.0).round() / 10.0, "publicIpv4": self.burn.ipv4,
-            "account": self.acct, "regions": AWS_BUDGET_REGIONS, "other": other, "owned": owned,
-            "error": null, "billedError": null});
+            "account": self.acct, "regions": aws_list_regions(), "other": other, "owned": owned,
+            "error": null, "billedError": null,
+            "bucketGb": (self.burn.bucket_gb * 10.0).round() / 10.0,
+            // the fabric's part (docs/PLAN-fabric.md): its hosts, disks, AMI snapshots, addresses and image bucket
+            "fabric": {"estimateUsd": s.fabric_usd, "ratePerHour": self.burn.fabric_rate_per_hour,
+                "perMonth": self.burn.fabric_rate_per_hour * HOURS_PER_MONTH, "hosts": self.burn.fabric_running,
+                "region": AWS_FABRIC_REGION}});
         if !self.err.is_empty() {
             v["error"] = json!(self.err);
         }

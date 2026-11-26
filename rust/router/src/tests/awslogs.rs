@@ -129,6 +129,12 @@ fn machine_output_to_the_shipper() {
     let t = new_test_router();
     let r = t.r.clone();
     add_session(&r, "sA", "started", "i-0abc", false);
+    // an AWS session: its runner says so, not its id
+    r.st.do_(|d| {
+        if let Some(s) = d.sessions.get_mut("sA") {
+            s.runner = "aws".into();
+        }
+    });
     seen("i-0abc", "started");
     let _unseen = Unseen(vec!["i-0abc"]);
     let m = new_test_machine(&r, "i-0abc");
@@ -291,6 +297,12 @@ fn console_tick() {
         Some(("AKIATEST".into(), "secret".into()));
     console_reset();
     add_session(&r, "sA", "started", "i-0abc", false);
+    // an AWS session: its runner says so, not its id
+    r.st.do_(|d| {
+        if let Some(s) = d.sessions.get_mut("sA") {
+            s.runner = "aws".into();
+        }
+    });
     seen("i-0abc", "started");
     seen("i-0old", "destroyed");
     let _unseen = Unseen(vec!["i-0abc", "i-0old"]);

@@ -252,6 +252,9 @@ pub struct BudgetState {
     pub aws_billed_usd: f64,
     #[serde(rename = "awsBilledAt", skip_serializing_if = "Option::is_none")]
     pub aws_billed_at: Option<GoTime>,
+    /// the fabric's part of aws_usd (awsbudget.rs AWS_FABRIC_REGION)
+    #[serde(rename = "fabricUsd", skip_serializing_if = "is_zero_f")]
+    pub fabric_usd: f64,
 }
 
 impl BudgetState {
@@ -274,6 +277,8 @@ impl BudgetState {
 pub struct SpendSample {
     pub fly_rate: f64,
     pub aws_rate: f64,
+    /// the fabric's part of aws_rate
+    pub fabric_rate: f64,
     pub billed: Option<AwsBilled>,
 }
 
@@ -312,6 +317,7 @@ pub fn apply_sample(
     let t = now.utc();
     s.spent_usd += (smp.fly_rate + smp.aws_rate) * delta_h;
     s.aws_usd += smp.aws_rate * delta_h;
+    s.fabric_usd += smp.fabric_rate * delta_h;
     s.last_sample_at = Some(t);
     s.rate_per_hour = smp.fly_rate + smp.aws_rate;
     if let Some(b) = &smp.billed
@@ -610,6 +616,7 @@ impl Router {
         let smp = SpendSample {
             fly_rate: b.rate_per_hour,
             aws_rate: ap.as_ref().map_or(0.0, |a| a.burn.rate_per_hour),
+            fabric_rate: ap.as_ref().map_or(0.0, |a| a.burn.fabric_rate_per_hour),
             billed: ap.as_ref().and_then(|a| a.billed.clone()),
         };
         let (state, act) = self.st.do_(|d| {
@@ -645,10 +652,27 @@ impl Router {
                 ap.inv
                     .instances
                     .iter()
-                    .filter(|i| i.state == "running" || i.state == "pending")
+                    // the fabric's hosts are hermit's: they go when their sandboxes do (the fabric's sessions, below)
+                    .filter(|i| {
+                        (i.state == "running" || i.state == "pending")
+                            && i.region != crate::awsbudget::AWS_FABRIC_REGION
+                    })
                     .map(|i| i.id.clone()),
             );
         }
+        // the fabric's sessions: their machines are hermit's sandboxes, in neither Fly's nor AWS's listing
+        self.st.read(|d| {
+            up.extend(
+                d.sessions
+                    .values()
+                    .filter(|s| {
+                        s.fabric.is_some()
+                            && !s.machine_id.is_empty()
+                            && (s.state == "started" || s.state == "frozen")
+                    })
+                    .map(|s| s.machine_id.clone()),
+            );
+        });
         let split = if ap.is_some() {
             format!(
                 " (Fly {}, AWS {})",

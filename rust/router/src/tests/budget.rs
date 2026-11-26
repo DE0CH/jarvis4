@@ -1,8 +1,8 @@
 //! budget_test.go, awsbudget_test.go, awsowner_test.go
 use crate::awsbudget::{
-    AWS_BILLED_EVERY, AWS_BUDGET_REGIONS, AwsAddress, AwsBilled, AwsCostApi, AwsCoster,
-    AwsInstance, AwsInventory, AwsSnapshot, AwsVolume, aws_burn_rate, aws_instance_rate,
-    aws_storage_rate,
+    AWS_BILLED_EVERY, AWS_BUDGET_REGIONS, AwsAddress, AwsBilled, AwsBucket, AwsCostApi, AwsCoster,
+    AwsInstance, AwsInventory, AwsSnapshot, AwsVolume, aws_budget_buckets, aws_burn_rate,
+    aws_instance_rate, aws_list_regions, aws_storage_rate,
 };
 use crate::awsowner::{GITHUB_RUN, GhRun};
 use crate::budget::{
@@ -125,6 +125,7 @@ fn smp(fly: f64, aws: f64, billed: Option<AwsBilled>) -> SpendSample {
     SpendSample {
         fly_rate: fly,
         aws_rate: aws,
+        fabric_rate: 0.0,
         billed,
     }
 }
@@ -729,6 +730,7 @@ fn aws_burn_rate_of_an_inventory() {
                 public_ip: "9.9.9.9".into(),
             },
         ],
+        buckets: vec![],
     };
     let b = aws_burn_rate(&inv);
     let want = 0.0472
@@ -768,6 +770,148 @@ fn aws_burn_rate_of_an_inventory() {
 }
 
 /// Fly and AWS fill one pool; Cost Explorer's figure is a floor under the AWS part
+/// the fabric's part of the AWS spend: everything in its region, its image bucket at S3's rate (2026-11-20: hosts in
+/// eu-central-1 were not in the estimate at all, and the bucket's 190 GB was counted only by Cost Explorer)
+#[test]
+fn fabric_part() {
+    let ip = |mut i: AwsInstance, ip: &str| {
+        i.public_ip = ip.into();
+        i
+    };
+    let inv = AwsInventory {
+        instances: vec![
+            ip(inst("i-s", "eu-west-2", "t3.medium", "running"), "1.1.1.1"),
+            ip(
+                inst("i-f", "eu-central-1", "m7i.xlarge", "running"),
+                "2.2.2.2",
+            ),
+            inst("i-b", "eu-central-1", "t3.large", "pending"),
+        ],
+        volumes: vec![
+            AwsVolume {
+                region: "eu-central-1".into(),
+                state: "in-use".into(),
+                size_gb: 220,
+                ..Default::default()
+            },
+            AwsVolume {
+                region: "eu-west-2".into(),
+                state: "in-use".into(),
+                size_gb: 40,
+                ..Default::default()
+            },
+        ],
+        snapshots: vec![AwsSnapshot {
+            region: "eu-central-1".into(),
+            state: "completed".into(),
+            volume_gb: 220,
+            bytes: 10 << 30,
+            ..Default::default()
+        }],
+        buckets: vec![AwsBucket {
+            region: "eu-central-1".into(),
+            name: "jarvis4-fabric-images".into(),
+            bytes: 190 << 30,
+        }],
+        ..Default::default()
+    };
+    let b = aws_burn_rate(&inv);
+    let fabric =
+        0.2415 + 220.0 * 0.0952 / 730.0 + 10.0 * 0.054 / 730.0 + 0.005 + 190.0 * 0.0245 / 730.0;
+    let all = fabric + 0.0472 + 40.0 * 0.0928 / 730.0 + 0.005;
+    assert!(
+        near(b.fabric_rate_per_hour, fabric)
+            && near(b.rate_per_hour, all)
+            && b.fabric_running == 1
+            && near(b.bucket_gb, 190.0),
+        "{b:?}, want fabric {fabric:.6} of {all:.6}"
+    );
+    let t0 = at(2026, 11, 20, 0, 0);
+    let prev = BudgetState {
+        month: "2026-11".into(),
+        last_sample_at: Some(t0),
+        ..Default::default()
+    };
+    let sample = SpendSample {
+        aws_rate: all,
+        fabric_rate: fabric,
+        ..Default::default()
+    };
+    let (s, _, _) = apply_sample(Some(&prev), t0.add(hours(2)), &sample, 100.0, 90.0);
+    assert!(
+        near(s.fabric_usd, 2.0 * fabric) && near(s.aws_usd, 2.0 * all),
+        "{s:?}"
+    );
+}
+
+/// over the cap a fabric session pauses too (its machine is hermit's sandbox, in no Fly or AWS listing), and the
+/// fabric's own hosts are neither paused, named as strangers, nor listed as instances with no owner (2026-11-20)
+#[test]
+fn budget_cap_pauses_fabric_sessions() {
+    let _g = serial();
+    let t = new_test_router();
+    let r = t.arc();
+    r.st.do_(|d| {
+        d.sessions.insert(
+            "sf".into(),
+            Session {
+                id: "sf".into(),
+                machine_id: "x0123".into(),
+                label: "on the fabric".into(),
+                state: "frozen".into(),
+                runner: "fabric".into(),
+                fabric: Some(crate::fabricrunner::FabricLine {
+                    conversation: "c-sf".into(),
+                    machine: "x0123".into(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        );
+        d.machines.insert("x0123".into(), "sf".into());
+        d.budget = Some(BudgetState {
+            month: "2026-11".into(),
+            spent_usd: 99.9,
+            ..Default::default()
+        });
+    });
+    let fx = Effects::install(false);
+    let mut host = inst("i-host", "eu-central-1", "m7i.xlarge", "running");
+    host.public_ip = "3.3.3.3".into();
+    let aws = FakeAws {
+        inv: AwsInventory {
+            instances: vec![host],
+            ..Default::default()
+        },
+        billed: 0.0,
+        calls: AtomicUsize::new(0),
+    };
+    let (a, _) = r
+        .budget_tick(
+            &FakeFly::default(),
+            Some(&aws),
+            at(2026, 11, 20, 0, 0),
+            50.0,
+            45.0,
+        )
+        .expect("tick");
+    assert!(a.enforce && fx.paused() == "sf", "{a:?} {}", fx.paused());
+    let dms = fx.dms();
+    assert!(dms.len() == 1 && !dms[0].contains("i-host"), "{dms:?}");
+    let v = budget_view(&r).0;
+    let ap = &v["aws"];
+    assert_eq!(
+        ap["other"].as_array().map(Vec::len),
+        Some(0),
+        "the fabric's host listed as no one's: {ap}"
+    );
+    let f = &ap["fabric"];
+    assert!(
+        f["hosts"] == 1 && near(f["ratePerHour"].as_f64().unwrap_or(0.0), 0.2415 + 0.005),
+        "fabric {f}"
+    );
+}
+
 #[test]
 fn one_pool() {
     let t0 = at(2026, 11, 4, 0, 0);
@@ -930,6 +1074,10 @@ fn fake_ec2(_: &str) -> String {
     format!("{}/", AWS_URL.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
+fn fake_s3(_: &str, _: &str) -> String {
+    fake_ec2("")
+}
+
 /// the real reader against a fake AWS: every call signed, EC2's XML and Cost Explorer's JSON read, the account filter set
 #[test]
 fn aws_cost_api() {
@@ -947,6 +1095,30 @@ fn aws_cost_api() {
                 .push(req.path.clone());
         }
         let b = req.read_body(1 << 20);
+        let query: BTreeMap<String, String> = url::form_urlencoded::parse(req.raw_query.as_bytes())
+            .into_owned()
+            .collect();
+        if req.method == "GET" && query.get("list-type").map(String::as_str) == Some("2") {
+            // S3 ListObjectsV2, two pages
+            if !req
+                .header("Authorization")
+                .contains("/eu-central-1/s3/aws4_request")
+            {
+                un.lock().unwrap_or_else(|e| e.into_inner()).push(format!(
+                    "S3 signed for the wrong scope: {}",
+                    req.header("Authorization")
+                ));
+            }
+            match query.get("continuation-token").map(String::as_str) {
+                None => w.write_str("<ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>t+2/=</NextContinuationToken><Contents><Size>4000000000</Size></Contents><Contents><Size>1000</Size></Contents></ListBucketResult>"),
+                Some("t+2/=") => w.write_str("<ListBucketResult><IsTruncated>false</IsTruncated><Contents><Size>2000000000</Size></Contents></ListBucketResult>"),
+                Some(_) => {
+                    w.write_header(400);
+                    0
+                }
+            };
+            return;
+        }
         if req.header("X-Amz-Target") == "AWSInsightsIndexService.GetCostAndUsage" {
             *cb.lock().unwrap_or_else(|e| e.into_inner()) =
                 serde_json::from_slice(&b).unwrap_or_default();
@@ -978,9 +1150,18 @@ fn aws_cost_api() {
     a.ec2 = fake_ec2;
     a.sts = format!("{}/", srv.url);
     a.ce = format!("{}/", srv.url);
+    a.s3 = fake_s3;
+    a.buckets = aws_budget_buckets("eu-central-1/jarvis4-fabric-images, bad");
     let (inv, err) = a.inventory(GoTime::now());
     assert!(err.is_none(), "{err:?}");
-    let n = AWS_BUDGET_REGIONS.len();
+    assert!(
+        inv.buckets.len() == 1
+            && inv.buckets[0].name == "jarvis4-fabric-images"
+            && inv.buckets[0].bytes == 6000001000,
+        "buckets {:?}",
+        inv.buckets
+    );
+    let n = aws_list_regions().len();
     assert!(
         inv.instances.len() == n
             && inv.instances[0].source == "source-x"

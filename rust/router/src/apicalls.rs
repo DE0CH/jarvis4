@@ -592,6 +592,8 @@ pub const CALL_RULES: &[(&str, CallRule)] = &[
     ("GET /api/machines", CallRule::Body),
     ("POST /api/machines/{id}/destroy", CallRule::Body),
     ("GET /api/runners", CallRule::Body), // runners.go: the Hetzner runners, each with its session
+    ("GET /api/fabric/ops/", CallRule::Body), // fabricops.rs: the fabric hermit's operator page
+    ("GET /api/fabric/ops/snapshot", CallRule::Body),
     ("POST /api/runners/{id}/delete", CallRule::Body), // only a runner no session at work owns
     ("GET /api/models", CallRule::Body),
     ("GET /api/policy", CallRule::Body),
