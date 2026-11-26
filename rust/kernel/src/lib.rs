@@ -4,7 +4,9 @@
 pub mod files;
 pub mod flip;
 pub mod merger;
+pub mod minter;
 pub mod mover;
+pub mod notarizer;
 pub mod notary;
 pub mod serve;
 pub mod signers;
