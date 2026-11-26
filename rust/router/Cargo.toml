@@ -62,6 +62,7 @@ uuid = "1"
 x25519-dalek = "2"
 
 [dev-dependencies]
+jarvis-kernel = { path = "../kernel" }
 tempfile = "3"
 
 [lints]

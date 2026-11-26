@@ -358,6 +358,16 @@ pub fn mark_pulled(machine: &str) {
         .insert(machine.to_string());
 }
 
+/// tests: the fake Fly's machine ids repeat across tests, so an earlier test's pull would make a later one wait out
+/// BOOT_GRACE
+#[cfg(test)]
+pub fn forget_pulled(machine: &str) {
+    PULLED_MACHINES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(machine);
+}
+
 pub fn has_pulled(machine: &str) -> bool {
     PULLED_MACHINES
         .lock()

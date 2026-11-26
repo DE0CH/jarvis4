@@ -1571,6 +1571,7 @@ dependencies = [
  "include_dir",
  "jarvis-doc",
  "jarvis-go",
+ "jarvis-kernel",
  "jarvis-nethttp",
  "jarvis-sig",
  "jiff",

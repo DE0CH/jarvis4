@@ -62,6 +62,13 @@ pub struct Kernel {
     pub github: FakeGitHub,
     pub secrets: Arc<Secrets>,
     servers: Vec<TestServer>,
+    /// every Deployment "<role>-<copy>" → its base URL, for the front
+    routes: Arc<std::sync::RwLock<BTreeMap<String, String>>>,
+    /// the kernel as the router's KERNEL_URL reaches it: `<front>/%s` (one server answering every Deployment under its
+    /// name, as the cluster's Services do)
+    pub front: String,
+    /// the front answers the next this-many POSTs whose path ends so with a 502 of the spawner's (a reset Fly call)
+    pub fail_posts: Arc<Mutex<(String, usize)>>,
     master: Signer,
     seed: Vec<u8>,
     env: BTreeMap<String, String>,
@@ -182,7 +189,11 @@ impl Kernel {
             env: machine_env,
             dir,
             http: reqwest::blocking::Client::new(),
+            routes: Arc::default(),
+            front: String::new(),
+            fail_posts: Arc::default(),
         };
+        k.start_front();
         k.start_copy("blue");
         let blue = &k.copies["blue"];
         k.url = blue.url.clone();
@@ -193,6 +204,73 @@ impl Kernel {
         k.sign_roster("blue")
             .unwrap_or_else(|e| panic!("blue's roster: {e:#}"));
         k
+    }
+
+    /// the front: /<role>-<copy>/<path> passed to that Deployment's server as /<path>, headers and body both ways
+    fn start_front(&mut self) {
+        let routes = self.routes.clone();
+        let fail = self.fail_posts.clone();
+        let http = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .unwrap_or_default();
+        let srv = TestServer::handler(move |w, r| {
+            let p = r.path.trim_start_matches('/').to_string();
+            let (dep, rest) = p.split_once('/').unwrap_or((p.as_str(), ""));
+            let Some(base) = routes
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(dep)
+                .cloned()
+            else {
+                w.write_header(404);
+                w.write_str(&format!("no Deployment {dep}"));
+                return;
+            };
+            let mut u = format!("{base}/{rest}");
+            if !r.raw_query.is_empty() {
+                u = format!("{u}?{}", r.raw_query);
+            }
+            {
+                let mut f = fail.lock().unwrap_or_else(|e| e.into_inner());
+                if r.method == "POST" && f.1 > 0 && !f.0.is_empty() && r.path.ends_with(&f.0) {
+                    f.1 -= 1;
+                    drop(f);
+                    w.write_header(502);
+                    w.write_str(
+                        r#"fly inspect: Get "https://api.machines.dev/v1/apps/x/machines/y": EOF"#,
+                    );
+                    return;
+                }
+            }
+            let body = r.read_body(64 << 20);
+            let m =
+                reqwest::Method::from_bytes(r.method.as_bytes()).unwrap_or(reqwest::Method::GET);
+            let mut req = http.request(m, u).body(body);
+            for (k, v) in &r.headers {
+                if k != "host" && k != "content-length" {
+                    req = req.header(k, v);
+                }
+            }
+            match req.send() {
+                Err(e) => {
+                    w.write_header(502);
+                    w.write_str(&format!("the front: {e}"));
+                }
+                Ok(resp) => {
+                    for (k, v) in resp.headers() {
+                        if k != "content-length" && k != "transfer-encoding" {
+                            w.set_header(k.as_str(), v.to_str().unwrap_or_default());
+                        }
+                    }
+                    w.write_header(resp.status().as_u16());
+                    let b = resp.bytes().unwrap_or_default();
+                    w.write(&b);
+                }
+            }
+        });
+        self.front = srv.url.clone();
+        self.servers.push(srv);
     }
 
     fn serve_on(&mut self, h: jarvis_nethttp::HandlerFn) -> String {
@@ -282,6 +360,12 @@ impl Kernel {
             .get(name)
             .map(|c| c.retired.clone())
             .unwrap_or_default();
+        {
+            let mut rt = self.routes.write().unwrap_or_else(|e| e.into_inner());
+            for (role, u) in &url {
+                rt.insert(format!("{role}-{name}"), u.clone());
+            }
+        }
         self.copies.insert(
             name.into(),
             Copy {
@@ -640,6 +724,10 @@ impl Kernel {
             .unwrap_or_else(|| panic!("no {active}"));
         cp.retired.push(old);
         cp.url.insert(role.into(), u.clone());
+        self.routes
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(format!("{role}-{active}"), u.clone());
         self.url.insert(role.into(), u);
     }
 }

@@ -23,6 +23,7 @@ mod failedsession;
 mod handover;
 mod inbox;
 mod jarvis1import;
+mod kernelline;
 mod leases;
 mod lifecycle;
 mod linestate;
