@@ -65,6 +65,11 @@ impl Drop for KRig {
 }
 
 pub fn kernel_rig() -> KRig {
+    kernel_rig_with(|_| {})
+}
+
+/// the same with the router's config f adjusts
+pub fn kernel_rig_with(f: impl FnOnce(&mut crate::router::Config)) -> KRig {
     let serial = serial();
     let k = Kernel::start(BTreeMap::from([(
         "JARVIS2_URL".to_string(),
@@ -81,6 +86,7 @@ pub fn kernel_rig() -> KRig {
             c.kernel_url = format!("{front}/%s");
             c.session_image = KERNEL_IMAGE.into();
             c.region = "lhr".into();
+            f(c);
         },
         policy,
     );
@@ -1161,7 +1167,11 @@ fn no_fly_logs(_: &str, _: &str) -> anyhow::Result<(Vec<crate::lifecycle::FlyLog
 }
 
 pub fn lost_rig() -> (KRig, String, FakeMachine) {
-    let kr = kernel_rig();
+    lost_rig_with(|_| {})
+}
+
+pub fn lost_rig_with(f: impl FnOnce(&mut crate::router::Config)) -> (KRig, String, FakeMachine) {
+    let kr = kernel_rig_with(f);
     // Fly lists a destroyed machine for a while; gone is the harder case
     *FLY.write().unwrap_or_else(|e| e.into_inner()) = Some((kr.k.fly.clone(), false));
     {
