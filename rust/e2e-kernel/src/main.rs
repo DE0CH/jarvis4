@@ -22,6 +22,7 @@
 //!                       when this runs on a Fly machine ([`Net`]); with the fabric, on loopback. aviary-pin.yml's
 //!                       replica (every aviary release, before it is pinned); by hand from a session:
 //!                       `session-secret --keys JARVIS2_FLY_TOKEN --exec env E2E_HARNESS=aviary e2e-kernel`
+//!   E2E_KERNEL_IMPL=rust the kernel's nine components built from rust/kernel (the Rust port) instead of kernel/
 //!   E2E_SESSION_IMAGE   the session image (default ghcr.io/de0ch/jarvis4-session:latest), pinned by digest here
 //!
 //! `e2e-kernel hosts-exec HOSTS UID GID -- CMD…` (run by the router's `sudo unshare`): HOSTS bound over /etc/hosts in
@@ -68,6 +69,11 @@ const GATEWAY_HEALTH: &str = "127.0.0.1:29082";
 const FAKE_HERMIT: &str = "127.0.2.1:29090";
 /// on the fake fabric's bridge (fakehermit.rs `BRIDGE_IP`), where each sandbox's namespace reaches it
 const FABRIC_LISTENER: &str = "10.89.0.1:29083";
+
+/// E2E_KERNEL_IMPL=rust: the kernel's components from rust/kernel (the Rust port) instead of kernel/ (Go)
+fn rust_kernel() -> bool {
+    std::env::var("E2E_KERNEL_IMPL").as_deref() == Ok("rust")
+}
 
 fn fabric() -> bool {
     std::env::var("E2E_RUNNER").is_ok_and(|r| r == "fabric")
@@ -668,15 +674,32 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         // the bridge the sandboxes' namespaces hang on (the router's fabric listener and the front listen on it)
         fakehermit::bridge_up()?;
     }
-    for r in ROLES {
+    if rust_kernel() {
+        // the kernel of rust/kernel: its nine binaries, as its image would build them
         run_ok(
-            Command::new("go")
-                .args(["build", "-o"])
-                .arg(w.join(r))
-                .arg(format!("./cmd/{r}"))
-                .current_dir(root.join("kernel")),
-            &format!("building the {r}"),
+            Command::new("cargo")
+                .args(["build", "--release", "--locked", "-p", "jarvis-kernel"])
+                .current_dir(root.join("rust")),
+            "building the kernel (rust/kernel)",
         )?;
+        let target = std::env::var("CARGO_TARGET_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| root.join("rust").join("target"));
+        for r in ROLES {
+            std::fs::copy(target.join("release").join(r), w.join(r))
+                .with_context(|| format!("the {r} binary"))?;
+        }
+    } else {
+        for r in ROLES {
+            run_ok(
+                Command::new("go")
+                    .args(["build", "-o"])
+                    .arg(w.join(r))
+                    .arg(format!("./cmd/{r}"))
+                    .current_dir(root.join("kernel")),
+                &format!("building the {r}"),
+            )?;
+        }
     }
     // the router (rust/router), as its image builds it: the router profile (a panicking request recovered)
     run_ok(
