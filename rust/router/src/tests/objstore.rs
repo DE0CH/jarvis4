@@ -37,7 +37,11 @@ fn cutting_bucket(body: Vec<u8>, cut: usize) -> (TestServer, S3Objects, Arc<Atom
             return;
         }
         if g.fetch_add(1, Ordering::SeqCst) < cut {
+            // the head and half the body on the wire before the connection ends (a handler that returns at once may
+            // end it before the head went: the GET itself fails, not its read)
             w.write(&part[..part.len() / 2]);
+            w.flush();
+            std::thread::sleep(std::time::Duration::from_millis(300));
             return;
         }
         w.write(part);
