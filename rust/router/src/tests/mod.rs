@@ -63,6 +63,7 @@ mod statestats;
 pub mod storedocs;
 mod storerestore;
 mod storesecrets;
+mod storeversions_kernel;
 mod tasks;
 mod timemachine;
 mod uploads;
