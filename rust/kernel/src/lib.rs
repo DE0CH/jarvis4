@@ -8,5 +8,6 @@ pub mod minter;
 pub mod mover;
 pub mod notarizer;
 pub mod notary;
+pub mod secrets;
 pub mod serve;
 pub mod signers;

@@ -7,6 +7,7 @@ use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use anyhow::{Result, anyhow};
 use hkdf::Hkdf;
+use p256::elliptic_curve::PrimeField as _;
 use p256::elliptic_curve::point::DecompressPoint as _;
 use p256::elliptic_curve::sec1::{FromEncodedPoint as _, ToEncodedPoint as _};
 use p256::{AffinePoint, EncodedPoint, FieldBytes, ProjectivePoint, Scalar};
@@ -28,6 +29,11 @@ fn bytes(p: &ProjectivePoint) -> Result<Vec<u8>> {
     Ok(e.as_bytes().to_vec())
 }
 
+/// raw is a point on the curve (not the identity)
+pub fn point_ok(raw: &[u8]) -> bool {
+    point(raw).is_ok()
+}
+
 /// P + Q, uncompressed
 pub fn add_points(a: &[u8], b: &[u8]) -> Result<Vec<u8>> {
     bytes(&(point(a)? + point(b)?))
@@ -35,20 +41,16 @@ pub fn add_points(a: &[u8], b: &[u8]) -> Result<Vec<u8>> {
 
 /// k·P, uncompressed (k: 32 bytes, big-endian, below the order)
 pub fn scalar_mult(k: &[u8], raw: &[u8]) -> Result<Vec<u8>> {
-    if k.len() != 32 {
-        return Err(anyhow!("a scalar is 32 bytes"));
-    }
-    let s = Option::<Scalar>::from(Scalar::from_repr(*FieldBytes::from_slice(k)))
+    let k: [u8; 32] = k.try_into().map_err(|_| anyhow!("a scalar is 32 bytes"))?;
+    let s = Option::<Scalar>::from(Scalar::from_repr(FieldBytes::from(k)))
         .ok_or_else(|| anyhow!("scalar out of range"))?;
     bytes(&(point(raw)? * s))
 }
 
 /// the two points whose x-coordinate is x (the Enclave's key agreement returns only x)
 pub fn points_with_x(x: &[u8]) -> Result<Vec<Vec<u8>>> {
-    if x.len() != 32 {
-        return Err(anyhow!("x must be 32 bytes"));
-    }
-    let fx = FieldBytes::from_slice(x);
+    let x: [u8; 32] = x.try_into().map_err(|_| anyhow!("x must be 32 bytes"))?;
+    let fx = &FieldBytes::from(x);
     let mut out = vec![];
     for odd in [false, true] {
         let p = Option::<AffinePoint>::from(AffinePoint::decompress(fx, (odd as u8).into()))
@@ -77,7 +79,7 @@ pub fn gcm_seal(key: &[u8; 32], plain: &[u8], aad: &[u8]) -> Vec<u8> {
     rand_core::OsRng.fill_bytes(&mut nonce);
     let mut out = nonce.to_vec();
     // encrypting into memory cannot fail
-    if let Ok(ct) = c.encrypt(Nonce::from_slice(&nonce), Payload { msg: plain, aad }) {
+    if let Ok(ct) = c.encrypt(&Nonce::from(nonce), Payload { msg: plain, aad }) {
         out.extend(ct);
     }
     out
@@ -88,8 +90,10 @@ pub fn gcm_open(key: &[u8; 32], sealed: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
         return Err(anyhow!("sealed data too short"));
     }
     let c = Aes256Gcm::new(key.into());
+    let mut nonce = [0u8; 12];
+    nonce.copy_from_slice(&sealed[..12]);
     c.decrypt(
-        Nonce::from_slice(&sealed[..12]),
+        &Nonce::from(nonce),
         Payload {
             msg: &sealed[12..],
             aad,
@@ -111,7 +115,11 @@ pub struct WrappedKey {
 pub const INFO_STORE: &str = "jarvis2/store-data-key";
 
 /// the phone's x(p·E) + secrets' k → the data key (tries both points with that x)
-pub fn unwrap_with_shares(w: &WrappedKey, phone_share_x: &[u8], agreement_scalar: &[u8]) -> Result<Vec<u8>> {
+pub fn unwrap_with_shares(
+    w: &WrappedKey,
+    phone_share_x: &[u8],
+    agreement_scalar: &[u8],
+) -> Result<Vec<u8>> {
     let eb = jarvis_sig::unb64(&w.e)?;
     let core_share = scalar_mult(agreement_scalar, &eb)?;
     let cands = points_with_x(phone_share_x)?;
