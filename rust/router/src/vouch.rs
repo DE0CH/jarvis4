@@ -368,6 +368,14 @@ pub fn forget_pulled(machine: &str) {
         .remove(machine);
 }
 
+#[cfg(test)]
+pub fn forget_all_pulled() {
+    PULLED_MACHINES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+}
+
 pub fn has_pulled(machine: &str) -> bool {
     PULLED_MACHINES
         .lock()

@@ -69,6 +69,8 @@ pub struct Kernel {
     pub front: String,
     /// the front answers the next this-many POSTs whose path ends so with a 502 of the spawner's (a reset Fly call)
     pub fail_posts: Arc<Mutex<(String, usize)>>,
+    /// Deployments the front can't reach (a component that doesn't answer)
+    pub down: Arc<Mutex<std::collections::BTreeSet<String>>>,
     master: Signer,
     seed: Vec<u8>,
     env: BTreeMap<String, String>,
@@ -192,6 +194,7 @@ impl Kernel {
             routes: Arc::default(),
             front: String::new(),
             fail_posts: Arc::default(),
+            down: Arc::default(),
         };
         k.start_front();
         k.start_copy("blue");
@@ -210,6 +213,7 @@ impl Kernel {
     fn start_front(&mut self) {
         let routes = self.routes.clone();
         let fail = self.fail_posts.clone();
+        let down = self.down.clone();
         let http = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(60))
             .build()
@@ -217,6 +221,11 @@ impl Kernel {
         let srv = TestServer::handler(move |w, r| {
             let p = r.path.trim_start_matches('/').to_string();
             let (dep, rest) = p.split_once('/').unwrap_or((p.as_str(), ""));
+            if down.lock().unwrap_or_else(|e| e.into_inner()).contains(dep) {
+                w.write_header(502);
+                w.write_str(&format!("{dep} doesn't answer"));
+                return;
+            }
             let Some(base) = routes
                 .read()
                 .unwrap_or_else(|e| e.into_inner())

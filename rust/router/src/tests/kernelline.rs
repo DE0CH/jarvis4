@@ -58,6 +58,8 @@ impl std::ops::Deref for KRig {
 
 impl Drop for KRig {
     fn drop(&mut self) {
+        // the fake Fly's ids repeat across tests: this test's pulls would make another wait BOOT_GRACE
+        crate::vouch::forget_all_pulled();
         *FLY.write().unwrap_or_else(|e| e.into_inner()) = None;
     }
 }
