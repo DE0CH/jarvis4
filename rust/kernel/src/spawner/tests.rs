@@ -2,6 +2,8 @@
 
 #[path = "tests_aws.rs"]
 mod aws;
+#[path = "tests_awsserial.rs"]
+mod awsserial;
 #[path = "tests_fabric.rs"]
 mod fabric;
 
