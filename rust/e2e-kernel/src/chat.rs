@@ -187,7 +187,10 @@ pub fn up(
             .output()?;
         let d = String::from_utf8(o.stdout)?.trim().to_owned();
         if !o.status.success() || !d.starts_with("sha256:") {
-            bail!("crane digest ghcr.io/de0ch/magpie:{tag}: {} {d:?}", o.status);
+            bail!(
+                "crane digest ghcr.io/de0ch/magpie:{tag}: {} {d:?}",
+                o.status
+            );
         }
         Ok(d)
     })?;
