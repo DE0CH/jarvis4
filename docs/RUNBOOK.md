@@ -392,11 +392,11 @@ The control box (`k8s/control/secrets/`, annotations in `k8s/control/apps/router
   Organization read (it checks the result lists apps and can't create a machine). It reads every machine's config in
   personal, env included (DECISIONS 138); it dies only with the token it was made from.
 - `--part flyvolumes FLY_VOLUME_TOKEN=file:…` → `router-flyvolumes.enc.yaml`: the leftover-volume sweep's token
-  (`router/volsweep.go`). `JARVIS2_FLY_TOKEN=… infra/fly-volume-token.sh OUT` attenuates the org token to delete on app
+  (`rust/router/src/volsweep.rs`). `JARVIS2_FLY_TOKEN=… infra/fly-volume-token.sh OUT` attenuates the org token to delete on app
   jarvis4-sessions plus a Volumes caveat (any volume, delete), which refuses every call that names no volume: it can
   only `DELETE /v1/apps/jarvis4-sessions/volumes/<id>` (proof: DECISIONS 195). It dies with the token it was made from.
 - `--part browserbase BROWSERBASE_API_KEY` → `router-browserbase.enc.yaml`: the Browserbase spend DM
-  (`router/bbbudget.go`; cap and warn line are `BROWSERBASE_BUDGET_USD` / `_WARN_USD` in the router's env).
+  (`rust/router/src/bbbudget.rs`; cap and warn line are `BROWSERBASE_BUDGET_USD` / `_WARN_USD` in the router's env).
 - `--part devices CF_DEVICE_TOKENS_API=file:…` → `router-devices.enc.yaml`: the Cloudflare token with which the router
   mints and deletes the paired apps' tokens (Access: Service Tokens read + write on the account, nothing else).
   Written 2026-10-26 (Cloudflare token `jarvis2-device-tokens-control`). A Cloudflare API token can only be minted in the
@@ -463,8 +463,8 @@ HETZNER_USER,HETZNER_PASSWORD --exec python3 infra/backup-read-key.py login` whe
 
 ## The Claude accounts
 
-Each Claude account is the core store `claude-<name>` (`router/claudeaccounts.go`, `router/claudestores.go`,
-`router/claudelogin.go`, API.md "Claude accounts", DECISIONS 115-121, 185 and 190): the router writes each account's pair
+Each Claude account is the core store `claude-<name>` (`rust/router/src/claudeaccounts.rs`, `rust/router/src/claudestores.rs`,
+`rust/router/src/claudelogin.rs`, API.md "Claude accounts", DECISIONS 115-121, 185 and 190): the router writes each account's pair
 and record into it at every change (the core's writer `router`), keeps its working copy on its volume
 (`claude-accounts/<store>.json`), and it is the ONLY refresher of each (Jarvis 4 never calls Jarvis 1; Jarvis 1, while it
 still runs, follows one account through `/peer/claude-login`). `infra/setup.py claude-accounts` shows them (no secrets):
@@ -526,7 +526,7 @@ Transcript search is not Jarvis's: DE0CH/deyao-ai (README there), a tenant on th
 
 In jarvis4-services (`services/icloud-index`; `k8s/cluster/services/icloud-index/`), built by `.github/workflows/services.yml` (only the service that changed; its unit
 tests run inside the image build) and pinned by digest like the router. The router reaches it at `ICLOUD_INDEX_URL`
-(k8s/cluster/router/router.yaml). Only the router reaches it (`router/searchsvc.go`); API.md "iCloud index" for the
+(k8s/cluster/router/router.yaml). Only the router reaches it (`rust/router/src/searchsvc.rs`); API.md "iCloud index" for the
 calls. Check it from a Jarvis 4 session holding `identity`: `curl -s "$JARVIS_URL/api/icloud/status"`.
 
 - **The iCloud index has no downtime on a rollout or a crash** (`services/icloud-index/icloud_index/lease.py`, DECISIONS 174): two
@@ -580,7 +580,7 @@ The machine has Fly's default 8 GB disk: an import that unpacks near 5 GB plus i
 
 ## Device leases and watches
 
-Nothing to set up: both live in the router (`router/leases.go`, `router/watches.go`; API.md). Leases: `GET /api/leases`
+Nothing to set up: both live in the router (`rust/router/src/leases.rs`, `rust/router/src/watches.rs`; API.md). Leases: `GET /api/leases`
 shows every device's holder, queue and log; a stuck holder is cleared with `POST /api/leases/<name>/force-return`
 (the app's Devices tab when it has one), and a lease that nobody renews lapses after its ttl (1 h) by itself.
 Watches: each session's `watches` in `/api/state` show `runs`, `lastExit`, `lastError` and `lastOutput`; a watch whose
@@ -591,7 +591,7 @@ router logs `the watch runner is unreachable`) and nothing is delivered until it
 
 ## Content stores
 
-Jarvis 1's folders `claude-records/.content/<name>/` on the Storage Box, used in place (`router/content.go`, API "Content
+Jarvis 1's folders `claude-records/.content/<name>/` on the Storage Box, used in place (`rust/router/src/content.rs`, API "Content
 stores"). Deyao manages them in the web page's Content tab; a session picks them in New session (web or the iPhone app)
 and gets each in `~/content/<name>/` at every start (`content-sync pull` in the base image's entrypoint);
 `content-sync status` / `content-sync push <name>` from inside the session. Nothing on the machine holds Storage Box
@@ -677,7 +677,7 @@ meanwhile), and a release still needs his OK:
    identities through kernel-id; the serving secrets as its secrets and its own empty secrets as `secretsBoot`; every
    serving member as retired, with the retired keys a line still needs), and Discord Deyao "waiting on you: sign the
    kernel's <copy> roster in Settings → Kernel". He signs it at his leisure.
-5. **The flip is the router's**, at once after the signature (router/kernelflip.go): every serving component hands
+5. **The flip is the router's**, at once after the signature (rust/router/src/kernelflip.rs): every serving component hands
    over and freezes, the new copy's notarizer, spawner and secrets take their state (the Fly token and the open unlocks
    included), and every call goes to the new copy. Nothing restarts and no session notices (calls wait out the flip's
    seconds). `GET /setup/kernel/roster`'s `flip` shows it under way; a step that fails is retried every 30 s and DMs
@@ -763,7 +763,7 @@ Storage Box copies. Nothing else waits on it; the router reports search unreacha
 
 ## Testing
 
-- Unit: `go test ./...` in core/ and router/, `cargo test` in rust/ (the machine: rust/machine) (the core's guarantees are tested in core/).
+- Unit: `go test ./...` in core/ and kernel/, `cargo test` in rust/ (the router: rust/router, the machine: rust/machine; the router's tests need a Postgres: TEST_DATABASE_URL) (the core's guarantees are tested in core/).
 - The app's crypto against the real core and router: the `ios` workflow's interop job (`ios/interop`, runs on
   Linux too with swift-crypto: `ios-ci standins W` (rust/ios-ci), then `swift run Interop` with the `INTEROP_*` env).
 - App code that needs no simulator (ResumeOnce: a continuation answered at most once): `swift run Units` in
@@ -772,17 +772,16 @@ Storage Box copies. Nothing else waits on it; the router reports search unreacha
   real core and router on the runner, recorded, and the phone replica below); `transitions.yml` taps every navigation
   and fails on a blank screen.
 - The web page: the `web` workflow (typecheck, `npm test`, export of `app/`).
-- End to end on real Fly with a software phone and the public TEST master key: `infra/e2e.sh` (a local core
-  and router, a throwaway WireGuard peer, the session image; set `E2E_SESSION_IMAGE` to a pinned tag). It sets its
-  own core up and never touches the production core. It always runs with Jarvis 1 unreachable (DECISIONS 155; needs
-  passwordless sudo, which sessions have): the router in its own mount namespace whose /etc/hosts sends
-  jarvis.deyaochen.com to a listener that fails the test on any connection, each machine with it blackholed; search, the
-  watch runner and the Storage Box are local stand-ins, so it also covers a search, a device lease, a watch, a content
-  store pulled at boot and pushed back, and a newer Claude pair reaching a running machine. Its cleanup also deletes the
-  run's own volumes whose machine is already gone (`infra/run-volumes.py`, from the run's router state and core log).
-  `E2E_ONLY=drain` (with its own `E2E_PEER`/`E2E_PORT` when another run is going) checks a rollout's drain instead of
-  the rest: SIGTERM to the router while the first session's pause waits for its snapshot → reads served, new actions
-  503, the pause ends `paused`, the router exits.
+- End to end on real Fly with a software phone and the public TEST master key: `session-secret --keys
+  JARVIS2_FLY_TOKEN --exec e2e-kernel` (rust/e2e-kernel, in a checkout; "A kernel release" above): the kernel and the
+  router of the tree, a throwaway WireGuard peer, the session image (`E2E_SESSION_IMAGE`). On Fly, e2e/kernel also
+  checks the keeper and memory for the supervisor on the first machine (e2e/kernel/keeper.go: Fly's main child, the
+  uid split, the session's and the rescue path's memory limits, a session hog killed inside its cgroup, the harness
+  started again after a SIGTERM or `kill -1`, supervisor-normal started again), a rollout's drain (SIGTERM to the
+  router while the pause waits for its snapshot: reads served, new actions 503, the pause ends `paused`, the router
+  exits and e2e-kernel starts the next one), and a stop signal to the second machine's main child (the transcript tail,
+  then the final snapshot; the next machine has the transcript). The fabric replica (`E2E_RUNNER=fabric`, CI's
+  images workflow on every branch) runs the same life on gVisor sandboxes without those Fly checks.
 
 ### Rehearsing Recover on a real box
 
@@ -921,7 +920,7 @@ A session volume (`jarvis4_state`, core/volumes.go) whose machine is gone shows 
 jarvis4-sessions' volumes as "not attached". The core deletes a machine's volume at its kill only while it remembers the
 volume, so one can be left by a kill whose delete failed, a line from before a core restart or Reset, or a test core that
 exited (DECISIONS 194).
-- **The router sweeps them** (`router/volsweep.go`, DECISIONS 195): every 10 minutes (the first 2 minutes after a leader
+- **The router sweeps them** (`rust/router/src/volsweep.rs`, DECISIONS 195): every 10 minutes (the first 2 minutes after a leader
   starts) it lists the app's volumes and machines with `FLY_READ_TOKEN` and deletes, with `FLY_VOLUME_TOKEN`, each volume
   named `jarvis4_state`, state `created`, attached to nothing, in no listed machine's `config.mounts`, at least 15 minutes
   old, and named by no session it knows (a session's current or booted machine's cert or start record). At most 20 a
@@ -963,11 +962,11 @@ metric series, 14 days). The account logs in **with GitHub as DE0CH** (no Grafan
   flyctl deploy -c services/log-shipper/fly.toml --ha=false --remote-only`). Its secrets: `ORG=jarvis2-370`,
   `ACCESS_TOKEN` (`flyctl tokens create readonly jarvis2-370 --from-existing` with the org token), `LOKI_URL=https://logs-prod-012.grafana.net`,
   `LOKI_USERNAME=1833850`, `LOKI_PASSWORD` = `GRAFANA_WRITE_TOKEN`. One shared-cpu-1x 256 MB machine (USD 2.52/month at the budget's lhr rates, in
-  the Fly budget; the Machines tab labels the app with what it is and this cost, `jarvisOwnApps` in `router/flyorgs.go`).
+  the Fly budget; the Machines tab labels the app with what it is and this cost, `jarvisOwnApps` in `rust/router/src/flyorgs.rs`).
 - **AWS session machines** (docs/PLAN-aws.md "Logs"): `{box="aws"}`, labels `instance` (i-…), `aws_region`,
   `session`, `source` = `machine` (the container's stdout and stderr), `journal` (the instance's systemd units: the
   image pull, docker, networkd) or `console` (the serial console: the kernel, the boot); e.g.
-  `{box="aws",instance="i-0abc…",source="console"} |= "Out of memory"`. The router sends them (router/awslogs.go,
+  `{box="aws",instance="i-0abc…",source="console"} |= "Out of memory"`. The router sends them (rust/router/src/awslogs.rs,
   `AWS_LOG_SHIPPER_URL`) to the Deployment `jarvis2-obs/aws-log-shipper` (Alloy, k8s/cluster/obs/aws-log-shipper.yaml,
   Secret `jarvis2-obs/alloy`: a new Grafana write token goes there as for the cluster's nodes). Nothing in Grafana from
   an AWS machine: the router's own log says why (`{box="cluster",container="router"} |= "[aws-logs]"`: the shipper

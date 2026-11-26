@@ -1,5 +1,5 @@
 // Package routerdb: the router's records as the e2e tests read them, from its database (E2E_DATABASE_URL; the router
-// keeps them in Postgres: router/statedb.go), in state.json's old shape: {"sessions": {id: …}, "records": […]}.
+// keeps them in Postgres: rust/router/src/statedb.rs), in state.json's old shape: {"sessions": {id: …}, "records": […]}.
 package routerdb
 
 import (

@@ -43,7 +43,7 @@ func reportedDigest(ref string) string {
 }
 
 // machineURLEnv: the core's own setting for the router's address on Fly's private network (MACHINE_URL of its
-// deployment: k8s/apps/core.yaml for production, infra/e2e.sh / rehearsal-box.sh for test cores), set in every
+// deployment: k8s/apps/core.yaml for production, rehearsal-box.sh for test cores), set in every
 // machine's config by the core alone. No default: a core without it starts no machine (a test core must never make
 // a machine that reaches production's router).
 const machineURLEnv = "JARVIS2_URL"

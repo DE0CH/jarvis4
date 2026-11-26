@@ -77,9 +77,10 @@ type session struct {
 		SourceCert *sig.Doc `json:"sourceCert"`
 		Burned     bool     `json:"burned"`
 	} `json:"kernel"`
-	// the machine's last status report (router/registry.go): whether its harness runs
+	// the machine's last status report (rust/router/src/registry.rs): whether its harness runs
 	Live *struct {
-		Reg *struct {
+		LastReport string `json:"lastReport"`
+		Reg        *struct {
 			Harness *struct {
 				Running bool `json:"running"`
 			} `json:"harness"`
@@ -100,7 +101,7 @@ func readSession(id string) (*session, bool) {
 	}
 	var st struct {
 		Sessions map[string]*session `json:"sessions"`
-		Records  []struct {          // a record carries the session's own fields (router/state.go Record)
+		Records  []struct {          // a record carries the session's own fields (rust/router/src/state.rs Record)
 			ID     string `json:"id"`
 			Kernel *struct {
 				Burned bool `json:"burned"`
@@ -281,9 +282,17 @@ func main() {
 	}
 	m1 := running("the first machine to boot from its kernel documents and pull its secrets")
 	log.Printf("machine %s booted", m1)
+	onFly := runner == ""
+	if onFly {
+		keeperStep(created.ID, m1) // keeper.go: the keeper, the uid split, memory for the supervisor
+	}
 
 	step("pause: the snapshot goes into the next source")
-	must("POST", router+"/api/sessions/"+created.ID+"/pause", map[string]any{}, nil)
+	if onFly {
+		drainPause(created.ID) // keeper.go: the pause in flight through a router rollout
+	} else {
+		must("POST", router+"/api/sessions/"+created.ID+"/pause", map[string]any{}, nil)
+	}
 	var snap string
 	waitFor("paused", 15*time.Minute, func() bool {
 		s, _ := readSession(created.ID)
@@ -312,6 +321,21 @@ func main() {
 		log.Fatal("the resume ran on the same machine")
 	}
 	log.Printf("machine %s booted from the snapshot", m2)
+	if onFly {
+		file, line := teardownStep(created.ID, m2) // keeper.go: a stop signal → the transcript tail, the final snapshot
+		must("POST", router+"/api/sessions/"+created.ID+"/pause", map[string]any{}, nil)
+		waitFor("paused after the teardown", 15*time.Minute, func() bool {
+			s, _ := readSession(created.ID)
+			if s != nil && s.State == "failed" {
+				log.Fatalf("pause after the teardown: the session failed: %s", s.Error)
+			}
+			return s != nil && s.State == "paused"
+		})
+		must("POST", router+"/api/sessions/"+created.ID+"/resume", map[string]any{}, nil)
+		m3 := running("the machine after the teardown")
+		expectOnMachine(m3, "grep -c '"+line+"' "+file, "1")
+		log.Printf("machine %s has the transcript the teardown saved", m3)
+	}
 
 	step("destroy: archived, its source burned")
 	must("POST", router+"/api/sessions/"+created.ID+"/destroy?force=1", map[string]any{}, nil)

@@ -876,25 +876,51 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
     let uid = nix::unistd::Uid::current().to_string();
     let gid = nix::unistd::Gid::current().to_string();
     {
-        let (o, e) = log_to(w, "router")?;
-        let child = Command::new("sudo")
-            .args(["-n", "unshare", "-m", "--propagation", "private"])
-            .arg(&me)
-            .arg("hosts-exec")
-            .arg(&hosts_file)
-            .args([&uid, &gid, "--", "env", "-i"])
-            .args(&router_env)
-            .arg(w.join("router"))
-            .stdout(o)
-            .stderr(e)
-            .spawn()
-            .context("starting the router")?;
+        let (me, hosts_file, w2) = (me.clone(), hosts_file.clone(), w.to_path_buf());
+        let spawn_router = move |log: &str| -> Result<Child> {
+            let (o, e) = log_to(&w2, log)?;
+            Command::new("sudo")
+                .args(["-n", "unshare", "-m", "--propagation", "private"])
+                .arg(&me)
+                .arg("hosts-exec")
+                .arg(&hosts_file)
+                .args([&uid, &gid, "--", "env", "-i"])
+                .args(&router_env)
+                .arg(w2.join("router"))
+                .stdout(o)
+                .stderr(e)
+                .spawn()
+                .context("starting the router")
+        };
+        let mut child = spawn_router("router")?;
         cl.lock()
             .unwrap_or_else(|e| e.into_inner())
             .sudo
             .push(child.id());
+        // a router that exits (the drain of a rollout: e2e/kernel's drainPause SIGTERMs it) is followed by the next
+        // one on the same database, as the cluster's rollout starts it; each with its own log (router-2.log, …)
+        let cl = cl.clone();
+        std::thread::spawn(move || {
+            for n in 2..=4 {
+                let _ = child.wait();
+                let mut g = cl.lock().unwrap_or_else(|e| e.into_inner());
+                if g.done {
+                    return;
+                }
+                match spawn_router(&format!("router-{n}")) {
+                    Ok(c) => {
+                        g.sudo.push(c.id());
+                        child = c;
+                    }
+                    Err(e) => {
+                        eprintln!("e2e-kernel: the next router: {e:#}");
+                        return;
+                    }
+                }
+            }
+        });
     }
-    // the machines' WireGuard peers run in the gateway (router/mgateway.go), as on the cluster: one passing /m to the
+    // the machines' WireGuard peers run in the gateway (rust/router/src/mgateway.rs), as on the cluster: one passing /m to the
     // router, and for aviary one passing the chat stack's calls to e2e/aviary's front
     if net.peers {
         start(
@@ -925,6 +951,9 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
 
     let mut driver = Command::new(w.join("driver"))
         .env("E2E_ROUTER", format!("http://{ROUTER}"))
+        // the router's process and its first log, for the drain (e2e/kernel/keeper.go drainPause)
+        .env("E2E_ROUTER_BIN", w.join("router"))
+        .env("E2E_ROUTER_LOG", w.join("router.log"))
         .env("E2E_SPAWNER", "http://127.0.1.5:28080")
         .env("E2E_DATA_DIR", &data)
         .env("E2E_DATABASE_URL", &db)
