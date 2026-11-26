@@ -221,3 +221,17 @@ impl Drop for TestServer {
         }
     }
 }
+
+impl World {
+    /// a copy of role's keys, for a component a test serves
+    pub fn component(&self, role: &str) -> Component {
+        let c = &self.c[role];
+        Component {
+            role: c.role.clone(),
+            signer: Signer::from_scalar(&c.signer.scalar()).unwrap_or_else(|e| panic!("{e}")),
+            agreement: jarvis_sig::Opener::from_scalar(&c.agreement.scalar())
+                .unwrap_or_else(|e| panic!("{e}")),
+            identity: c.identity.clone(),
+        }
+    }
+}
