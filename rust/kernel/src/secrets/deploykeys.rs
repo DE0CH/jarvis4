@@ -1,4 +1,4 @@
-//! Deploy keys (kernel/secrets/deploykeys.go; Deyao, 2026-10-10): adding a repo in the app's Settings adds an SSH
+//! Deploy keys (Deyao, 2026-10-10): adding a repo in the app's Settings adds an SSH
 //! public key to that one repo on GitHub as a read/write deploy key, and keeps the private half in a store of its own
 //! (`github-<repo>`), which sessions include to clone, pull and push that repo — and no other. The app makes the key
 //! pair and wraps the private half's store to the store key P + K, so secrets never sees it. Removing the repo deletes

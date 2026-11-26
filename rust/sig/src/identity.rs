@@ -1,4 +1,4 @@
-//! Components' keys and the kernel's roster, the Rust port of kernel/sig identity.go and storekey.go: a component's
+//! Components' keys and the kernel's roster: a component's
 //! fresh keys are checked against the roster the root key signs (docs/PLAN-cluster.md "The roster").
 
 use crate::{Doc, Error as SigError, Opener, Signer, go_json, strict_json, unb64, verify};

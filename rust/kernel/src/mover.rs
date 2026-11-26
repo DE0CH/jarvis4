@@ -1,4 +1,4 @@
-//! The grant mover (kernel/mover; DESIGN "Target design"). Grant G on a cert's predecessor, along that notarized cert
+//! The grant mover (DESIGN "Target design"). Grant G on a cert's predecessor, along that notarized cert
 //! with pair P → (successor, G ⊓ P). It never refuses a well-formed move and a move can only narrow. It doesn't check
 //! the cert's signer: the notarization says the notarizer did.
 

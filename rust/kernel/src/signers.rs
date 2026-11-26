@@ -1,4 +1,4 @@
-//! The identity signer and the gullible signer (kernel/signers; DESIGN "Target design"). Neither checks anything but
+//! The identity signer and the gullible signer (DESIGN "Target design"). Neither checks anything but
 //! the shape it is for: what their certs may do is the notarizer's table (the identity signer's (M, M, P) only narrows
 //! a machine's own grant; the gullible signer's certs count only where the table takes any signer: ending a source).
 

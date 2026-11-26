@@ -1,4 +1,4 @@
-//! The grant merger (kernel/merger; DESIGN "Target design"). Two grants on one machine with identical conditions →
+//! The grant merger (DESIGN "Target design"). Two grants on one machine with identical conditions →
 //! (M, allowed₁ ∪ allowed₂, conditions); anything else is refused.
 
 use crate::serve::{Answer, Server, fail, handle};

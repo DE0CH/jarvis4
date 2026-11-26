@@ -1,6 +1,6 @@
 [package]
 name = "jarvis-kernel"
-description = "Jarvis 4's kernel (kernel/ in Go until its cut): the nine components, each a binary of its own (notary, notarizer, mover, merger, spawner, identity, gullible, minter, secrets)"
+description = "Jarvis 4's kernel: the nine components, each a binary of its own (notary, notarizer, mover, merger, spawner, identity, gullible, minter, secrets)"
 version = "0.0.0"
 edition.workspace = true
 publish.workspace = true

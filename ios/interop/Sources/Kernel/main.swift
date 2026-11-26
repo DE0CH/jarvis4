@@ -201,7 +201,7 @@ check((try? KernelChecks.add(first: vectors["addFirst"]!, second: vectors["addSe
       "…onto an AWS machine")
 check((try? KernelChecks.add(first: vectors["addFirst"]!, second: vectors["addSecondFabric"]!, session: "s1", store: "extra"))?.machine == "x01a1f84c119b7406bf3daf4fb7f0cba9",
       "…onto a fabric machine (2026-11-20: refused before)")
-// the app's machine objects are kernel/doc's machineRE, every runner of it
+// the app's machine objects are rust/doc's machineRE, every runner of it
 for (o, want) in [("fly-0123456789abcd", true), ("aws-i-0123456789abcdef0", true), ("fabric-x01a1f84c119b7406bf3daf4fb7f0cba9", true),
                   ("fabric-01a1f84c119b7406bf3daf4fb7f0cba9", false), ("fabric-x01a1f84c", false), ("aws-0123456789abcd", false), ("x01a1f84c119b7406bf3daf4fb7f0cba9", false)] {
   check(KernelChecks.isMachine(o) == want, "machine object \(o): \(want)")

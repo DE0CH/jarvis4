@@ -1,4 +1,4 @@
-//! The EC2 API (kernel/spawner/aws.go), used only by the spawner, the only holder of its AWS key (sealed to it by the
+//! The EC2 API, used only by the spawner, the only holder of its AWS key (sealed to it by the
 //! setup session: POST /aws-credentials). One session machine = one EC2 instance (docs/PLAN-aws.md): Flatcar Container
 //! Linux from the region's launch template `jarvis4-session` (infra/aws), whose Ignition user-data, written here, runs
 //! the session image pinned by digest as the instance's one container (privileged, the host's network, /data bound

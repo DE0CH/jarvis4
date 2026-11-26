@@ -69,7 +69,7 @@ pub const KEEPER_DIR: &str = "/run/jarvis-keeper";
 pub const CONSOLE_PATH: &str = "/dev/ttyS0";
 /// a fabric sandbox's console: its first process's stdout, which sandboxd keeps
 pub const FABRIC_CONSOLE_PATH: &str = "/proc/1/fd/1";
-/// the console line's mark (kernel/spawner/aws.go)
+/// the console line's mark (rust/kernel/src/spawner/aws.rs)
 pub const KEYS_MARK: &str = "JARVIS2-KEYS ";
 pub const CLAUDE_HOME: &str = "/home/claude";
 

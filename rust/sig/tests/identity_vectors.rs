@@ -1,4 +1,4 @@
-//! identity.rs against Go's kernel/sig identity.go and storekey.go (kernel/sig/rustidvec_test.go): go-identity.json is
+//! identity.rs against the Go kernel's (which wrote go-identity.json before its cut, 2026-11-26): go-identity.json is
 //! what Go made, checked here; rust-identity.json what this crate made, checked by the Go test.
 //! `GEN_RUST_VECTORS=1 cargo test -p jarvis-sig --test identity_vectors` writes rust-identity.json again.
 #![allow(clippy::unwrap_used)]

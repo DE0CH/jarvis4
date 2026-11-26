@@ -1,4 +1,4 @@
-//! kernel/minter/minter_test.go
+//! The minter over HTTP, on a GitHub stand-in
 
 use jarvis_kernel::kt::{TestServer, World};
 use jarvis_kernel::minter::{

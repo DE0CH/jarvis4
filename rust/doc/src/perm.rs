@@ -1,4 +1,4 @@
-//! Permission pairs, the Rust port of kernel/perm (DESIGN "Target design"). `allowed` is a finite ("only") or cofinite
+//! Permission pairs (DESIGN "Target design"). `allowed` is a finite ("only") or cofinite
 //! ("except") set of exact strings, covariant; `conditions` a finite set of exact strings, contravariant.
 //! P' ≤ P iff allowed' ⊆ allowed and conditions' ⊇ conditions; P ⊓ Q = (allowed ∩, conditions ∪). Only these set
 //! operations, never what a string means. Strings are kept sorted and unique, so equal pairs marshal to equal bytes.

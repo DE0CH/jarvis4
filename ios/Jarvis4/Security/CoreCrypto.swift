@@ -756,7 +756,7 @@ extension CoreCrypto {
     try values.keys.sorted().map { try wrapKey(store: store, key: $0, value: Data(values[$0]!.utf8), storeKey: storeKey) }
   }
   /// the kernel's store key C = P + K for this phone's agreement key P and secrets' agreement key K (the pinned one, or a
-  /// Recover's derived one): computed here, as every writer does (kernel/sig StoreKey); secrets signs no store key
+  /// Recover's derived one): computed here, as every writer does (rust/sig StoreKey); secrets signs no store key
   static func storeKey(phone: String, secrets: String) throws -> String { try StorePoint.sum(phone, secrets) }
 }
 

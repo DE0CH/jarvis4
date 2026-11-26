@@ -1,4 +1,4 @@
-//! The spawner (kernel/spawner; DESIGN "Target design"), the kernel's only holder of the Fly token. It attests Fly
+//! The spawner (DESIGN "Target design"), the kernel's only holder of the Fly token. It attests Fly
 //! facts only, so every cert it signs has the pair ⊤:
 //!
 //!   spawn:   a notarized cert into source-x → a new empty volume and a Fly machine on it with the source's image (by

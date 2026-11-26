@@ -1,6 +1,6 @@
 [package]
 name = "jarvis-doc"
-description = "The kernel's documents (kernel/doc) and permission pairs (kernel/perm): objects, succession certs, the log notary's challenges, grants"
+description = "The kernel's documents and permission pairs: objects, succession certs, the log notary's challenges, grants"
 version = "0.0.0"
 edition.workspace = true
 publish.workspace = true

@@ -41,7 +41,7 @@ pub struct FlyDetailConfig {
     pub image: String,
     pub env: BTreeMap<String, String>,
     pub guest: Option<FlyGuest>,
-    /// a kernel machine's names its source (kernel/spawner SourceMeta)
+    /// a kernel machine's names its source (rust/kernel/src/spawner SourceMeta)
     pub metadata: BTreeMap<String, String>,
     pub mounts: Vec<FlyMount>,
 }

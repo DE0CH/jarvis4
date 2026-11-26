@@ -77,7 +77,7 @@ pub const KERNEL_APPROVAL_KIND: &str = "kernel-source";
 /// (source-a → fly-M, ⊤); the answer is the two signatures, one per line, in that order
 pub const KERNEL_ADD_APPROVAL_KIND: &str = "kernel-add-store";
 
-// the spawner's and the notarizer's reasons (kernel/spawner/spawner.go, kernel/notarizer/notarizer.go)
+// the spawner's and the notarizer's reasons (rust/kernel/src/spawner/mod.rs, rust/kernel/src/notarizer.rs)
 pub const REASON_NO_FLY_TOKEN: &str = "no-fly-token";
 pub const REASON_FLY: &str = "fly";
 pub const REASON_NO_AWS_KEY: &str = "no-aws-key";
@@ -87,7 +87,7 @@ pub const REASON_UNKNOWN: &str = "unknown-machine";
 pub const REASON_NOT_STARTED: &str = "not-started";
 pub const REASON_NOT_DESTROYED: &str = "not-destroyed";
 pub const REASON_DEFINED: &str = "already-defined";
-/// a kernel machine's Fly metadata naming its source (kernel/spawner SourceMeta)
+/// a kernel machine's Fly metadata naming its source (rust/kernel/src/spawner SourceMeta)
 pub const SOURCE_META: &str = "jarvis4_source";
 
 /// how long a spawn waits for its machine's keys, and how often it asks
@@ -146,7 +146,7 @@ fn cert_payload(c: &Cert) -> Result<String> {
     jarvis_sig::go_json(c).map_err(|e| anyhow!("{e}"))
 }
 
-/// a kernel line's machine as the kernel names it, "<runner>-<id>" (kernel/doc Object; the machine checks the same
+/// a kernel line's machine as the kernel names it, "<runner>-<id>" (rust/doc Object; the machine checks the same
 /// name, rust/machine/src/main.rs machine_object): the spawner's cert onto it when that names it, else by the
 /// session's runner (fallback: the router's default, for a session from before runners were recorded)
 pub fn kernel_object(s: Option<&Session>, machine: &str, fallback: &str) -> Object {
@@ -179,7 +179,7 @@ pub fn must_succ(d: &SDoc) -> Object {
 /// still coming up (not started yet, or its runner briefly unreachable); a machine the spawner reports destroyed never
 /// starts, so the start fails at once with why (a fabric sandbox whose start failed at hermit left its session
 /// "booting" for the whole 10 minutes, 2026-11-17). The spawner says it as "machine X is destroyed, not started" under
-/// REASON_NOT_STARTED (kernel/spawner/spawner.go Init).
+/// REASON_NOT_STARTED (rust/kernel/src/spawner/mod.rs Init).
 pub fn init_waits(err: &anyhow::Error) -> bool {
     let Some(ke) = reason_of(err) else {
         return false;

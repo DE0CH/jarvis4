@@ -17,10 +17,12 @@ first rollout of the two copies) moves onto SHA itself, in place, with no hold, 
 copy isn't moved for that role. There is nothing to hand over from (the kernel starts empty), so the setup is a
 Recover of the kernel's secrets, not a flip.
 
-A component's inputs: the module's own packages that `go list -deps ./cmd/<role>` reaches (their non-test .go files,
-by directory so a deleted file counts, plus embedded files), kernel/go.mod, kernel/go.sum and kernel/Dockerfile's
-build (comments, blank lines and `go test` steps dropped). Tests, kerneltest, internal/kt, flowtest and tools are not
-inputs. The serving copy is never moved.
+A component's inputs (role_files): rust/kernel/src/bin/<role>.rs and the kernel's modules it reaches (jarvis_kernel::,
+then crate::, by file so a deleted one counts), the sources of the crates rust/kernel builds against by path (rust/sig,
+rust/doc, …), every one's Cargo.toml and rust/rust-toolchain.toml; the packages of rust/Cargo.lock the kernel builds
+with, the workspace's build profiles and rust/kernel/Dockerfile's build. Full-line comments and #[cfg(test)] modules
+are dropped before comparing; tests (tests.rs, tests_*.rs, rust/kernel/tests/) and modules only tests reach (kt,
+kerneltest) are not inputs. The serving copy is never moved.
 
   kernel-pin.py plan KERNEL_YAML ACTIVE SHA          prints the other copy's Deployments to move onto SHA, one per line;
                                                      exit 1 (and ::error:: lines naming what changed) when inputs changed
@@ -30,15 +32,15 @@ inputs. The serving copy is never moved.
                                                      images, every one replicas 1 and held
   kernel-pin.py flipped KERNEL_YAML SERVING          after a flip (infra/setup.py kernel-flipped): SERVING's holds go,
                                                      the other copy's replicas go to 0
-Run from the repository root; needs git and go.
+Run from the repository root; needs git.
 """
-import os, re, subprocess, sys, tempfile
+import functools, os, re, subprocess, sys, tomllib
 
-MOD = "github.com/DE0CH/jarvis4/kernel"
 IMG = re.compile(r"ghcr.io/de0ch/jarvis4-kernel:(latest|sha-[0-9a-f]{12}(@sha256:[0-9a-f]{64})?)")
 TRAILER = re.compile(r"^.+ \(Deyao, \d{4}-\d{2}-\d{2}\)$")
 HOLD = "jarvis2/kernel-release: pending"
 COPIES = ("blue", "green")
+KERNEL = "rust/kernel"
 
 
 def git(*a, check=True):
@@ -71,51 +73,185 @@ def held(text, copy):
 
 
 def dockerfile_build(text):
-    """kernel/Dockerfile as far as the binaries go: continuation lines joined, comments, blank lines and `go test` steps
-    dropped (a test run never changes what is built)."""
+    """rust/kernel/Dockerfile as far as the binaries go: continuation lines joined, comments, blank lines and `cargo
+    test` steps dropped (a test run never changes what is built)."""
     s = re.sub(r"\\\n", " ", text)
     lines = []
     for l in s.splitlines():
         l = l.strip()
         if not l or l.startswith("#"):
             continue
-        l = re.sub(r"(\S+=\S+\s+)*go test(\s[^&;|]*)?(&&|;)\s*", "", l)
+        l = re.sub(r"(\S+=\S+\s+)*cargo test(\s[^&;|]*)?(&&|;)\s*", "", l)
         lines.append(re.sub(r"\s+", " ", l))
     return "\n".join(lines)
 
 
-def inputs(sha, roles):
-    """{role: [pathspec…]} at SHA: the package directories (non-test .go files) and embedded files of the module's own
-    packages each kernel/cmd/<role> is built from, plus kernel/go.mod and kernel/go.sum."""
-    with tempfile.TemporaryDirectory() as d:
-        arch = subprocess.run(["git", "archive", sha, "kernel"], check=True, capture_output=True).stdout
-        subprocess.run(["tar", "-x", "-C", d], input=arch, check=True)
-        src = os.path.join(d, "kernel")
-        env = dict(os.environ, CGO_ENABLED="0", GOOS="linux", GOARCH="amd64", GOFLAGS="-mod=readonly")
-        out = {}
-        for r in sorted(set(roles)):
-            if not os.path.isdir(os.path.join(src, "cmd", r)):
-                out[r] = None  # no such binary at SHA: the Deployment can't move onto it
+@functools.lru_cache(maxsize=None)
+def show(c, path):
+    """the file at commit C, or None"""
+    r = git("show", f"{c}:{path}", check=False)
+    return r.stdout if r.returncode == 0 else None
+
+
+@functools.lru_cache(maxsize=None)
+def ls(c, path):
+    return tuple(git("ls-tree", "-r", "--name-only", c, "--", path).stdout.split())
+
+
+def normalized(path, text):
+    """what of a file reaches the binary: a .rs file without blank lines, full-line comments and its #[cfg(test)] modules (a
+    column-0 `mod … {` closed by the next column-0 `}`, as rustfmt lays them out), a .toml without blank lines and
+    comments"""
+    if text is None:
+        return None
+    lines = text.splitlines()
+    if path.endswith(".rs"):
+        out, i = [], 0
+        while i < len(lines):
+            if lines[i] == "#[cfg(test)]" and i + 1 < len(lines) and lines[i + 1].startswith("mod ") and lines[i + 1].endswith("{"):
+                j = i + 2
+                while j < len(lines) and lines[j] != "}":
+                    j += 1
+                i = j + 1
                 continue
-            lst = subprocess.run(["go", "list", "-e", "-deps", "-f",
-                                  '{{if .Module}}{{if eq .Module.Path "' + MOD + '"}}{{.Dir}}|{{join .EmbedFiles ","}}{{end}}{{end}}',
-                                  "./cmd/" + r], cwd=src, env=env, check=True, capture_output=True, text=True).stdout
-            specs = ["kernel/go.mod", "kernel/go.sum"]
-            for line in lst.split():
-                dr, emb = line.split("|", 1)
-                rel = "kernel/" + os.path.relpath(dr, src) if dr != src else "kernel"
-                specs.append(f":(glob){rel}/*.go")
-                specs += [f"{rel}/{e}" for e in emb.split(",") if e]
-            out[r] = specs + [":(glob,exclude)kernel/**/*_test.go"]
-        return out
+            if lines[i].strip() and not lines[i].strip().startswith("//"):
+                out.append(lines[i])
+            i += 1
+        return "\n".join(out)
+    return "\n".join(l for l in lines if l.strip() and not l.strip().startswith("#"))
 
 
-def changed(a, b, specs):
-    """Files of SPECS that differ between commits A and B, and whether the Dockerfile's build differs."""
-    files = git("diff", "--name-only", a, b, "--", *specs).stdout.split()
-    show = lambda c: git("show", f"{c}:kernel/Dockerfile", check=False).stdout
-    if dockerfile_build(show(a)) != dockerfile_build(show(b)):
-        files.append("kernel/Dockerfile (its build lines)")
+def test_file(path):
+    """a test-only file: a module's tests (tests.rs, tests_*.rs), the kernel's tests/ and its test harnesses"""
+    base = os.path.basename(path)
+    return base == "tests.rs" or base.startswith("tests_") or "/tests/" in path
+
+
+def refs(text, root):
+    """the top-level modules TEXT names through ROOT:: (crate or jarvis_kernel), grouped imports included"""
+    out = set()
+    for m in re.finditer(r"\b" + root + r"::(\{|[a-z_][a-z0-9_]*)", text):
+        if m.group(1) != "{":
+            out.add(m.group(1))
+            continue
+        depth, item, i = 1, "", m.end()
+        while i < len(text) and depth:
+            ch = text[i]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+            if depth == 1 and ch == ",":
+                item = ""
+            elif depth == 1 and ch not in "{}":
+                item += ch
+                w = re.match(r"\s*([a-z_][a-z0-9_]*)", item)
+                if w and (ch in " :" or i + 1 < len(text) and text[i + 1] in ",}:"):
+                    out.add(w.group(1))
+            i += 1
+    return out
+
+
+def module_files(c, m):
+    """a top-level module's files at C: src/M.rs, or every file under src/M/ but its tests"""
+    f = f"{KERNEL}/src/{m}.rs"
+    if show(c, f) is not None:
+        return [f]
+    return [p for p in ls(c, f"{KERNEL}/src/{m}") if p.endswith(".rs") and not test_file(p)]
+
+
+@functools.lru_cache(maxsize=None)
+def crates(c):
+    """the crate directories rust/kernel builds against at C: itself and its path dependencies, transitively"""
+    seen, todo = [], [KERNEL]
+    while todo:
+        d = todo.pop()
+        if d in seen:
+            continue
+        seen.append(d)
+        toml = show(c, f"{d}/Cargo.toml") or ""
+        deps = toml.split("[dev-dependencies]")[0]
+        for m in re.finditer(r'path\s*=\s*"([^"]+)"', deps):
+            todo.append(os.path.normpath(os.path.join(d, m.group(1))))
+    return tuple(seen)
+
+
+@functools.lru_cache(maxsize=None)
+def role_files(c, role):
+    """{path: what reaches the binary} of ROLE's build at C: rust/kernel/src/bin/ROLE.rs and the kernel's modules it
+    reaches (through jarvis_kernel:: and then crate::), the other crates' sources and every Cargo.toml, and the
+    toolchain (a module only tests reach, e.g. kt or kerneltest, never counts)"""
+    bin_ = f"{KERNEL}/src/bin/{role}.rs"
+    out = {}
+    text = show(c, bin_)
+    if text is not None:
+        out[bin_] = text
+        mods, todo = set(), set(refs(text, "jarvis_kernel"))
+        while todo:
+            m = todo.pop()
+            if m in mods:
+                continue
+            mods.add(m)
+            for f in module_files(c, m):
+                out[f] = show(c, f)
+                todo |= refs(out[f], "crate") - mods
+    for d in crates(c):
+        out[f"{d}/Cargo.toml"] = show(c, f"{d}/Cargo.toml")
+        if d != KERNEL:
+            for f in ls(c, f"{d}/src"):
+                if f.endswith(".rs") and not test_file(f):
+                    out[f] = show(c, f)
+    out["rust/rust-toolchain.toml"] = show(c, "rust/rust-toolchain.toml")
+    return {p: normalized(p, t) for p, t in out.items()}
+
+
+@functools.lru_cache(maxsize=None)
+def lock_closure(c):
+    """the packages of rust/Cargo.lock that jarvis-kernel builds with at C (name, version, source, checksum)"""
+    text = show(c, "rust/Cargo.lock")
+    if not text:
+        return ()
+    pk = tomllib.loads(text).get("package", [])
+    by = {}
+    for p in pk:
+        by.setdefault(p["name"], []).append(p)
+    out, todo = {}, [("jarvis-kernel", None)]
+    while todo:
+        name, ver = todo.pop()
+        for p in by.get(name, []):
+            if ver and p["version"] != ver:
+                continue
+            key = (p["name"], p["version"], p.get("source", ""), p.get("checksum", ""))
+            if key in out:
+                continue
+            out[key] = True
+            for dep in p.get("dependencies", []):
+                bits = dep.split(" ")
+                todo.append((bits[0], bits[1] if len(bits) > 1 else None))
+    return tuple(sorted(out))
+
+
+def profiles(c):
+    text = show(c, "rust/Cargo.toml")
+    return repr(sorted(tomllib.loads(text).get("profile", {}).items())) if text else ""
+
+
+def inputs(sha, roles):
+    """{role: True, or None when SHA builds no binary of that role}"""
+    return {r: (True if show(sha, f"{KERNEL}/src/bin/{r}.rs") is not None else None) for r in set(roles)}
+
+
+def changed(a, b, role):
+    """what of ROLE's build differs between commits A and B (see role_files), and whether the kernel's dependencies in
+    Cargo.lock, the workspace's build profiles or the Dockerfile's build differ"""
+    fa, fb = role_files(a, role), role_files(b, role)
+    files = sorted(p for p in set(fa) | set(fb) if fa.get(p) != fb.get(p))
+    if lock_closure(a) != lock_closure(b):
+        files.append("rust/Cargo.lock (the kernel's dependencies)")
+    if profiles(a) != profiles(b):
+        files.append("rust/Cargo.toml (its build profiles)")
+    if dockerfile_build(show(a, f"{KERNEL}/Dockerfile") or "") != dockerfile_build(show(b, f"{KERNEL}/Dockerfile") or ""):
+        files.append(f"{KERNEL}/Dockerfile (its build lines)")
     return files
 
 
@@ -149,17 +285,17 @@ def plan(kf, active, sha):
         if full == sha:
             continue
         if ins[role] is None:
-            refused.append(f"{name}: kernel/cmd/{role} does not exist at {sha[:12]}")
+            refused.append(f"{name}: {KERNEL}/src/bin/{role}.rs does not exist at {sha[:12]}")
             continue
         if full and git("merge-base", "--is-ancestor", full, sha, check=False).returncode != 0:
             full = ""  # pinned to a build that isn't behind SHA: compare as if unpinned
-        files = changed(full, sha, ins[role]) if full else ["(no pinned build to compare: " + (pin or "latest") + ")"]
+        files = changed(full, sha, role) if full else ["(no pinned build to compare: " + (pin or "latest") + ")"]
         if not files:
             continue
         good, bad = releases(sha, full)
         for c, t in bad:
             print(f"::warning::{c[:12]} has a malformed trailer 'Kernel-Release: {t}' (needs 'Kernel-Release: <why> (Deyao, YYYY-MM-DD)'): ignored", file=sys.stderr)
-        ok = next(((c, t) for c, t in good if not changed(c, sha, ins[role])), None)
+        ok = next(((c, t) for c, t in good if not changed(c, sha, role)), None)
         if ok and not pin:  # the bootstrap: the serving copy has never been released, it is pinned in place
             print(f"{name}: kernel release {ok[0][:12]} ({ok[1]}): the serving copy's first pin, in place", file=sys.stderr)
             move.append(name)
@@ -186,7 +322,7 @@ def plan(kf, active, sha):
         def same(name):
             full = git("rev-parse", "-q", "--verify", f"{spin.get(name)}^{{commit}}", check=False).stdout.strip() if spin.get(name) else ""
             return bool(full) and git("merge-base", "--is-ancestor", full, sha, check=False).returncode == 0 \
-                and not changed(full, sha, ins[role_of[name]])
+                and not changed(full, sha, role_of[name])
         move = [m for m in move if m not in role_of or not same(m)]
     if set(move) & set(standby.values()) and held(text, other(active)):
         print(f"::error::a kernel release is in flight on the {other(active)} copy ({HOLD}): it may serve already, so "

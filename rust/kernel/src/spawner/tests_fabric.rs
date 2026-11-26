@@ -1,4 +1,4 @@
-//! kernel/spawner/fabric_test.go: the fabric runner against a fake hermit
+//! the fabric runner against a fake hermit
 
 use super::super::aws::KEYS_MARK;
 use super::super::fabric::{

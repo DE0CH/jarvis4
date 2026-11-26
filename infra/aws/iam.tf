@@ -1,5 +1,5 @@
 # The spawner's IAM user: instances from the session launch templates only, tagged with their source; it reads,
-# reads the console of (GetConsoleOutput, and live over the EC2 Serial Console: kernel/spawner/awsserial.go) and
+# reads the console of (GetConsoleOutput, and live over the EC2 Serial Console: rust/kernel/src/spawner/awsserial.rs) and
 # terminates only instances that carry that tag.
 resource "aws_iam_user" "spawner" {
   provider = aws.sin # IAM is global; any region's provider

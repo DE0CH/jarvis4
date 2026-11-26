@@ -1,4 +1,4 @@
-//! A store is a set of keys, each sealed on its own (kernel/secrets/keys.go; Deyao, 2026-10-13: "writing one key by
+//! A store is a set of keys, each sealed on its own (Deyao, 2026-10-13: "writing one key by
 //! name is allowed, and it doesn't just overwrite the whole key store"). Each key's value is under its own data key
 //! (the store's and the key's names as associated data, so a value doesn't decrypt under another name), and that data
 //! key is wrapped to the combined key P + K (phone + secrets) — the public store key, so anyone can write a key and

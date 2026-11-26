@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
-/// the session regions (kernel/spawner/aws.go AWSRegions; infra/aws builds nothing elsewhere)
+/// the session regions (rust/kernel/src/spawner/aws.rs AWSRegions; infra/aws builds nothing elsewhere)
 pub const AWS_BUDGET_REGIONS: &[&str] = &["eu-west-2", "ap-southeast-1", "ap-northeast-1"];
 
 /// the fabric's hosts (docs/PLAN-fabric.md): listed beside the session regions, and everything in it, with the fabric's
@@ -35,7 +35,7 @@ pub fn aws_list_regions() -> Vec<&'static str> {
     v
 }
 
-/// USD an hour, on-demand Linux, shared tenancy, for every instance type kernel/spawner/aws.go uses, per region (AWS's
+/// USD an hour, on-demand Linux, shared tenancy, for every instance type rust/kernel/src/spawner/aws.rs uses, per region (AWS's
 /// Price List API, read 2026-11-04). A type not listed is priced at the dearest listed (the cap errs high).
 const AWS_INSTANCE_RATES: &[(&str, &[(&str, f64)])] = &[
     (

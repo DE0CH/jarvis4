@@ -315,7 +315,7 @@ fn put_key_seals_to_the_store_and_the_master_key() {
     ));
 }
 
-/// a kernel machine's live copy opens in secrets exactly as kernel/secrets liveUpdate opens it
+/// a kernel machine's live copy opens in secrets exactly as rust/kernel/src/secrets liveUpdate opens it
 #[test]
 fn the_live_copy_opens_in_secrets() {
     let k = Opener::generate();

@@ -1,4 +1,4 @@
-//! kernel/secrets/deploykeys_test.go: deploy keys through the minter, on a GitHub stand-in
+//! deploy keys through the minter, on a GitHub stand-in
 
 use super::deploykeys::{DEPLOY_KEY_TOKEN_KEY, DEPLOY_KEY_TOKEN_STORE, DeployKeyRequest};
 use super::keys::KeyEntry;

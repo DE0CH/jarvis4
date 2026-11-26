@@ -1,4 +1,4 @@
-//! kernel/doc/rustvec_test.go marshalled these documents in Go; each opens here, checks, and marshals again to the
+//! The Go kernel marshalled these documents (before its cut, 2026-11-26); each opens here, checks, and marshals again to the
 //! same bytes (what a Rust kernel signs must be what the Go kernel signed).
 #![allow(clippy::unwrap_used)]
 

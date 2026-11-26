@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""infra/kernel-pin.py on a made-up history over this checkout's kernel/: test, kerneltest and Dockerfile-comment edits
-move nothing; a spawner edit moves only the other copy's spawner, and only after a Kernel-Release trailer; an edit after
-the release needs another; the serving copy never moves; apply gives the other copy the release's build and the serving
-copy's images, replicas 1 and the hold, which refuses the next release until kernel-flipped. Offline; needs git and go:
-python3 infra/kernel_pin_test.py"""
+"""infra/kernel-pin.py on a made-up history over this checkout's rust/kernel and the crates it builds against: tests,
+test-only modules, inline test modules, comments and Dockerfile comments move nothing; a spawner edit moves only the
+other copy's spawner, and only after a Kernel-Release trailer; an edit after the release needs another; a shared
+crate, Cargo.lock and a deleted module count; the serving copy never moves; apply gives the other copy the release's
+build and the serving copy's images, replicas 1 and the hold, which refuses the next release until kernel-flipped.
+Offline; needs git: python3 infra/kernel_pin_test.py"""
 import importlib.util, os, re, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -15,8 +16,14 @@ d = tempfile.mkdtemp()
 env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
 git = lambda *a: subprocess.run(["git", *a], cwd=d, env=env, check=True, capture_output=True, text=True).stdout.strip()
 
-arch = subprocess.run(["git", "archive", "HEAD", "kernel"], cwd=ROOT, check=True, capture_output=True).stdout
+TREE = ["rust/Cargo.toml", "rust/Cargo.lock", "rust/rust-toolchain.toml", "rust/kernel", "rust/sig", "rust/doc", "rust/go",
+        "rust/nethttp"]
+arch = subprocess.run(["git", "archive", "HEAD", *TREE], cwd=ROOT, check=True, capture_output=True).stdout
+if not os.path.exists(os.path.join(ROOT, "rust/kernel/Dockerfile")):
+    sys.exit("rust/kernel/Dockerfile is missing")
 subprocess.run(["tar", "-x", "-C", d], input=arch, check=True)
+# the working tree's Dockerfile (this test may run before it is committed)
+open(os.path.join(d, "rust/kernel/Dockerfile"), "w").write(open(os.path.join(ROOT, "rust/kernel/Dockerfile")).read())
 git("init", "-q", "-b", "main")
 git("add", "-A")
 git("commit", "-qm", "base")
@@ -43,6 +50,16 @@ def edit(path, add, msg):
     return git("rev-parse", "HEAD")
 
 
+def replace(path, a, b, msg):
+    p = os.path.join(d, path)
+    s = open(p).read()
+    assert a in s, (path, a)
+    open(p, "w").write(s.replace(a, b, 1))
+    git("add", "-A")
+    git("commit", "-qm", msg)
+    return git("rev-parse", "HEAD")
+
+
 def plan(sha):
     r = subprocess.run([sys.executable, PIN, "plan", KF, "blue", sha], cwd=d, capture_output=True, text=True)
     return r.returncode, r.stdout.split(), r.stderr
@@ -51,18 +68,22 @@ def plan(sha):
 base = git("rev-parse", "HEAD")
 pin_all(base)
 
-# 1. tests, kerneltest, internal/kt, flowtest and a Dockerfile comment are not inputs
-c = edit("kernel/spawner/spawner_test.go", "\n// x\n", "test")
-edit("kernel/kerneltest/kerneltest.go", "\n// x\n", "kerneltest")
-edit("kernel/internal/kt/kt.go", "\n// x\n", "kt")
-edit("kernel/flowtest/" + sorted(os.listdir(os.path.join(d, "kernel/flowtest")))[0], "\n// x\n", "flowtest")
-c = edit("kernel/Dockerfile", "\n# a comment\n", "dockerfile comment")
+# 1. tests, test-only modules (kt, kerneltest), an inline test module, full-line comments and a Dockerfile comment
+# are not inputs
+edit("rust/kernel/src/spawner/tests.rs", "\n// x\nfn _x() {}\n", "test")
+edit("rust/kernel/src/kerneltest.rs", "\nfn _x() {}\n", "kerneltest")
+edit("rust/kernel/src/kt.rs", "\nfn _x() {}\n", "kt")
+edit("rust/kernel/tests/flow.rs", "\nfn _x() {}\n", "an integration test")
+replace("rust/kernel/src/spawner/fly.rs", "#[cfg(test)]\nmod tests {\n", "#[cfg(test)]\nmod tests {\n    fn _x() {}\n", "fly's test module")
+edit("rust/kernel/src/spawner/fly.rs", "\n// a comment\n", "a comment")
+edit("rust/sig/src/lib.rs", "\n/// a doc comment\n", "a comment in sig")
+c = edit("rust/kernel/Dockerfile", "\n# a comment\n", "dockerfile comment")
 assert plan(c) == (0, [], ""), plan(c)
 
 # 2. a spawner source edit without a release: refused, names the file, moves nothing
-c = edit("kernel/spawner/spawner.go", "\n// x\n", "spawner change")
+c = edit("rust/kernel/src/spawner/fly.rs", "\nfn _y() {}\n", "spawner change")
 rc, out, err = plan(c)
-assert rc == 1 and out == [] and "kernel/spawner/spawner.go" in err and "spawner-blue (spawner" in err and "notary" not in err, (rc, out, err)
+assert rc == 1 and out == [] and "rust/kernel/src/spawner/fly.rs" in err and "spawner-blue (spawner" in err and "notary" not in err, (rc, out, err)
 
 # 3. a malformed trailer doesn't count; Deyao's trailer moves the spawner alone
 git("commit", "-q", "--allow-empty", "-m", "release\n\nKernel-Release: placement retries")
@@ -74,24 +95,29 @@ rc, out, err = plan(rel)
 assert (rc, out) == (0, ["spawner-green"]), (rc, out, err)
 
 # 4. an edit after the release needs another one; a sig edit touches every component, each moving only in green
-c = edit("kernel/sig/sig.go", "\n// x\n", "sig change")
+c = edit("rust/sig/src/lib.rs", "\nfn _y() {}\n", "sig change")
 rc, out, err = plan(c)
 assert rc == 1 and out == [] and "secrets-blue (secrets" in err, (rc, out, err)
 git("commit", "-q", "--allow-empty", "-m", "release 2\n\nKernel-Release: sig fix (Deyao, 2026-10-24)")
 rc, out, err = plan(git("rev-parse", "HEAD"))
 assert rc == 0 and not [o for o in out if o.endswith("-blue")] and {"spawner-green", "notary-green", "secrets-green"} <= set(out), (rc, out, err)
 
-# 5. go.mod counts; a deleted non-test file counts
+# 5. a deleted module counts for the components that reach it; the kernel's Cargo.lock packages count, others don't
 pin_all(git("rev-parse", "HEAD"))
-os.remove(os.path.join(d, "kernel/sig/identity.go"))
+os.remove(os.path.join(d, "rust/kernel/src/notary.rs"))
 git("add", "-A")
 git("commit", "-qm", "delete")
 rc, out, err = plan(git("rev-parse", "HEAD"))
-assert rc == 1 and "kernel/sig/identity.go" in err and "mover-blue (mover" in err, (rc, err)
+assert rc == 1 and "rust/kernel/src/notary.rs" in err and "notary-blue (notary" in err and "mover-blue" not in err, (rc, err)
 pin_all(git("rev-parse", "HEAD"))
-c = edit("kernel/go.mod", "\n// x\n", "go.mod")
+lock = open(os.path.join(d, "rust/Cargo.lock")).read()
+other = re.search(r'\[\[package\]\]\nname = "e2e-kernel"\nversion = "([^"]+)"', lock)
+c = replace("rust/Cargo.lock", f'name = "e2e-kernel"\nversion = "{other.group(1)}"', 'name = "e2e-kernel"\nversion = "9.9.9"', "another crate's version")
+assert plan(c) == (0, [], ""), plan(c)
+m = re.search(r'name = "serde_json"\nversion = "([^"]+)"', lock)
+c = replace("rust/Cargo.lock", f'name = "serde_json"\nversion = "{m.group(1)}"', 'name = "serde_json"\nversion = "9.9.9"', "serde_json")
 rc, out, err = plan(c)
-assert rc == 1 and "kernel/go.mod" in err and "gullible-blue (gullible" in err, (rc, err)
+assert rc == 1 and "rust/Cargo.lock (the kernel's dependencies)" in err and "gullible-blue (gullible" in err, (rc, err)
 
 # 6. apply: the named green Deployment onto the build, every other green one onto blue's image, all of green replicas 1
 # and held; blue untouched
@@ -139,6 +165,7 @@ open(KF, "w").write(boot_src)
 d2 = tempfile.mkdtemp()
 git2 = lambda *a: subprocess.run(["git", *a], cwd=d2, env=env, check=True, capture_output=True, text=True).stdout.strip()
 subprocess.run(["tar", "-x", "-C", d2], input=arch, check=True)
+open(os.path.join(d2, "rust/kernel/Dockerfile"), "w").write(open(os.path.join(ROOT, "rust/kernel/Dockerfile")).read())
 git2("init", "-q", "-b", "main"); git2("add", "-A"); git2("commit", "-qm", "two copies")
 r = subprocess.run([sys.executable, PIN, "plan", KF, "blue", git2("rev-parse", "HEAD")], cwd=d2, capture_output=True, text=True)
 assert r.returncode == 1 and r.stdout.split() == [] and "notary-blue (notary, pinned latest)" in r.stderr, (r.returncode, r.stdout, r.stderr)

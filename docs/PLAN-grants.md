@@ -38,12 +38,12 @@ Taken as recommended in the first draft (Claude, 2026-10-21; each is easy to cha
 
 ## 1. Components
 
-The kernel is a new Go module `kernel/` (stdlib and `filippo.io/nistec` only), one binary per component under
-`kernel/cmd/<role>`, all in one image `ghcr.io/de0ch/jarvis4-kernel`, each run as its own Deployment in namespace
-`jarvis2-kernel` on the control box. Shared code: `kernel/internal/sig` (P-256 signing, sealing, identities, signed
-errors), `kernel/internal/perm` (permission pairs), `kernel/internal/h2c` (hash-to-curve keys of sources and the sink),
-`kernel/internal/doc` (the documents below). Each binary's dependencies are listed in CI (`go list -deps`), so a
-component can be read alone.
+The kernel is the Rust crate `rust/kernel` (DECISIONS 280), one binary per component under
+`rust/kernel/src/bin/<role>.rs`, all in one image `ghcr.io/de0ch/jarvis4-kernel`, each run as its own Deployment in
+namespace `jarvis4-kernel` on the cluster. Shared code: `rust/sig` (P-256 signing, sealing, identities, signed
+errors), `rust/doc/src/perm.rs` (permission pairs), `rust/doc/src/h2c.rs` (hash-to-curve keys of sources and the sink),
+`rust/doc` (the documents below). What each binary is built from is what infra/kernel-pin.py reads (`role_files`: the
+modules its bin reaches), so a component can be read alone.
 
 | role | state | holds | answers |
 |---|---|---|---|
@@ -77,9 +77,8 @@ and `"jarvis2 <object> encryption"`: nobody holds their private halves. A Fly ma
 generated, named in the spawner's cert.
 
 **Permission pair** `{"allowed": {"only": [...]} | {"except": [...]}, "conditions": [...]}`, strings sorted and unique.
-⊤ = `{"allowed": {"except": []}, "conditions": []}`. Meet and order as DESIGN says; `kernel/internal/perm` is the only
-code that computes them, and the guard and the app use the same rules (shared golden vectors in
-`kernel/testdata/`).
+⊤ = `{"allowed": {"except": []}, "conditions": []}`. Meet and order as DESIGN says; `rust/doc/src/perm.rs` is the only
+code that computes them, and the guard and the app use the same rules (the vectors in `rust/doc/tests/vectors/`).
 
 **Source** (the content a cert into a source carries): `{image, settings: {harness, permissionMode, title, model,
 repos, prompt, attachments, restore?, task?, oneShot, apiProxy, accept}, snapshot?}`. A source is defined once, by the

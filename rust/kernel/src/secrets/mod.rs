@@ -1,4 +1,4 @@
-//! The kernel's secrets (kernel/secrets; DESIGN "Target design"), carried over from the old core's store half (same
+//! The kernel's secrets (DESIGN "Target design"), carried over from the old core's store half (same
 //! formats, so the app's store code serves both). It holds the stores, the unlocks and a signed list of open unlocks,
 //! and keeps nothing it doesn't need. It hands secrets out and never uses one (DECISIONS 232): a deploy key's GitHub
 //! call is the minter's (minter.rs), and a store's earlier versions are the router's (a restore writes back an earlier

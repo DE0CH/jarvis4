@@ -1,4 +1,4 @@
-//! kernel/secrets: secrets_test.go, replay_test.go and their helpers (helpers_test.go)
+//! secrets: claims, stores, unlocks, pulls, the line state and its replays
 
 use super::continuity::{MODE_HANDED_OFF, allowed_in};
 use super::crypto::{INFO_STORE, WrappedKey, add_points, gcm_seal, kdf, scalar_mult};

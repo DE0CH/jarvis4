@@ -1,4 +1,4 @@
-//! The keys of objects nobody holds (sources and the sink), the Rust port of kernel/h2c: each is a P-256 point hashed
+//! The keys of objects nobody holds (sources and the sink): each is a P-256 point hashed
 //! from the object's name (RFC 9380, P256_XMD:SHA-256_SSWU_RO_), so its discrete log is unknown to everyone.
 
 use p256::NistP256;
@@ -56,7 +56,7 @@ mod tests {
         }
     }
 
-    /// what Go's kernel/h2c ObjectKey gives (2026-11-17)
+    /// what the Go kernel's ObjectKey gave (2026-11-17)
     #[test]
     fn object_keys_match_go() {
         assert_eq!(

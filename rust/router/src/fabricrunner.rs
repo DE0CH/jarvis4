@@ -1,5 +1,5 @@
 //! The fabric runner (docs/PLAN-fabric.md): a session's machines are gVisor sandboxes on aviary's fabric, started by
-//! the fabric hermit through the kernel's spawner (kernel/spawner/fabric.go). Each session has one conversation at
+//! the fabric hermit through the kernel's spawner (rust/kernel/src/spawner/fabric.rs). Each session has one conversation at
 //! hermit for its life (its /workspace and home on the fabric's network filesystem), made here at its first fabric
 //! spawn and named in every spawn after.
 //!

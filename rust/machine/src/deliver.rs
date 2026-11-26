@@ -738,7 +738,7 @@ s.close()
 done(True, "delivered to %s (pid %s)" % (t.get("name") or "?", t.get("pid")), target=t.get("name") or "", ack=ack[:500])
 "#;
 
-// ---- machine sizes (the same block is in rust/router/src/sizes.rs, core/fly.go and kernel/spawner/fly.go) -----------------
+// ---- machine sizes (the same block is in rust/router/src/sizes.rs, core/fly.go and rust/kernel/src/spawner/fly.rs) -----------------
 
 /// The sizes: small (2 GB), medium (4 GB), large (8 GB), then every doubling past large, named by its memory
 const NAMED_SIZES: &[(&str, i64)] = &[("small", 2), ("medium", 4), ("large", 8)];

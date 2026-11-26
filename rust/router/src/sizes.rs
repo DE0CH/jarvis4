@@ -1,4 +1,4 @@
-//! Machine sizes (the same rules are in core/fly.go, rust/machine/src/deliver.rs and kernel/spawner/fly.go; the test
+//! Machine sizes (the same rules are in core/fly.go, rust/machine/src/deliver.rs and rust/kernel/src/spawner/fly.rs; the test
 //! below checks the machine's).
 
 use std::sync::Mutex;

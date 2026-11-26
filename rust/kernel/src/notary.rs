@@ -1,4 +1,4 @@
-//! The log notary (kernel/notary; DESIGN "Target design"). It issues challenges with its own timestamp and logs each
+//! The log notary (DESIGN "Target design"). It issues challenges with its own timestamp and logs each
 //! one before answering it: an append-only file on its own volume, each entry naming the previous one's ID, so a gap
 //! or an edit shows. It holds no secret but its key, and never reads what a subject means.
 

@@ -1,4 +1,4 @@
-//! Secrets' HTTP surface (kernel/secrets/http.go: the old core's store routes, the same shapes), plus /keys and /pull.
+//! Secrets' HTTP surface (the old core's store routes, the same shapes), plus /keys and /pull.
 //! Only the router reaches it (NetworkPolicy). Nothing here trusts the caller: what matters is signed (the phone, the
 //! master key, the mover or merger) or sealed to secrets. Bodies are read as Go's encoding/json did (a missing field
 //! is its zero value); every answer carries X-Line-Seq once there is a line state; errors leave signed too.

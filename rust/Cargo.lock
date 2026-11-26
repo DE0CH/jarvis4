@@ -690,6 +690,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "jarvis-go",
+ "jarvis-kernel",
  "jarvis-sig",
  "nix 0.30.1",
  "postgres",

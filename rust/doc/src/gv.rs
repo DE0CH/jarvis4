@@ -1,4 +1,4 @@
-//! Checking a grant as everyone who takes one does, the Rust port of kernel/gv: a grant is signed by the mover or the
+//! Checking a grant as everyone who takes one does: a grant is signed by the mover or the
 //! merger (their identities, checked against the root key's roster: its member, or a retired one whose grants still
 //! open though it signs nothing new), or is the root key's ⊤ on the sink.
 
@@ -136,7 +136,7 @@ mod tests {
     }
 
     /// a grant signed by a retired mover or merger opens as one signed by the current one; a retired key passes only
-    /// for its own role; a key the roster names nowhere is refused (kernel/gv TestRetiredSignersGrantsOpen)
+    /// for its own role; a key the roster names nowhere is refused (retired_signers_grants_open below)
     #[test]
     fn retired_signers_grants_open() {
         let root = Signer::generate();

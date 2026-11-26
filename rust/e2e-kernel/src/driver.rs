@@ -56,9 +56,8 @@ fn flip(
 ) -> Result<()> {
     let r = router();
     step(&format!(
-        "a kernel release onto {to} ({}): its components start fresh, the root key signs its roster (the {serving} \
-         members retired, its empty secrets as secretsBoot), the router hands {serving} over to it",
-        env(&format!("E2E_IMPL_{to}"))
+        "a kernel release onto {to}: its components start fresh, the root key signs its roster (the {serving} \
+         members retired, its empty secrets as secretsBoot), the router hands {serving} over to it"
     ));
     copies.insert(to.into(), release(to)?);
     let next = crate::phone::identities(&copies[to])?;
@@ -146,9 +145,10 @@ pub fn main(release: &mut dyn FnMut(&str) -> Result<String>) -> Result<()> {
     );
     p.roster()?;
     step(
-        "the kernel's secrets: a Reset with the test master key, naming the phone and the root key",
+        "the kernel's secrets: a Reset with the test master key and the seed its kit derives, naming the phone and \
+         the root key; the roster again, naming the keys secrets serves with now",
     );
-    p.claim(r#"{"format":"keys"}"#)?;
+    p.claim()?;
     p.runner_credentials()?;
     step("the root grant: ⊤ on the sink, signed by the root key");
     p.root_grant()?;

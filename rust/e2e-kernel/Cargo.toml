@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 jarvis-sig = { path = "../sig" }
 jarvis-go = { path = "../go" }
+jarvis-kernel = { path = "../kernel" }
 anyhow = "1"
 base64 = "0.22"
 ring = "0.17"

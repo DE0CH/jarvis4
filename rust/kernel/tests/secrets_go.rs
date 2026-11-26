@@ -1,4 +1,4 @@
-//! A Go secrets' copy flip taken by the Rust secrets (kernel/secrets/rustvec_test.go writes the vector): the kernel's
+//! A Go secrets' copy flip taken by the Rust secrets (tests/vectors/secrets-handoff.json, which the Go kernel wrote before its cut, 2026-11-26): the kernel's
 //! cut is a copy flip from a Go secrets to a Rust one, so the Rust one must take Go's handoff whole — the derived keys,
 //! the claim's keys, every store and the open unlocks — and open the stores with the phone's share afterwards.
 

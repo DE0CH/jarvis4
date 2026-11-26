@@ -1,4 +1,4 @@
-//! kernel/spawner/awsserial_test.go: the live serial console reader against a fake EC2 Instance Connect push and a
+//! the live serial console reader against a fake EC2 Instance Connect push and a
 //! fake serial console SSH endpoint
 
 use super::super::Runner as _;

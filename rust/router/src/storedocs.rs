@@ -186,7 +186,7 @@ pub struct KeyWriteIn {
     pub backup: Option<Sealed>,
     pub sig: String,
     pub explanation: String,
-    /// the value sealed to the kernel's secrets (kernel/secrets WriteKeyInput.Live), so an open unlock of the store
+    /// the value sealed to the kernel's secrets (rust/kernel/src/secrets WriteKeyInput.Live), so an open unlock of the store
     /// stays current; passed on as is (the core has none)
     pub live: Option<Value>,
 }

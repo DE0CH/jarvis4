@@ -1,8 +1,7 @@
-//! The kernel's documents, the Rust port of kernel/doc (docs/PLAN-grants.md §2). Every one travels as a signed
+//! The kernel's documents (docs/PLAN-grants.md §2). Every one travels as a signed
 //! [`Doc`] and opens strictly: an unknown field refuses it. A source's settings stay opaque JSON (only the guard gives
 //! them meaning), kept byte for byte.
 //!
-//! Not ported here: `IdealKeys` (hash-to-curve, kernel/h2c), which only the kernel needs; it comes with the kernel.
 
 pub mod gv;
 pub mod h2c;

@@ -3266,3 +3266,17 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      (2, 4, 6, 8, 10 s apart), so every caller (archive, read-back, facts, downloads) gets it without a retry of its
      own. An S3 error answer is not retried. *Change*: if WARP's resets get worse, reach the bucket over IPv6
      (2a01:4f8:b001::1) instead of retrying more.
+280. **The kernel is Rust** (Deyao, 2026-11-26: "Kernel port first", then "lets do the kernel rollout"). rust/kernel's
+     nine binaries replace kernel/ (Go), each component the port of its Go one byte for byte on the wire: the same
+     routes, documents (go_json), sealed states and reasons, checked against vectors the Go kernel wrote
+     (rust/kernel/tests/vectors: a Go copy's handoffs, which the Rust notarizer, spawner and secrets take and hand on
+     unchanged, so a rollback flip gives Go back what it handed over; the AWS user-data and SigV4 byte for byte) and
+     by every Go test ported. The release is a copy flip as any other (233): the Go copy serves, the Rust build lands
+     on the other, Deyao signs its roster, the router flips; the replica rehearses it (e2e-kernel flips onto green
+     and back onto blue in every run). What the kernel's image is built from is now rust/kernel and the crates it
+     builds against by path (infra/kernel-pin.py `role_files`: a bin's modules through `jarvis_kernel::` and
+     `crate::`, comments and test modules dropped), so a comment sweep no longer needs a release (lessons/157). The
+     tools that read kernel/ went with it: ios/interop's rostervec and vectors and ios/ci/fakekernel are `ios-ci`
+     subcommands, e2e/kernel is e2e-kernel's own driver, e2e/aviary has a phone of its own. *Change*: a component
+     that must differ from its Go behaviour is a kernel release like any other; the vectors stay as the Go kernel
+     wrote them.

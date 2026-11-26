@@ -1,5 +1,5 @@
-//! An AWS machine's keys line, read live from the instance's serial console (the EC2 Serial Console, over SSH;
-//! kernel/spawner/awsserial.go) instead of waiting for GetConsoleOutput, whose newest output EC2 refreshes only every
+//! An AWS machine's keys line, read live from the instance's serial console (the EC2 Serial Console, over SSH)
+//! instead of waiting for GetConsoleOutput, whose newest output EC2 refreshes only every
 //! 30-40 s (measured 2026-11-04: docs/PLAN-aws.md): the line reaches the spawner within a second of the machine
 //! writing it. GetConsoleOutput stays the fallback (init), so a region without serial console access, a refused key
 //! or a dropped connection only costs that wait again.

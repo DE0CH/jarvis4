@@ -1,4 +1,4 @@
-//! A Go copy's flip taken by Rust components (kernel/kerneltest/rustflipvec_test.go writes the vector): the kernel's
+//! A Go copy's flip taken by Rust components (tests/vectors/flip-handoff.json, which the Go kernel wrote before its cut, 2026-11-26): the kernel's
 //! cut is a flip from Go's notarizer, spawner and secrets to Rust's, and a rollback the flip back. Each Rust
 //! component takes Go's handoff and hands over again: the state it hands over is the state Go handed it (so a Go
 //! component takes it back as Go made it); and the Rust spawner kills the machine Go's made.

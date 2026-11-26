@@ -658,15 +658,20 @@ meanwhile), and a release still needs his OK:
 
 1. **Deyao's OK, in the commit.** The release commit (or an empty commit after the change) carries the trailer
    `Kernel-Release: <why> (Deyao, YYYY-MM-DD)`, written only when Deyao said so in that conversation. Never add it
-   for a change he hasn't OK'd, nor to unblock CI.
+   for a change he hasn't OK'd, nor to unblock CI. It goes in the message's last paragraph, beside `Co-Authored-By`:
+   a blank line between them makes it body text, which the pin job doesn't read (`git log -1 --format='%(trailers)'`).
 2. **What CI moves** (the pin job, `infra/kernel-pin.py`): only the other copy, and only when a component's binary's
-   inputs changed since the build the serving copy's Deployment of it pins (the module's packages `go list -deps
-   ./cmd/<role>` reaches, their non-test .go and embedded files; kernel/go.mod, go.sum; kernel/Dockerfile's build
-   lines) and a `Kernel-Release` commit lies after that pin with no input change after it. Then the other copy gets
-   the release's build for those components, the serving copy's images for the rest, replicas 1 and the hold
-   `jarvis2/kernel-release: pending` on each Deployment. Tests, `kerneltest`, `internal/kt`, `flowtest`, comments in
-   the Dockerfile and anything outside kernel/ never count. Test and tool programs live outside kernel/
-   (`ios/interop/vectors`, `ios/interop/rostervec`).
+   inputs changed since the build the serving copy's Deployment of it pins (rust/kernel/src/bin/<role>.rs and the
+   kernel's modules it reaches through `jarvis_kernel::` and `crate::`; the sources of the crates rust/kernel builds
+   against by path, rust/sig, rust/doc, rust/go and rust/nethttp; every one's Cargo.toml and rust/rust-toolchain.toml;
+   the packages of rust/Cargo.lock the kernel builds with; the workspace's build profiles; rust/kernel/Dockerfile's
+   build lines) and a `Kernel-Release` commit lies after that pin with no input change after it. Then the other copy
+   gets the release's build for those components, the serving copy's images for the rest, replicas 1 and the hold
+   `jarvis2/kernel-release: pending` on each Deployment. Blank lines, full-line comments, `#[cfg(test)]` modules, test
+   files (tests.rs, tests_*.rs, rust/kernel/tests/), the modules only tests reach (`kt`, `kerneltest`), comments in the
+   Dockerfile and any other crate's packages in Cargo.lock never count. Every release is rehearsed first: each
+   e2e-kernel run (the fabric replica on every branch) flips its kernel onto green and back onto blue started again,
+   the session paused and resumed after each.
 3. **Changed inputs with no release, or a release while one is in flight** (the other copy still holds the hold: it
    may serve already): the pin job pins the router and session as usual, pins no kernel Deployment and fails, naming
    why. Ask Deyao in one line for a missing OK (what changes, which components; he signs one roster). A release in
@@ -763,7 +768,7 @@ Storage Box copies. Nothing else waits on it; the router reports search unreacha
 
 ## Testing
 
-- Unit: `go test ./...` in core/ and kernel/, `cargo test` in rust/ (the router: rust/router, the machine: rust/machine; the router's tests need a Postgres: TEST_DATABASE_URL) (the core's guarantees are tested in core/).
+- Unit: `go test ./...` in core/, `cargo test` in rust/ (the kernel: rust/kernel, the router: rust/router, the machine: rust/machine; the router's tests need a Postgres: TEST_DATABASE_URL) (the core's guarantees are tested in core/).
 - The app's crypto against the real core and router: the `ios` workflow's interop job (`ios/interop`, runs on
   Linux too with swift-crypto: `ios-ci standins W` (rust/ios-ci), then `swift run Interop` with the `INTEROP_*` env).
 - App code that needs no simulator (ResumeOnce: a continuation answered at most once): `swift run Units` in

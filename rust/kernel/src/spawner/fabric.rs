@@ -1,4 +1,4 @@
-//! The fabric runner (kernel/spawner/fabric.go; docs/PLAN-fabric.md): a machine is a gVisor sandbox on aviary's fabric,
+//! The fabric runner (docs/PLAN-fabric.md): a machine is a gVisor sandbox on aviary's fabric,
 //! started by the fabric hermit (DE0CH/aviary's hermit, an internal service of Jarvis 4's cluster) on one of its AWS
 //! hosts. The spawner is a client of hermit's contract (aviary docs/CONTRACTS.md "The hermit contract"), the only
 //! holder of its two pair tokens (sealed to it by the setup session: POST /fabric-credentials, memory only, handed

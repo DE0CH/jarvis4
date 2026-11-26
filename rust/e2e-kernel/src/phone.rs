@@ -198,18 +198,32 @@ impl Phone {
         )
     }
 
-    /// the kernel's secrets claimed (a Reset with the test master key, naming the phone and the root key) with bundle
-    pub fn claim(&self, bundle: &str) -> Result<()> {
+    /// the kernel's secrets claimed as the app's Reset claims them (ios/Jarvis4/Security/KernelSetup.swift): the
+    /// test master key, naming the phone and the root key, the seed the kit derives (HKDF of the master's scalar,
+    /// "jarvis2/kernel-secrets-seed") in the bundle and the keys it derives as the claim's identity; then the roster
+    /// again, naming those keys (secrets serves with them from now on, which a copy flip needs: only a secrets set up
+    /// from the kit's seed hands over)
+    pub fn claim(&self) -> Result<()> {
+        use base64::Engine as _;
         use sha2::Digest as _;
         let r = router();
         let id = must("GET", &format!("{r}/api/kernel/secrets/identity"), None)?;
+        let seed = jarvis_kernel::secrets::crypto::kdf(
+            &self.master.scalar(),
+            "jarvis2/kernel-secrets-seed",
+        );
+        let (ds, da) = jarvis_kernel::secrets::continuity::seed_identity(&seed)?;
+        let bundle = jarvis_sig::go_json(
+            &json!({"format": "keys", "secretsSeed": base64::engine::general_purpose::STANDARD.encode(seed)}),
+        )?;
         let sum = sha2::Sha256::digest(bundle.as_bytes());
         let st = jarvis_sig::go_json(
             &json!({"kind": "kernel-claim", "master": self.master.public_key(),
             "secrets": {"signingKey": id["signingKey"], "agreementKey": id["agreementKey"]},
             "phone": {"signingKey": self.phone.public_key(), "agreementKey": self.agree.public_key()},
             "root": self.root.public_key(),
-            "bundleSha256": sum.iter().map(|x| format!("{x:02x}")).collect::<String>()}),
+            "bundleSha256": sum.iter().map(|x| format!("{x:02x}")).collect::<String>(),
+            "identity": {"signingKey": ds, "agreementKey": da}}),
         )?;
         let ms = self.master.sign(st.as_bytes());
         let sealed: Sealed = seal_to(
@@ -222,6 +236,15 @@ impl Phone {
             &format!("{r}/api/kernel/secrets/claim"),
             Some(&json!({"statement": st, "masterSig": ms, "bundle": sealed})),
         )?;
+        let ro = Roster {
+            copy: "blue".into(),
+            members: identities(&env("E2E_KERNEL"))?,
+            ..Default::default()
+        };
+        if ro.member("secrets").map(|m| m.signing_key.as_str()) != Some(ds.as_str()) {
+            bail!("secrets doesn't serve with the keys the seed derives after the claim");
+        }
+        self.post_roster(&ro)?;
         Ok(())
     }
 

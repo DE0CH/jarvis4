@@ -153,7 +153,7 @@ pub fn seal_targets(
     }
 }
 
-/// the HKDF info a write's live copy is sealed under (kernel/secrets infoLive + store + key)
+/// the HKDF info a write's live copy is sealed under (rust/kernel/src/secrets infoLive + store + key)
 pub fn live_info(store: &str, key: &str) -> String {
     format!("jarvis2/live-key\n{store}\n{key}")
 }

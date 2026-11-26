@@ -1,5 +1,5 @@
 //! `e2e-kernel fake-hermit`: the fabric's hermit for the fabric replica (docs/PLAN-fabric.md), on one box. It answers
-//! the routes the spawner's fabric runner and the router call (kernel/spawner/fabric.go, rust/router/src/fabricrunner.rs) and
+//! the routes the spawner's fabric runner and the router call (rust/kernel/src/spawner/fabric.rs, rust/router/src/fabricrunner.rs) and
 //! runs each sandbox with the real runsc of the fork on this box, from the fabric image unpacked here, in the bundle
 //! sandboxd writes (aviary crates/sandboxd/src/runsc.rs: its flags, capabilities, rlimits, mounts, the FUSE device),
 //! so a fabric machine boots here as on a host. Each sandbox has a network namespace of its own on the run's bridge

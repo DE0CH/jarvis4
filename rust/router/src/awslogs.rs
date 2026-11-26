@@ -329,7 +329,7 @@ pub fn console_off_until() -> Option<GoTime> {
     CONSOLE.lock().unwrap_or_else(|e| e.into_inner()).off_until
 }
 
-/// the machine's keys line on the console (kernel/spawner keysMark): shipped, never a lifecycle entry
+/// the machine's keys line on the console (rust/kernel/src/spawner keysMark): shipped, never a lifecycle entry
 pub const KEYS_LINE_MARK: &str = "JARVIS2-KEYS ";
 
 static CONSOLE_ANSI_RE: LazyLock<regex::Regex> = LazyLock::new(|| {

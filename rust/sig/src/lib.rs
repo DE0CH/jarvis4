@@ -1,4 +1,4 @@
-//! The kernel's cryptography, the Rust port of kernel/sig (sig.go): all P-256 (the only curve the iPhone's Secure
+//! The kernel's cryptography: all P-256 (the only curve the iPhone's Secure
 //! Enclave has), the same formats as the Go code and core/crypto.go: ECDSA P-256 / SHA-256 DER signatures over the exact
 //! payload bytes, base64; sealing to one public key = ephemeral ECDH + HKDF-SHA256 + AES-256-GCM. Points travel as
 //! base64 of the 65-byte uncompressed encoding.

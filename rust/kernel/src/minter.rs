@@ -1,4 +1,4 @@
-//! The minter (kernel/minter): the kernel's only component that uses a secret (Deyao, 2026-10-23: secrets hands
+//! The minter: the kernel's only component that uses a secret (Deyao, 2026-10-23: secrets hands
 //! secrets out, it never uses one), and the only one with GitHub egress. Secrets checks the phone's approval of a
 //! deploy-key call, opens the GitHub token store with the phone's share, seals the token to the minter's agreement key
 //! (from the root key's roster) and calls POST /mint. The minter checks the same phone-signed request itself —

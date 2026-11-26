@@ -1,4 +1,4 @@
-//! Continuity, carried over from core/continuity.go for secrets alone (kernel/secrets/continuity.go):
+//! Continuity, carried over from core/continuity.go for secrets alone:
 //!
 //!  1. Secrets' long-lived keys come from the master key: the app derives a 32-byte seed (its own label, SecretsSeed)
 //!     and sends it in the claim bundle; from it secrets derives its signing key, its store share K and the state key

@@ -1,7 +1,7 @@
 // The kernel (DESIGN "Target design", docs/PLAN-grants.md, docs/PLAN-cluster.md "The roster") as the app sees it, with
 // no UI, network or Keychain in it (compiled into the interop test too, which runs it against the real kernel binaries):
 //   - the roster: the kernel's components and their RAM-only keys, which the setup session reads and signs with the
-//     setup key (keys/setup.pub), and the root key signs here (KernelRoster, the exact payload kernel/sig
+//     setup key (keys/setup.pub), and the root key signs here (KernelRoster, the exact payload rust/sig
 //     RosterPayload makes);
 //   - secrets' identity, checked against the roster (or, once claimed, the keys this iPhone pinned), and its claim
 //     (Recover: every store from the backups, wrapped to secrets' store key; its keys derived from the kit like the
@@ -15,7 +15,7 @@ import Crypto
 #endif
 import Foundation
 
-// ---- secrets' keys from the kit (kernel/secrets/continuity.go: the same derivation, its own labels) ----
+// ---- secrets' keys from the kit (rust/kernel/src/secrets/continuity.rs: the same derivation, its own labels) ----
 enum KernelContinuity {
   static let seedInfo = "jarvis2/kernel-secrets-seed", keyInfo = "jarvis2/kernel-secrets/"
 
@@ -36,7 +36,7 @@ enum KernelContinuity {
 }
 
 enum KernelSetup {
-  // ---- secrets' identity and state (kernel/secrets: GET /identity) ----
+  // ---- secrets' identity and state (rust/kernel/src/secrets: GET /identity) ----
   struct Identity: Decodable { var role: String? = nil; let signingKey: String; let agreementKey: String; let state: SignedDoc }
   struct State: Decodable {
     let kind: String; let master: String; let phone: PublicKeys?; let root: String?; var lineSeq: Int? = nil; var derived: Bool? = nil; var serving: String? = nil
@@ -87,7 +87,7 @@ enum KernelSetup {
     }
   }
 
-  // ---- the claim (kernel/secrets Claim) ----
+  // ---- the claim (rust/kernel/src/secrets Claim) ----
   static let claimInfo = "jarvis2/kernel-claim"
 
   /// the bundle: every store but the old core's own, each key wrapped to secrets' store key, the seed and the record
@@ -118,7 +118,7 @@ enum KernelSetup {
     let st = try statement(master: master.publicKey, secrets: secrets, phone: phone, root: root, bundle: bundle, identity: identity)
     return ["statement": st, "masterSig": try master.sign(st), "bundle": try CoreCrypto.seal(bundle, to: secrets.agreementKey, info: claimInfo)]
   }
-  /// a component's identity document (kernel/internal/serve: GET /identity, signed by the component), checked: signed by
+  /// a component's identity document (rust/kernel/src/serve.rs: GET /identity, signed by the component), checked: signed by
   /// the keys it names, which the root key's roster names for this role
   static func component(_ doc: SignedDoc, role: String, roster: KernelRoster.Roster) throws -> PublicKeys {
     struct I: Decodable { let role: String; let signingKey: String; let agreementKey: String }
@@ -143,7 +143,7 @@ enum KernelSetup {
   }
 }
 
-// ---- the roster (kernel/sig Roster, docs/PLAN-cluster.md "The roster") ----
+// ---- the roster (rust/sig Roster, docs/PLAN-cluster.md "The roster") ----
 enum KernelRoster {
   struct Member: Codable, Equatable { let role: String; let signingKey: String; let agreementKey: String
     var keys: PublicKeys { PublicKeys(signingKey: signingKey, agreementKey: agreementKey) }
@@ -160,7 +160,7 @@ enum KernelRoster {
   struct Pending: Codable, Equatable { let copy: String; let payload: String; let setupSig: String }
 
   static func validRole(_ r: String) -> Bool { !r.isEmpty && r.allSatisfy { ("a"..."z").contains($0) || ("0"..."9").contains($0) || $0 == "-" } }
-  /// kernel/sig Roster.Payload, byte for byte: Go's json.Marshal of {kind, copy, members[{role, signingKey,
+  /// rust/sig Roster.Payload, byte for byte: Go's json.Marshal of {kind, copy, members[{role, signingKey,
   /// agreementKey}], retired[…] (omitted when none), secretsBoot (omitted when none)}, members sorted by role, retired by
   /// role then signing key. Roles are [a-z0-9-] and keys base64, so nothing needs escaping.
   static func payload(copy: String, members: [Member], retired: [Member] = [], secretsBoot: Member? = nil) -> String {
@@ -214,7 +214,7 @@ enum KernelRoster {
   }
 }
 
-// ---- the certs the phone signs (kernel/doc Cert), read strictly ----
+// ---- the certs the phone signs (rust/doc Cert), read strictly ----
 struct KernelPair: Codable, Equatable {
   struct Allowed: Codable, Equatable { var only: [String]? = nil; var except: [String]? = nil }
   let allowed: Allowed; let conditions: [String]
@@ -261,7 +261,7 @@ enum KernelJSON: Codable, Equatable {
 enum KernelChecks {
   static let sessionImageRepo = "ghcr.io/de0ch/jarvis4-session"
   /// the fabric image (docs/PLAN-fabric.md): the session image with aviary's sandbox in it, for machines on aviary's
-  /// fabric (kernel/spawner/fabric.go FabricRepo); attested by CI like the session image
+  /// fabric (rust/kernel/src/spawner/fabric.rs FabricRepo); attested by CI like the session image
   static let fabricImageRepo = "ghcr.io/de0ch/jarvis4-session-fabric"
 
   /// a cert into a new source the phone signs (a new session, a restore, a resume on another image): from the sink, by
@@ -304,7 +304,7 @@ enum KernelChecks {
     return AddReview(store: store, machine: String(b.succ.drop(while: { $0 != "-" }).dropFirst()))
   }
 
-  /// a machine object, kernel/doc's machineRE exactly: "fly-<Fly machine id>", "aws-i-<EC2 instance id>" or
+  /// a machine object, rust/doc's machineRE exactly: "fly-<Fly machine id>", "aws-i-<EC2 instance id>" or
   /// "fabric-x<a sandbox's 32 hex>" (Deyao, 2026-11-20: every fabric session's add-store was refused here)
   static func isMachine(_ o: String) -> Bool {
     if o.hasPrefix("fly-") { let id = o.dropFirst(4); return (8...32).contains(id.count) && isHex(id) }

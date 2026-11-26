@@ -1,5 +1,5 @@
-//! Jarvis 4's kernel in Rust (the port of kernel/, Go, which serves until the kernel's cut; docs/PLAN-grants.md,
-//! docs/PLAN-cluster.md). Each component is a binary of its own (src/bin/<role>.rs), as kernel/cmd/<role> is.
+//! Jarvis 4's kernel (docs/PLAN-grants.md, docs/PLAN-cluster.md; the Go kernel's port, DECISIONS 280). Each component
+//! is a binary of its own (src/bin/<role>.rs), built into one image (rust/kernel/Dockerfile).
 
 pub mod files;
 pub mod flip;

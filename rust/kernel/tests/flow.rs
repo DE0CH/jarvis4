@@ -1,4 +1,4 @@
-//! kernel/flowtest/flow_test.go: a session's chain through the real notarizer, mover, merger and signers (no HTTP)
+//! A session's chain through the real notarizer, mover, merger and signers (no HTTP)
 
 use jarvis_doc::gv::{self, Signed, ideal_keys};
 use jarvis_doc::perm::{Pair, Set};

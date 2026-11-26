@@ -22,7 +22,6 @@
 //!                       when this runs on a Fly machine ([`Net`]); with the fabric, on loopback. aviary-pin.yml's
 //!                       replica (every aviary release, before it is pinned); by hand from a session:
 //!                       `session-secret --keys JARVIS2_FLY_TOKEN --exec env E2E_HARNESS=aviary e2e-kernel`
-//!   E2E_KERNEL_IMPL=rust the kernel's nine components built from rust/kernel (the Rust port) instead of kernel/
 //!   E2E_SESSION_IMAGE   the session image (default ghcr.io/de0ch/jarvis4-session:latest), pinned by digest here
 //!
 //! `e2e-kernel hosts-exec HOSTS UID GID -- CMD…` (run by the router's `sudo unshare`): HOSTS bound over /etc/hosts in
@@ -71,21 +70,6 @@ const GATEWAY_HEALTH: &str = "127.0.0.1:29082";
 const FAKE_HERMIT: &str = "127.0.2.1:29090";
 /// on the fake fabric's bridge (fakehermit.rs `BRIDGE_IP`), where each sandbox's namespace reaches it
 const FABRIC_LISTENER: &str = "10.89.0.1:29083";
-
-/// the build a copy's components run: "rust" (rust/kernel) or "go" (kernel/). Blue's is E2E_KERNEL_IMPL (go by
-/// default), green's E2E_KERNEL_GREEN (blue's by default): the cut's flip is blue go, green rust
-fn kernel_impl(copy: &str) -> &'static str {
-    let blue = if std::env::var("E2E_KERNEL_IMPL").as_deref() == Ok("rust") {
-        "rust"
-    } else {
-        "go"
-    };
-    match (copy, std::env::var("E2E_KERNEL_GREEN").as_deref()) {
-        ("green", Ok("rust")) => "rust",
-        ("green", Ok("go")) => "go",
-        _ => blue,
-    }
-}
 
 /// a copy's components' loopback addresses: blue's 127.0.1.<n>, green's 127.0.3.<n> (n = the role's place, from 1)
 fn kernel_addr(copy: &str, n: usize) -> String {
@@ -698,39 +682,21 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         // the bridge the sandboxes' namespaces hang on (the router's fabric listener and the front listen on it)
         fakehermit::bridge_up()?;
     }
-    for imp in ["go", "rust"] {
-        if kernel_impl("blue") != imp && kernel_impl("green") != imp {
-            continue;
-        }
-        let dir = w.join(format!("kernel-{imp}"));
-        fs::create_dir_all(&dir)?;
-        if imp == "rust" {
-            // the kernel of rust/kernel: its nine binaries, as its image would build them
-            run_ok(
-                Command::new("cargo")
-                    .args(["build", "--release", "--locked", "-p", "jarvis-kernel"])
-                    .current_dir(root.join("rust")),
-                "building the kernel (rust/kernel)",
-            )?;
-            let target = std::env::var("CARGO_TARGET_DIR")
-                .map(PathBuf::from)
-                .unwrap_or_else(|_| root.join("rust").join("target"));
-            for r in ROLES {
-                std::fs::copy(target.join("release").join(r), dir.join(r))
-                    .with_context(|| format!("the {r} binary"))?;
-            }
-        } else {
-            for r in ROLES {
-                run_ok(
-                    Command::new("go")
-                        .args(["build", "-o"])
-                        .arg(dir.join(r))
-                        .arg(format!("./cmd/{r}"))
-                        .current_dir(root.join("kernel")),
-                    &format!("building the {r}"),
-                )?;
-            }
-        }
+    // the kernel of rust/kernel: its nine binaries, as its image builds them (both copies run this build)
+    run_ok(
+        Command::new("cargo")
+            .args(["build", "--release", "--locked", "-p", "jarvis-kernel"])
+            .current_dir(root.join("rust")),
+        "building the kernel (rust/kernel)",
+    )?;
+    let target = std::env::var("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| root.join("rust").join("target"));
+    let kbin = w.join("kernel");
+    fs::create_dir_all(&kbin)?;
+    for r in ROLES {
+        std::fs::copy(target.join("release").join(r), kbin.join(r))
+            .with_context(|| format!("the {r} binary"))?;
     }
     // the router (rust/router), as its image builds it: the router profile (a panicking request recovered)
     run_ok(
@@ -921,7 +887,7 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
             let _ = c.kill();
             let _ = c.wait();
         }
-        let bin = w.join(format!("kernel-{}", kernel_impl(copy)));
+        let bin = w.join("kernel");
         let mut kaddrs = String::new();
         let mut children = vec![];
         for (i, r) in ROLES.iter().enumerate() {
@@ -1127,8 +1093,6 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         ),
         ("E2E_ROOT_KEY_FILE", os(&root_key)),
         ("E2E_KERNEL", kaddrs.clone()),
-        ("E2E_IMPL_blue", kernel_impl("blue").into()),
-        ("E2E_IMPL_green", kernel_impl("green").into()),
         ("E2E_FLY_TOKEN", token.into()),
         ("E2E_RUNNER", if fabric() { "fabric" } else { "" }.into()),
         ("E2E_FABRIC_MAGPIE", fabric_tokens.0.clone()),

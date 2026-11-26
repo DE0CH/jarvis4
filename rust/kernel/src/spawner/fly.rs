@@ -1,4 +1,4 @@
-//! The Fly Machines API (kernel/spawner/fly.go), used only by the spawner, the only holder of the Fly token (sealed to
+//! The Fly Machines API, used only by the spawner, the only holder of the Fly token (sealed to
 //! it by the setup session: POST /fly-token). The token is narrowed to app jarvis4-sessions and to one command inside
 //! a machine: jarvis2-init, with no arguments, whose output is the machine's public keys, so their link to the machine
 //! is Fly's word, not the machine's or the router's. Volumes are made with Fly's automatic backups off: a session's

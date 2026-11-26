@@ -1,4 +1,4 @@
-//! The cryptography of secrets (kernel/secrets/crypto.go), all P-256 (the only curve the iPhone's Secure Enclave has):
+//! The cryptography of secrets, all P-256 (the only curve the iPhone's Secure Enclave has):
 //! a store's data key is wrapped to the COMBINED public key P + K (phone + secrets): unwrapping needs the phone's share
 //! p·E and secrets' share k·E — Diffie–Hellman with the recipient split in two. Signing and sealing to one public key
 //! are jarvis_sig's. Points travel as base64 of the 65-byte uncompressed X9.63 encoding.

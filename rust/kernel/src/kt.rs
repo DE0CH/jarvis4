@@ -1,4 +1,4 @@
-//! A kernel for tests (kernel/internal/kt): every component's identity and the root key's roster of them, the phone
+//! A kernel for tests: every component's identity and the root key's roster of them, the phone
 //! and root keys, secrets' signed keys statement, and certs made and signed as each signer would.
 
 use jarvis_doc::perm::Pair;

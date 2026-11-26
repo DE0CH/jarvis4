@@ -1,4 +1,4 @@
-//! Go and Rust agree byte for byte (kernel/sig/rustvec_test.go): tests/vectors/go.json is what Go's kernel/sig made,
+//! Go and Rust agree byte for byte: tests/vectors/go.json is what the Go kernel's sig made (before its cut, 2026-11-26),
 //! checked here; tests/vectors/rust.json is what this crate made, checked by the Go test.
 //! `GEN_RUST_VECTORS=1 cargo test -p jarvis-sig --test vectors` writes rust.json again.
 #![allow(clippy::unwrap_used)]

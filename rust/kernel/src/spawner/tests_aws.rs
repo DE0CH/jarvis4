@@ -1,5 +1,5 @@
-//! kernel/spawner/aws_test.go, and what the Go spawner made byte for byte (tests/vectors/spawner-aws.json, written
-//! by kernel/spawner/rustvec_test.go): an EC2 machine's Ignition, a SigV4 signature, the sizes' instance types
+//! The AWS runner's parts, and what the Go spawner made byte for byte (tests/vectors/spawner-aws.json, which it wrote
+//! before the kernel's cut, 2026-11-26): an EC2 machine's Ignition, a SigV4 signature, the sizes' instance types
 
 use super::super::aws::{
     AwsCredentials, WireGuard, ignition, instance_type, sign_v4, user_data_image,

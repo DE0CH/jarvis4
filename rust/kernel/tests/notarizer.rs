@@ -1,4 +1,4 @@
-//! kernel/notarizer/notarizer_test.go and kernel/notary/notary_test.go
+//! The notarizer and the log notary
 use jarvis_doc::perm::{Pair, Set};
 use jarvis_doc::{Cert, Challenge, Notarized, Object, by, peek_cert};
 use jarvis_kernel::kt::{World, machine_keys, source, source_content};

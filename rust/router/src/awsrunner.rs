@@ -1,5 +1,5 @@
 //! The AWS runner (docs/PLAN-aws.md; Deyao, 2026-11-03: AWS the default, Fly kept as an option). A session's runner
-//! says where its machines run: "aws" (one EC2 instance per machine, kernel/spawner/aws.go) or "fly". Its region stays
+//! says where its machines run: "aws" (one EC2 instance per machine, rust/kernel/src/spawner/aws.rs) or "fly". Its region stays
 //! a place (London, Singapore, Tokyo: regions.rs), which each runner maps to its own region.
 //!
 //! An AWS machine reaches the router over WireGuard: the router makes the machine's key pair and tunnel address per
@@ -99,7 +99,7 @@ pub struct AwsWg {
     pub address: String,
 }
 
-/// the spawner's WireGuard of a new machine (kernel/spawner WireGuard)
+/// the spawner's WireGuard of a new machine (rust/kernel/src/spawner WireGuard)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SpawnWireGuard {
     #[serde(rename = "privateKey")]

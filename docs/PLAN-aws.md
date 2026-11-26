@@ -11,7 +11,7 @@ A session has a runner, `aws` (default) or `fly`, next to its region; New sessio
 passes it to the spawner's `start` (`runner`), and the spawner keeps it per machine. Machine objects are `fly-<id>`
 (as now) or `aws-<instance id>`; everything after the spawner treats both the same.
 
-## One session = one EC2 instance (`kernel/spawner/aws.go`)
+## One session = one EC2 instance (`rust/kernel/src/spawner/aws.rs`)
 
 The same calls the Fly backend makes, single calls, no waiting (the router retries):
 
@@ -19,7 +19,7 @@ The same calls the Fly backend makes, single calls, no waiting (the router retri
 |---|---|
 | CreateVolume + Create | `RunInstances` from the region's launch template `jarvis4-session` (Flatcar Container Linux, pinned AMI): the size's instance type, one gp3 volume of 30 GB + the session's `diskGb` (Flatcar's root grows to fill it; `/data` is a directory on it), tag `jarvis4_source`, user-data = an Ignition config that runs `ghcr.io/de0ch/jarvis4-session@sha256:…` privileged with host networking, `/data` bound in, the env the core sets, and the machine's WireGuard |
 | Inspect | `DescribeInstances` (pending → created, running → started, shutting-down → destroying, terminated → destroyed), the tag; the image = the `IMAGE=` line of the user-data's `/etc/jarvis4/image.env` (`DescribeInstanceAttribute userData`), which the session unit runs |
-| Init (exec jarvis2-init) | the machine's keeper writes `JARVIS2-KEYS {…}` to the serial console every 20 s until its cert is in; the spawner reads it live over the EC2 Serial Console (`kernel/spawner/awsserial.go`: from Create on, a one-off key pushed with `SendSerialConsoleSSHPublicKey`, SSH to the region's endpoint with AWS's published host key pinned, read until the line, closed), else from `GetConsoleOutput --latest`; either way AWS's word that the line came from that instance |
+| Init (exec jarvis2-init) | the machine's keeper writes `JARVIS2-KEYS {…}` to the serial console every 20 s until its cert is in; the spawner reads it live over the EC2 Serial Console (`rust/kernel/src/spawner/awsserial.rs`: from Create on, a one-off key pushed with `SendSerialConsoleSSHPublicKey`, SSH to the region's endpoint with AWS's published host key pinned, read until the line, closed), else from `GetConsoleOutput --latest`; either way AWS's word that the line came from that instance |
 | Destroy | `TerminateInstances` (the volume goes with it) |
 | DeleteVolume | nothing to do |
 
@@ -166,7 +166,7 @@ power-off), since no machine is left to sign it, and the keeper's own crash trac
 (`shutting-down: Client.InstanceInitiatedShutdown`: the instance powered itself off, i.e. the container ended).
 
 **In the kernel (Deyao, 2026-11-05: "release the logs change"; a spawner release after the serial console's):** two
-lines of the session unit in `kernel/spawner/aws.go` (`ignition`):
+lines of the session unit in `rust/kernel/src/spawner/aws.rs` (`ignition`):
 
 ```diff
 -ExecStart=/usr/bin/docker run --name session --network host --privileged --cgroupns host --env-file /etc/jarvis4/session.env --env-file /etc/jarvis4/id.env -v /data:/data ${IMAGE}

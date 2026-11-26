@@ -521,7 +521,7 @@ by the core, approved by the phone; the box alone can never make one, and no AI 
 - **Once the kernel serves** (DECISIONS 232: secrets hands out, the minter uses): the same calls and phone approval, but
   secrets never uses the token. After checking the phone's signature and opening the token store with its share,
   secrets seals the token to the **minter**'s agreement key (from the root key's roster) and sends it the begin
-  document, the phone's signature and secrets' signed keys statement. The minter (`kernel/minter`, the kernel's only
+  document, the phone's signature and secrets' signed keys statement. The minter (`rust/kernel/src/minter.rs`, the kernel's only
   GitHub egress) checks that request itself (secrets signed the begin, the phone signed exactly it), makes exactly one
   GitHub call — add the begin's public key, or delete the key **by the id GitHub gave it at the add** (secrets records
   it, and it travels in the line state) — drops the token and answers signed; secrets checks the answer against the

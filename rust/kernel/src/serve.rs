@@ -1,4 +1,4 @@
-//! What every kernel component's server shares (kernel/internal/serve). A component makes fresh keys at start (RAM
+//! What every kernel component's server shares. A component makes fresh keys at start (RAM
 //! only) and answers them at GET /identity; the root key vouches for them in the kernel's roster, which the router
 //! brings with POST /roster and every component checks against KERNEL_ROOT (keys/root.pub). Every answer leaves
 //! signed, errors too, so the untrusted router can't put words in a component's mouth.

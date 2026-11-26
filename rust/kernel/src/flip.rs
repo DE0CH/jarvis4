@@ -1,4 +1,4 @@
-//! The copy flip (kernel/internal/serve/flip.go; docs/PLAN-cluster.md "Releases: the copy flip"): a kernel release
+//! The copy flip (docs/PLAN-cluster.md "Releases: the copy flip"): a kernel release
 //! lands on the copy that doesn't serve; once the root key signed that copy's roster (which names the serving copy's
 //! members as retired), the router asks every serving component to hand over:
 //!

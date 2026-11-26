@@ -1,4 +1,4 @@
-//! The whole kernel for tests (kernel/kerneltest, Go): this crate's own flip tests and the router's. Every component
+//! The whole kernel for tests (the Go kernel's, ported): this crate's own flip tests and the router's. Every component
 //! runs in-process on its own loopback server, on a fake Fly whose machines have real key pairs and a fake GitHub (the
 //! minter's), with a phone key and a root key the test holds, and secrets already claimed (Reset with a seed: no
 //! stores). Two copies, blue and green (docs/PLAN-cluster.md "Releases: the copy flip"): `start` runs blue, which

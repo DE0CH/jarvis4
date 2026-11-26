@@ -1,4 +1,4 @@
-//! kernel/kerneltest/flip_test.go: the copy flip on the kernel alone
+//! The copy flip on the kernel alone (kerneltest)
 
 use jarvis_doc::gv::{self, Signed};
 use jarvis_doc::{Grant, Kind, now};

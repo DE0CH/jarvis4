@@ -524,7 +524,7 @@ def main():
         backup("core", tok, True, me["master"])
         print("ok: the core has its Fly token, and the core store's backup is written")
     elif cmd == "kernel-fly-token":
-        # the kernel's spawner (kernel/spawner): its identity checked against the root key's roster, the token sealed to it
+        # the kernel's spawner (rust/kernel/src/spawner): its identity checked against the root key's roster, the token sealed to it
         d = call("GET", "/setup/kernel/spawner/identity")
         ident = json.loads(d["payload"])
         if not _verify(ident["signingKey"], d["payload"].encode(), d["sig"]):
@@ -536,7 +536,7 @@ def main():
         call("POST", "/setup/kernel/spawner/fly-token", {"sealed": seal_to(ident["agreementKey"], json.dumps(tok).encode(), "jarvis2/fly-token")})
         print("ok: the kernel's spawner has its Fly token (send it again after the spawner restarts)")
     elif cmd == "kernel-aws-credentials":
-        # the same check as kernel-fly-token, then the AWS key sealed to the spawner (kernel/spawner/aws.go)
+        # the same check as kernel-fly-token, then the AWS key sealed to the spawner (rust/kernel/src/spawner/aws.rs)
         d = call("GET", "/setup/kernel/spawner/identity")
         ident = json.loads(d["payload"])
         if not _verify(ident["signingKey"], d["payload"].encode(), d["sig"]):
@@ -549,7 +549,7 @@ def main():
         call("POST", "/setup/kernel/spawner/aws-credentials", {"sealed": seal_to(ident["agreementKey"], json.dumps(key).encode(), "jarvis4/aws-credentials")})
         print("ok: the kernel's spawner has its AWS key (send it again after the spawner restarts)")
     elif cmd == "kernel-fabric-credentials":
-        # the same check as kernel-fly-token, then hermit's tokens sealed to the spawner (kernel/spawner/fabric.go)
+        # the same check as kernel-fly-token, then hermit's tokens sealed to the spawner (rust/kernel/src/spawner/fabric.rs)
         d = call("GET", "/setup/kernel/spawner/identity")
         ident = json.loads(d["payload"])
         if not _verify(ident["signingKey"], d["payload"].encode(), d["sig"]):

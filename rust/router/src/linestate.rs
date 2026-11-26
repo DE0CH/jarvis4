@@ -123,7 +123,7 @@ impl LineKeeper {
         )
     }
 
-    /// the same for the kernel's secrets (kernel/secrets/continuity.go: its stores and the deploy-key stores, which
+    /// the same for the kernel's secrets (rust/kernel/src/secrets/continuity.rs: its stores and the deploy-key stores, which
     /// have no backup), kept beside the core's (kernel-line-state.json; keys/_jarvis2/kernel-line-state.json)
     pub fn new_kernel(docs: Arc<State>, k: Arc<KernelClient>) -> Arc<LineKeeper> {
         let k2 = k.clone();

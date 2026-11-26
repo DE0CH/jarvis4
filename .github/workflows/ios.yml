@@ -6,7 +6,7 @@ name: ios
 # only when the walkthrough, the interop test and the replica of this very commit pass.
 on:
   push:
-    paths: [ios/**, core/**, kernel/**, tasks/**, infra/setup.py, infra/fly-token.sh, infra/fly-read-token.sh, infra/run-volumes.py, infra/run_volumes_test.py, infra/test-postgres.sh, e2e/testdata/**, policy/**, tools/**, .github/workflows/ios.yml, .github/actions/ios-simulator/**, rust/replica-setup/**, rust/ios-ci/**, rust/router/**, rust/kernel/**, rust/sig/**, rust/doc/**, rust/nethttp/**, rust/go/**, rust/Cargo.lock]
+    paths: [ios/**, core/**, tasks/**, infra/setup.py, infra/fly-token.sh, infra/fly-read-token.sh, infra/run-volumes.py, infra/run_volumes_test.py, infra/test-postgres.sh, e2e/testdata/**, policy/**, tools/**, .github/workflows/ios.yml, .github/actions/ios-simulator/**, rust/replica-setup/**, rust/ios-ci/**, rust/router/**, rust/kernel/**, rust/sig/**, rust/doc/**, rust/nethttp/**, rust/go/**, rust/Cargo.lock]
   workflow_dispatch:
 # one group per ref: a newer push replaces the run still waiting to start (only the newest queued run is kept), and
 # never cancels one in progress

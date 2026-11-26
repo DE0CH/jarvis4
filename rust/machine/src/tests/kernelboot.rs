@@ -1,5 +1,5 @@
-//! kernelboot_test.go, on documents the Go kernel test harness made (kernel/kerneltest/rustmachinevec_test.go writes
-//! rust/machine/tests/vectors/kernelboot.json).
+//! kernelboot_test.go, on documents the Go kernel's test harness made (rust/machine/tests/vectors/kernelboot.json,
+//! written before the kernel's cut, 2026-11-26).
 
 use super::testutil::*;
 use crate::crypto::SignedDoc;

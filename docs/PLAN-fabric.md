@@ -24,7 +24,7 @@ What was built (2026-11-17/18):
 | Part | State |
 |---|---|
 | aviary: spec `mounts`, `sandbox.mounts`, `directEgress`, live console tail | pushed (DE0CH/aviary d417d225) |
-| kernel/spawner: the fabric runner (`fabric.go`), objects `fabric-x<32 hex>` | pushed, tests pass; ships with a kernel release (Deyao's OK) |
+| rust/kernel/src/spawner: the fabric runner (`fabric.rs`), objects `fabric-x<32 hex>` | pushed, tests pass; ships with a kernel release (Deyao's OK) |
 | machine: `JARVIS2_RUNNER=fabric` (object, keys line, records-only snapshot) | pushed, tests pass |
 | router: runner `fabric` (offered with `FABRIC_HERMIT_URL`), the session's conversation, the spawn, `GET /fabric/env` | pushed, tests pass |
 | router: a destroy asks a fabric machine for its whole state (`snapshot-full`, so the archive holds the files), then deletes the conversation's files at hermit (`DELETE /v1/workspaces/{cid}`, `FABRIC_HERMIT_MAGPIE_TOKEN`) | pushed, tests pass |
@@ -91,7 +91,7 @@ chat.deyaochen.com ─▶ pigeon ─▶ magpie ─▶ hermit-jarvis ──(calle
 | host.json `directEgress` and hermit.json `fabric.directEgress` | sandboxd `net.rs`, hermit `fabric/scaler.rs` |
 | `GET /v1/admin/sandboxes/{id}/log` answers a live sandbox's console as its host has it now | hermit `admin.rs`, `console.rs` |
 
-### The runner (kernel/spawner; a kernel release)
+### The runner (rust/kernel/src/spawner; a kernel release)
 
 The spawner's `Runner` interface, as for AWS:
 

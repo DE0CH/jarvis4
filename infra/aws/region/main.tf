@@ -28,7 +28,7 @@ data "aws_ami_ids" "baked" {
 data "aws_availability_zones" "up" { state = "available" }
 
 # the account's EC2 Serial Console in this region: the spawner reads a new machine's keys line live through it
-# (kernel/spawner/awsserial.go; only with a key it pushes for one of its tagged instances, iam.tf)
+# (rust/kernel/src/spawner/awsserial.rs; only with a key it pushes for one of its tagged instances, iam.tf)
 resource "aws_ec2_serial_console_access" "on" {
   enabled = true
 }
@@ -73,6 +73,7 @@ resource "aws_security_group" "session" {
   description = "Jarvis 4 session machines: WireGuard in (the m-gateways start the handshakes), any outbound"
   vpc_id      = aws_vpc.sessions.id
   ingress {
+    # the Go kernel's path, as the resource was made (now rust/kernel/src/spawner/aws.rs): a new description replaces it
     description = "WireGuard (kernel/spawner/aws.go wgPort): silent to anything without a peer key"
     from_port   = 51820
     to_port     = 51820
@@ -90,6 +91,7 @@ resource "aws_security_group" "session" {
 
 resource "aws_launch_template" "session" {
   name                                 = "jarvis4-session"
+  # the Go kernel's path, as the resource was made (now rust/kernel/src/spawner/aws.rs): a new description replaces it
   description                          = "Jarvis 4 session machine (kernel/spawner/aws.go sets type, disk, tags, user-data)"
   image_id                             = length(data.aws_ami_ids.baked.ids) > 0 ? data.aws_ami_ids.baked.ids[0] : var.ami
   instance_initiated_shutdown_behavior = "terminate"

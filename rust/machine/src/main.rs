@@ -95,7 +95,7 @@ pub fn machine_id() -> String {
     crate::env::get("FLY_MACHINE_ID")
 }
 
-/// this machine's kernel object, "<runner>-<id>" (kernel/doc)
+/// this machine's kernel object, "<runner>-<id>" (rust/doc)
 pub fn machine_object(id: &str) -> String {
     if on_aws() {
         return format!("aws-{id}");

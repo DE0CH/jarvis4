@@ -6,7 +6,7 @@ name: images
 # jarvis4-session:base-sha-<12>, and pinned in session-image/Dockerfile's BASE by the pin job.
 on:
   push:  # every branch: the gate merges an agent's branch only when this is green (rust/gate); main alone pins
-    paths: [kernel/**, rust/**, session-image/**, policy/**, tasks/**, app/**, infra/setup.py, infra/setup_trust_test.py, infra/setup_write_test.py, infra/setup_roster_test.py, infra/kernel-pin.py, infra/kernel_pin_test.py, infra/image-unpacked-size.py, .github/workflows/images.yml]
+    paths: [rust/**, session-image/**, policy/**, tasks/**, app/**, infra/setup.py, infra/setup_trust_test.py, infra/setup_write_test.py, infra/setup_roster_test.py, infra/kernel-pin.py, infra/kernel_pin_test.py, infra/image-unpacked-size.py, .github/workflows/images.yml]
   workflow_dispatch:
     inputs:
       base:
@@ -32,10 +32,7 @@ jobs:
     env: { TEST_DATABASE_URL: "postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable" }
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with: { go-version: "1.25" }
-      - run: cd kernel && go vet ./... && go test ./... && test -z "$(gofmt -l .)"
-      # Jarvis 4 in Rust (rust/): each crate tested before it replaces its Go part; rust/sig against kernel/sig's vectors,
+      # Jarvis 4 in Rust (rust/): rust/sig, rust/doc and rust/kernel against the vectors the Go kernel wrote (tests/vectors),
       # rust/machine (the session image's jarvis-machine) against documents and snapshots Go wrote
       # a failing test's name and panic as annotations: job logs need a login, annotations don't (lessons/129)
       - run: |
@@ -66,8 +63,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: free disk space (the session image and the fabric image, unpacked)
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h / | tail -1
-      - uses: actions/setup-go@v5
-        with: { go-version: "1.25" }
       - name: tools (crane, the Rust toolchain of rust/)
         run: |
           set -euo pipefail
@@ -118,7 +113,7 @@ jobs:
         with: { repository: DE0CH/aviary, path: aviary, persist-credentials: false }
       - name: free disk space (the session image and the fabric image, unpacked)
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h / | tail -1
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5  # e2e/aviary, the phone of this replica
         with: { go-version: "1.25" }
       - name: tools (crane, the Rust toolchain of rust/)
         run: |
@@ -204,7 +199,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - { name: kernel, context: kernel, file: kernel/Dockerfile }
+          - { name: kernel, context: ., file: rust/kernel/Dockerfile }
           - { name: router, context: ., file: rust/router/Dockerfile }
           - { name: session, context: ., file: session-image/Dockerfile }
     steps:
@@ -313,8 +308,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0, ssh-key: "${{ secrets.PIN_DEPLOY_KEY }}" }  # the pin checks compare against older commits
-      - uses: actions/setup-go@v5  # infra/kernel-pin.py reads each component's packages with go list
-        with: { go-version: "1.25", cache: false }
       - name: pin the new images in k8s/cluster/ by digest (Flux rolls them out); never over a newer pin
         env: { CI_IMAGE_KEY: "${{ secrets.CI_IMAGE_KEY }}" }
         run: |

@@ -1,6 +1,6 @@
 [package]
 name = "jarvis-sig"
-description = "The kernel's cryptography (kernel/sig): P-256 ECDSA over SHA-256 (DER, base64), signed documents, sealing to one public key (ephemeral ECDH + HKDF-SHA256 + AES-256-GCM)"
+description = "The kernel's cryptography: P-256 ECDSA over SHA-256 (DER, base64), signed documents, sealing to one public key (ephemeral ECDH + HKDF-SHA256 + AES-256-GCM)"
 version = "0.0.0"
 edition.workspace = true
 publish.workspace = true

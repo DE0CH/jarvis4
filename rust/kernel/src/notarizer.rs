@@ -1,4 +1,4 @@
-//! The succession notarizer (kernel/notarizer; DESIGN "Target design"). It checks a succession cert against the policy
+//! The succession notarizer (DESIGN "Target design"). It checks a succession cert against the policy
 //! table — the shape (kinds of predecessor and successor), the signer's key, and "first successor of a source" — and
 //! answers the log notary's challenge over the cert's ID. A shape not in the table is refused. It remembers, on its
 //! own volume, every source that has been defined (a source is defined once, by the first cert into it) and every
