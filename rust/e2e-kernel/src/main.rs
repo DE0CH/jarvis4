@@ -2,7 +2,7 @@
 //! kernel components and the router of this tree (rust/router), runs them here with a throwaway box key and root key (each
 //! component on its own loopback address, named `<role>-blue.kernel.e2e` in the router's own /etc/hosts), the
 //! machines' way back to the router over a throwaway WireGuard peer of the Fly org (served by `router m-gateway`, as
-//! on the cluster), and the session image; e2e/kernel plays the iPhone: the roster, a Reset with the public TEST master
+//! on the cluster), and the session image; its driver (driver.rs, phone.rs) plays the iPhone: the roster, a Reset with the public TEST master
 //! key, the root grant, a new session, pause (its snapshot), resume (restored), destroy.
 //! Leaves nothing behind but the logs (`$E2E_LOGS`, default /tmp/jarvis2-e2e-kernel-logs): every machine naming this
 //! run's peer is destroyed with its volume, the peer removed, the processes stopped. Runs may overlap (several aviary
@@ -17,7 +17,7 @@
 //!                       approval: the boot check of a fabric change.
 //!   E2E_HARNESS=aviary  the session's harness aviary, with the chat stack beside the kernel (chat.rs: hermit-jarvis
 //!                       built from E2E_HERMIT_JARVIS, DE0CH/aviary's jarvis/hermit, magpie of the pinned release, a TLS Postgres, an S3 stand-in) and e2e/aviary
-//!                       as the phone, the stand-in model and the chat front (127.0.0.1:31085) instead of e2e/kernel.
+//!                       as the phone, the stand-in model and the chat front (127.0.0.1:31085) instead of driver.rs.
 //!                       On Fly the machines reach the front through a second throwaway peer (`-chat`), or over 6PN
 //!                       when this runs on a Fly machine ([`Net`]); with the fabric, on loopback. aviary-pin.yml's
 //!                       replica (every aviary release, before it is pinned); by hand from a session:
@@ -29,7 +29,9 @@
 //! this mount namespace, then CMD as UID:GID with no supplementary groups.
 
 mod chat;
+mod driver;
 mod fakehermit;
+mod phone;
 
 use anyhow::{Context, Result, bail};
 use std::fs;
@@ -70,9 +72,24 @@ const FAKE_HERMIT: &str = "127.0.2.1:29090";
 /// on the fake fabric's bridge (fakehermit.rs `BRIDGE_IP`), where each sandbox's namespace reaches it
 const FABRIC_LISTENER: &str = "10.89.0.1:29083";
 
-/// E2E_KERNEL_IMPL=rust: the kernel's components from rust/kernel (the Rust port) instead of kernel/ (Go)
-fn rust_kernel() -> bool {
-    std::env::var("E2E_KERNEL_IMPL").as_deref() == Ok("rust")
+/// the build a copy's components run: "rust" (rust/kernel) or "go" (kernel/). Blue's is E2E_KERNEL_IMPL (go by
+/// default), green's E2E_KERNEL_GREEN (blue's by default): the cut's flip is blue go, green rust
+fn kernel_impl(copy: &str) -> &'static str {
+    let blue = if std::env::var("E2E_KERNEL_IMPL").as_deref() == Ok("rust") {
+        "rust"
+    } else {
+        "go"
+    };
+    match (copy, std::env::var("E2E_KERNEL_GREEN").as_deref()) {
+        ("green", Ok("rust")) => "rust",
+        ("green", Ok("go")) => "go",
+        _ => blue,
+    }
+}
+
+/// a copy's components' loopback addresses: blue's 127.0.1.<n>, green's 127.0.3.<n> (n = the role's place, from 1)
+fn kernel_addr(copy: &str, n: usize) -> String {
+    format!("127.0.{}.{n}", if copy == "green" { 3 } else { 1 })
 }
 
 fn fabric() -> bool {
@@ -209,6 +226,8 @@ struct Cleanup {
     w: PathBuf,
     token: String,
     children: Vec<Child>,
+    /// each kernel copy's components
+    kernel: std::collections::BTreeMap<String, Vec<Child>>,
     sudo: Vec<u32>,
     /// the chat stack is up (its namespace, NAT rules and Postgres to undo), with the tree's root
     chat: Option<PathBuf>,
@@ -230,7 +249,11 @@ impl Cleanup {
                 let _ = fs::copy(e.path(), logs.join(e.file_name()));
             }
         }
-        for c in &mut self.children {
+        for c in self
+            .children
+            .iter_mut()
+            .chain(self.kernel.values_mut().flatten())
+        {
             let _ = c.kill();
             let _ = c.wait();
         }
@@ -617,6 +640,7 @@ fn e2e() -> Result<()> {
         w: w.clone(),
         token: token.clone(),
         children: vec![],
+        kernel: Default::default(),
         sudo: vec![],
         chat: None,
         done: false,
@@ -674,31 +698,38 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         // the bridge the sandboxes' namespaces hang on (the router's fabric listener and the front listen on it)
         fakehermit::bridge_up()?;
     }
-    if rust_kernel() {
-        // the kernel of rust/kernel: its nine binaries, as its image would build them
-        run_ok(
-            Command::new("cargo")
-                .args(["build", "--release", "--locked", "-p", "jarvis-kernel"])
-                .current_dir(root.join("rust")),
-            "building the kernel (rust/kernel)",
-        )?;
-        let target = std::env::var("CARGO_TARGET_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| root.join("rust").join("target"));
-        for r in ROLES {
-            std::fs::copy(target.join("release").join(r), w.join(r))
-                .with_context(|| format!("the {r} binary"))?;
+    for imp in ["go", "rust"] {
+        if kernel_impl("blue") != imp && kernel_impl("green") != imp {
+            continue;
         }
-    } else {
-        for r in ROLES {
+        let dir = w.join(format!("kernel-{imp}"));
+        fs::create_dir_all(&dir)?;
+        if imp == "rust" {
+            // the kernel of rust/kernel: its nine binaries, as its image would build them
             run_ok(
-                Command::new("go")
-                    .args(["build", "-o"])
-                    .arg(w.join(r))
-                    .arg(format!("./cmd/{r}"))
-                    .current_dir(root.join("kernel")),
-                &format!("building the {r}"),
+                Command::new("cargo")
+                    .args(["build", "--release", "--locked", "-p", "jarvis-kernel"])
+                    .current_dir(root.join("rust")),
+                "building the kernel (rust/kernel)",
             )?;
+            let target = std::env::var("CARGO_TARGET_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| root.join("rust").join("target"));
+            for r in ROLES {
+                std::fs::copy(target.join("release").join(r), dir.join(r))
+                    .with_context(|| format!("the {r} binary"))?;
+            }
+        } else {
+            for r in ROLES {
+                run_ok(
+                    Command::new("go")
+                        .args(["build", "-o"])
+                        .arg(dir.join(r))
+                        .arg(format!("./cmd/{r}"))
+                        .current_dir(root.join("kernel")),
+                    &format!("building the {r}"),
+                )?;
+            }
         }
     }
     // the router (rust/router), as its image builds it: the router profile (a panicking request recovered)
@@ -720,14 +751,16 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         .unwrap_or_else(|_| root.join("rust").join("target"));
     std::fs::copy(target.join("router").join("router"), w.join("router"))
         .context("the router binary")?;
-    run_ok(
-        Command::new("go")
-            .args(["build", "-o"])
-            .arg(w.join("driver"))
-            .arg(if aviary() { "./aviary" } else { "./kernel" })
-            .current_dir(root.join("e2e")),
-        "building e2e/kernel",
-    )?;
+    if aviary() {
+        run_ok(
+            Command::new("go")
+                .args(["build", "-o"])
+                .arg(w.join("driver"))
+                .arg("./aviary")
+                .current_dir(root.join("e2e")),
+            "building e2e/aviary",
+        )?;
+    }
     let box_key = w.join("box-key.pem");
     let root_key = w.join("root-key.pem");
     fs::write(&box_key, jarvis_sig::Signer::generate().to_pkcs8_pem())?;
@@ -864,36 +897,80 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         }
     }
 
-    // the kernel: each component on 127.0.1.<n>:28080, its state in its own directory
+    // the kernel: each component of a copy on its own loopback address (kernel_addr), its state in its own directory
+    // (kept when the copy starts again: a release); the router calls a Deployment "<role>-<copy>"
     let mut hosts = fs::read_to_string("/etc/hosts").unwrap_or_default();
-    let mut kaddrs = String::new();
-    for (i, r) in ROLES.iter().enumerate() {
-        let n = i + 1;
-        let data = w.join(format!("k-{r}"));
-        fs::create_dir_all(&data)?;
-        let mut c = Command::new(w.join(r));
-        c.env("KERNEL_ROOT", &kernel_root)
-            .env("KERNEL_BOX_KEY", &box_key)
-            .env("KERNEL_DATA", &data)
-            .env("KERNEL_ADDR", format!("127.0.1.{n}:28080"));
-        if *r == "spawner" {
-            c.env("KERNEL_MACHINE_URL", murl());
-            if fabric() {
-                c.env("KERNEL_FABRIC_HERMIT_URL", format!("http://{FAKE_HERMIT}"))
-                    .env(
-                        "KERNEL_FABRIC_MACHINE_URL",
-                        format!("http://{FABRIC_LISTENER}"),
-                    );
-            }
+    for copy in ["blue", "green"] {
+        for (i, r) in ROLES.iter().enumerate() {
+            hosts.push_str(&format!(
+                "{} {r}-{copy}.kernel.e2e\n",
+                kernel_addr(copy, i + 1)
+            ));
         }
-        if *r == "secrets" {
-            c.env("KERNEL_MINTER_URL", "http://127.0.1.8:28080"); // the minter is the 8th
-        }
-        start(&mut c, &format!("kernel-{r}"))?;
-        // the router calls a Deployment "<role>-<copy>": this run is copy blue
-        hosts.push_str(&format!("127.0.1.{n} {r}-blue.kernel.e2e\n"));
-        kaddrs.push_str(&format!("{r}=http://127.0.1.{n}:28080,"));
     }
+    let starts = std::sync::atomic::AtomicUsize::new(0);
+    let start_copy = |copy: &str| -> Result<String> {
+        let run = starts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let old = cl
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .kernel
+            .remove(copy)
+            .unwrap_or_default();
+        for mut c in old {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+        let bin = w.join(format!("kernel-{}", kernel_impl(copy)));
+        let mut kaddrs = String::new();
+        let mut children = vec![];
+        for (i, r) in ROLES.iter().enumerate() {
+            let a = kernel_addr(copy, i + 1);
+            let data = w.join(format!("k-{copy}-{r}"));
+            fs::create_dir_all(&data)?;
+            let mut c = Command::new(bin.join(r));
+            c.env("KERNEL_ROOT", &kernel_root)
+                .env("KERNEL_BOX_KEY", &box_key)
+                .env("KERNEL_DATA", &data)
+                .env("KERNEL_ADDR", format!("{a}:28080"));
+            if *r == "spawner" {
+                c.env("KERNEL_MACHINE_URL", murl());
+                if fabric() {
+                    c.env("KERNEL_FABRIC_HERMIT_URL", format!("http://{FAKE_HERMIT}"))
+                        .env(
+                            "KERNEL_FABRIC_MACHINE_URL",
+                            format!("http://{FABRIC_LISTENER}"),
+                        );
+                }
+            }
+            if *r == "secrets" {
+                // the minter is the 8th
+                c.env(
+                    "KERNEL_MINTER_URL",
+                    format!("http://{}:28080", kernel_addr(copy, 8)),
+                );
+            }
+            let name = if run == 0 {
+                format!("kernel-{copy}-{r}")
+            } else {
+                format!("kernel-{copy}-{r}-{run}")
+            };
+            let (o, e) = log_to(w, &name)?;
+            children.push(
+                c.stdout(o)
+                    .stderr(e)
+                    .spawn()
+                    .with_context(|| format!("starting {name}"))?,
+            );
+            kaddrs.push_str(&format!("{r}=http://{a}:28080,"));
+        }
+        cl.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .kernel
+            .insert(copy.into(), children);
+        Ok(kaddrs)
+    };
+    let kaddrs = start_copy("blue")?;
     let hosts_file = w.join("hosts");
     fs::write(&hosts_file, &hosts)?;
     let image = std::env::var("E2E_SESSION_IMAGE")
@@ -923,7 +1000,7 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         kv("HOME", &home),
         kv("DATABASE_URL", &db),
         "ROUTER_THROWAWAY=1".into(),
-        // the objects in a directory, so the next router after a rollout (e2e/kernel drainPause) has the snapshots
+        // the objects in a directory, so the next router after a rollout (driver.rs drain_pause) has the snapshots
         // the first one took, as production's has the bucket's
         kv("OBJECTS_DIR", &w.join("objects")),
         "KERNEL_URL=http://%s.kernel.e2e:28080".into(),
@@ -978,7 +1055,7 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
             .unwrap_or_else(|e| e.into_inner())
             .sudo
             .push(child.id());
-        // a router that exits (the drain of a rollout: e2e/kernel's drainPause SIGTERMs it) is followed by the next
+        // a router that exits (the drain of a rollout: driver.rs drain_pause SIGTERMs it) is followed by the next
         // one on the same database, as the cluster's rollout starts it; each with its own log (router-2.log, …)
         let cl = cl.clone();
         std::thread::spawn(move || {
@@ -1030,37 +1107,53 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         Duration::from_secs(60),
     )?;
 
-    let mut driver = Command::new(w.join("driver"))
-        .env("E2E_ROUTER", format!("http://{ROUTER}"))
-        // the router's process and its first log, for the drain (e2e/kernel/keeper.go drainPause)
-        .env("E2E_ROUTER_BIN", w.join("router"))
-        .env("E2E_ROUTER_LOG", w.join("router.log"))
-        .env("E2E_SPAWNER", "http://127.0.1.5:28080")
-        .env("E2E_DATA_DIR", &data)
-        .env("E2E_DATABASE_URL", &db)
-        .env("ROUTER_THROWAWAY", "1")
-        .env(
+    // the phone: e2e/aviary, or this binary's own driver (driver.rs), which also releases a copy (start_copy)
+    let os = |p: &Path| p.to_string_lossy().into_owned();
+    let denv: Vec<(&str, String)> = vec![
+        ("E2E_ROUTER", format!("http://{ROUTER}")),
+        // the router's process and its first log, for the drain (driver.rs drain_pause)
+        ("E2E_ROUTER_BIN", os(&w.join("router"))),
+        ("E2E_ROUTER_LOG", os(&w.join("router.log"))),
+        (
+            "E2E_SPAWNER",
+            format!("http://{}:28080", kernel_addr("blue", 5)),
+        ),
+        ("E2E_DATA_DIR", os(&data)),
+        ("E2E_DATABASE_URL", db.clone()),
+        ("ROUTER_THROWAWAY", "1".into()),
+        (
             "E2E_MASTER_KEY_FILE",
-            root.join("e2e/testdata/master-test.pem"),
-        )
-        .env("E2E_ROOT_KEY_FILE", &root_key)
-        .env("E2E_KERNEL", &kaddrs)
-        .env("E2E_FLY_TOKEN", token)
-        .env("E2E_RUNNER", if fabric() { "fabric" } else { "" })
-        .env("E2E_FABRIC_MAGPIE", &fabric_tokens.0)
-        .env("E2E_FABRIC_ADMIN", &fabric_tokens.1)
-        .env("E2E_FRONT_ADDR", &net.front_addr)
-        .env("E2E_HERMIT_GW", "http://127.0.0.1:8081")
-        .env("E2E_CHAT_URL", &net.chat_url)
-        .env("E2E_MAGPIE", "http://10.88.0.2:8080")
-        .env("E2E_MAGPIE_ADMIN", &chat_keys.magpie_admin)
-        .env("E2E_MAGPIE_PIGEON", &chat_keys.magpie_pigeon)
-        .env("E2E_OWNER", chat::OWNER)
-        .spawn()
-        .context("starting e2e/kernel")?;
-    let st = driver.wait()?;
-    if !st.success() {
-        bail!("e2e/kernel: {st}");
+            os(&root.join("e2e/testdata/master-test.pem")),
+        ),
+        ("E2E_ROOT_KEY_FILE", os(&root_key)),
+        ("E2E_KERNEL", kaddrs.clone()),
+        ("E2E_IMPL_blue", kernel_impl("blue").into()),
+        ("E2E_IMPL_green", kernel_impl("green").into()),
+        ("E2E_FLY_TOKEN", token.into()),
+        ("E2E_RUNNER", if fabric() { "fabric" } else { "" }.into()),
+        ("E2E_FABRIC_MAGPIE", fabric_tokens.0.clone()),
+        ("E2E_FABRIC_ADMIN", fabric_tokens.1.clone()),
+        ("E2E_FRONT_ADDR", net.front_addr.clone()),
+        ("E2E_HERMIT_GW", "http://127.0.0.1:8081".into()),
+        ("E2E_CHAT_URL", net.chat_url.clone()),
+        ("E2E_MAGPIE", "http://10.88.0.2:8080".into()),
+        ("E2E_MAGPIE_ADMIN", chat_keys.magpie_admin.clone()),
+        ("E2E_MAGPIE_PIGEON", chat_keys.magpie_pigeon.clone()),
+        ("E2E_OWNER", chat::OWNER.into()),
+    ];
+    if aviary() {
+        let st = Command::new(w.join("driver"))
+            .envs(denv)
+            .spawn()
+            .context("starting e2e/aviary")?
+            .wait()?;
+        if !st.success() {
+            bail!("e2e/aviary: {st}");
+        }
+    } else {
+        phone::set_env(denv.into_iter().map(|(k, v)| (k.to_string(), v)).collect());
+        let mut release = |copy: &str| start_copy(copy);
+        driver::main(&mut release)?;
     }
     println!("e2e-kernel: ok");
     Ok(())

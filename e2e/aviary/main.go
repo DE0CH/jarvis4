@@ -1,5 +1,5 @@
 // e2e/aviary: the aviary harness end to end on real Fly machines (rust/e2e-kernel E2E_HARNESS=aviary runs it, with the chat stack
-// and the kernel's line beside it). It plays the iPhone with software keys as e2e/kernel does, serves the stand-in
+// and the kernel's line beside it). It plays the iPhone with software keys as rust/e2e-kernel/src/driver.rs does, serves the stand-in
 // model and the machines' front to hermit-jarvis's gateway listener, and checks every step through the router's
 // records and magpie's admin API:
 //
@@ -34,7 +34,7 @@
 //
 //   - destroy: the source burns, the record stays.
 //
-//     E2E_ROUTER, E2E_SPAWNER, E2E_DATA_DIR, E2E_MASTER_KEY_FILE, E2E_FLY_TOKEN, E2E_RUNNER (as e2e/kernel); E2E_FRONT_ADDR (where
+//     E2E_ROUTER, E2E_SPAWNER, E2E_DATA_DIR, E2E_MASTER_KEY_FILE, E2E_FLY_TOKEN, E2E_RUNNER (as rust/e2e-kernel/src/phone.rs); E2E_FRONT_ADDR (where
 //     the chat peer's m-gateway sends), E2E_HERMIT_GW (hermit-jarvis's gateway listener), E2E_CHAT_URL (the chat peer
 //     as the machines know it), E2E_MAGPIE + E2E_MAGPIE_ADMIN (magpie and its admin token), E2E_MAGPIE_PIGEON (the
 //     token magpie takes from pigeon: the chat's own calls), E2E_OWNER (hermit-jarvis's person)
@@ -125,7 +125,7 @@ func waitFor(what string, limit time.Duration, ok func() bool) {
 	}
 }
 
-// ---- the router's records (as e2e/kernel)
+// ---- the router's records (as rust/e2e-kernel/src/phone.rs)
 
 type session struct {
 	State     string `json:"state"`

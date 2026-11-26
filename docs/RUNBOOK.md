@@ -774,8 +774,8 @@ Storage Box copies. Nothing else waits on it; the router reports search unreacha
 - The web page: the `web` workflow (typecheck, `npm test`, export of `app/`).
 - End to end on real Fly with a software phone and the public TEST master key: `session-secret --keys
   JARVIS2_FLY_TOKEN --exec e2e-kernel` (rust/e2e-kernel, in a checkout; "A kernel release" above): the kernel and the
-  router of the tree, a throwaway WireGuard peer, the session image (`E2E_SESSION_IMAGE`). On Fly, e2e/kernel also
-  checks the keeper and memory for the supervisor on the first machine (e2e/kernel/keeper.go: Fly's main child, the
+  router of the tree, a throwaway WireGuard peer, the session image (`E2E_SESSION_IMAGE`). On Fly, its driver also
+  checks the keeper and memory for the supervisor on the first machine (rust/e2e-kernel/src/driver.rs: Fly's main child, the
   uid split, the session's and the rescue path's memory limits, a session hog killed inside its cgroup, the harness
   started again after a SIGTERM or `kill -1`, supervisor-normal started again), a rollout (SIGTERM to the router
   while the pause waits for its snapshot: out of the Service, reads served, the pause's snapshot committed before the
