@@ -23,6 +23,8 @@ pub mod aws;
 pub mod awsserial;
 pub mod fabric;
 pub mod fly;
+#[cfg(test)]
+mod tests;
 
 use crate::serve::{
     Answer, Continuity, Server, Stateful, fail, fail_because, handle, log, no_roster,
