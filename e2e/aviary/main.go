@@ -43,8 +43,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/ecdh"
 	"crypto/hkdf"
 	"crypto/rand"
@@ -67,9 +65,6 @@ import (
 	"time"
 
 	"github.com/DE0CH/jarvis4/e2e/routerdb"
-	"github.com/DE0CH/jarvis4/kernel/doc"
-	"github.com/DE0CH/jarvis4/kernel/secrets"
-	"github.com/DE0CH/jarvis4/kernel/sig"
 )
 
 var (
@@ -164,27 +159,19 @@ func readSession(id string) (*session, bool) {
 	return nil, false
 }
 
-// ---- a store key as the app writes it: the value under its own data key, that key wrapped to P + K (kernel/secrets
-// keys.go; WrapToPoint in its tests)
+// ---- a store key as the app writes it (phone.go)
 
-func gcmSeal(key, plain, aad []byte) []byte {
-	blk, _ := aes.NewCipher(key)
-	g, _ := cipher.NewGCM(blk)
-	nonce := randBytes(g.NonceSize())
-	return append(nonce, g.Seal(nil, nonce, plain, aad)...)
-}
-
-func wrapKey(combined []byte, store, key, value string) secrets.KeyEntry {
+func wrapKey(combined []byte, store, key, value string) keyEntry {
 	dk := randBytes(32)
 	e, _ := ecdh.P256().GenerateKey(rand.Reader)
-	shared, err := secrets.ScalarMult(e.Bytes(), combined)
+	shared, err := scalarMult(e.Bytes(), combined)
 	if err != nil {
 		log.Fatal(err)
 	}
 	kek, _ := hkdf.Key(sha256.New, shared[1:33], nil, "jarvis2/store-data-key", 32)
-	return secrets.KeyEntry{Store: store, Key: key,
-		Wrapped: secrets.WrappedKey{E: b64.EncodeToString(e.PublicKey().Bytes()), Wrapped: b64.EncodeToString(gcmSeal(kek, dk, nil))},
-		Data:    b64.EncodeToString(gcmSeal(dk, []byte(value), secrets.KeyAAD(store, key)))}
+	return keyEntry{Store: store, Key: key,
+		Wrapped: wrappedKey{E: b64.EncodeToString(e.PublicKey().Bytes()), Wrapped: b64.EncodeToString(gcmSeal(kek, dk, nil))},
+		Data:    b64.EncodeToString(gcmSeal(dk, []byte(value), keyAAD(store, key)))}
 }
 
 // ---- the stand-in model (Anthropic's Messages API, streamed or not) and the chat peer's front
@@ -646,12 +633,12 @@ func approvalFor(session string) bool {
 
 // proposal: the new-session approval the router filed for a session other than `skip` (hermit-jarvis's proposal for a
 // conversation begun in the chat), once it is in the Inbox.
-func proposal(skip map[string]bool) (session, approval string, challenge sig.Doc) {
+func proposal(skip map[string]bool) (session, approval string, challenge signDoc) {
 	waitFor("hermit-jarvis's proposal in the Inbox", 2*time.Minute, func() bool {
 		var s struct {
 			Approvals []struct {
 				ID, Kind, Session string
-				Challenge         sig.Doc
+				Challenge         signDoc
 			} `json:"approvals"`
 		}
 		must("GET", router+"/api/state", nil, &s)
@@ -673,17 +660,17 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	master, err := sig.SignerFromPEM(mk)
+	master, err := signerFromPEM(mk)
 	if err != nil {
 		log.Fatal(err)
 	}
-	phone, _ := sig.NewSigner()
+	phone, _ := newSigner()
 	phoneAgree, _ := ecdh.P256().GenerateKey(rand.Reader)
 	rk, err := os.ReadFile(os.Getenv("E2E_ROOT_KEY_FILE"))
 	if err != nil {
 		log.Fatal(err)
 	}
-	root, err := sig.SignerFromPEM(rk)
+	root, err := signerFromPEM(rk)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -691,10 +678,10 @@ func main() {
 
 	step("the roster: the app's root key registered, every component's fresh keys vouched for in one root-signed document")
 	must("POST", router+"/api/kernel/root-key", map[string]string{"rootKey": root.PublicKey()}, nil)
-	ro := sig.Roster{Kind: "kernel-roster", Copy: "blue"}
+	ro := roster{Kind: "kernel-roster", Copy: "blue"}
 	for _, kv := range strings.Split(strings.TrimRight(os.Getenv("E2E_KERNEL"), ","), ",") {
 		role, base, _ := strings.Cut(kv, "=")
-		var m sig.Identity
+		var m identity
 		waitFor(role+"'s identity", time.Minute, func() bool {
 			code, b := call("GET", base+"/identity", nil)
 			if code != 200 {
@@ -703,10 +690,10 @@ func main() {
 			if role == "secrets" { // {role, signingKey, agreementKey, state}
 				return json.Unmarshal(b, &m) == nil && m.SigningKey != ""
 			}
-			var d sig.Doc // self-signed {payload, sig}
+			var d signDoc // self-signed {payload, sig}
 			return json.Unmarshal(b, &d) == nil && json.Unmarshal([]byte(d.Payload), &m) == nil && m.SigningKey != ""
 		})
-		ro.Members = append(ro.Members, sig.Identity{Role: m.Role, SigningKey: m.SigningKey, AgreementKey: m.AgreementKey})
+		ro.Members = append(ro.Members, identity{Role: m.Role, SigningKey: m.SigningKey, AgreementKey: m.AgreementKey})
 	}
 	sort.Slice(ro.Members, func(i, j int) bool { return ro.Members[i].Role < ro.Members[j].Role })
 	rp, _ := json.Marshal(ro)
@@ -719,11 +706,11 @@ func main() {
 	var id struct{ SigningKey, AgreementKey string }
 	must("GET", router+"/api/kernel/secrets/identity", nil, &id)
 	ka, _ := b64.DecodeString(id.AgreementKey)
-	combined, err := secrets.AddPoints(phoneAgree.PublicKey().Bytes(), ka)
+	combined, err := addPoints(phoneAgree.PublicKey().Bytes(), ka)
 	if err != nil {
 		log.Fatal(err)
 	}
-	keys := []secrets.KeyEntry{}
+	keys := []keyEntry{}
 	for k, v := range map[string]string{"AVIARY_GW_ACCESS_ID": "e2e", "AVIARY_GW_ACCESS_SECRET": "e2e",
 		"AVIARY_GW_URL": chat, "AVIARY_MODEL_URL": chat + "/model",
 		"AVIARY_OPENROUTER_URL": chat + "/openrouter", "OPENROUTER_API": openRouterKey} {
@@ -737,15 +724,15 @@ func main() {
 		"phone":   map[string]string{"signingKey": phone.PublicKey(), "agreementKey": b64.EncodeToString(phoneAgree.PublicKey().Bytes())},
 		"root":    root.PublicKey(), "bundleSha256": hex.EncodeToString(sum[:])})
 	ms, _ := master.Sign(st)
-	sealed, err := secrets.SealTo(id.AgreementKey, bundle, "jarvis2/kernel-claim")
+	sealed, err := sealTo(id.AgreementKey, bundle, "jarvis2/kernel-claim")
 	if err != nil {
 		log.Fatal(err)
 	}
 	must("POST", router+"/api/kernel/secrets/claim", map[string]any{"statement": string(st), "masterSig": ms, "bundle": sealed}, nil)
 
-	var sd sig.Doc
+	var sd signDoc
 	must("GET", os.Getenv("E2E_SPAWNER")+"/identity", nil, &sd)
-	var sid sig.Identity
+	var sid identity
 	json.Unmarshal([]byte(sd.Payload), &sid)
 	// the runner of this run: Fly (rust/e2e-kernel's default), or the fabric (rust/e2e-kernel E2E_RUNNER=fabric, its hermit
 	// the replica's fake one)
@@ -754,7 +741,7 @@ func main() {
 		step("the spawner's fabric credentials, sealed to it")
 		cred, _ := json.Marshal(map[string]string{"magpieToken": os.Getenv("E2E_FABRIC_MAGPIE"),
 			"adminToken": os.Getenv("E2E_FABRIC_ADMIN"), "admin": "e2e@fabric.invalid", "person": "jarvis4@deyaochen.com"})
-		cs, err := sig.SealTo(sid.AgreementKey, cred, "jarvis4/fabric-credentials")
+		cs, err := sealTo(sid.AgreementKey, cred, "jarvis4/fabric-credentials")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -762,7 +749,7 @@ func main() {
 	} else {
 		step("the spawner's Fly token, sealed to it")
 		tok, _ := json.Marshal(map[string]string{"FLY_API_TOKEN": os.Getenv("E2E_FLY_TOKEN")})
-		ts, err := sig.SealTo(sid.AgreementKey, tok, "jarvis2/fly-token")
+		ts, err := sealTo(sid.AgreementKey, tok, "jarvis2/fly-token")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -776,14 +763,14 @@ func main() {
 	must("POST", router+"/api/kernel/root-grant", map[string]any{"grant": map[string]string{"payload": draft.Payload, "sig": rs}}, nil)
 
 	step("a standing unlock of aviary (the Stores page): the phone's share of each key, sealed to secrets' one-off key")
-	var ubd sig.Doc
+	var ubd signDoc
 	must("POST", router+"/api/kernel/secrets/unlock/begin", map[string]string{"store": "aviary-gw"}, &ubd)
 	var ub struct {
 		Pending, T string
 		Keys       []struct{ Key, E string }
 	}
 	json.Unmarshal([]byte(ubd.Payload), &ub)
-	shares := map[string]secrets.Sealed{}
+	shares := map[string]sealedDoc{}
 	for _, k := range ub.Keys {
 		eb, _ := b64.DecodeString(k.E)
 		E, err := ecdh.P256().NewPublicKey(eb)
@@ -791,7 +778,7 @@ func main() {
 			log.Fatal(err)
 		}
 		x, _ := phoneAgree.ECDH(E)
-		if shares[k.Key], err = secrets.SealTo(ub.T, x, "jarvis2/unlock-share"); err != nil {
+		if shares[k.Key], err = sealTo(ub.T, x, "jarvis2/unlock-share"); err != nil {
 			log.Fatal(err)
 		}
 	}
@@ -833,12 +820,12 @@ func main() {
 	}
 	must("POST", router+"/api/sessions", newSession, &created)
 	var aID, aKind string
-	var challenge sig.Doc
+	var challenge signDoc
 	waitFor("the approval", time.Minute, func() bool {
 		var s struct {
 			Approvals []struct {
 				ID, Kind, Session string
-				Challenge         sig.Doc
+				Challenge         signDoc
 			} `json:"approvals"`
 		}
 		must("GET", router+"/api/state", nil, &s)
@@ -852,7 +839,7 @@ func main() {
 	if aKind != "kernel-source" {
 		log.Fatalf("approval kind %s", aKind)
 	}
-	var c doc.Cert
+	var c cert
 	json.Unmarshal([]byte(challenge.Payload), &c)
 	log.Printf("session %s, image %s", created.ID, c.Source.Image)
 	ps, _ := phone.Sign([]byte(challenge.Payload))
