@@ -2,7 +2,7 @@ package main
 
 // On real Fly only (not the fabric: its machines are gVisor sandboxes, with no Fly exec and their own process model):
 // the keeper (rust/machine/src/keeper.rs, DECISIONS 218), memory for the supervisor (rust/machine/src/oomguard.rs),
-// the router's drain on a rollout (rust/router/src/drain.rs) and the machine's teardown on a stop signal
+// a router rollout with a pause in flight (rust/router/src/main.rs SIGTERM) and the machine's teardown on a stop signal
 // (rust/machine/src/teardown.rs). Moved here from the old core's e2e (Deyao, 2026-11-26), which went with the Go router.
 
 import (
@@ -42,13 +42,18 @@ func flyExec(m string, cmd []string) (string, int, error) {
 	return out.Stdout, out.ExitCode, nil
 }
 
+// procs: the machine's own processes by their whole command line, so a pattern never matches the exec's own sh -c
+// (which carries the command's text): the keeper re-executes itself ("/proc/self/exe boot"), the supervisors are its
+// children ("/proc/self/exe supervisor --core|--normal …")
+const procs = `KEEPER='^(/usr/local/bin/jarvis-machine|/proc/self/exe) boot$'; CORE='^/proc/self/exe supervisor --core'; NORMAL='^/proc/self/exe supervisor --normal'; `
+
 // expectOnMachine: exit 0 and stdout (trimmed) exactly want, within ten tries
 func expectOnMachine(m, cmd, want string) {
 	var out string
 	var code int
 	var err error
 	for i := 0; i < 10; i++ {
-		out, code, err = flyExec(m, []string{"sh", "-c", cmd})
+		out, code, err = flyExec(m, []string{"sh", "-c", procs + cmd})
 		if err == nil && code == 0 && strings.TrimSpace(out) == want {
 			log.Printf("   on %s: %q → %q ok", m, cmd, want)
 			return
@@ -78,11 +83,11 @@ func waitReport(id, before, after string) {
 // keeperStep: on a running session's machine m
 func keeperStep(id, m string) {
 	step("the keeper: Fly's main child is jarvis-machine boot as root; supervisor-core and supervisor-normal are root; the harness is claude's, in its own session")
-	expectOnMachine(m, "k=$(pgrep -o -f 'jarvis-machine boot'); ps -o user=,ppid= -p $k | awk '{print $1, $2}'", "root 1")
-	expectOnMachine(m, "ps -o user= -p $(pgrep -o -f 'supervisor --core')", "root")
-	expectOnMachine(m, "ps -o user= -p $(pgrep -o -f 'supervisor --normal')", "root")
+	expectOnMachine(m, "k=$(pgrep -o -f \"$KEEPER\"); ps -o user=,ppid= -p $k | awk '{print $1, $2}'", "root 1")
+	expectOnMachine(m, "ps -o user= -p $(pgrep -o -f \"$CORE\")", "root")
+	expectOnMachine(m, "ps -o user= -p $(pgrep -o -f \"$NORMAL\")", "root")
 	expectOnMachine(m, "h=$(cat /run/jarvis-keeper/harness.pid); ps -o user=,sid= -p $h | awk -v h=$h '{print $1, ($2==h)}'", "claude 1")
-	expectOnMachine(m, "cat /proc/$(pgrep -o -f 'jarvis-machine boot')/oom_score_adj /proc/$(pgrep -o -f 'supervisor --core')/oom_score_adj", "-1000\n-1000")
+	expectOnMachine(m, "cat /proc/$(pgrep -o -f \"$KEEPER\")/oom_score_adj /proc/$(pgrep -o -f \"$CORE\")/oom_score_adj", "-1000\n-1000")
 
 	step("memory for the supervisor: the session is under a memory limit below the machine's RAM, the rescue path under its own; the keeper's and supervisor-core's pages are locked, supervisor-normal is unprotected in the session's cgroup; a session hog over the limit is killed inside it and the supervisor reports on")
 	expectOnMachine(m, "G=/sys/fs/cgroup/memory/jarvis-session; t=$(awk '/MemTotal/{print $2*1024}' /proc/meminfo); l=$(cat $G/memory.limit_in_bytes); "+
@@ -90,9 +95,9 @@ func keeperStep(id, m string) {
 	expectOnMachine(m, "R=/sys/fs/cgroup/memory/jarvis-rescue; [ $(cat $R/memory.limit_in_bytes) -le $((384<<20)) ] && echo limited", "limited")
 	expectOnMachine(m, "/usr/local/bin/jarvis-machine unprotected --rescue -- cat /proc/self/cgroup | grep -o ':memory:.*'", ":memory:/jarvis-rescue")
 	expectOnMachine(m, "G=/sys/fs/cgroup/memory/jarvis-session; grep -qx $(cat /run/jarvis-keeper/harness.pid) $G/cgroup.procs && echo in", "in")
-	expectOnMachine(m, "for p in $(pgrep -o -f 'jarvis-machine boot') $(pgrep -o -f 'supervisor --core'); do awk '/VmLck/{print ($2>0)}' /proc/$p/status; done", "1\n1")
-	expectOnMachine(m, "G=/sys/fs/cgroup/memory/jarvis-session; grep -qx $(pgrep -o -f 'supervisor --core') $G/cgroup.procs && echo in || echo out", "out")
-	expectOnMachine(m, "N=$(pgrep -o -f 'supervisor --normal'); G=/sys/fs/cgroup/memory/jarvis-session; grep -qx $N $G/cgroup.procs && echo in; cat /proc/$N/oom_score_adj; awk '/VmLck/{print ($2>0)}' /proc/$N/status", "in\n0\n0")
+	expectOnMachine(m, "for p in $(pgrep -o -f \"$KEEPER\") $(pgrep -o -f \"$CORE\"); do awk '/VmLck/{print ($2>0)}' /proc/$p/status; done", "1\n1")
+	expectOnMachine(m, "G=/sys/fs/cgroup/memory/jarvis-session; grep -qx $(pgrep -o -f \"$CORE\") $G/cgroup.procs && echo in || echo out", "out")
+	expectOnMachine(m, "N=$(pgrep -o -f \"$NORMAL\"); G=/sys/fs/cgroup/memory/jarvis-session; grep -qx $N $G/cgroup.procs && echo in; cat /proc/$N/oom_score_adj; awk '/VmLck/{print ($2>0)}' /proc/$N/status", "in\n0\n0")
 	hogBefore := lastReport(id)
 	expectOnMachine(m, "/usr/local/bin/jarvis-machine unprotected -- python3 -c 'a=[]\nwhile True: a.append(b\"x\"*(64<<20))' >/dev/null 2>&1; echo $?", "137")
 	waitReport(id, hogBefore, "the session's hog")
@@ -102,10 +107,10 @@ func keeperStep(id, m string) {
 		"kill -TERM $K", "kill -KILL $K", "kill -TERM -$K", "kill -TERM $W", "kill -STOP $W",
 		"echo 1000 > /proc/$K/oom_score_adj", "cat /proc/$W/environ",
 	} {
-		expectOnMachine(m, "K=$(pgrep -o -f 'jarvis-machine boot'); W=$(pgrep -o -f 'supervisor --core'); "+
+		expectOnMachine(m, "K=$(pgrep -o -f \"$KEEPER\"); W=$(pgrep -o -f \"$CORE\"); "+
 			"su claude -s /bin/sh -c \""+c+"\" >/dev/null 2>&1 && echo worked || echo refused", "refused")
 	}
-	expectOnMachine(m, "K=$(pgrep -o -f 'jarvis-machine boot'); su claude -s /bin/sh -c 'pkill -f jarvis-machine'; sleep 1; kill -0 $K && pgrep -f 'supervisor --core' >/dev/null && echo up", "up")
+	expectOnMachine(m, "K=$(pgrep -o -f \"$KEEPER\"); su claude -s /bin/sh -c 'pkill -f jarvis-machine'; sleep 1; kill -0 $K && pgrep -f \"$CORE\" >/dev/null && echo up", "up")
 
 	step("the incident of 2026-10-21: a session process SIGTERMs the harness's launcher → the machine stays up, the harness starts again")
 	expectOnMachine(m, "su claude -s /bin/sh -c 'kill -TERM $(cat /run/jarvis-keeper/harness.pid)' && echo sent", "sent")
@@ -115,14 +120,14 @@ func keeperStep(id, m string) {
 	expectOnMachine(m, "grep -c 'HARNESS ENDED (killed by SIGTERM)' /run/jarvis/supervisor.log", "1")
 
 	step("kill -TERM -1 as claude: every session process ends, the keeper and the supervisors don't; the harness starts again")
-	expectOnMachine(m, "su claude -s /bin/sh -c 'kill -TERM -1'; sleep 2; pgrep -o -f 'jarvis-machine boot' >/dev/null && pgrep -f 'supervisor --core' >/dev/null && echo up", "up")
+	expectOnMachine(m, "su claude -s /bin/sh -c 'kill -TERM -1'; sleep 2; pgrep -o -f \"$KEEPER\" >/dev/null && pgrep -f \"$CORE\" >/dev/null && echo up", "up")
 	expectOnMachine(m, "for i in $(seq 1 60); do grep -q '\"starts\":3,\"running\":true' /run/jarvis-keeper/harness.json && break; sleep 1; done; "+
 		"grep -o '\"starts\":[0-9]*,\"running\":true' /run/jarvis-keeper/harness.json", "\"starts\":3,\"running\":true")
 
 	step("supervisor-normal dies (as a full session's OOM kill would end it): supervisor-core carries on, the keeper starts it again")
-	expectOnMachine(m, "C=$(pgrep -o -f 'supervisor --core'); N=$(pgrep -o -f 'supervisor --normal'); kill -KILL $N; "+
-		"for i in $(seq 1 20); do M=$(pgrep -o -f 'supervisor --normal'); [ -n \"$M\" ] && [ \"$M\" != $N ] && break; sleep 1; done; "+
-		"[ \"$(pgrep -o -f 'supervisor --core')\" = $C ] && [ -n \"$M\" ] && [ \"$M\" != $N ] && echo restarted", "restarted")
+	expectOnMachine(m, "C=$(pgrep -o -f \"$CORE\"); N=$(pgrep -o -f \"$NORMAL\"); kill -KILL $N; "+
+		"for i in $(seq 1 20); do M=$(pgrep -o -f \"$NORMAL\"); [ -n \"$M\" ] && [ \"$M\" != $N ] && break; sleep 1; done; "+
+		"[ \"$(pgrep -o -f \"$CORE\")\" = $C ] && [ -n \"$M\" ] && [ \"$M\" != $N ] && echo restarted", "restarted")
 	waitReport(id, lastReport(id), "the harness restarts") // supervisor-normal reports on through it all
 }
 
@@ -144,30 +149,42 @@ func routerPID() int {
 	return 0
 }
 
-// drainPause: a router rollout while a pause is in flight. SIGTERM reaches the router right after the pause began: it
-// goes on serving reads and the machine's snapshot, refuses a new action with 503 "router updating, try again shortly",
-// lets the pause finish, then exits on its own; rust/e2e-kernel starts the next router, which finds the session paused
+// drainPause: a router rollout while a pause is in flight (rust/router/src/main.rs, SIGTERM). SIGTERM reaches the
+// router right after the pause began: it leaves the Service (/readyz 503) and hands the scheduler's lease on, goes on
+// serving (reads, and the machine's snapshot), lets the pause finish as its own job, then says "stopped" and exits;
+// rust/e2e-kernel starts the next router on the same database, which finds the session paused
 func drainPause(id string) {
-	step("drain: SIGTERM with a pause in flight → reads served, new actions 503, the pause finishes, then the router exits and the next one takes over")
+	step("a rollout: SIGTERM with a pause in flight → out of the Service, reads served, the pause finishes, then the router exits and the next one takes over")
 	pid := routerPID()
 	if pid == 0 {
-		log.Fatal("drain: no router process (E2E_ROUTER_BIN)")
+		log.Fatal("rollout: no router process (E2E_ROUTER_BIN)")
 	}
 	must("POST", router+"/api/sessions/"+id+"/pause", map[string]any{}, nil)
 	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
 		log.Fatalf("SIGTERM to the router: %v", err)
 	}
-	if code, b := call("GET", router+"/api/state", nil); code != 200 {
-		log.Fatalf("GET /api/state during the drain: %d %s", code, b)
+	logged := func(text string) bool {
+		lb, _ := os.ReadFile(os.Getenv("E2E_ROUTER_LOG"))
+		return strings.Contains(string(lb), text)
 	}
-	code, b := call("POST", router+"/api/sessions/"+id+"/destroy", map[string]any{})
-	if code != 503 || !strings.Contains(string(b), "router updating, try again shortly") {
-		log.Fatalf("a new action during the drain: %d %s", code, b)
+	// the signal is taken asynchronously: the stop has begun once the router says so
+	for end := time.Now().Add(time.Minute); !logged("stopping: out of the Service"); time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(end) {
+			log.Fatal("the router never said it was stopping")
+		}
 	}
-	waitFor("the draining router to exit", 15*time.Minute, func() bool { return syscall.Kill(pid, 0) != nil })
+	if code, _ := callQuiet("GET", router+"/readyz"); code != 503 {
+		log.Fatalf("GET /readyz while stopping: %d, not 503 (still in the Service)", code)
+	}
+	if code, b := callQuiet("GET", router+"/api/state"); code != 200 {
+		log.Fatalf("GET /api/state while stopping: %d %s", code, b)
+	}
+	waitFor("the stopping router to exit", 15*time.Minute, func() bool { return syscall.Kill(pid, 0) != nil })
 	lb, _ := os.ReadFile(os.Getenv("E2E_ROUTER_LOG"))
-	if !strings.Contains(string(lb), "drained") {
-		log.Fatal("the router's log has no \"drained\"")
+	l := string(lb)
+	committed, stopped := strings.LastIndex(l, "snapshot committed"), strings.LastIndex(l, " stopped\n")
+	if committed < 0 || stopped < 0 || committed > stopped {
+		log.Fatal("the stopping router did not finish the pause's snapshot before it stopped")
 	}
 	waitFor("the next router", 2*time.Minute, func() bool {
 		if p := routerPID(); p == 0 || p == pid {
@@ -203,7 +220,7 @@ func teardownStep(id, m string) (file, line string) {
 	file = "/home/claude/.claude/projects/-e2e/0e2e0000-2222-4333-8444-" + tag[len(tag)-12:] + ".jsonl"
 	line = "e2e tail " + tag
 	expectOnMachine(m, "mkdir -p /home/claude/.claude/projects/-e2e && echo '{\"type\":\"user\",\"message\":{\"content\":\""+line+"\"}}' > "+file+
-		" && chown -R claude /home/claude/.claude && kill -TERM $(pgrep -o -f 'jarvis-machine boot') && echo sent", "sent")
+		" && chown -R claude /home/claude/.claude && kill -TERM $(pgrep -o -f \"$KEEPER\") && echo sent", "sent")
 	waitFor("the teardown's log", 5*time.Minute, func() bool {
 		var ev struct {
 			Events []struct{ Text string } `json:"events"`

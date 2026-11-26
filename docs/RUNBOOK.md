@@ -777,9 +777,9 @@ Storage Box copies. Nothing else waits on it; the router reports search unreacha
   router of the tree, a throwaway WireGuard peer, the session image (`E2E_SESSION_IMAGE`). On Fly, e2e/kernel also
   checks the keeper and memory for the supervisor on the first machine (e2e/kernel/keeper.go: Fly's main child, the
   uid split, the session's and the rescue path's memory limits, a session hog killed inside its cgroup, the harness
-  started again after a SIGTERM or `kill -1`, supervisor-normal started again), a rollout's drain (SIGTERM to the
-  router while the pause waits for its snapshot: reads served, new actions 503, the pause ends `paused`, the router
-  exits and e2e-kernel starts the next one), and a stop signal to the second machine's main child (the transcript tail,
+  started again after a SIGTERM or `kill -1`, supervisor-normal started again), a rollout (SIGTERM to the router
+  while the pause waits for its snapshot: out of the Service, reads served, the pause's snapshot committed before the
+  router stops, the next router e2e-kernel starts finds the session `paused`), and a stop signal to the second machine's main child (the transcript tail,
   then the final snapshot; the next machine has the transcript). The fabric replica (`E2E_RUNNER=fabric`, CI's
   images workflow on every branch) runs the same life on gVisor sandboxes without those Fly checks.
 

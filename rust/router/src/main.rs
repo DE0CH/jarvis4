@@ -205,6 +205,11 @@ fn main() {
             "OBJECTS_ACCESS_KEY / OBJECTS_SECRET_KEY are required (Secret router-secrets-objects), or ROUTER_THROWAWAY=1 for a throwaway router",
         );
     }
+    if !throwaway && !std::env::var("OBJECTS_DIR").unwrap_or_default().is_empty() {
+        fatal(
+            "OBJECTS_DIR is a throwaway router's (ROUTER_THROWAWAY=1): production's objects are the bucket's",
+        );
+    }
     if !std::env::var("WG_CONFIG").unwrap_or_default().is_empty() {
         fatal(
             "WG_CONFIG: the machines' WireGuard peer runs in m-gateway (`router m-gateway`), not in the router",

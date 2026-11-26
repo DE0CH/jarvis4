@@ -139,8 +139,12 @@ pub trait ObjDirect: Send + Sync {
     fn get_url(&self, key: &str, ttl: Duration) -> Result<String>;
 }
 
-/// the bucket, or None when no credential is set
+/// the bucket, or a throwaway router's directory (OBJECTS_DIR), or None when neither is set (memory)
 pub fn objects_from_env() -> Result<Option<Arc<dyn ObjStore>>> {
+    let dir = std::env::var("OBJECTS_DIR").unwrap_or_default();
+    if !dir.is_empty() {
+        return Ok(Some(Arc::new(DirObjects::new(std::path::Path::new(&dir))?)));
+    }
     let ak = std::env::var("OBJECTS_ACCESS_KEY").unwrap_or_default();
     let sk = std::env::var("OBJECTS_SECRET_KEY").unwrap_or_default();
     if ak.is_empty() || sk.is_empty() {
@@ -737,6 +741,99 @@ impl ObjStore for MemObjects {
     }
 }
 
+/// objects in a directory, one file per key (a throwaway router whose objects outlive it: rust/e2e-kernel's next
+/// router after a rollout finds the snapshots the first one took, as production's finds them in the bucket). Never
+/// production's: OBJECTS_DIR is only taken with ROUTER_THROWAWAY=1 (main.rs). Its machines stream through the router.
+pub struct DirObjects {
+    root: std::path::PathBuf,
+}
+
+impl DirObjects {
+    pub fn new(root: &std::path::Path) -> Result<DirObjects> {
+        std::fs::create_dir_all(root)?;
+        Ok(DirObjects { root: root.into() })
+    }
+
+    /// a key's file: each "/"-separated part a path component, none of them empty, "." or ".."
+    fn file(&self, key: &str) -> Result<std::path::PathBuf> {
+        let mut p = self.root.clone();
+        for part in key.split('/') {
+            if part.is_empty() || part == "." || part == ".." {
+                return Err(anyhow!("objects: no such key as {key:?} in a directory"));
+            }
+            p.push(part);
+        }
+        Ok(p)
+    }
+
+    fn walk(&self, dir: &std::path::Path, rel: &str, out: &mut Vec<String>) {
+        for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if name.starts_with(".tmp-") {
+                continue;
+            }
+            let key = if rel.is_empty() {
+                name
+            } else {
+                format!("{rel}/{name}")
+            };
+            if e.file_type().is_ok_and(|t| t.is_dir()) {
+                self.walk(&e.path(), &key, out);
+            } else {
+                out.push(key);
+            }
+        }
+    }
+}
+
+impl ObjStore for DirObjects {
+    fn put(&self, key: &str, r: &mut dyn Read, _: i64) -> Result<()> {
+        let p = self.file(key)?;
+        let dir = p.parent().ok_or_else(|| anyhow!("objects: {key:?}"))?;
+        std::fs::create_dir_all(dir)?;
+        // whole or not at all: a reader sees the old object or the new one
+        let tmp = dir.join(format!(".tmp-{}", crate::util::rand_id()));
+        let res = (|| -> Result<()> {
+            let mut f = std::fs::File::create(&tmp)?;
+            std::io::copy(r, &mut f)?;
+            f.sync_all()?;
+            std::fs::rename(&tmp, &p)?;
+            Ok(())
+        })();
+        if res.is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+        res
+    }
+
+    fn get(&self, key: &str) -> Result<ObjReader> {
+        let f = match std::fs::File::open(self.file(key)?) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(NoObject.into()),
+            other => other?,
+        };
+        let size = f.metadata().map_or(-1, |m| m.len() as i64);
+        Ok(ObjReader {
+            body: Box::new(f),
+            size,
+        })
+    }
+
+    fn delete(&self, key: &str) -> Result<()> {
+        match std::fs::remove_file(self.file(key)?) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            other => Ok(other?),
+        }
+    }
+
+    fn list(&self, prefix: &str) -> Result<Vec<String>> {
+        let mut out = vec![];
+        self.walk(&self.root, "", &mut out);
+        out.retain(|k| k.starts_with(prefix));
+        out.sort();
+        Ok(out)
+    }
+}
+
 impl Router {
     /// small objects whole
     pub fn obj_put_bytes(&self, key: &str, b: &[u8]) -> Result<()> {
@@ -771,7 +868,10 @@ impl Router {
         }
         self.objects.delete(&key)?;
         if in_memory {
-            crate::logf!("objects: in memory (ROUTER_THROWAWAY=1: a throwaway router)");
+            match std::env::var("OBJECTS_DIR").unwrap_or_default().as_str() {
+                "" => crate::logf!("objects: in memory (ROUTER_THROWAWAY=1: a throwaway router)"),
+                d => crate::logf!("objects: in {d} (ROUTER_THROWAWAY=1: a throwaway router)"),
+            }
         } else {
             crate::logf!(
                 "objects: the bucket {} answers (put, get, delete)",
@@ -849,6 +949,35 @@ mod tests {
             xml_values(b, "NextContinuationToken"),
             vec!["t1".to_string()]
         );
+    }
+
+    #[test]
+    fn a_directory_store_keeps_its_objects_for_the_next_router() {
+        let d = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let a = DirObjects::new(d.path()).unwrap_or_else(|e| panic!("{e:#}"));
+        a.put("snapshots/m1.tar.gz", &mut Cursor::new(b"one".to_vec()), 3)
+            .unwrap_or_else(|e| panic!("{e:#}"));
+        a.put("snapshots/m1.tar.gz", &mut Cursor::new(b"two".to_vec()), 3)
+            .unwrap_or_else(|e| panic!("{e:#}"));
+        a.put("uploads/x", &mut Cursor::new(b"u".to_vec()), 1)
+            .unwrap_or_else(|e| panic!("{e:#}"));
+        // another process's store on the same directory: the next router after a rollout
+        let b = DirObjects::new(d.path()).unwrap_or_else(|e| panic!("{e:#}"));
+        let mut got = vec![];
+        b.get("snapshots/m1.tar.gz")
+            .unwrap_or_else(|e| panic!("{e:#}"))
+            .read_to_end(&mut got)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(got, b"two");
+        assert_eq!(
+            b.list("").unwrap_or_default(),
+            vec!["snapshots/m1.tar.gz".to_string(), "uploads/x".to_string()]
+        );
+        assert_eq!(b.list("snap").unwrap_or_default().len(), 1);
+        b.delete("uploads/x").unwrap_or_else(|e| panic!("{e:#}"));
+        b.delete("uploads/x").unwrap_or_else(|e| panic!("{e:#}"));
+        assert!(b.get("uploads/x").is_err_and(|e| is_no_object(&e)));
+        assert!(b.get("../etc/passwd").is_err() && b.get("a//b").is_err());
     }
 
     #[test]

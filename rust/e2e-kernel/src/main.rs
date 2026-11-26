@@ -227,12 +227,16 @@ impl Cleanup {
             let _ = c.kill();
             let _ = c.wait();
         }
+        // SIGKILL: a SIGTERM'd router with an action in flight drains first and outlives the run (it held the next
+        // run's port: "Address already in use")
         for p in &self.sudo {
             let p = p.to_string();
             let _ = Command::new("sudo")
-                .args(["-n", "pkill", "-P", &p])
+                .args(["-n", "pkill", "-KILL", "-P", &p])
                 .status();
-            let _ = Command::new("sudo").args(["-n", "kill", &p]).status();
+            let _ = Command::new("sudo")
+                .args(["-n", "kill", "-KILL", &p])
+                .status();
         }
         if let Some(root) = &self.chat {
             chat::teardown(&self.w, root);
@@ -845,6 +849,9 @@ fn steps(root: &Path, w: &Path, token: &str, cl: &Arc<Mutex<Cleanup>>) -> Result
         kv("HOME", &home),
         kv("DATABASE_URL", &db),
         "ROUTER_THROWAWAY=1".into(),
+        // the objects in a directory, so the next router after a rollout (e2e/kernel drainPause) has the snapshots
+        // the first one took, as production's has the bucket's
+        kv("OBJECTS_DIR", &w.join("objects")),
         "KERNEL_URL=http://%s.kernel.e2e:28080".into(),
         "NO_ACCESS=1".into(),
         // no core, as production's router (k8s/cluster/router/router.yaml): the store calls go to the kernel's
