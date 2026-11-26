@@ -1238,16 +1238,20 @@ dependencies = [
 name = "jarvis-kernel"
 version = "0.0.0"
 dependencies = [
+ "aes-gcm",
  "anyhow",
+ "hkdf",
  "jarvis-doc",
  "jarvis-go",
  "jarvis-nethttp",
  "jarvis-sig",
+ "p256",
  "rand_core 0.6.4",
  "regex",
  "reqwest",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "time",
  "tokio",
