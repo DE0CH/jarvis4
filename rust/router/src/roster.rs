@@ -100,7 +100,7 @@ impl RosterCurrent {
 }
 
 /// the stale roster was DMed (once per roster)
-static ROSTER_DMED: AtomicBool = AtomicBool::new(false);
+pub(crate) static ROSTER_DMED: AtomicBool = AtomicBool::new(false);
 
 /// a P-256 public key, base64 X9.63 (65 bytes, uncompressed)
 pub fn valid_root_key(k: &str) -> bool {

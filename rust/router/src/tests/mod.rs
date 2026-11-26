@@ -45,6 +45,7 @@ mod remote;
 mod repokernel;
 mod repostore;
 mod resumefallback;
+mod roster;
 mod runners;
 mod schedule;
 mod screen;
