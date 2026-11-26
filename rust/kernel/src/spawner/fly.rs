@@ -182,7 +182,7 @@ impl FlyApi {
             struct St {
                 status: String,
             }
-            let st: St = serde_json::from_slice(&b).unwrap_or_default();
+            let st: St = jarvis_go::json::unmarshal(&b).unwrap_or_default();
             return Err(FlyError {
                 http: status,
                 status: st.status,
@@ -217,7 +217,7 @@ impl Fly for FlyApi {
         struct V {
             id: String,
         }
-        let v: V = serde_json::from_slice(&b)?;
+        let v: V = jarvis_go::json::unmarshal(&b)?;
         if v.id.is_empty() {
             return Err(anyhow::anyhow!("fly made no volume"));
         }
@@ -245,7 +245,7 @@ impl Fly for FlyApi {
         struct M {
             id: String,
         }
-        Ok(serde_json::from_slice::<M>(&b)?.id)
+        Ok(jarvis_go::json::unmarshal::<M>(&b)?.id)
     }
 
     fn inspect(&self, id: &str) -> anyhow::Result<RunMachine> {
@@ -286,7 +286,7 @@ impl Fly for FlyApi {
             config: Config,
             image_ref: Ref,
         }
-        let m: M = serde_json::from_slice(&b)?;
+        let m: M = jarvis_go::json::unmarshal(&b)?;
         let mut fm = RunMachine {
             state: m.state,
             image: m.config.image.clone(),
@@ -324,7 +324,7 @@ impl Fly for FlyApi {
             stderr: String,
             exit_code: i64,
         }
-        let out: Out = serde_json::from_slice(&b)?;
+        let out: Out = jarvis_go::json::unmarshal(&b)?;
         if out.exit_code != 0 {
             return Err(anyhow::anyhow!(
                 "exit {}: {}",
@@ -332,7 +332,7 @@ impl Fly for FlyApi {
                 out.stderr.trim()
             ));
         }
-        match serde_json::from_str::<MachineKeys>(out.stdout.trim()) {
+        match jarvis_go::json::unmarshal::<MachineKeys>(out.stdout.trim().as_bytes()) {
             Ok(k) if !k.encryption_key.is_empty() && !k.signing_key.is_empty() => Ok(k),
             _ => Err(anyhow::anyhow!("jarvis2-init gave no keys")),
         }

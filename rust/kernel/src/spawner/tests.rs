@@ -1,5 +1,8 @@
 //! kernel/spawner/spawner_test.go: spawn, init, kill and destroy on a fake Fly
 
+#[path = "tests_fabric.rs"]
+mod fabric;
+
 use super::fly::{Fly, FlyError};
 use super::{
     MachineKeys, REASON_BAD_SNAPSHOT, REASON_CAME_UP, REASON_FLY, REASON_HOST_FULL,
@@ -170,7 +173,7 @@ impl Fly for FakeFly {
 struct Rig {
     w: World,
     fly: Arc<FakeFly>,
-    sp: Spawner,
+    sp: Arc<Spawner>,
     nz: Notarizer,
     path: PathBuf,
     _dir: tempfile::TempDir,
@@ -199,7 +202,7 @@ fn rig() -> Rig {
     let dir = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
     let fly = Arc::new(FakeFly::default());
     let path = dir.path().join("sp.json");
-    let sp = open_spawner(&w, &path, fly.clone());
+    let sp = Arc::new(open_spawner(&w, &path, fly.clone()));
     let nz = Notarizer::open(&dir.path().join("nz"), &w.trust).unwrap_or_else(|e| panic!("{e:#}"));
     Rig {
         w,

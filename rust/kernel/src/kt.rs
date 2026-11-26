@@ -173,3 +173,51 @@ pub fn keys_of(m: &Machine) -> Keys {
         encryption_key: m.encryption_key.clone(),
     }
 }
+
+/// an HTTP server on a loopback port for a test's stand-ins (a fake hermit, a fake EC2), stopped when dropped
+pub struct TestServer {
+    pub url: String,
+    stop: tokio_util::sync::CancellationToken,
+    th: Option<std::thread::JoinHandle<()>>,
+}
+
+impl TestServer {
+    pub fn handler(
+        f: impl Fn(&mut jarvis_nethttp::W, &mut jarvis_nethttp::Req) + Send + Sync + 'static,
+    ) -> TestServer {
+        let stop = tokio_util::sync::CancellationToken::new();
+        let ln = std::net::TcpListener::bind("127.0.0.1:0").unwrap_or_else(|e| panic!("{e}"));
+        let url = format!(
+            "http://{}",
+            ln.local_addr().unwrap_or_else(|e| panic!("{e}"))
+        );
+        ln.set_nonblocking(true).unwrap_or_else(|e| panic!("{e}"));
+        let s2 = stop.clone();
+        let h: jarvis_nethttp::HandlerFn = Arc::new(f);
+        let th = std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .unwrap_or_else(|e| panic!("{e}"));
+            rt.block_on(async move {
+                let ln = tokio::net::TcpListener::from_std(ln).unwrap_or_else(|e| panic!("{e}"));
+                let _ = jarvis_nethttp::serve_listener(ln, h, s2).await;
+            });
+        });
+        TestServer {
+            url,
+            stop,
+            th: Some(th),
+        }
+    }
+}
+
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        self.stop.cancel();
+        if let Some(th) = self.th.take() {
+            let _ = th.join();
+        }
+    }
+}

@@ -390,7 +390,7 @@ pub fn user_data_image(user_data: &str) -> String {
     struct Cfg {
         storage: Storage,
     }
-    let Ok(cfg) = serde_json::from_slice::<Cfg>(&b) else {
+    let Ok(cfg) = jarvis_go::json::unmarshal::<Cfg>(&b) else {
         return String::new();
     };
     for f in cfg.storage.files {
@@ -821,7 +821,7 @@ pub fn keys_from_line(line: &str) -> anyhow::Result<(MachineKeys, bool)> {
     let Some(i) = line.find(KEYS_MARK) else {
         return Ok((MachineKeys::default(), false));
     };
-    match serde_json::from_str::<MachineKeys>(line[i + KEYS_MARK.len()..].trim()) {
+    match jarvis_go::json::unmarshal::<MachineKeys>(line[i + KEYS_MARK.len()..].trim().as_bytes()) {
         Ok(k) if !k.encryption_key.is_empty() && !k.signing_key.is_empty() => Ok((k, true)),
         _ => Err(anyhow::anyhow!("the console's keys line has no keys")),
     }

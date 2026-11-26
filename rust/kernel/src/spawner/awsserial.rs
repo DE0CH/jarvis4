@@ -377,7 +377,7 @@ fn push_serial_key(job: &SerialJob, pub_line: &str) -> anyhow::Result<()> {
             #[serde(default, rename = "Success")]
             success: bool,
         }
-        if serde_json::from_slice::<Ok>(b).is_ok_and(|o| o.success) {
+        if jarvis_go::json::unmarshal::<Ok>(b).is_ok_and(|o| o.success) {
             return Result::Ok(());
         }
         return Err(aws_err(
@@ -398,7 +398,7 @@ fn push_serial_key(job: &SerialJob, pub_line: &str) -> anyhow::Result<()> {
         #[serde(rename = "Message")]
         msg: String,
     }
-    let e: E = serde_json::from_slice(b).unwrap_or_default();
+    let e: E = jarvis_go::json::unmarshal(b).unwrap_or_default();
     let code = e.kind.rsplit('#').next().unwrap_or_default().to_string();
     let mut msg = format!("{}{}", e.message, e.msg);
     if code.is_empty() {

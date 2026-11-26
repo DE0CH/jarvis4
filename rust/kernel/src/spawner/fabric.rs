@@ -133,7 +133,7 @@ type ConvOf = Box<dyn Fn(&str) -> String + Send + Sync>;
 /// routes are by conversation): the spawner's state names it.
 pub struct FabricApi {
     /// hermit's address inside the cluster
-    pub url: String,
+    url: std::sync::RwLock<String>,
     http: reqwest::blocking::Client,
     conv: OnceLock<ConvOf>,
     cred: Mutex<Option<FabricCredentials>>,
@@ -141,17 +141,17 @@ pub struct FabricApi {
 
 #[derive(Deserialize, Default)]
 #[serde(default)]
-struct Sandbox {
-    id: String,
-    state: String,
-    phase: String,
-    image: String,
+pub(crate) struct Sandbox {
+    pub(crate) id: String,
+    pub(crate) state: String,
+    pub(crate) phase: String,
+    pub(crate) image: String,
 }
 
 impl FabricApi {
     pub fn new(url: &str) -> FabricApi {
         FabricApi {
-            url: url.trim_end_matches('/').into(),
+            url: std::sync::RwLock::new(url.trim_end_matches('/').into()),
             http: reqwest::blocking::Client::builder()
                 .timeout(Duration::from_secs(20))
                 .build()
@@ -159,6 +159,11 @@ impl FabricApi {
             conv: OnceLock::new(),
             cred: Mutex::new(None),
         }
+    }
+
+    /// hermit's address from now on
+    pub fn set_url(&self, url: &str) {
+        *self.url.write().unwrap_or_else(|e| e.into_inner()) = url.trim_end_matches('/').into();
     }
 
     pub(crate) fn set_conversations(&self, f: ConvOf) {
@@ -192,7 +197,13 @@ impl FabricApi {
         let m = method.as_str().to_string();
         let mut req = self
             .http
-            .request(method, format!("{}{path}", self.url))
+            .request(
+                method,
+                format!(
+                    "{}{path}",
+                    self.url.read().unwrap_or_else(|e| e.into_inner())
+                ),
+            )
             .header("Aviary-Protocol", "hermit-core=1");
         if let Some(b) = &body {
             req = req
@@ -229,7 +240,7 @@ impl FabricApi {
                 code: String,
                 message: String,
             }
-            let env: Env = serde_json::from_slice(&b).unwrap_or_default();
+            let env: Env = jarvis_go::json::unmarshal(&b).unwrap_or_default();
             return (
                 status,
                 Err(FabricError {
@@ -247,7 +258,7 @@ impl FabricApi {
 /// a sandbox's state in the spawner's words. A sandbox is up for the spawner (its first process runs, the keeper can
 /// write its keys) from hermit's phase supervisor on: hermit calls it ready only when the session's supervisor answers,
 /// which is after the machine has its cert.
-fn fabric_state(s: &Sandbox) -> String {
+pub(crate) fn fabric_state(s: &Sandbox) -> String {
     match s.state.as_str() {
         "starting" if s.phase == "supervisor" => "started",
         "starting" => "created",
@@ -275,7 +286,7 @@ impl Runner for FabricApi {
             &format!("/v1/conversations/{}/sandbox", f.conversation),
             Some(json!({"person": c.person})),
         );
-        let s: Sandbox = serde_json::from_slice(&r?)?;
+        let s: Sandbox = jarvis_go::json::unmarshal(&r?)?;
         let id = fabric_machine_id(&s.id);
         if !fabric_id(&id) {
             return Err(anyhow::anyhow!(
@@ -310,7 +321,7 @@ impl Runner for FabricApi {
             Err(_) if code == 404 => return Ok(gone),
             Err(e) => return Err(e),
         };
-        let s: Sandbox = serde_json::from_slice(&b)?;
+        let s: Sandbox = jarvis_go::json::unmarshal(&b)?;
         if fabric_machine_id(&s.id) != id {
             return Ok(gone);
         }
@@ -350,7 +361,7 @@ impl Runner for FabricApi {
         struct Tail {
             text: String,
         }
-        let t: Tail = serde_json::from_slice(&b)?;
+        let t: Tail = jarvis_go::json::unmarshal(&b)?;
         let Some(found) = t.text.lines().rfind(|l| l.contains(KEYS_MARK)) else {
             return Err(Missing::NotYet.into());
         };

@@ -117,7 +117,7 @@ impl GitHubApi {
                 #[serde(default)]
                 message: String,
             }
-            let e: E = serde_json::from_slice(&b).unwrap_or_default();
+            let e: E = jarvis_go::json::unmarshal(&b).unwrap_or_default();
             return Err(GitHubError {
                 status,
                 msg: format!("GitHub {m} {path}: HTTP {status} {}", e.message),
@@ -148,7 +148,7 @@ impl GitHub for GitHubApi {
             &format!("/repos/{repo}/keys"),
             Some(serde_json::json!({"title": title, "key": public_key, "read_only": false})),
         )?;
-        Ok(serde_json::from_slice(&b)?)
+        Ok(jarvis_go::json::unmarshal(&b)?)
     }
 
     fn delete_deploy_key(&self, token: &str, repo: &str, id: i64) -> anyhow::Result<()> {
