@@ -1,5 +1,7 @@
 //! kernel/spawner/spawner_test.go: spawn, init, kill and destroy on a fake Fly
 
+#[path = "tests_aws.rs"]
+mod aws;
 #[path = "tests_fabric.rs"]
 mod fabric;
 

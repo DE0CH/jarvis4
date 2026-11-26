@@ -1,0 +1,30 @@
+{
+  "image": "ghcr.io/de0ch/jarvis4-session@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "env": {
+    "B": "a b=c%d\u0026e",
+    "JARVIS2_SOURCE": "source-x",
+    "JARVIS2_URL": "http://10.99.0.1:8081"
+  },
+  "wireguard": {
+    "privateKey": "yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=",
+    "address": "10.99.1.7",
+    "peers": [
+      {
+        "publicKey": "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=",
+        "address": "10.99.0.1"
+      }
+    ]
+  },
+  "userData": "{\"ignition\":{\"version\":\"3.4.0\"},\"storage\":{\"directories\":[{\"mode\":493,\"path\":\"/data\"}],\"files\":[{\"contents\":{\"source\":\"data:,IMAGE=ghcr.io%2Fde0ch%2Fjarvis4-session@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa%0A\"},\"mode\":420,\"overwrite\":true,\"path\":\"/etc/jarvis4/image.env\"},{\"contents\":{\"source\":\"data:,JARVIS2_RUNNER=aws%0AB=a%20b=c%25d\\u0026e%0AJARVIS2_SOURCE=source-x%0AJARVIS2_URL=http:%2F%2F10.99.0.1:8081%0A\"},\"mode\":384,\"overwrite\":true,\"path\":\"/etc/jarvis4/session.env\"},{\"contents\":{\"source\":\"data:,REBOOT_STRATEGY=off%0A\"},\"mode\":420,\"overwrite\":true,\"path\":\"/etc/flatcar/update.conf\"},{\"contents\":{\"source\":\"data:,%5BNetDev%5D%0AName=wg0%0AKind=wireguard%0A%5BWireGuard%5D%0APrivateKey=yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=%0AListenPort=51820%0A%5BWireGuardPeer%5D%0APublicKey=xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=%0AAllowedIPs=10.99.0.1%2F32%0APersistentKeepalive=25%0A\"},\"mode\":420,\"overwrite\":true,\"path\":\"/etc/systemd/network/50-wg0.netdev\"},{\"contents\":{\"source\":\"data:,%5BMatch%5D%0AName=wg0%0A%5BNetwork%5D%0AAddress=10.99.1.7%2F32%0A%5BRoute%5D%0ADestination=10.99.0.1%2F32%0A\"},\"mode\":420,\"overwrite\":true,\"path\":\"/etc/systemd/network/50-wg0.network\"}]},\"systemd\":{\"units\":[{\"mask\":true,\"name\":\"update-engine.service\"},{\"mask\":true,\"name\":\"locksmithd.service\"},{\"contents\":\"[Unit]\\nDescription=The session machine\\nAfter=docker.service network-online.target systemd-networkd.service\\nRequires=docker.service\\nWants=network-online.target\\n[Service]\\nType=simple\\nRestart=no\\nTimeoutStartSec=0\\nEnvironmentFile=/etc/jarvis4/image.env\\nExecStartPre=/bin/sh -c 'T=$(curl -sf -X PUT -H \\\"X-aws-ec2-metadata-token-ttl-seconds: 60\\\" http://169.254.169.254/latest/api/token) \\u0026\\u0026 echo JARVIS2_MACHINE_ID=$(curl -sf -H \\\"X-aws-ec2-metadata-token: $T\\\" http://169.254.169.254/latest/meta-data/instance-id) \\u003e /etc/jarvis4/id.env'\\nExecStartPre=/usr/sbin/iptables -I OUTPUT -d 169.254.169.254 -j DROP\\nExecStartPre=/usr/bin/docker pull ${IMAGE}\\nExecStart=/usr/bin/docker run --name session --network host --privileged --cgroupns host --env-file /etc/jarvis4/session.env --env-file /etc/jarvis4/id.env -v /data:/data -v /var/log/journal:/run/jarvis-host/journal:ro ${IMAGE}\\nExecStopPost=/bin/sh -c 'echo \\\"JARVIS4-SESSION-END result=$SERVICE_RESULT code=$EXIT_CODE status=$EXIT_STATUS\\\" \\u003e /dev/ttyS0; [ \\\"$SERVICE_RESULT\\\" = success ] || sleep 50'\\nExecStopPost=/usr/bin/systemctl poweroff\\n[Install]\\nWantedBy=multi-user.target\\n\",\"enabled\":true,\"name\":\"jarvis4-session.service\"}]}}",
+  "body": "Action=DescribeInstances\u0026Version=2016-11-15",
+  "authorization": "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/ap-southeast-1/ec2/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date, Signature=0b090f653618f1d18a42b3fd73f20b7d5a9429e96c9be3cdc2c89fc4cf3d8744",
+  "instances": {
+    "1024gb": "",
+    "16gb": "m7i.2xlarge",
+    "32gb": "r7i.2xlarge",
+    "64gb": "r7i.4xlarge",
+    "large": "m7i.xlarge",
+    "medium": "t3.large",
+    "small": "t3.medium"
+  }
+}
