@@ -1385,10 +1385,15 @@ name = "ios-ci"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "jarvis-doc",
+ "jarvis-nethttp",
+ "jarvis-sig",
  "rand 0.8.8",
  "regex",
  "reqwest",
  "serde_json",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

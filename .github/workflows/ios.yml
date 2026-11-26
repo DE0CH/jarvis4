@@ -6,7 +6,7 @@ name: ios
 # only when the walkthrough, the interop test and the replica of this very commit pass.
 on:
   push:
-    paths: [ios/**, core/**, kernel/**, tasks/**, infra/setup.py, infra/fly-token.sh, infra/fly-read-token.sh, infra/run-volumes.py, infra/run_volumes_test.py, infra/test-postgres.sh, e2e/testdata/**, policy/**, tools/**, .github/workflows/ios.yml, .github/actions/ios-simulator/**, rust/replica-setup/**, rust/ios-ci/**, rust/router/**, rust/Cargo.lock]
+    paths: [ios/**, core/**, kernel/**, tasks/**, infra/setup.py, infra/fly-token.sh, infra/fly-read-token.sh, infra/run-volumes.py, infra/run_volumes_test.py, infra/test-postgres.sh, e2e/testdata/**, policy/**, tools/**, .github/workflows/ios.yml, .github/actions/ios-simulator/**, rust/replica-setup/**, rust/ios-ci/**, rust/router/**, rust/kernel/**, rust/sig/**, rust/doc/**, rust/nethttp/**, rust/go/**, rust/Cargo.lock]
   workflow_dispatch:
 # one group per ref: a newer push replaces the run still waiting to start (only the newest queued run is kept), and
 # never cancels one in progress
@@ -55,16 +55,16 @@ jobs:
       - name: swift run Units (app code that needs no simulator, e.g. ResumeOnce)
         working-directory: ios/interop
         run: swift run Units
-      - name: swift run Kernel (the app's kernel code against the real kernel secrets and spawner, the roster on both sides, Go-made certs)
+      - name: swift run Kernel (the app's kernel code against the real kernel secrets and spawner, the roster on both sides, kernel-made certs)
         working-directory: ios/interop
         run: |
           K="$RUNNER_TEMP/kernel"; mkdir -p "$K"
           # the root key the test plays: the components check the roster against its public half (KERNEL_ROOT)
           openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$K/root.pem"
           openssl pkey -in "$K/root.pem" -pubout -outform DER | tail -c 65 | base64 | tr -d '\n' > "$K/root.pub"
-          (cd "$GITHUB_WORKSPACE/kernel" && go build -o "$K/secrets" ./cmd/secrets && go build -o "$K/spawner" ./cmd/spawner)
-          (cd vectors && go run . > "$K/vectors.json")
-          (cd rostervec && go build -o "$K/rostervec" .)
+          (cd "$GITHUB_WORKSPACE/rust" && cargo build --release --locked -p jarvis-kernel --bin secrets --bin spawner && cp target/release/secrets target/release/spawner "$K/")
+          "$IOS_CI" vectors > "$K/vectors.json"
+          ln -sf "$IOS_CI" "$K/rostervec"  # ios-ci run as rostervec (rust/ios-ci/src/kernel.rs)
           KERNEL_ROOT="$(cat "$K/root.pub")" KERNEL_ADDR=127.0.0.1:18300 "$K/secrets" > "$K/secrets.log" 2>&1 &
           mkdir -p "$K/spawner-data"
           KERNEL_ROOT="$(cat "$K/root.pub")" KERNEL_ADDR=127.0.0.1:18301 KERNEL_DATA="$K/spawner-data" "$K/spawner" > "$K/spawner.log" 2>&1 &
@@ -211,13 +211,12 @@ jobs:
             -destination "id=$SIM_UDID" -derivedDataPath ../dd \
             -resultBundlePath ../result-kernel.xcresult 2>&1 | tee ../test-kernel.log | grep -E "error:|Test Case|\*\* " || true)
           grep -q "TEST EXECUTE SUCCEEDED\|\*\* TEST SUCCEEDED" test-kernel.log
-      - name: The kernel's health on Sessions (the router with no core, ios/ci/fakekernel as the eight components)
+      - name: The kernel's health on Sessions (the router with no core, ios-ci fakekernel as the nine components)
         run: |
           W="$RUNNER_TEMP/w"
           kill $(cat "$W/router.pid" 2>/dev/null) 2>/dev/null || true
           for i in $(seq 60); do lsof -nP -iTCP:18080 -iTCP:18081 -sTCP:LISTEN > /dev/null 2>&1 || break; sleep 1; done
           lsof -nP -iTCP:18080 -iTCP:18081 -sTCP:LISTEN -t 2>/dev/null | xargs kill -9 2>/dev/null || true; sleep 1
-          (cd ios/ci/fakekernel && go build -o "$W/fakekernel" .)
           rm -rf data-health && mkdir -p data-health
           DBURL="$(bash infra/test-postgres.sh fresh router_health)"
           (DATABASE_URL="$DBURL" ROUTER_THROWAWAY=1 NO_ACCESS=1 NO_CORE=1 KERNEL_URL='http://127.0.0.1:18310/%s' CORE_URL=http://core.invalid:8090 \
@@ -227,7 +226,7 @@ jobs:
             nohup "$W/router" > out/router-health.log 2>&1 & echo $! > "$W/router.pid")
           for i in $(seq 20); do curl -sf http://127.0.0.1:18080/api/kernel > /dev/null && break; sleep 1; done
           # the stand-in components register a root key and post the roster it signs; the router then says healthy
-          (nohup "$W/fakekernel" -addr 127.0.0.1:18310 -router http://127.0.0.1:18080 > out/fakekernel.log 2>&1 & echo $! > "$W/fakekernel.pid")
+          (nohup "$IOS_CI" fakekernel 127.0.0.1:18310 http://127.0.0.1:18080 > out/fakekernel.log 2>&1 & echo $! > "$W/fakekernel.pid")
           ok=0
           for i in $(seq 30); do
             curl -sf http://127.0.0.1:18080/api/state | python3 -c 'import json,sys; k=json.load(sys.stdin)["kernel"]; sys.exit(0 if k["healthy"] else 1)' && { ok=1; break; }

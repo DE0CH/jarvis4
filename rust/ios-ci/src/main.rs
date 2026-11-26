@@ -25,6 +25,8 @@
 //!                             NOT an earlier run's bare volume (its machine gone): Fly keeps no label on a volume
 //!                             (docs/RUNBOOK.md "Leftover volumes"); `down` deletes them while the run's records exist
 //!
+//!   ios-ci rostervec | vectors | fakekernel   the kernel's side of the app's tests (kernel.rs)
+//!
 //! Env of `replica`: REPLICA_FLY_TOKEN (an org token of jarvis2-370: peers, machines, exec), REPLICA_RUN (digits and
 //! dashes). The router runs NO_ACCESS=1 on the loopback address: the simulator talks to it directly (app/DECISIONS.md
 //! "The phone replica").
@@ -44,10 +46,25 @@ const KEYS: &str = "127.0.0.1:18099";
 /// the stand-ins' machines' router address (no machine ever dials it: fakefly)
 const STANDIN_MURL: &str = "http://ci-router._peer.internal:8081";
 
+mod kernel;
+
 fn main() {
-    let a: Vec<String> = std::env::args().skip(1).collect();
+    let mut a: Vec<String> = std::env::args().collect();
+    // run as `rostervec` (a link to this binary: the Swift test runs it with rostervec's args alone)
+    if Path::new(&a[0])
+        .file_name()
+        .is_some_and(|n| n == "rostervec")
+    {
+        a[0] = "rostervec".into();
+    } else {
+        a.remove(0);
+    }
     let s: Vec<&str> = a.iter().map(String::as_str).collect();
     let res = match s.as_slice() {
+        ["rostervec", rest @ ..] => kernel::rostervec(rest),
+        ["vectors"] => kernel::vectors(),
+        ["fakekernel", addr] => kernel::fakekernel(addr, None),
+        ["fakekernel", addr, router] => kernel::fakekernel(addr, Some(router)),
         ["standins", w] => standins(Path::new(w)),
         ["s3-fresh", w] => s3_fresh(Path::new(w)),
         ["core-loop", w, log] => core_loop(Path::new(w), Path::new(log), STANDIN_MURL),
@@ -56,7 +73,8 @@ fn main() {
         ["replica", "down", w] => replica_down(Path::new(w)),
         ["replica", "sweep"] => replica_sweep(),
         _ => Err(anyhow!(
-            "usage: ios-ci standins W | s3-fresh W | core-loop W LOG [MACHINE_URL] | replica up|down W | replica sweep"
+            "usage: ios-ci standins W | s3-fresh W | core-loop W LOG [MACHINE_URL] | replica up|down W | replica sweep | \
+             rostervec [-open ROOTPUB] | vectors | fakekernel ADDR [ROUTER]"
         )),
     };
     if let Err(e) = res {

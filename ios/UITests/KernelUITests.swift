@@ -46,7 +46,7 @@ final class KernelUITests: JarvisUITestCase {
   }
 
   /// A healthy kernel shows no warning on Sessions, and one component that stops answering does, by name.
-  /// ios.yml's simulator job runs it against the real router (NO_CORE=1) with ios/ci/fakekernel as the nine components,
+  /// ios.yml's simulator job runs it against the real router (NO_CORE=1) with `ios-ci fakekernel` (rust/ios-ci) as the nine components,
   /// which signed and posted a roster every component holds (the router says healthy before the test starts).
   func testKernelHealthBanner() {
     continueAfterFailure = false
@@ -76,7 +76,7 @@ final class KernelUITests: JarvisUITestCase {
     shot("kernel-healthy-again")
   }
 
-  /// ios/ci/fakekernel's switches (POST /_down/<role>, /_up/<role>) on the runner
+  /// `ios-ci fakekernel`'s switches (POST /_down/<role>, /_up/<role>) on the runner
   private func fakeKernel(_ path: String) -> Int {
     var r = URLRequest(url: URL(string: "http://127.0.0.1:18310/" + path)!)
     r.httpMethod = "POST"

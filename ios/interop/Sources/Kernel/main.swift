@@ -1,13 +1,13 @@
 // The app's kernel code (Security/KernelSetup.swift, with CoreCrypto and CoreSetup) against the REAL kernel secrets and
-// spawner binaries (kernel/cmd/secrets and spawner, started with KERNEL_ROOT = the public half of the root key this
-// test plays) and the documents as the Go side makes them (ios/interop/vectors, ios/interop/rostervec over kernel/sig):
-// the roster (the setup key's pending one checked, its payload byte for byte Go's RosterPayload, the root key's
+// spawner binaries (rust/kernel secrets and spawner, started with KERNEL_ROOT = the public half of the root key this
+// test plays) and the documents as the kernel makes them (`ios-ci vectors` and `ios-ci rostervec` over rust/sig, rust/doc):
+// the roster (the setup key's pending one checked, its payload byte for byte the kernel's Roster::payload, the root key's
 // signature taken by the real components, secrets' boot keys replaced by the kit-derived ones), secrets' identity
 // checked against it (and refused when only the setup key vouches for a claimed secrets), the claim with the
 // kit-derived keys and the root key, the split-key unlock, the keys statement; then the cert checks the approval
 // pages make before Face ID, and their refusals.
 // Configuration (env): KERNEL_SECRETS, KERNEL_SPAWNER (their URLs), KERNEL_ROOT_PEM (the root key the components were
-// started with, PEM), KERNEL_ROSTERVEC (the rostervec binary), KERNEL_VECTORS (ios/interop/vectors' output).
+// started with, PEM), KERNEL_ROSTERVEC (ios-ci run as rostervec), KERNEL_VECTORS (`ios-ci vectors`' output).
 #if canImport(CryptoKit)
 import CryptoKit
 #else
@@ -40,8 +40,8 @@ func call(_ base: String, _ path: String, _ body: Any? = nil) -> (Int, Data) {
 }
 func call(_ path: String, _ body: Any? = nil) -> (Int, Data) { call(secrets, path, body) }
 func doc(_ d: Data) -> SignedDoc { try! JSONDecoder().decode(SignedDoc.self, from: d) }
-/// rostervec (kernel/sig on the Go side): stdin in, stdout out, exit status
-func goSide(_ args: [String], _ input: Data) -> (Int32, String) {
+/// rostervec (the kernel's rust/sig, through ios-ci): stdin in, stdout out, exit status
+func kernelSide(_ args: [String], _ input: Data) -> (Int32, String) {
   let p = Process(); p.executableURL = URL(fileURLWithPath: rostervec); p.arguments = args
   let i = Pipe(), o = Pipe(); p.standardInput = i; p.standardOutput = o; p.standardError = FileHandle.nullDevice
   try! p.run(); i.fileHandleForWriting.write(input); try! i.fileHandleForWriting.close()
@@ -65,16 +65,16 @@ let members = [KernelRoster.Member(role: "spawner", signingKey: sp.signingKey, a
                KernelRoster.Member(role: "secrets", signingKey: id0.signingKey, agreementKey: id0.agreementKey)]
 let bootPayload = KernelRoster.payload(copy: "blue", members: members)
 struct In: Encodable { let copy: String; let members: [KernelRoster.Member] }
-let goPayload = goSide([], json(In(copy: "blue", members: members)))
-check(goPayload.0 == 0 && goPayload.1 == bootPayload, "the roster's payload is byte for byte Go's Roster.Payload (members sorted by role)")
+let kernelPayload = kernelSide([], json(In(copy: "blue", members: members)))
+check(kernelPayload.0 == 0 && kernelPayload.1 == bootPayload, "the roster's payload is byte for byte the kernel's Roster::payload (members sorted by role)")
 // retired keys and secretsBoot (the copy a release landed on: docs/PLAN-cluster.md "Releases: the copy flip")
 let retiredM = [KernelRoster.Member(role: "mover", signingKey: sp.agreementKey, agreementKey: sp.signingKey),
                 KernelRoster.Member(role: "merger", signingKey: id0.agreementKey, agreementKey: id0.signingKey)]
 let bootM = KernelRoster.Member(role: "secrets", signingKey: sp.agreementKey, agreementKey: id0.agreementKey)
 struct InFull: Encodable { let copy: String; let members: [KernelRoster.Member]; let retired: [KernelRoster.Member]; let secretsBoot: KernelRoster.Member }
 let fullPayload = KernelRoster.payload(copy: "green", members: members, retired: retiredM, secretsBoot: bootM)
-let goFull = goSide([], json(InFull(copy: "green", members: members, retired: retiredM, secretsBoot: bootM)))
-check(goFull.0 == 0 && goFull.1 == fullPayload, "…and with retired keys (sorted by role, then key) and secretsBoot")
+let kernelFull = kernelSide([], json(InFull(copy: "green", members: members, retired: retiredM, secretsBoot: bootM)))
+check(kernelFull.0 == 0 && kernelFull.1 == fullPayload, "…and with retired keys (sorted by role, then key) and secretsBoot")
 check((try? KernelRoster.parse(fullPayload)).map { $0.retired.count == 2 && $0.secretsBoot == bootM } == true, "…which read back as such")
 check(throwsErr { _ = try KernelRoster.parse(KernelRoster.payload(copy: "green", members: members, retired: [KernelRoster.Member(role: "secrets", signingKey: sp.agreementKey, agreementKey: sp.signingKey)])) },
       "…but secrets is never retired")
@@ -110,8 +110,8 @@ let phoneSig = P256.Signing.PrivateKey(), phoneAgree = P256.KeyAgreement.Private
 let phone = PublicKeys(signingKey: phoneSig.publicKey.x963Representation.base64EncodedString(), agreementKey: phoneAgree.publicKey.x963Representation.base64EncodedString())
 let seed = KernelContinuity.seed(master)
 let derived = try! KernelContinuity.keys(seed: seed)
-// the store key P + K: the app computes it (secrets signs none), the same sum as Go's sig.StoreKey
-check((try? CoreCrypto.storeKey(phone: vectors["storeKeyPhone"]!, secrets: vectors["storeKeySecrets"]!)) == vectors["storeKey"], "P + K is Go's sum")
+// the store key P + K: the app computes it (secrets signs none), the same sum as the kernel's store_key
+check((try? CoreCrypto.storeKey(phone: vectors["storeKeyPhone"]!, secrets: vectors["storeKeySecrets"]!)) == vectors["storeKey"], "P + K is the kernel's sum")
 check((try? CoreCrypto.storeKey(phone: vectors["storeKeyTwice"]!, secrets: vectors["storeKeyTwice"]!)) == vectors["storeKeyDouble"], "…and P + P its doubling")
 check(throwsErr { _ = try CoreCrypto.storeKey(phone: "AAAA", secrets: vectors["storeKeySecrets"]!) }, "…not for a key that isn't a point")
 check(call("/store-key", ["phone": phone.agreementKey]).0 == 404, "secrets answers no store key")
@@ -129,7 +129,7 @@ let (code, _) = call("/claim", try! KernelSetup.claim(secrets: k0, phone: phone,
 check(code == 200, "the claim goes through")
 let id1 = identity()
 let c1 = try? KernelSetup.check(id1, KernelSetup.Anchors(pinned: derived))
-check(c1?.keys == derived, "secrets now answers with the keys the kit derives (Swift and Go derive the same)")
+check(c1?.keys == derived, "secrets now answers with the keys the kit derives (Swift and the kernel derive the same)")
 check(throwsErr { _ = try KernelSetup.check(id1, KernelSetup.Anchors(pending: KernelRoster.replacing(pending!, role: "secrets", with: derived))) },
       "…which the setup key alone can't vouch for once claimed")
 check(KernelSetup.unclaimed(id1) == nil, "a claimed secrets doesn't read as unclaimed")
@@ -155,9 +155,9 @@ check(throwsErr { try KernelSetup.signable(KernelRoster.Roster(copy: "green", me
       "…nor one naming no empty secrets to take over")
 check(throwsErr { try KernelSetup.signable(takeover, pinned: derived, unclaimed: [], current: signedR) }, "…nor one whose secretsBoot isn't an empty secrets")
 let rDoc = rootSigned(signedR.payload)
-let goOpen = goSide(["-open", rootPub], json(rDoc))
-check(goOpen.0 == 0, "Go's OpenRoster takes the app's payload and the root key's DER signature")
-check(goSide(["-open", otherPub], json(rDoc)).0 != 0, "…not checked against another root key")
+let kernelOpen = kernelSide(["-open", rootPub], json(rDoc))
+check(kernelOpen.0 == 0, "the kernel's open_roster takes the app's payload and the root key's DER signature")
+check(kernelSide(["-open", otherPub], json(rDoc)).0 != 0, "…not checked against another root key")
 check(call("/roster", ["roster": ["payload": rDoc.payload, "sig": rDoc.sig]]).0 == 200, "secrets takes the root key's roster naming its derived keys")
 check(call("/roster", ["roster": ["payload": bootPayload, "sig": rootSigned(bootPayload).sig]]).0 == 403, "…not one naming its boot keys")
 let byOther = rootSigned(signedR.payload, by: other)
@@ -188,7 +188,7 @@ check(call("/unlock/finish", ["pending": ub.pending, "shares": shares]).0 == 200
 // ---- the certs the phone signs ----
 let s = try? KernelChecks.source(payload: vectors["source"]!, session: "s1")
 check(s?.stores == ["default", "tunnel"] && s?.harness == "claude" && s?.permissionMode == "auto" && s?.config["label"]?.string == "x" && s?.snapshot == nil,
-      "a new source as Go makes it reads as its stores, harness, mode and settings")
+      "a new source as the kernel makes it reads as its stores, harness, mode and settings")
 check((try? KernelChecks.source(payload: vectors["restore"]!, session: "s1"))?.snapshot?.count == 64, "a restore's source names the snapshot hash")
 check(throwsErr { _ = try KernelChecks.source(payload: vectors["source"]!, session: "s2") }, "…not for another session")
 check(throwsErr { _ = try KernelChecks.source(payload: vectors["shell"]!, session: "s1") }, "…not a source that allows a shell")

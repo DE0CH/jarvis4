@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""infra/setup.py's roster: the payload it signs is sig.Roster.Payload byte for byte (checked against the Go side,
-ios/interop/rostervec), and kernel-roster files what it read through kernel-id, signed by the setup key: the serving
+"""infra/setup.py's roster: the payload it signs is the kernel's Roster::payload byte for byte (checked against the
+kernel's side, `ios-ci rostervec` over rust/sig), and kernel-roster files what it read through kernel-id, signed by the setup key: the serving
 copy's (a restarted component's old keys retired), the other copy's (every serving member retired, the retired keys a
 line still needs kept, the serving secrets as its secrets and its empty one as secretsBoot); kernel-flipped. Offline
-(the router and kernel-id stubbed); needs go: python3 infra/setup_roster_test.py"""
+(the router and kernel-id stubbed); needs cargo: python3 infra/setup_roster_test.py"""
 import base64, importlib.util, json, os, random, subprocess, sys, tempfile
 
 from cryptography.hazmat.primitives import hashes, serialization
@@ -23,31 +23,31 @@ pub = lambda k: base64.b64encode(k.public_key().public_bytes(serialization.Encod
 sign = lambda k, b: base64.b64encode(k.sign(b, ec.ECDSA(hashes.SHA256()))).decode()
 
 
-def go_payload(copy, members, retired=(), boot=None):
+def kernel_payload(copy, members, retired=(), boot=None):
     body = {"copy": copy, "members": members, "retired": list(retired)}
     if boot:
         body["secretsBoot"] = boot
-    out = subprocess.run(["go", "run", "."], cwd=os.path.join(ROOT, "ios", "interop", "rostervec"), check=True, capture_output=True,
-                         input=json.dumps(body).encode())
+    out = subprocess.run(["cargo", "run", "-q", "--locked", "-p", "ios-ci", "--", "rostervec"], cwd=os.path.join(ROOT, "rust"),
+                         check=True, capture_output=True, input=json.dumps(body).encode())
     return out.stdout.decode()
 
 
-# 1. byte for byte as Go: real keys, and strings with everything Go's encoder treats specially
+# 1. byte for byte as the kernel: real keys, and strings with everything Go's encoder treats specially
 ks = {r: (ec.generate_private_key(ec.SECP256R1()), ec.generate_private_key(ec.SECP256R1())) for r in S.KERNEL_ROLES + ["secrets"]}
 members = [{"role": r, "signingKey": pub(a), "agreementKey": pub(b)} for r, (a, b) in ks.items()]
 random.shuffle(members)
 for copy in ("blue", "green"):
-    assert S.roster_payload(copy, members) == go_payload(copy, members), copy
+    assert S.roster_payload(copy, members) == kernel_payload(copy, members), copy
 odd = [{"role": "z<b>&", "signingKey": "é  /+=", "agreementKey": "q\"\\é中"}, {"role": "a", "signingKey": "1", "agreementKey": "2"},
        {"role": "é", "signingKey": "x", "agreementKey": "y"}]
-assert S.roster_payload("blue", odd) == go_payload("blue", odd), (S.roster_payload("blue", odd), go_payload("blue", odd))
+assert S.roster_payload("blue", odd) == kernel_payload("blue", odd), (S.roster_payload("blue", odd), kernel_payload("blue", odd))
 
-# retired (sorted by role, then signing key) and secretsBoot, as Go writes them
+# retired (sorted by role, then signing key) and secretsBoot, as the kernel writes them
 ret = [{"role": "mover", "signingKey": "z" + pub(ks["mover"][0]), "agreementKey": "a"}, {"role": "merger", "signingKey": "k", "agreementKey": "b"},
        {"role": "mover", "signingKey": "a" + pub(ks["mover"][0]), "agreementKey": "c"}]
 boot = {"role": "secrets", "signingKey": "bs", "agreementKey": "ba"}
-assert S.roster_payload("green", members, ret, boot) == go_payload("green", members, ret, boot)
-assert S.roster_payload("green", members, [], None) == go_payload("green", members)
+assert S.roster_payload("green", members, ret, boot) == kernel_payload("green", members, ret, boot)
+assert S.roster_payload("green", members, [], None) == kernel_payload("green", members)
 
 # 2. kernel-roster: identities read through kernel-id (self-signed), the payload signed by the setup key and filed
 def answer(copy, ks, secrets_state):
@@ -74,7 +74,7 @@ def call(method, path, body=None):
 S.call = call
 S.kernel_roster()
 f = filed[0]
-assert f["copy"] == "blue" and f["payload"] == go_payload("blue", members), f
+assert f["copy"] == "blue" and f["payload"] == kernel_payload("blue", members), f
 assert sorted(m["role"] for m in json.loads(f["payload"])["members"]) == ["gullible", "identity", "merger", "minter", "mover", "notarizer", "notary", "secrets", "spawner"]
 setup_k.public_key().verify(base64.b64decode(f["setupSig"]), f["payload"].encode(), ec.ECDSA(hashes.SHA256()))
 
@@ -104,7 +104,7 @@ S.kernel_roster()
 r = json.loads(filed[-1]["payload"])
 assert r["copy"] == "blue" and r["retired"] == [old_mover] and "secretsBoot" not in r, r
 blue2 = [{"role": k, "signingKey": pub(a), "agreementKey": pub(b)} for k, (a, b) in ks2.items()]
-assert filed[-1]["payload"] == go_payload("blue", blue2, [old_mover])
+assert filed[-1]["payload"] == kernel_payload("blue", blue2, [old_mover])
 router["current"] = {"payload": filed[-1]["payload"], "sig": sign(root_k, filed[-1]["payload"].encode())}
 
 # a release onto green: every blue member but secrets retired, the old mover kept only while a line needs it (and only
@@ -121,7 +121,7 @@ assert r["copy"] == "green" and {m["role"]: m for m in r["members"]}["secrets"] 
 assert r["secretsBoot"] == {"role": "secrets", "signingKey": pub(gks["secrets"][0]), "agreementKey": pub(gks["secrets"][1])}, r
 assert sorted(map(json.dumps, r["retired"])) == sorted(map(json.dumps, want_retired)) and stranger not in r["retired"], r["retired"]
 green_members = [m for m in ({"role": k, "signingKey": pub(a), "agreementKey": pub(b)} for k, (a, b) in gks.items()) if m["role"] != "secrets"] + [serving_secrets]
-assert filed[-1]["payload"] == go_payload("green", green_members, want_retired, r["secretsBoot"])
+assert filed[-1]["payload"] == kernel_payload("green", green_members, want_retired, r["secretsBoot"])
 router["retiredInUse"] = []
 # a green secrets already set up doesn't take over
 answers.update(answer("green", gks, {"master": "M"}))
