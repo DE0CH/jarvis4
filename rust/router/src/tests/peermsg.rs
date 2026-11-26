@@ -1,4 +1,4 @@
-//! router/peermsg_test.go
+//! peermsg_test.go
 use crate::outcomes::{OUTCOME_APPROVED, OUTCOME_DENIED};
 use crate::peermsg::{
     DELIVER_PEER_HOOK, PeerNote, REQUEST_KIND_PEER, peer_attested, peer_direction, peer_note,

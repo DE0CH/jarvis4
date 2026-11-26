@@ -1,4 +1,4 @@
-//! router/claudeaccounts_test.go
+//! claudeaccounts_test.go
 use super::claudelogin::FakeAnthropic;
 use crate::claudeaccounts::{account_store_name, slug_from_email};
 use crate::claudelogin::account_uuid;

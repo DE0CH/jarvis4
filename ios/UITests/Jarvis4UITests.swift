@@ -541,7 +541,7 @@ final class Jarvis4UITests: JarvisUITestCase {
       }
     }
 
-    // ---- a batch (router/batches.go): filed as the web page files it, one Inbox entry with the caller's summary and
+    // ---- a batch (rust/router/src/batches.rs): filed as the web page files it, one Inbox entry with the caller's summary and
     // each item's signed details; the first is denied whole, the second allowed whole under one Face ID
     inboxBatch(deny: true)
     inboxBatch(deny: false)

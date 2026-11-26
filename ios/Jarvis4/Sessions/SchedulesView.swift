@@ -1,4 +1,4 @@
-// A session's wakeups, crons and watches (router/schedule.go, watches.go; a watch fires when its check passes): at the due time the router delivers the prompt into the session
+// A session's wakeups, crons and watches (rust/router/src/schedule.rs, watches.go; a watch fires when its check passes): at the due time the router delivers the prompt into the session
 // as a message, resuming it first when it is paused. Into a session holding a sensitive store, each delivery waits in
 // the Inbox as a pending message until Deyao delivers it (Face ID) or denies it, unless a per-kind message rule says
 // to deliver it (MessageReviewView). Only the session arms them (schedule-wakeup, schedule-cron: its own

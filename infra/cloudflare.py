@@ -18,10 +18,10 @@ Access apps:
   "Jarvis 4"         jarvis4.deyaochen.com          Deyao's email only (the app + web page)
   "Jarvis 4 setup"   jarvis4.deyaochen.com/setup    service token jarvis4-setup only (the setup session)
   "Jarvis 4 health"  jarvis4.deyaochen.com/healthz  service token jarvis2-health-probe only (Grafana's uptime probe,
-                                                    the same token as Jarvis 2's; router/healthz.go)
+                                                    the same token as Jarvis 2's; rust/router/src/healthz.rs)
   "Jarvis 4 devices" jarvis4.deyaochen.com/api/remotes, /api/sessions/*/start, /api/machine-signatures/verify and /api/sessions/*/chat-schedule:
                      Deyao's email, or ANY service token of the account (Deyao's paired OpenClaw/Paseo apps, hermit-jarvis);
-                     the router admits a token only when it is a paired device's or hermit-jarvis's (router/devices.go)
+                     the router admits a token only when it is a paired device's or hermit-jarvis's (rust/router/src/devices.rs)
   "Jarvis 4 kernel id" kernel-id.deyaochen.com      service token jarvis2-kernel-id only (setup sessions)
 Session machines don't come through Cloudflare at all (Fly's private network, docs/API.md).
 

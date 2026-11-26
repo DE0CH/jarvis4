@@ -1,4 +1,4 @@
-//! router/accountswap_test.go and router/accountswap_paseo_test.go
+//! accountswap_test.go and accountswap_paseo_test.go
 use super::claudelogin::{ACCT1, FakeAnthropic, now_ms, own_router, pair_of};
 use crate::accountswap::{
     SWAP_CHECK_WAIT_MS, SWAP_KILL_CMD, SWAP_LOGIN_WAIT_MS, SWAP_POLL_MS, SWAP_RC_WAIT_MS,

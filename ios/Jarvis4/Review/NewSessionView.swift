@@ -44,7 +44,7 @@ struct NewSessionView: View {
   @State private var content: Set<String> = []
   /// the router's store rows (each key's writer): the keys sessions wrote into the stores Start unlocks are shown
   @State private var storeRows: [StoreRowDTO] = []
-  /// the Claude accounts (GET api/claude-accounts, router/claudeaccounts.go): the default pre-picked; the session keeps it
+  /// the Claude accounts (GET api/claude-accounts, rust/router/src/claudeaccounts.rs): the default pre-picked; the session keeps it
   @State private var accounts: [JSON]?
   @State private var account = ""
   /// on the kernel (Jarvis 4, no core): the router files a kernel-source approval; Start opens its page here
@@ -211,7 +211,7 @@ struct NewSessionView: View {
     }
   }
 
-  /// content stores (router/content.go): each pulled into ~/content/<name>/ at every start; signed with the session
+  /// content stores (rust/router/src/content.rs): each pulled into ~/content/<name>/ at every start; signed with the session
   @ViewBuilder private var contentSection: some View {
     if !contentStores.isEmpty {
       Section {
@@ -329,7 +329,7 @@ struct NewSessionView: View {
     let want = picked.sorted(), rid = CoreCrypto.nonce()
     let title = label.trimmingCharacters(in: .whitespacesAndNewlines)
     do {
-      // a new line goes on the kernel once it serves (router/flows.go): no core key, a kernel-source approval
+      // a new line goes on the kernel once it serves (rust/router/src/flows.rs): no core key, a kernel-source approval
       let kernel = (try? await RouterClient.shared.kernelStatus())?.serves == true
       let key = try kernel ? "" : CoreTrust.key()
       busy = "Requesting…"

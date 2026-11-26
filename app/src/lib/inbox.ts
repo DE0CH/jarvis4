@@ -1,4 +1,4 @@
-// The Inbox (docs/API.md "Requests", router/inbox.go): everything waiting for the phone's Face ID that was asked
+// The Inbox (docs/API.md "Requests", rust/router/src/inbox.rs): everything waiting for the phone's Face ID that was asked
 // for somewhere else — a session, the web page, the setup session (Claude). Each entry opens the shell's secure page
 // for it, which shows (1) what will be signed, rendered from the signed content, (2) the API call the router
 // recorded and who made it, (3) the caller's own reason. This file renders the LIST's title from the entry's kind +
@@ -29,7 +29,7 @@ export function inboxTitle(it: InboxItem): string {
     case "restore": return "Restore store";
     case "new-session": return it.options?.restore ? "Restore session" : "New session";
   }
-  // a kind this build doesn't know (router/inbox_kinds_test.go keeps the list in step): say so, never guess
+  // a kind this build doesn't know (rust/router/src/tests/small.rs every_inbox_kind_is_known_to_the_apps keeps the list in step): say so, never guess
   return `Unknown request (${it.kind}): reload the page`;
 }
 
@@ -59,7 +59,7 @@ export function inboxRows(it: InboxItem, approvals: Approval[] = [], policy: Pol
       add("store", "Store", p.store);
       add("version", "Version", p.seq);
       return rows;
-    case "peer-message": // router/peermsg.go: the sender is the caller (From); the explanation gives the direction and why
+    case "peer-message": // rust/router/src/peermsg.rs: the sender is the caller (From); the explanation gives the direction and why
       add("to", "To", session);
       add("text", "Message", p.text);
       return rows;
@@ -95,13 +95,13 @@ export const denyRequest = (it: InboxItem) => api("DELETE", `api/requests/${it.i
 export const denyMessages = (ids: string[]) => api<{ ok: boolean; denied: string[] }>("POST", "api/messages/deny", { ids });
 /** Remove a session's per-kind message rule: the router stops using it at once */
 export const removeMessageRule = (id: string) => api("DELETE", `api/message-rules/${id}`);
-/** a peer message (router/peermsg.go): one tap delivers it, no Face ID (nothing is signed) */
+/** a peer message (rust/router/src/peermsg.rs): one tap delivers it, no Face ID (nothing is signed) */
 export async function approvePeer(it: InboxItem) {
   const r = await api<{ ok: boolean; state?: string; error?: string }>("POST", `api/requests/${it.id}/approve`);
   toast(r.ok ? "Delivered to the session." : r.error || "Not delivered", r.ok ? "ok" : "error");
   return r;
 }
-/** an API call a session's actions asked for (router/apicalls.go): the router runs it now, as Deyao. No Face ID here:
+/** an API call a session's actions asked for (rust/router/src/apicalls.rs): the router runs it now, as Deyao. No Face ID here:
  * a step that needs the core's signature asks for its own afterwards. */
 export async function approveCall(it: InboxItem) {
   const r = await api<{ ok: boolean; state: string; status: number; error?: string }>("POST", `api/requests/${it.id}/approve`);
@@ -109,7 +109,7 @@ export async function approveCall(it: InboxItem) {
   else toast(r.error || "The call didn't run", "error");
   return r;
 }
-/** an approved call's follow-ups (router/apicalls.go): the core requests it brought about (each Inbox item while it
+/** an approved call's follow-ups (rust/router/src/apicalls.rs): the core requests it brought about (each Inbox item while it
  * waits) and, while one may still come, until when */
 export type CallFollowups = {
   id: string; state: string; status?: number; error?: string;

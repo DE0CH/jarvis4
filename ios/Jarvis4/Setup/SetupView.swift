@@ -40,7 +40,7 @@ struct SetupView: View {
   @State private var unpinned = false
   /// the Recover asked for is alongside the serving core (standby until it hands over)
   @State private var alongside = false
-  /// this page sets up the NEXT core (blue/green, router/nextcore.go): every core call carries X-Jarvis2-Core: next, and
+  /// this page sets up the NEXT core (blue/green, rust/router/src/nextcore.rs): every core call carries X-Jarvis2-Core: next, and
   /// the only setup is a Recover alongside; its keys are pinned once it serves (AppModel.adoptNext)
   let next: Bool
   init(next: Bool = false) { self.next = next }

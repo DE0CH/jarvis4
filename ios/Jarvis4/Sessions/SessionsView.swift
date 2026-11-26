@@ -142,7 +142,7 @@ struct SessionRow: View {
       }
       Text(line1).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
       if busy == nil, m.state == "failed" {
-        // why it failed, in the list too (router/failures.go): the reason's start, the rest on the session's page
+        // why it failed, in the list too (rust/router/src/failures.rs): the reason's start, the rest on the session's page
         if m.lost != nil {
           StatusPill(text: "Stopped outside Jarvis", color: .red)
             .accessibilityIdentifier("lost-row-\(m.id)")

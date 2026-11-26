@@ -1,4 +1,4 @@
-//! The harnesses a session can run (the cert's options.harness; router/harness.go has the list Deyao picks from):
+//! The harnesses a session can run (the cert's options.harness; rust/router/src/harness.rs has the list Deyao picks from):
 //!   claude        the `claude --remote-control` host in tmux (harness-claude.sh); Jarvis's messages go in through
 //!                 its channel
 //!   opencode      OpenCode driven by a Paseo daemon (harness-opencode.sh)

@@ -22,7 +22,7 @@ import { colours, parseScreen, TERM_BG, type Run } from "../ui/ansi";
 import { TermBody, useTermFrame } from "./termFrame";
 
 export type TermSpec = { id: string; title: string };
-// the keys the router passes to tmux (router/terminal.go tmuxKeys)
+// the keys the router passes to tmux (rust/router/src/terminal.rs tmuxKeys)
 const KEYS: [string, string][] = [["Enter", "Enter"], ["Esc", "Escape"], ["Tab", "Tab"], ["⇧Tab", "BTab"], ["↑", "Up"], ["↓", "Down"], ["←", "Left"], ["→", "Right"], ["⌫", "BSpace"], ["^C", "C-c"], ["^D", "C-d"], ["^R", "C-r"], ["^U", "C-u"], ["PgUp", "PageUp"], ["PgDn", "PageDown"]];
 const BAR = "#161a22";
 const FONT = 12, CW = FONT * 0.602, LH = Math.round(FONT * 1.25);
@@ -92,7 +92,7 @@ export function TerminalPage({ spec }: { spec: TermSpec }) {
     let alive = true, next: any = null;
     const tick = async () => {
       try {
-        // the machine pushes its own pane (`at`): viewing needs no grant (router/terminal.go)
+        // the machine pushes its own pane (`at`): viewing needs no grant (rust/router/src/terminal.rs)
         const f = await api<{ screen: string; cursor: string; at?: string }>("GET", `api/sessions/${id}/terminal`);
         if (!alive) return;
         setErr(null);

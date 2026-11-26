@@ -8,7 +8,7 @@
 # workflow's pin job, infra/kernel-pin.py: the release's builds and the serving copy's images for the rest, replicas 1,
 # and the hold `jarvis2/kernel-release: pending`). Once Deyao signs that copy's roster the router flips: every serving
 # component hands over and freezes, the notarizer's, the spawner's and secrets' state moves to the other copy
-# (router/kernelflip.go). Then infra/setup.py kernel-flipped names the new serving copy in active-kernel.txt, deletes its
+# (rust/router/src/kernelflip.rs). Then infra/setup.py kernel-flipped names the new serving copy in active-kernel.txt, deletes its
 # hold and scales the old copy to zero until the next release lands on it. The copy label is `color` (a Deployment's
 # selector can't change, and secrets-blue/-green had it before the copies). A copy that pins no build (`:latest`) has
 # never been released: the pin job pins the serving one in place (the bootstrap, RUNBOOK "The first rollout of the two

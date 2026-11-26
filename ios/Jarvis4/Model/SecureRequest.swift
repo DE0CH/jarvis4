@@ -21,11 +21,11 @@ enum SecureRequest: Identifiable, Equatable, Hashable {
   case grant(GrantAsk, inbox: String? = nil)
   case unlock(session: String, label: String, inbox: String? = nil)
   case repoKey(action: String, repo: String, sensitive: Bool, inbox: String? = nil, into: RepoInto? = nil)
-  /// a batch from the Inbox (router/batches.go): its items on one page, allowed under one Face ID
+  /// a batch from the Inbox (rust/router/src/batches.rs): its items on one page, allowed under one Face ID
   case batch(id: String)
   /// a store put back to an earlier version (core/history.go)
   case restore(store: String, seq: Int, inbox: String? = nil)
-  /// an API call a session's actions asked for (router/apicalls.go): its own sheet, which then follows the core
+  /// an API call a session's actions asked for (rust/router/src/apicalls.rs): its own sheet, which then follows the core
   /// requests the call brings about (APICallReviewView)
   case apiCall(id: String)
   /// a session's pending messages (router: per-message delivery approval): every one listed, delivered under one
@@ -71,7 +71,7 @@ enum SecureRequest: Identifiable, Equatable, Hashable {
     }
   }
 
-  /// the page an Inbox entry opens (router/inbox.go requestItem / approvalItem: open {kind, options})
+  /// the page an Inbox entry opens (rust/router/src/inbox.rs requestItem / approvalItem: open {kind, options})
   static func fromInbox(_ it: InboxItem) -> SecureRequest? {
     let o = it.openOptions
     switch it.openKind {

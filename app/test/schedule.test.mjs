@@ -1,5 +1,5 @@
 // npm test: what makes a session's card say "scheduled" (lib/schedule.ts), the same rule as the router's willWake
-// (router/schedule.go) that the live dashboard and the chat use.
+// (rust/router/src/schedule.rs) that the live dashboard and the chat use.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { hasSchedule } from "../src/lib/schedule.ts";

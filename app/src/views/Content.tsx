@@ -1,4 +1,4 @@
-// Content stores (GET api/content; router/content.go): named folders of files on the Storage Box, the file counterpart
+// Content stores (GET api/content; rust/router/src/content.rs): named folders of files on the Storage Box, the file counterpart
 // of the key stores. A session picked with one in New session pulls it into ~/content/<name>/ at every start and
 // pushes its changes back with `content-sync push <name>`. Here: list, make, delete a store; its files on its own page.
 import { useEffect, useState } from "react";

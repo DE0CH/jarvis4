@@ -1,4 +1,4 @@
-//! router/lifecycle_test.go
+//! lifecycle_test.go
 use crate::awsread::AwsInstanceView;
 use crate::lifecycle::{
     FlyEvent, FlyLogLine, FlyLogsRefused, LcEntry, LcOp, LcRec, now_text, parse_at,

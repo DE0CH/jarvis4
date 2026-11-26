@@ -1,4 +1,4 @@
-//! router/remote_test.go
+//! remote_test.go
 use crate::autopilot::Liveness;
 use crate::grants::ExecResult;
 use crate::harness::{default_model, proxy_login_harness, session_model};

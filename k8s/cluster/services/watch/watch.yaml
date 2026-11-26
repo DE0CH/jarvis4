@@ -1,5 +1,5 @@
 # Watch check runner (services/watch): runs the check scripts of the sessions' watches (conditional wakeups) for the
-# router (router/watches.go), which calls it with each due check and decides what its exit means. A check is the
+# router (rust/router/src/watches.rs), which calls it with each due check and decides what its exit means. A check is the
 # session's own script; it gets NO secrets (docs/DECISIONS.md 101): this pod holds none, mounts no volume and no
 # service account token, and its NetworkPolicy lets it reach only DNS and public addresses (not the router, the core
 # or any other pod), so a check can do no more than any stranger on the internet. Image pinned by its digest by

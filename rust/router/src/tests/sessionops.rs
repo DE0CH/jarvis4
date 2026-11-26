@@ -1,4 +1,4 @@
-//! router/sessionops_test.go
+//! sessionops_test.go
 use crate::registry::Registry;
 use crate::sessionops::{env_key_allowed, normalize_env_patch, restart_continues};
 use crate::testutil::*;

@@ -1,4 +1,4 @@
-//! router/leases_test.go
+//! leases_test.go
 use crate::leases::{
     LEASE_DEFAULT_TTL, LEASE_MIN_TTL, LeaseError, LeaseOpts, LeaseState, lease_granted_text,
     signed_prompt,

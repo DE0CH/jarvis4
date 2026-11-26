@@ -1,4 +1,4 @@
-//! router/snapsafe_test.go
+//! snapsafe_test.go
 use crate::nethttp::{Req, W, write_json};
 use crate::router::Router;
 use crate::testutil::*;

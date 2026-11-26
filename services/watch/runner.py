@@ -1,5 +1,5 @@
 """Watch check runner (k8s/services/apps/watch/watch.yaml): runs a session's watch check script (bash) and answers its exit code and
-output. The router (router/watches.go) is its only caller and decides everything else: when a check is due, what an
+output. The router (rust/router/src/watches.rs) is its only caller and decides everything else: when a check is due, what an
 exit means, the delivery into the session.
 
 It holds nothing: no secrets, no service account, no volume, and its NetworkPolicy lets it reach only DNS and the public

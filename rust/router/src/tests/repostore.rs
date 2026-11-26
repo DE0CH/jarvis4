@@ -1,4 +1,4 @@
-//! router/repostore_test.go: a repo a session asks for lands in that session in the same approval (Deyao, 2026-10-15;
+//! repostore_test.go: a repo a session asks for lands in that session in the same approval (Deyao, 2026-10-15;
 //! DECISIONS 182): the request names the asking session; the finished deploy key files the add-store approval at once
 //! and names it to the phone, which signs it under the same Face ID.
 use crate::inbox::{Caller, INBOX_TTL, InboxRequest, Origin, REQUEST_KIND_REPO, RequestParams};

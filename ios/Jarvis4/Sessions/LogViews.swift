@@ -1,5 +1,5 @@
 // A session's Log, read only, beside the terminal: ONE stream, in time order, of everything the router keeps about the
-// session's machines (GET api/sessions/:id/events, router/sessionevents.go): the supervisor's lines (boot, commands it
+// session's machines (GET api/sessions/:id/events, rust/router/src/sessionevents.rs): the supervisor's lines (boot, commands it
 // ran, prompts it delivered, the snapshot, with no secrets in it) and each boot, pause, resume, upgrade and destroy
 // from its start to its end, with the router's steps and what Fly did. Each entry has its time and a source tag
 // (Supervisor, Router, Fly) and, inside an operation, the operation's kind. Kept for the session's life, so it opens for

@@ -1,4 +1,4 @@
-//! router/snapdirect_test.go (snapdirect_live_test.go, against the real bucket, is left out: it needs the bucket's
+//! snapdirect_test.go (snapdirect_live_test.go, against the real bucket, is left out: it needs the bucket's
 //! credential in the env)
 use crate::archive::CHANGES_FILE;
 use crate::objstore::{MemObjects, ObjDirect, ObjReader, ObjStore};

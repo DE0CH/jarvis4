@@ -9,7 +9,7 @@ struct Session: Identifiable, Equatable, Hashable {
   var state: String { j["state"].string ?? "" }
   /// Resume brings it back: paused, or failed with no machine (a failed or cut-off start; router Resume)
   /// a failed session with a machine finishes its pause first (router Resume, DECISIONS 181); not one whose last
-  /// machine left no snapshot (the router refuses: it would start empty — router/snapsafe.go)
+  /// machine left no snapshot (the router refuses: it would start empty — rust/router/src/snapsafe.rs)
   /// and a frozen fabric session (router timemachine.go): its Resume thaws it, its machine going on where it stopped
   var resumable: Bool { ((state == "paused" || state == "failed") && noSnapshot == nil) || state == "frozen" }
   /// a fabric session in the time machine: since when, and until when (anything that arrives ends it sooner)
@@ -17,11 +17,11 @@ struct Session: Identifiable, Equatable, Hashable {
   var frozenUntil: Date? { j["timeMachine"]["until"].string?.isoDate }
   var status: String? { j["status"].text }
   var harness: String { j["harness"].text ?? "claude" }
-  /// the Claude account it runs on (router/claudeaccounts.go), fixed when it was made
+  /// the Claude account it runs on (rust/router/src/claudeaccounts.rs), fixed when it was made
   var claudeAccount: String? { j["claudeAccount"].text }
   var model: String? { j["model"].text }
   var region: String? { j["region"].text }
-  /// where its machines run (router/awsrunner.go): aws | fly | fabric
+  /// where its machines run (rust/router/src/awsrunner.rs): aws | fly | fabric
   var runner: String? { j["runner"].text }
   var guest: String? { j["guest"].text }
   var size: String? { j["size"].text }
@@ -48,14 +48,14 @@ struct Session: Identifiable, Equatable, Hashable {
   var wakeups: [Wakeup] { j["wakeups"].array.map(Wakeup.init) }
   var crons: [Cron] { j["crons"].array.map(Cron.init) }
   var watches: [Watch] { j["watches"].array.map(Watch.init) }
-  /// an aviary session's chat schedules (magpie's, reported by hermit-jarvis): the soonest next fire (router/schedule.go ChatSchedule)
+  /// an aviary session's chat schedules (magpie's, reported by hermit-jarvis): the soonest next fire (rust/router/src/schedule.rs ChatSchedule)
   var chatScheduleAt: Date? { j["chatScheduleIso"].string?.isoDate }
   /// will wake by itself: the router's willWake, which the live dashboard and the chat read (app/src/lib/schedule.ts)
   var hasSchedule: Bool { !wakeups.isEmpty || !crons.isEmpty || !watches.isEmpty || chatScheduleAt != nil }
   var isTaskLine: Bool { harness.hasPrefix("task:") }
   /// OpenCode and OpenClaw sessions aren't in the Claude app: their primary action is the Remote page
   var hasRemote: Bool { harness == "opencode" || harness == "openclaw" || harness == "paseo-claude" || harness == "aviary" }
-  /// what the Claude app calls it (router/discord.go sessionTitle): the app's title, a CLI name, the label, the AI title
+  /// what the Claude app calls it (rust/router/src/discord.rs sessionTitle): the app's title, a CLI name, the label, the AI title
   var title: String {
     for k in ["serverTitle", "userTitle", "label", "aiTitle", "title", "name"] { if let t = j[k].text { return t } }
     return id
@@ -69,7 +69,7 @@ struct Session: Identifiable, Equatable, Hashable {
   }
   /// a memory-starvation episode the router is watching (absent once it is over)
   var memAlert: MemAlert? { j["memAlert"].object == nil ? nil : MemAlert(j: j["memAlert"]) }
-  /// what a running session's harness has running besides itself (router/registry.go Workers, from Claude Code's
+  /// what a running session's harness has running besides itself (rust/router/src/registry.rs Workers, from Claude Code's
   /// hooks): subagents, and every other background job by Claude Code's type label; nil on an image from before
   var workers: (subagents: Int, jobs: [String: Int])? {
     guard j["workers"].object != nil else { return nil }
@@ -82,7 +82,7 @@ struct Session: Identifiable, Equatable, Hashable {
     guard let a = j["memory"]["availMb"].int, let t = j["memory"]["totalMb"].int, t > 0 else { return nil }
     return (a, t)
   }
-  /// a low-disk episode the router is watching (router/disk.go; absent once it is over)
+  /// a low-disk episode the router is watching (rust/router/src/disk.rs; absent once it is over)
   var diskAlert: DiskAlert? { j["diskAlert"].object == nil ? nil : DiskAlert(j: j["diskAlert"]) }
   /// the latest disk sample of a running machine: its volume when it has one, else its root filesystem
   var disk: (availMb: Int, totalMb: Int, volume: Bool)? {
@@ -95,9 +95,9 @@ struct Session: Identifiable, Equatable, Hashable {
   var noSnapshot: String? { j["noSnapshot"].text }
   /// the final snapshot failed and the machine (no volume) is kept: Pause again or Destroy anyway
   var snapshotFailed: String? { j["snapshotFailed"].text }
-  /// when it became failed (router/failures.go; `error` says why)
+  /// when it became failed (rust/router/src/failures.rs; `error` says why)
   var failedAt: Date? { j["failedAt"].string?.isoDate }
-  /// its machine stopped or went away without Jarvis doing it (router/lostmachine.go)
+  /// its machine stopped or went away without Jarvis doing it (rust/router/src/lostmachine.rs)
   var lost: LostMachine? { j["lost"].object == nil ? nil : LostMachine(j: j["lost"]) }
   /// the router's last restart / upgrade / account-switch job (kind, phase, error)
   var wakeKind: String? { j["wake"]["kind"].text }
@@ -128,7 +128,7 @@ struct MemAlert: Equatable, Hashable {
   var nextGuest: String? { j["nextGuest"].text }
 }
 
-/// a low-disk episode (router/disk.go): the disk now, and whether More disk can grow it
+/// a low-disk episode (rust/router/src/disk.rs): the disk now, and whether More disk can grow it
 struct DiskAlert: Equatable, Hashable {
   let j: JSON
   var since: Date? { j["since"].string?.isoDate }
@@ -149,7 +149,7 @@ struct Wakeup: Identifiable, Equatable, Hashable {
   var at: Date? { j["at"].double.map { Date(timeIntervalSince1970: $0 / 1000) } ?? j["atIso"].string?.isoDate }
 }
 
-/// a condition the router's watch runner checks on an interval (router/watches.go): met, it wakes the session
+/// a condition the router's watch runner checks on an interval (rust/router/src/watches.rs): met, it wakes the session
 struct Watch: Identifiable, Equatable, Hashable {
   let j: JSON
   var id: String { name }
@@ -185,7 +185,7 @@ struct Approval: Identifiable, Equatable, Hashable {
   var session: String? { j["session"].text }
 }
 
-/// an Inbox entry (router/inbox.go): a request waiting for the phone, or one of the router's approvals
+/// an Inbox entry (rust/router/src/inbox.rs): a request waiting for the phone, or one of the router's approvals
 struct InboxItem: Identifiable, Equatable, Hashable {
   let j: JSON
   var id: String { j["id"].string ?? "" }
@@ -200,7 +200,7 @@ struct InboxItem: Identifiable, Equatable, Hashable {
   var expires: Date? { j["expires"].string?.isoDate }
   var openKind: String { j["open"]["kind"].string ?? "" }
   var openOptions: JSON { j["open"]["options"] }
-  /// the batch it was filed in (router/batches.go)
+  /// the batch it was filed in (rust/router/src/batches.rs)
   var batch: String? { j["batch"].text }
   /// api-call: what the call does, in words the router renders from the call (e.g. an account switch)
   var does: String? { j["does"].text }
@@ -212,7 +212,7 @@ struct InboxItem: Identifiable, Equatable, Hashable {
   }
 }
 
-/// several Inbox items a caller filed together (router/batches.go): one Inbox entry, one review page, one Face ID
+/// several Inbox items a caller filed together (rust/router/src/batches.rs): one Inbox entry, one review page, one Face ID
 struct InboxBatch: Identifiable, Equatable, Hashable {
   let j: JSON
   var id: String { j["id"].string ?? "" }
@@ -502,7 +502,7 @@ struct SessionEvent: Equatable, Hashable, Identifiable {
   var text: String { j["text"].string ?? "" }
 }
 
-/// a session's machine that stopped outside Jarvis (router/lostmachine.go LostMachine)
+/// a session's machine that stopped outside Jarvis (rust/router/src/lostmachine.rs LostMachine)
 struct LostMachine: Equatable, Hashable {
   let j: JSON
   var machine: String { j["machine"].string ?? "" }

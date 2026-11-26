@@ -1,4 +1,4 @@
-//! router/outcomes_test.go
+//! outcomes_test.go
 use crate::inbox::{Caller, Origin, prune_requests};
 use crate::outcomes::{
     DELIVER_OUTCOME_HOOK, Outcome, OutcomeItem, outcome_attested, outcomes_in_flight,

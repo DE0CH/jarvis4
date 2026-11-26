@@ -1,4 +1,4 @@
-//! router/resumefallback_test.go: a resume the core won't answer by itself becomes the resume-upgrade approval in the
+//! resumefallback_test.go: a resume the core won't answer by itself becomes the resume-upgrade approval in the
 //! Inbox (Deyao, 2026-10-15), and an approved API call's review sheet follows the core requests the call brings about
 //! (apicalls.rs follow-ups).
 use crate::router::Config;

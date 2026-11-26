@@ -219,7 +219,7 @@ if let spk {
   check(code == 200 && String(decoding: body, as: UTF8.self).contains("fly-token-set"), "the spawner opens the Fly token the app sealed to it")
 }
 
-// ---- a key a restore removed (router/storeversions.go): its delete marker carries secrets' receipt, which a Recover
+// ---- a key a restore removed (rust/router/src/storeversions.rs): its delete marker carries secrets' receipt, which a Recover
 // checks against the secrets the kit derives ----
 let (rmCode, rmBody) = call("/stores/write-key", ["store": "default", "key": "B", "delete": true, "writer": "replay"])
 check(rmCode == 200, "secrets removes a key for a restore (writer replay)")

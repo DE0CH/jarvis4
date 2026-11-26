@@ -1,4 +1,4 @@
-//! A WireGuard device in userspace that serves HTTP on one TCP port of its tunnel address (router/wg.go and
+//! A WireGuard device in userspace that serves HTTP on one TCP port of its tunnel address (wgserve.rs and
 //! awsgw.go's serveWG/serveAWSWG): boringtun does WireGuard, smoltcp the tunnel's TCP/IP, and every connection a
 //! peer opens is handed to an HTTP handler (hyper) as a stream. No kernel interface, no privileges: the pod only
 //! sends and receives UDP.
@@ -40,7 +40,7 @@ pub struct PeerConf {
     pub keepalive: Option<u16>,
 }
 
-/// what a wg.conf says (router/wg.go parseWG)
+/// what a wg.conf says (wgserve.rs parseWG)
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct WgConf {
     pub address: String,
@@ -130,7 +130,7 @@ fn in_prefix(ip: IpAddr, (net, len): (IpAddr, u8)) -> bool {
     }
 }
 
-/// a TCP SYN (not a SYN-ACK) to port, in an IPv4 or IPv6 packet (router/wg.go isSynTo)
+/// a TCP SYN (not a SYN-ACK) to port, in an IPv4 or IPv6 packet (wgserve.rs isSynTo)
 pub fn is_syn_to(p: &[u8], port: u16) -> bool {
     let tcp = match p.first().map(|b| b >> 4) {
         Some(6) if p.len() >= 40 && p[6] == 6 => &p[40..],

@@ -1,4 +1,4 @@
-// An API call a session's actions asked to run as Deyao (router/apicalls.go, kind "api-call") on its own review page,
+// An API call a session's actions asked to run as Deyao (rust/router/src/apicalls.rs, kind "api-call") on its own review page,
 // as the iPhone app's sheet (ios/Jarvis2/Review/APICallReviewView.swift): the call itself (method, path, body), who
 // asked, and the caller's reason. Approve runs it as him (no Face ID). The page then stays for the core requests the
 // call brought about (a resume call → the resume-upgrade approval): the router links each to the call and says while

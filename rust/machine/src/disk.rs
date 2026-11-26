@@ -1,4 +1,4 @@
-//! Disk: the machine's own disk report (router/disk.go), every 30 s: the root filesystem and, on a machine with a
+//! Disk: the machine's own disk report (rust/router/src/disk.rs), every 30 s: the root filesystem and, on a machine with a
 //! volume (volume.rs), the volume at /data that holds the session's state.
 
 use crate::client::Client;

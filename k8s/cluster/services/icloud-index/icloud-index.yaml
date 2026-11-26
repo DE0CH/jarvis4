@@ -1,7 +1,7 @@
 # The iCloud Drive index (services/icloud-index): every file in Deyao's iCloud Drive searchable by name, folder and
 # content (document text, OCR of scans and photos, video frames, speech). Identity-level (Deyao, 2026-10-13): the
 # router forwards Deyao's app (/api/icloud/*) and only sessions holding the identity store (/m/api/icloud/*,
-# router/searchsvc.go) here; nothing else can reach it (NetworkPolicy below: only the router's pods). It parses untrusted
+# rust/router/src/searchsvc.rs) here; nothing else can reach it (NetworkPolicy below: only the router's pods). It parses untrusted
 # files (PDF, office, images, ffmpeg) and uses up to 2 GiB, so it runs only on the services node (nodeSelector).
 # Only ONE iCloud index may run against the Drive and its AI budget: Jarvis 2's (on its services box) stops before this
 # one starts, or the ledger in each copy lets both spend the rest of the budget.

@@ -1,4 +1,4 @@
-// The kernel's routes (router/kernelline.go): its status, the root grant, and secrets' own API relayed as is
+// The kernel's routes (rust/router/src/kernelline.rs): its status, the root grant, and secrets' own API relayed as is
 // (/api/kernel/secrets/…), and the roster (the kernel's components, signed by the setup key, then by the root key).
 // Every document of secrets is checked here against the keys this iPhone pinned (KernelTrust), the root key's roster,
 // or, before a claim, the setup session's pending roster.

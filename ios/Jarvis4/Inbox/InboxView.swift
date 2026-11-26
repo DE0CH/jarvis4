@@ -3,7 +3,7 @@
 // feature, session: the router's record; the review page renders the exact facts from the signed content), who asked,
 // when, the call, and the caller's reason in its own words.
 // Review opens the page for it; Deny (a swipe or the page's button) drops it. An API call a session's actions asked
-// for (router/apicalls.go) opens its own sheet (APICallReviewView): the call, who asked, the reason; Approve runs it as
+// for (rust/router/src/apicalls.rs) opens its own sheet (APICallReviewView): the call, who asked, the reason; Approve runs it as
 // Deyao (no Face ID), and the sheet stays up for the approvals the call brings about.
 import SwiftUI
 
@@ -93,7 +93,7 @@ private struct InboxRow: View {
   private var callTarget: String { "\(it.params["method"].string ?? "") \(it.params["path"].string ?? "")" }
 
   private func review() {
-    // an upward peer message (router/peermsg.go): one tap delivers it, no Face ID (nothing is signed)
+    // an upward peer message (rust/router/src/peermsg.rs): one tap delivers it, no Face ID (nothing is signed)
     if it.kind == "peer-message" {
       Task {
         let to = it.sessionName ?? it.session ?? "the session"

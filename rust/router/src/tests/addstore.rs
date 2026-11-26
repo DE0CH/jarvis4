@@ -1,4 +1,4 @@
-//! router/addstore_test.go: two add-stores pending for one running session, both approved (2026-10-13: identity and
+//! addstore_test.go: two add-stores pending for one running session, both approved (2026-10-13: identity and
 //! yyc for one session; the session ended with only the store answered last). Whatever order and timing the phone
 //! answers in, the session ends with both stores: with a core that answers every add-store onto the newest cert, and,
 //! with the production core that doesn't, by filing the stale one again rather than storing an answer that drops a

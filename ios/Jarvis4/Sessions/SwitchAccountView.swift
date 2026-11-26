@@ -1,4 +1,4 @@
-// Switch a session's Claude account (router/accountswap.go, POST api/sessions/{id}/account): a sheet from the session's
+// Switch a session's Claude account (rust/router/src/accountswap.rs, POST api/sessions/{id}/account): a sheet from the session's
 // More menu. It lists the other accounts (one not signed in or with an expired login can't be picked) and
 // whether to type "continue" into its chat once Claude is back. A running session switches now (the
 // router installs the new account's login under the running Claude, in the same conversation: its `wake` job, kind "account",

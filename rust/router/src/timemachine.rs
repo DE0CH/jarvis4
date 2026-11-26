@@ -10,7 +10,7 @@
 //!
 //! The machine's command waits through it all (it is frozen with the sandbox) and then reads why it came back
 //! (GET /m/api/time-machine). Wakeups and crons stay as they are; the time machine is one more way to wait.
-//! (router/timemachine.go, ported with its later fixes: 4c8b49a0, 0e549d2e.)
+//! (timemachine.rs, ported with its later fixes: 4c8b49a0, 0e549d2e.)
 
 use crate::http::Registrar;
 use crate::nethttp::write_json;

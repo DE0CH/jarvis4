@@ -1,4 +1,4 @@
-//! router/claudestores_test.go
+//! claudestores_test.go
 use super::claudeaccounts::sign_in;
 use super::claudelogin::FakeAnthropic;
 use crate::claudelogin::for_machine;

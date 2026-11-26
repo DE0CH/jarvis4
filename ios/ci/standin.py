@@ -11,7 +11,7 @@ S3 stand-in (rclone serve s3), seeded in exactly infra/setup.py's format by infr
                                                   sensitive/ marker says it is)
                           jarvis2-backup-tampered default signed by another key → Recover must refuse
                           jarvis2-backup-nocore   no core store → Recover still works (the token comes later)
-                          jarvis2-backup-keys     key backups only (keys/<store>/<key>.json, router/storedocs.go's
+                          jarvis2-backup-keys     key backups only (keys/<store>/<key>.json, rust/router/src/storedocs.rs's
                                                   format), laid over jarvis2-backup-ci's stores at a Recover: default's
                                                   OTHER rewritten (setup), GITHUB_TOKEN deleted, OLD older than the
                                                   store's backup (ignored), SESSION_KEY written by a session's machine (a
@@ -107,7 +107,7 @@ def iso(t):
 
 
 def key_backups(d, setup, s3, master, setup_pem, dump):
-    """jarvis2-backup-keys: key backups as router/storedocs.go writes them (the router puts them; here written directly)"""
+    """jarvis2-backup-keys: key backups as rust/router/src/storedocs.rs writes them (the router puts them; here written directly)"""
     name = "jarvis2-backup-keys"
     try:
         s3.create_bucket(Bucket=name)
@@ -141,7 +141,7 @@ def key_backups(d, setup, s3, master, setup_pem, dump):
         w = {"by": "setup", "sig": sign(setup_key, text), "cert": None}
         if writer == "machine":
             w = {"by": "machine", "sig": sign(machine, text), "cert": cert_doc}
-        if writer == "restore":  # a phone-approved restore: the core's signed receipt (router/storerestore.go)
+        if writer == "restore":  # a phone-approved restore: the core's signed receipt (rust/router/src/storerestore.rs)
             rc = json.dumps({"kind": "store-restore-approved", "pending": "p", "store": store, "to": 3, "remove": [],
                              "put": [{"key": key, "e": e, "dataSha256": dsha, "backupSha256": bsha}]})
             w = {"by": "restore", "receipt": {"payload": rc, "sig": sign(core_sig, rc)}}

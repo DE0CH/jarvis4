@@ -77,7 +77,7 @@ resource "aws_iam_user_policy" "spawner" {
 # The router's read-only user: the instances (lost machines, the lifecycle log), the costs (the budget, router/
 # awsbudget.go: every instance, volume, snapshot and Elastic IP for the live estimate; Cost Explorer's billed figure
 # as the cross-check; the price list) and the session instances' serial consoles (their logs to Grafana,
-# router/awslogs.go; the console carries no secret: the machine writes only its public keys there)
+# rust/router/src/awslogs.rs; the console carries no secret: the machine writes only its public keys there)
 resource "aws_iam_user" "router" {
   provider = aws.sin # IAM is global; any region's provider
   name     = "jarvis4-router-read"
@@ -104,7 +104,7 @@ resource "aws_iam_user_policy" "router" {
         Condition = { Null = { "aws:ResourceTag/jarvis4_source" = "false" } }
       },
       {
-        # the budget's estimate counts the fabric's image bucket (router/awsbudget.go AWS_BUDGET_BUCKETS)
+        # the budget's estimate counts the fabric's image bucket (rust/router/src/awsbudget.rs AWS_BUDGET_BUCKETS)
         Sid      = "SizeOfTheFabricsImageBucket"
         Effect   = "Allow"
         Action   = "s3:ListBucket"

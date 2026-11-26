@@ -1,5 +1,5 @@
 # aws-log-shipper: the AWS session machines' logs to Grafana Cloud (docs/DESIGN.md "Logs and metrics", docs/PLAN-aws.md
-# "Logs"), as the Fly app jarvis2-log-shipper ships the Fly machines'. The router (router/awslogs.go) is its only
+# "Logs"), as the Fly app jarvis2-log-shipper ships the Fly machines'. The router (rust/router/src/awslogs.rs) is its only
 # client: it pushes each machine's output and host journal (which the machine sends it, signed: rust/machine/src/output.rs) and
 # each instance's serial console (which it reads with its read-only AWS key), labelled instance, aws_region, session
 # and source, to Loki's push API here. Alloy sets box="aws" on every line (whatever the router sent), replaces the

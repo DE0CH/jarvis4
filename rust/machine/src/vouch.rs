@@ -167,7 +167,7 @@ pub fn ensure_clean_env() -> Result<()> {
 
 // ---- the settings the cert vouches for --------------------------------------------------------------------------
 
-/// Options.Config (router/vouch.go builds it, the app's shell shows and checks it before Face ID)
+/// Options.Config (rust/router/src/vouch.rs builds it, the app's shell shows and checks it before Face ID)
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct SessionConfig {
@@ -399,7 +399,7 @@ pub fn fetch_exceptions(c: &Client) -> FormatExceptions {
     check_exceptions(&ex)
 }
 
-/// The tunnel proof (router/remote.go): the router's proof for the session id, which the cf-tunnel Worker asks of an
+/// The tunnel proof (rust/router/src/remote.rs): the router's proof for the session id, which the cf-tunnel Worker asks of an
 /// agent that registers it; fetched at boot over the signed /m channel. None = no TUNNEL_AGENT_SECRET.
 pub fn tunnel_proof(c: &Client) -> String {
     #[derive(Deserialize, Default)]
@@ -608,7 +608,7 @@ pub fn task_vouched_env(v: &Vouched) -> Vec<String> {
     out
 }
 
-/// router/tasks.go paramEnv
+/// rust/router/src/tasks.rs paramEnv
 pub fn param_value(v: &serde_json::Value) -> String {
     use serde_json::Value;
     match v {

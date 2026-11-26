@@ -327,7 +327,7 @@ private struct SnapshotProblemSection: View {
   }
 }
 
-/// its machine stopped outside Jarvis (router/lostmachine.go): what happened, when, what is kept, and one Resume
+/// its machine stopped outside Jarvis (rust/router/src/lostmachine.rs): what happened, when, what is kept, and one Resume
 private struct LostMachineSection: View {
   @Environment(AppModel.self) private var model
   let m: Session

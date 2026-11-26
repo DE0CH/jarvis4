@@ -1,4 +1,4 @@
-//! router/linestate_test.go
+//! linestate_test.go
 use crate::core::CoreClient;
 use crate::linestate::{LINE_SEQ_HEADER, LineKeeper};
 use crate::nethttp::write_json;

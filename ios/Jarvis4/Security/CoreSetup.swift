@@ -12,7 +12,7 @@
 //   keys/<store>/<key>.json {kind "key-backup", store, key, deleted, sealed {e,data} | null, backupSha256, e,
 //                         dataSha256, writer {by "setup"|"machine"|"restore", sig, cert?, receipt?}, core (the core's
 //                         identity), explanation, at (RFC 3339)}: one key, written after the whole-store backups
-//                         (router/storedocs.go, storerestore.go). Its writer signed Checks.writerText (backupSha256 =
+//                         (rust/router/src/storedocs.rs, storerestore.go). Its writer signed Checks.writerText (backupSha256 =
 //                         sha256(sealed.e + "\n" + sealed.data)): the setup key, or a machine whose cert a core signed whose
 //                         identity the box key signed; or a phone-approved restore, whose receipt that core signed. Sealed to the master
 //                         key (info "jarvis2/backup", "<store>\n<key>" as associated data) → the value's raw bytes.
@@ -66,10 +66,10 @@ enum CoreSetup {
   struct BackupObject: Decodable { let key: String; let body: String }
   struct Signed: Decodable { let doc: String; let sig: String }
   struct BackupDoc: Decodable { let kind: String; let name: String; let sensitive: Bool; let sealed: [String: String]; var at: Double? = nil }
-  /// keys/<store>/<key>.json (router/storedocs.go)
+  /// keys/<store>/<key>.json (rust/router/src/storedocs.rs)
   struct KeyBackup: Decodable {
     /// setup: sig; machine: sig + cert; restore: the core's signed receipt (a phone-approved restore, core/history.go);
-    /// replay: the kernel secrets' signed receipt of a key a restore removed (router/storeversions.go)
+    /// replay: the kernel secrets' signed receipt of a key a restore removed (rust/router/src/storeversions.rs)
     struct Writer: Decodable { let by: String; var sig: String? = nil; var cert: SignedDoc? = nil; var receipt: SignedDoc? = nil }
     let kind: String; let store: String; let key: String; let deleted: Bool
     var sealed: [String: String]? = nil
@@ -194,7 +194,7 @@ enum CoreSetup {
         else { throw TrustError.backup("\(o.key)'s restore receipt doesn't name this value.") }
       }
     case "replay":
-      // a restore on a box with no core removed this key (router/storeversions.go): the kernel secrets' signed receipt
+      // a restore on a box with no core removed this key (rust/router/src/storeversions.rs): the kernel secrets' signed receipt
       // of exactly that delete, checked against the secrets the kit derives (`secretsKey`)
       struct Written: Decodable { let kind: String; let store: String; let key: String; let deleted: Bool }
       guard b.deleted, let secretsKey, let rd = b.writer.receipt,

@@ -1,4 +1,4 @@
-//! router/parity_test.go: the core-not-running answer, the app's search forwarding, the Claude app's title, live
+//! parity_test.go: the core-not-running answer, the app's search forwarding, the Claude app's title, live
 //! transcript sync, and one-shot destroys. (TestLiveTranscriptSync's LIVE_SYNC_SECONDS env check is left out: tests
 //! can't set the env.)
 use crate::archive::RepoChange;

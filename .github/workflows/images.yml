@@ -6,7 +6,7 @@ name: images
 # jarvis4-session:base-sha-<12>, and pinned in session-image/Dockerfile's BASE by the pin job.
 on:
   push:  # every branch: the gate merges an agent's branch only when this is green (rust/gate); main alone pins
-    paths: [kernel/**, router/**, rust/**, session-image/**, policy/**, tasks/**, app/**, infra/setup.py, infra/setup_trust_test.py, infra/setup_write_test.py, infra/setup_roster_test.py, infra/kernel-pin.py, infra/kernel_pin_test.py, ios/interop/rostervec/**, infra/image-unpacked-size.py, .github/workflows/images.yml]
+    paths: [kernel/**, rust/**, session-image/**, policy/**, tasks/**, app/**, infra/setup.py, infra/setup_trust_test.py, infra/setup_write_test.py, infra/setup_roster_test.py, infra/kernel-pin.py, infra/kernel_pin_test.py, ios/interop/rostervec/**, infra/image-unpacked-size.py, .github/workflows/images.yml]
   workflow_dispatch:
     inputs:
       base:
@@ -22,7 +22,7 @@ concurrency: { group: "images-${{ github.ref }}", cancel-in-progress: false }
 jobs:
   test:
     runs-on: ubuntu-latest
-    # the router's tests need a Postgres (router/db_test.go: a schema per test); the same major as jarvis4-db
+    # the router's tests need a Postgres (rust/router testutil: a database per test); the same major as jarvis4-db
     services:
       postgres:
         image: postgres:18
@@ -35,7 +35,6 @@ jobs:
       - uses: actions/setup-go@v5
         with: { go-version: "1.25" }
       - run: cd kernel && go vet ./... && go test ./... && test -z "$(gofmt -l .)"
-      - run: cd router && go vet ./... && go test ./...
       # Jarvis 4 in Rust (rust/): each crate tested before it replaces its Go part; rust/sig against kernel/sig's vectors,
       # rust/machine (the session image's jarvis-machine) against documents and snapshots Go wrote
       # a failing test's name and panic as annotations: job logs need a login, annotations don't (lessons/129)
@@ -206,7 +205,7 @@ jobs:
       matrix:
         include:
           - { name: kernel, context: kernel, file: kernel/Dockerfile }
-          - { name: router, context: ., file: router/Dockerfile }
+          - { name: router, context: ., file: rust/router/Dockerfile }
           - { name: session, context: ., file: session-image/Dockerfile }
     steps:
       - uses: actions/checkout@v4

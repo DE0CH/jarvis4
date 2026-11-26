@@ -129,13 +129,13 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
     return JSON.parse(data)
   }
   func get(_ path: String) async throws -> JSON { try await call("GET", path) }
-  /// switch a session's Claude account (router/accountswap.go): 202 {started} for a running session (its `wake` job,
+  /// switch a session's Claude account (rust/router/src/accountswap.rs): 202 {started} for a running session (its `wake` job,
   /// kind "account"), 200 {nextStart} for a paused or failed one, 200 {unchanged} when it already uses it
   func switchAccount(id: String, account: String, continue cont: Bool) async throws -> JSON {
     try await call("POST", "api/sessions/\(id)/account", ["account": account, "continue": cont])
   }
 
-  // ---- first-prompt attachments (router/uploads.go) ----
+  // ---- first-prompt attachments (rust/router/src/uploads.rs) ----
   /// the router's record of one uploaded file: the name it made safe, the size it stored
   struct Uploaded: Decodable { let name: String; let size: Int; let isImage: Bool }
   /// RFC 3986 unreserved characters (ASCII only: a header value and a URL path segment)
@@ -171,7 +171,7 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
   // ---- the core, relayed: every answer checked against the pinned core key ----
   func stores() async throws -> [StoreView] { try await storesDoc().stores }
 
-  /// the content stores (router/content.go): name, file count, bytes
+  /// the content stores (rust/router/src/content.rs): name, file count, bytes
   struct ContentStoreDTO: Decodable, Identifiable, Hashable { let name: String; let files: Int; let bytes: Int; var id: String { name } }
   private struct ContentList: Decodable { let stores: [ContentStoreDTO] }
   func contentStores() async throws -> [ContentStoreDTO] { try await json("GET", "api/content", as: ContentList.self).stores }
@@ -193,7 +193,7 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
     ws.contains { $0?.by == "setup" } ? try await KeySource.key("setup.pub") : nil
   }
   private func setupKeyIfNeeded(_ w: StoreWriter?) async throws -> String? { try await setupKeyIfNeeded([w]) }
-  /// the router relays a core call to the NEXT core (blue/green, router/nextcore.go) when it carries this header
+  /// the router relays a core call to the NEXT core (blue/green, rust/router/src/nextcore.rs) when it carries this header
   static func coreHeaders(_ next: Bool) -> [String: String] { next ? ["X-Jarvis2-Core": "next"] : [:] }
   func unlocked() async throws -> [UnlockRow] {
     let n = CoreCrypto.nonce()
@@ -240,7 +240,7 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
   /// the core's signed begin document, checked: this action, this repo, its store, the one token store it opens
   /// An add: the app makes the ed25519 pair, wraps the repo's store (the private half among its keys) to the core's
   /// store key, and sends both; the core's signed begin must echo them.
-  /// Once the kernel serves, its secrets keeps the stores and answers these calls (router/repos.go deployKeyCall):
+  /// Once the kernel serves, its secrets keeps the stores and answers these calls (rust/router/src/repos.rs deployKeyCall):
   /// its store key and its signatures, checked against the keys this iPhone pinned (KernelTrust).
   func deployKeyBegin(action: String, repo: String, sensitive: Bool) async throws -> (doc: SignedDoc, begin: DeployKeyBegin) {
     let store = Checks.repoStore(repo), title = Checks.deployKeyTitle(store)
@@ -314,10 +314,10 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
     return try? JSONDecoder().decode(CoreSetup.LineStateDoc.self, from: data)
   }
 
-  // ---- what each store and key is for (router/storedocs.go): names, writers, explanations; never values ----
-  // ---- a store's earlier versions and putting one back (core/history.go, router/storerestore.go) ----
+  // ---- what each store and key is for (rust/router/src/storedocs.rs): names, writers, explanations; never values ----
+  // ---- a store's earlier versions and putting one back (core/history.go, rust/router/src/storerestore.rs) ----
   /// the core's signed list of a store's kept versions (checked: the core's key, this call's nonce, this store); once
-  /// the kernel serves, the router's list (router/storeversions.go: each key's receipt is secrets', checked on restore)
+  /// the kernel serves, the router's list (rust/router/src/storeversions.rs: each key's receipt is secrets', checked on restore)
   func storeVersions(_ store: String) async throws -> StoreVersionsDoc {
     let n = CoreCrypto.nonce()
     let body: [String: Any] = ["store": store, "nonce": n]
@@ -427,7 +427,7 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
   /// imageSig: CI's signature over the image the challenge names (keys/ci.pub; Attestation)
   struct ApprovalDTO: Decodable {
     let id: String; let kind: String; let session: String?; let label: String?; let challenge: SignedDoc; let options: [String: String]?; let imageSig: String?
-    /// an add-store on a kernel line: its second cert (router/kernelline.go)
+    /// an add-store on a kernel line: its second cert (rust/router/src/kernelline.rs)
     var earlier: [SignedDoc]? = nil
   }
   struct SessionDTO: Decodable { let id: String; let state: String; let createRequestId: String? }
@@ -512,7 +512,7 @@ final class RouterClient: NSObject, ASWebAuthenticationPresentationContextProvid
   /// Deny the whole batch: its requests leave, its approvals are rejected
   func inboxDenyBatch(_ id: String) async throws { try await call("DELETE", "api/requests/batches/\(id)") }
   func inboxDone(_ id: String) async { _ = try? await raw("POST", "api/requests/\(id)/done") }
-  /// an api-call request (router/apicalls.go): the router runs the call now as Deyao → its outcome
+  /// an api-call request (rust/router/src/apicalls.rs): the router runs the call now as Deyao → its outcome
   func inboxApproveCall(_ id: String) async throws -> JSON { try await call("POST", "api/requests/\(id)/approve") }
   /// an approved call's follow-ups (GET api/requests/calls/:id): the core requests it brought about and whether one
   /// may still come; nil when the router no longer keeps it

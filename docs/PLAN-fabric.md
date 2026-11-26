@@ -196,10 +196,10 @@ Built (2026-11-18), switched on per deployment:
 | sandboxd `POST …/pause` and `…/resume` (runsc pause/resume), the eviction (`…/freeze`) of a paused sandbox, a memory check in every create/receive/thaw (paused sandboxes hold theirs) | DE0CH/aviary crates/sandboxd |
 | hermit: the freeze task pauses in place (row `frozen`, host kept); the repacking evicts (`fabric/packing.rs` `place`, `evictions`; `placement.rs` `reclaim`; scaler step 10 `evict_lone_frozen`); a thaw resumes in place or restores from S3 (`Gvisor::thaw`); the janitor wakes a due `until`; a frozen row's release is forced and deletes its image | DE0CH/aviary crates/hermit (`fabric/pausing.rs`, `freezekey.rs`) |
 | magpie: an answer to a question asks hermit for the conversation's sandbox (a use) | DE0CH/aviary 4d38eb57 |
-| router: `POST/GET /m/api/time-machine`, state `frozen`, Resume and every delivery thaw it, `frozenLoop` (hermit thawed it at its time) | router/timemachine.go |
+| router: `POST/GET /m/api/time-machine`, state `frozen`, Resume and every delivery thaw it, `frozenLoop` (hermit thawed it at its time) | rust/router/src/timemachine.rs |
 | hermit-jarvis: a frozen session's sandbox is kept, its chat open, a use thaws it | DE0CH/aviary jarvis/hermit/src/reconcile.rs, hermit.rs |
 | the `time-machine` command | session-image/tools/src/timemachine.rs |
-| the frozen state on the web page, the iPhone app and the live push | app/, ios/, router/livepush.go |
+| the frozen state on the web page, the iPhone app and the live push | app/, ios/, rust/router/src/livepush.rs |
 | AWS: managed policy `jarvis4-fabric-freeze` on hermit-scaler (STS federation token `hermit-freeze`; Put/Get/Delete on `frozen/*` of the image bucket; List and Delete on `images/*` for the pruning of images no one uses, hermit.json `fabric.aws.pruneImages`) | infra/fabric-aws/freeze-policy.json (applied by hand: `aws iam create-policy` + `attach-user-policy`; the user's inline policies are at AWS's 2048-byte limit) |
 | the key | `HERMIT_FREEZE_KEY` in Secret hermit (`FABRIC_HERMIT_FREEZE_KEY` in the infra store) |
 
@@ -243,7 +243,7 @@ Decisions (Deyao, 2026-11-17):
   present: until then a session has no time machine to prefer).
 
 Everywhere a session's state shows knows `frozen` (Deyao, 2026-11-17), as a state of its own (and "in the time machine
-until T" when it froze with `until`): the router's session states and its live push (router/livepush.go) to the live
+until T" when it froze with `until`): the router's session states and its live push (rust/router/src/livepush.rs) to the live
 monitoring dashboard and its iPhone app, the Jarvis 4 iPhone app (ios/) and the web page (app/). A frozen session is
 neither running nor paused there, and the apps' actions on it (Resume, Destroy) thaw or destroy it.
 

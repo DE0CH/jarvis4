@@ -65,13 +65,13 @@ Fly machines reach the m-gateways over Fly's private network. An AWS machine rea
 2026-11-03: "just use wireguard"): the router makes the machine's key pair and a tunnel address in 10.99.1.0/16 per
 spawn (kept on the session until the machine is up, so a spawn whose answer was lost is adopted with them) and hands
 them to the spawner, which writes `wg0` into the instance (systemd-networkd, listening on UDP 51820, the gateways
-10.99.0.1 and 10.99.0.2 as peers). The m-gateways (router/awsgw.go) list the AWS machines from the router every 10 s
+10.99.0.1 and 10.99.0.2 as peers). The m-gateways (rust/router/src/wgserve.rs) list the AWS machines from the router every 10 s
 (GET /gw/aws-peers on the machines' port, which the gateways' proxy refuses to machines) and start every handshake
 to the instance's public IPv4 (the pods' IPv4 goes out through WARP, as their handshakes to Fly's gateway do), so the
 boxes take nothing inbound; the security group lets in UDP 51820 only. The machines know the gateways as
 `KERNEL_AWS_MACHINE_URL` = `http://10.99.0.1:8081,http://10.99.0.2:8081`. Nothing about the tunnel is a trust element:
 every /m request is signed by the machine's certified key. The gateways' AWS device runs at MTU 1200
-(router/awsgw.go awsWGMTU): its UDP goes through WARP's 1280-byte tunnel, and at 1420 every full-size segment from an
+(rust/router/src/wgserve.rs awsWGMTU): its UDP goes through WARP's 1280-byte tunnel, and at 1420 every full-size segment from an
 instance was lost, so a machine's first small requests went through and nothing bigger did (2026-11-04: both AWS test
 sessions failed "the harness didn't come up").
 
@@ -91,7 +91,7 @@ credits). Account-wide: the IAM users above. State in R2 beside DE0CH/deyao-ai'.
   fixed when made; `DEFAULT_RUNNER` (fly: aws from the first AWS session's end-to-end run, back to fly 2026-11-04 by Deyao). Its region stays a place
   that each runner maps (lhr/sin/nrt → eu-west-2/ap-southeast-1/ap-northeast-1).
 - Lost machines and the adoption of a lost spawn answer look at AWS too (`listAWSMachines`).
-- The lifecycle log's AWS events (router/lifecycle.go, awsread.go; 2026-11-04): while an operation runs and for 30 s
+- The lifecycle log's AWS events (rust/router/src/lifecycle.rs, awsread.go; 2026-11-04): while an operation runs and for 30 s
   after, the router describes each of its AWS machines every 2 s with its read-only key and writes an entry (source
   `aws`) for each change: launched (type, zone, at EC2's launch time), pending, running (public IPv4), stopping,
   shutting-down, terminated (with EC2's `stateReason`, e.g. `Client.InstanceInitiatedShutdown`, and
@@ -101,7 +101,7 @@ credits). Account-wide: the IAM users above. State in R2 beside DE0CH/deyao-ai'.
   operation (awslogs.go). A launch EC2 refuses is the spawn's error, as before ("the spawn failed (…): try 2 of 3").
 - Logs to Grafana: "Logs" below. The runner picker is in New session in the web page and the iPhone app (2469018).
 
-## Budget (AWS spend, `router/awsbudget.go`)
+## Budget (AWS spend, `rust/router/src/awsbudget.rs`)
 
 AWS and Fly fill one pool, the existing cap (`FLY_BUDGET_USD`, default USD 50; DM at `FLY_BUDGET_WARN_USD`, 45; Deyao,
 2026-11-04: "they contribute to the same pool of 50 usd"). Every budget tick (2 min) the router lists, with its read-only
@@ -142,7 +142,7 @@ Nothing reads an EC2 instance's: the unit's `docker run` writes the container's 
 |---|---|---|
 | `machine` | the container's stdout and stderr (the keeper's, the boot steps', both supervisors', the harness's console lines: what Fly ships as the app's lines) | the keeper (PID 1) makes fd 1 and 2 a pipe and tees each line on to the journal and into `/run/jarvis/output.log`; supervisor-core pushes it every 2 s to `POST /m/machine-output` (rust/machine/src/output.rs) |
 | `journal` | the instance's systemd units: the session unit's image pull and start, docker, networkd's WireGuard, journald (not the kernel's: the console has those; not the unit's docker client after the keeper started: that is `machine`) | the keeper mounts the host's ROOT partition read only (privileged, as the container is; under a 0700 directory) and follows `journalctl -D … -b -f -o json` from the boot's start; pushed as above |
-| `console` | the serial console: the kernel from its first second, the initrd's systemd, Ignition, getty, an OOM kill, a panic; also for a machine whose container never started | the leader reads `GetConsoleOutput --latest` of each live session instance every 15 s with the router's read key (`ec2:GetConsoleOutput` on tagged instances, infra/aws/iam.tf) and ships what follows the last line it shipped (router/awslogs.go) |
+| `console` | the serial console: the kernel from its first second, the initrd's systemd, Ignition, getty, an OOM kill, a panic; also for a machine whose container never started | the leader reads `GetConsoleOutput --latest` of each live session instance every 15 s with the router's read key (`ec2:GetConsoleOutput` on tagged instances, infra/aws/iam.tf) and ships what follows the last line it shipped (rust/router/src/awslogs.rs) |
 
 The machine's pushes are signed with its certified key like every `/m` request, so the router, not the machine, puts
 the instance id, region and session on the lines. The machine holds no Grafana credential: the router pushes to the
@@ -181,7 +181,7 @@ lines of the session unit in `kernel/spawner/aws.go` (`ignition`):
 2. The container's end on the console: the unit's result and exit status (what Fly's "Main child exited with code"
    gives), and, when the container didn't end cleanly, 50 s before the power-off so the router's console read sees
    it (the console's newest output lags 7-47 s); the router already ships that line and puts it into the running
-   operation's lifecycle log (`JARVIS4-SESSION-END`, router/awslogs.go). Tried on a test instance from the session
+   operation's lifecycle log (`JARVIS4-SESSION-END`, rust/router/src/awslogs.rs). Tried on a test instance from the session
    template (2026-11-04: a container exiting 3): `JARVIS4-SESSION-END result=exit-code code=exited status=3` was in
    GetConsoleOutput 28 s after it was written, before the power-off. The cost: an instance whose container failed runs
    50 s longer (USD 0.0006 on a t3.medium); a clean end (status 0, the teardown's) powers off at once.

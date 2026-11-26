@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """tools/decrypt-backup.py against backups sealed and signed by infra/setup.py's own code (backup, mark_sensitive_backup,
-key_write for the per-key backups, laid out as router/storedocs.go WriteKey puts them) with the public TEST master key (e2e/testdata/master-test.pem) and a throwaway setup key, plus the committed vector
+key_write for the per-key backups, laid out as rust/router/src/storedocs.rs WriteKey puts them) with the public TEST master key (e2e/testdata/master-test.pem) and a throwaway setup key, plus the committed vector
 tools/testdata/backup-export-v1.json. Offline: python3 tools/decrypt_backup_test.py (needs `cryptography`).
 The production master key is never used (no session has it)."""
 import base64, datetime, hashlib, importlib.util, io, json, os, stat, subprocess, sys, tempfile, unittest
@@ -67,7 +67,7 @@ def seed(signer=None, only=None):
     return bucket
 
 
-# ---- per-key backups (keys/<store>/<key>.json, as router/storedocs.go WriteKey puts them) ---------------------------
+# ---- per-key backups (keys/<store>/<key>.json, as rust/router/src/storedocs.rs WriteKey puts them) ---------------------------
 
 BOX = ec.generate_private_key(ec.SECP256R1())
 CORE_SIG = ec.generate_private_key(ec.SECP256R1())
@@ -119,7 +119,7 @@ PHONE_SIG = ec.generate_private_key(ec.SECP256R1())
 
 
 def restore_backups(store, put, remove, when, phone=None, core=None, tamper=None):
-    """keys/<store>/<key>.json as router/storerestore.go writes them after a phone-approved restore: the core's backups
+    """keys/<store>/<key>.json as rust/router/src/storerestore.rs writes them after a phone-approved restore: the core's backups
     (sealed to the master key, core/history.go sealBackup) and its signed receipt carrying the phone-signed begin"""
     state = json.dumps({"kind": "core-state", "master": pub(MASTER), "phone": {"signingKey": pub(PHONE_SIG), "agreementKey": pub(PHONE_AGR)}})
     ident = dict(core_identity(), state={"payload": state, "sig": sign(CORE_SIG, state)})

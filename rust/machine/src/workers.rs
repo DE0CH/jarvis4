@@ -1,5 +1,5 @@
 //! The worker count: a component of the supervisor. It knows how many subagents and background jobs the session's
-//! Claude Code harness has running now, for the session's card (router/registry.go Workers); the status report carries
+//! Claude Code harness has running now, for the session's card (rust/router/src/registry.rs Workers); the status report carries
 //! it.
 //!
 //! Claude Code documents no live list of its tasks, so the count comes from its documented hooks: boot installs
@@ -307,7 +307,7 @@ impl WorkerCount {
         }
     }
 
-    /// the status report's __WORKERS__ section, one JSON object per conversation (router/registry.go)
+    /// the status report's __WORKERS__ section, one JSON object per conversation (rust/router/src/registry.rs)
     pub fn report(&self) -> String {
         self.files
             .values()

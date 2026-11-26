@@ -1,4 +1,4 @@
-// What a secret store and each of its keys are for (GET api/stores, router/storedocs.go): the store's about text and
+// What a secret store and each of its keys are for (GET api/stores, rust/router/src/storedocs.rs): the store's about text and
 // one line per key with its explanation and, for a key a session wrote, which session. On the Stores page each text is
 // editable in place (PUT api/stores/{store}/docs); the New session picker shows a compact read-only form.
 import { useState } from "react";

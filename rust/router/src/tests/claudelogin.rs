@@ -1,4 +1,4 @@
-//! router/claudelogin_test.go
+//! claudelogin_test.go
 use crate::claudelogin::{
     LoginAnswer, LoginErr, LoginHub, OAUTH, OAUTH_CLIENT_ID, OAUTH_SCOPES, OauthUrls, account_uuid,
     is_login_err,

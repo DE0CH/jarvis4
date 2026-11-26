@@ -7,7 +7,7 @@
 use crate::http::Registrar;
 use std::sync::LazyLock;
 
-pub const TERMINAL_PAGE: &str = include_str!("../../../router/web/terminal.html");
+pub const TERMINAL_PAGE: &str = include_str!("../web/terminal.html");
 
 /// a session id as the router makes them; anything else is not a page
 static TERM_ID_RE: LazyLock<regex::Regex> =

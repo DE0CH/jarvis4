@@ -1,4 +1,4 @@
-// A session's wakeups and crons (router/schedule.go, Jarvis 1's shapes): at the due time the router delivers
+// A session's wakeups and crons (rust/router/src/schedule.rs, Jarvis 1's shapes): at the due time the router delivers
 // the prompt into the session as a message, resuming it first when it is paused. Into a session holding a sensitive
 // store, each such message waits in the Inbox until Deyao delivers it (signed on the iPhone) or denies it; a per-kind
 // rule on the session lets one kind through (views/Sessions.tsx MessageRules). Only the session arms

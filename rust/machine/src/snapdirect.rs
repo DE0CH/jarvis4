@@ -1,4 +1,4 @@
-//! Snapshots straight between the machine and the bucket (router/snapdirect.go, DECISIONS 241). The machines' way to the
+//! Snapshots straight between the machine and the bucket (rust/router/src/snapdirect.rs, DECISIONS 241). The machines' way to the
 //! router carries about 6 MB/s per connection and 15 MB/s in all, while the bucket answers a Fly machine at 86 MB/s on
 //! one stream and 380 MB/s on eight. So the bytes go to the bucket and only the asking goes to the router:
 //!

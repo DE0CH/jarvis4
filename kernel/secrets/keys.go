@@ -34,7 +34,7 @@ import (
 	"github.com/DE0CH/jarvis4/kernel/gv"
 )
 
-// routerStoreRE: the stores the router writes (the Claude accounts, router/claudeaccounts.go)
+// routerStoreRE: the stores the router writes (the Claude accounts, rust/router/src/claudeaccounts.rs)
 var routerStoreRE = regexp.MustCompile(`^claude(-[a-z0-9]+)*$`)
 
 // reservedStore: names a machine's write never makes (a repo's deploy-key store is made by its deploy-key call)

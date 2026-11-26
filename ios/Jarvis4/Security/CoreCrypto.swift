@@ -257,7 +257,7 @@ enum Checks {
     return rv
   }
 
-  /// an attached file as the signed config names it (router/vouch.go AttachmentRef): the sha256 and size are of the
+  /// an attached file as the signed config names it (rust/router/src/vouch.rs AttachmentRef): the sha256 and size are of the
   /// bytes this phone uploaded, hashed here
   struct Attachment: Equatable { var name: String; var sha256: String; var size: Int }
 
@@ -274,7 +274,7 @@ enum Checks {
     return out
   }
 
-  /// the signed config's content stores (router/content.go: ~/content/<name>/ on the machine), as signed (nil: not a
+  /// the signed config's content stores (rust/router/src/content.rs: ~/content/<name>/ on the machine), as signed (nil: not a
   /// list of store names)
   static func content(_ c: [String: Any]) -> [String]? {
     guard let v = c["content"] else { return [] }
@@ -290,7 +290,7 @@ enum Checks {
     var label: String; var prompt: String; var model: String; var repos: [String]; var oneShot: Bool; var apiProxy: Bool
     var attachments: [Attachment] = []
     var content: [String] = []
-    /// the Claude account picked (router/claudeaccounts.go; "" = none picked here): a config that names one must name it
+    /// the Claude account picked (rust/router/src/claudeaccounts.rs; "" = none picked here): a config that names one must name it
     var claudeAccount: String = ""
   }
 
@@ -432,7 +432,7 @@ struct SessionCert: Codable {
   /// what an unlock for this session names (unlock_begin's "for")
   let nonce: String?
 }
-/// the grant text (router/grants.go grantText) — exactly the router's draft, field for field
+/// the grant text (rust/router/src/grants.rs grantText) — exactly the router's draft, field for field
 struct GrantText: Codable, Equatable {
   let kind: String, holder: String, session: String, scope: String, issued: String
   let expires: String?, until: String?

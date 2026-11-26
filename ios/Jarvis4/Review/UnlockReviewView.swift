@@ -18,7 +18,7 @@ struct UnlockReviewView: View {
   /// keys sessions wrote into the locked stores (shown before Face ID; the unlock refuses one not shown)
   @State private var writes: [SessionWrite] = []
   @State private var scoped = false
-  /// a kernel line (router/kernelline.go): its stores unlock in the kernel's secrets, open until locked
+  /// a kernel line (rust/router/src/kernelline.rs): its stores unlock in the kernel's secrets, open until locked
   @State private var kernel = false
   @State private var signed: [SignedFact]?
   @State private var loadError: String?

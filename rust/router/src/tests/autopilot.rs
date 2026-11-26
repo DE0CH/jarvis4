@@ -1,4 +1,4 @@
-//! router/autopilot_test.go
+//! autopilot_test.go
 use crate::autopilot::{
     DEFAULT_PILOT, Liveness, PilotAction, PilotConfig, ROUTER_STARTED, WaitEpisode, downgrade_text,
     harness_retry_upgrade, harness_stuck_text, live_env, live_view, new_liveness, plan_tick,

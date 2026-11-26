@@ -5,7 +5,7 @@
 // Deliver all: the router drafts one batch text with every listed message; it is checked item for item against what
 // the page shows (Checks.reviewMessages: the ids, each kind, sender and text, the cert's line, issued now, at most an
 // hour) and signed under ONE Face ID. A message can be delivered or denied on its own. Deny signs nothing.
-// A kernel line (router/kernelline.go) has no core-signed cert: its line is the session's id and the phone key is this
+// A kernel line (rust/router/src/kernelline.rs) has no core-signed cert: its line is the session's id and the phone key is this
 // phone's own (the machine reads it from secrets' signed key statement); the page names it as such.
 // Opened right after Resume with a prompt (`deliverPrompt`), the pending resume prompt with exactly that text is
 // delivered at once: the same checks, one Face ID, no second tap.

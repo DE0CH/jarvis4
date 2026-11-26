@@ -1,4 +1,4 @@
-// What each store and key is for (router/storedocs.go GET /api/stores): each store's keys with who wrote them and when,
+// What each store and key is for (rust/router/src/storedocs.rs GET /api/stores): each store's keys with who wrote them and when,
 // the store's about text and each key's explanation. Not a secret and in no trust decision by itself: the names and
 // writers come from the core's signed store list (the router passes them on), the texts are the router's own record.
 // What a review page shows of it is checked against the core's signed unlock_begin before Face ID: a key a session

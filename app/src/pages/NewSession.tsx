@@ -14,7 +14,7 @@ import { Page, useDone } from "../ui/page";
 import { loadContentStores, type ContentStore } from "../views/Content";
 import { formModel } from "../lib/newsession";
 
-// what the router's safeName makes of a file name (router/uploads.go): a basename, whitespace → "_"
+// what the router's safeName makes of a file name (rust/router/src/uploads.rs): a basename, whitespace → "_"
 const safeName = (raw: string) => {
   const s = (raw.split(/[\\/]/).pop() || "").replace(/[\x00-\x1f]/g, "").replace(/\s+/g, "_").trim().slice(0, 200);
   return !s || s === "." || s === ".." ? "file" : s;
@@ -91,9 +91,9 @@ export function NewSession() {
   const harnessTouched = useRef(false), hasAviary = useStore((s) => "aviary" in s.policy);
   const setHarness = (h: string) => { harnessTouched.current = true; setHarnessState(h); };
   useEffect(() => { if (!harnessTouched.current && hasAviary) setHarnessState("aviary"); }, [hasAviary]);
-  // the Fly region its machines run in (router/regions.go); the router's default until another is picked
+  // the Fly region its machines run in (rust/router/src/regions.rs); the router's default until another is picked
   const [region, setRegion] = useState("");
-  // where its machines run (router/awsrunner.go): AWS (one EC2 instance each) or Fly; the router's default until
+  // where its machines run (rust/router/src/awsrunner.rs): AWS (one EC2 instance each) or Fly; the router's default until
   // another is picked, fixed for the session's life
   const [runner, setRunner] = useState("");
   // the models of the chosen harness (the router swaps a model of another harness for that harness's default)
@@ -102,7 +102,7 @@ export function NewSession() {
   const modelPicked = useRef(false), modelDefault = useStore((s) => s.modelDefaults[harness]);
   const pickModel = (id: string) => { modelPicked.current = true; setModel(id); };
   useEffect(() => { setModel((m) => formModel(m, modelPicked.current, models.map((x) => x.id), modelDefault)); }, [harness, models.map((m) => m.id).join(","), modelDefault]);
-  // the Claude account (router/claudeaccounts.go): the default pre-picked; fixed for the session's life
+  // the Claude account (rust/router/src/claudeaccounts.rs): the default pre-picked; fixed for the session's life
   const [accounts, setAccounts] = useState<ClaudeAccounts | null>(null), [account, setAccount] = useState("");
   useEffect(() => { loadClaudeAccounts().then((a) => { setAccounts(a); setAccount((cur) => cur || a.default); }, () => setAccounts({ default: "", accounts: [] })); }, []);
   const takesAccount = accountHarnesses.has(harness);
@@ -122,7 +122,7 @@ export function NewSession() {
     const r = repoList.find((x) => x.repo.toLowerCase() === "de0ch/claude-env");
     if (r) setRepos((cur) => (cur.includes(r.name) ? cur : [...cur, r.name]));
   }, [repoList.length]);
-  // content stores (router/content.go): pulled into ~/content/<name>/ at every start, signed with the session
+  // content stores (rust/router/src/content.rs): pulled into ~/content/<name>/ at every start, signed with the session
   const [contentList, setContentList] = useState<ContentStore[] | null>(null), [content, setContent] = useState<string[]>([]);
   useEffect(() => { loadContentStores().then(setContentList, () => setContentList([])); }, []);
   const [busy, setBusy] = useState<string | null>(null);

@@ -123,7 +123,7 @@ pub struct KernelBootDocs {
     pub roster: Option<SignedDoc>,
 }
 
-/// a source's settings (router/kernelline.go kernelSettings), read strictly
+/// a source's settings (rust/router/src/kernelline.rs kernelSettings), read strictly
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct KernelSettings {

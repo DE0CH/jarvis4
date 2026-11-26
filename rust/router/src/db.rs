@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 static MIGRATIONS: include_dir::Dir<'_> =
-    include_dir::include_dir!("$CARGO_MANIFEST_DIR/../../router/migrations");
+    include_dir::include_dir!("$CARGO_MANIFEST_DIR/migrations");
 
 /// the advisory lock key the migrations run under ("jarvis4-migrate")
 const MIGRATION_LOCK: i64 = 0x6a3473_6d6967;

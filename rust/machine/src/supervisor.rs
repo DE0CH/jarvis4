@@ -31,7 +31,7 @@ use std::os::unix::fs::MetadataExt;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-/// how long the router holds a poll of /m/commands open when it has nothing (router/http.go mqNext 50 s)
+/// how long the router holds a poll of /m/commands open when it has nothing (rust/router/src/http.rs mqNext 50 s)
 pub const COMMANDS_WAIT: Duration = Duration::from_secs(50);
 
 /// supervisor-core, what keeps the control plane alive: the commands (stop, snapshot, Upgrade, pause), execs and
@@ -197,7 +197,7 @@ pub fn run_command(c: &Client, cmd: &str) {
             }
         }
         "live-sync" => {
-            // livesync.rs: the router wants this session's tail now (router/livetail.go)
+            // livesync.rs: the router wants this session's tail now (rust/router/src/livetail.rs)
             if booted() {
                 let c = c.clone();
                 std::thread::spawn(move || crate::livesync::live_round(&c));

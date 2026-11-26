@@ -29,9 +29,9 @@ const clip = (t: string) => t.length > 90 ? t.slice(0, 90) + "…" : t;
 
 // the steps of an Upgrade job (wake.kind "upgrade"), as the busy label
 const UPGRADE_PHASE: Record<string, string> = { freeing: "Freeing memory…", snapshotting: "Snapshotting…", resuming: "Resuming…" };
-// the steps of a More disk job (wake.kind "disk", router/disk.go)
+// the steps of a More disk job (wake.kind "disk", rust/router/src/disk.rs)
 const DISK_PHASE: Record<string, string> = { extending: "Growing the disk…", snapshotting: "Snapshotting…", resuming: "Resuming…" };
-// the steps of a Claude account switch (wake.kind "account", router/accountswap.go): lib/accountswap.ts ACCOUNT_PHASE
+// the steps of a Claude account switch (wake.kind "account", rust/router/src/accountswap.rs): lib/accountswap.ts ACCOUNT_PHASE
 const phaseLabel = (w: { kind: string; phase: string }) => (w.kind === "upgrade" && UPGRADE_PHASE[w.phase]) || (w.kind === "disk" && DISK_PHASE[w.phase]) || (w.kind === "account" && ACCOUNT_PHASE[w.phase]) || null;
 // what the router is doing to this session right now (its lifecycle lock, or a mode / restart / account job), as a
 // button label — seen on every device, not only the one that started it
@@ -82,7 +82,7 @@ const pause = (id: string) => pendUntil("s:" + id, "Pausing…", () => api("POST
 // started, snapshots, and brings the session back on the next size up with the same conversation
 // (POST …/upgrade → 202, then busy "upgrading" + wake {kind:"upgrade"} until done / failed). No question first —
 // the notice already says what it does. Two-phase: the label stays until the router reports the job's end.
-// "Large (8 GB)" for the named sizes, "16 GB" past them (router/sizes.go: every doubling, named by its memory)
+// "Large (8 GB)" for the named sizes, "16 GB" past them (rust/router/src/sizes.rs: every doubling, named by its memory)
 const sizeName = (a: { nextSize: string | null; nextGb: number | null }) =>
   !a.nextSize ? "a bigger machine"
   : /^\d+gb$/.test(a.nextSize) ? `${a.nextGb} GB` : `${a.nextSize.charAt(0).toUpperCase()}${a.nextSize.slice(1)} (${a.nextGb} GB)`;
@@ -101,7 +101,7 @@ export const upgradeSession = (id: string) => exclusive("s:" + id, async () => {
   } catch (e: any) { failed(e); await refresh(false); }
   finally { pend("s:" + id, null); }
 });
-// More disk (router/disk.go): the core grows the machine's volume to twice its size; when Fly says the machine must
+// More disk (rust/router/src/disk.rs): the core grows the machine's volume to twice its size; when Fly says the machine must
 // restart to see it, the router pauses and resumes it (POST …/disk → 202, then busy "growing-disk" + wake {kind:"disk"}
 // until done / failed). A machine without a volume can't grow (409, the alert says why).
 const diskDone = (x: Session | undefined) => !x || x.state === "failed" || (!x.busy && x.wake?.kind === "disk" && ["done", "failed"].includes(x.wake.phase));
@@ -342,7 +342,7 @@ function DiskAlert({ m, busy }: { m: Session; busy: string | null }) {
   );
 }
 // the final snapshot failed and the machine was kept; or the line's last machine left none and it won't resume
-// its machine stopped outside Jarvis (router/lostmachine.go): what happened, when, what is kept, and what Resume does
+// its machine stopped outside Jarvis (rust/router/src/lostmachine.rs): what happened, when, what is kept, and what Resume does
 function LostMachineNote({ m }: { m: Session }) {
   const l = m.lost;
   if (!l) return null;
@@ -444,7 +444,7 @@ export function LockedStore({ m, compact }: { m: Session; compact?: boolean }) {
     </Callout>
   );
 }
-const DISCORD_GUILD = "1482150592414486748"; // the router's DISCORD_GUILD_ID default (router/discord.go)
+const DISCORD_GUILD = "1482150592414486748"; // the router's DISCORD_GUILD_ID default (rust/router/src/discord.rs)
 const openDiscord = (ch: string) => Linking.openURL(`https://discord.com/channels/${DISCORD_GUILD}/${ch}`).catch((e) => failed(e, "Could not open Discord: "));
 
 export function Sessions() {

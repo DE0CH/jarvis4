@@ -1,4 +1,4 @@
-// Paired apps (GET api/devices; router/devices.go): Deyao's builds of the OpenClaw and Paseo apps, each paired once
+// Paired apps (GET api/devices; rust/router/src/devices.rs): Deyao's builds of the OpenClaw and Paseo apps, each paired once
 // with its own Access service token. Remove deletes that token: the app then asks to pair again.
 import { useEffect, useState } from "react";
 import { api, ago } from "../lib/api";

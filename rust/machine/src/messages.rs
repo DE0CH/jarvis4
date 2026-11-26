@@ -1,4 +1,4 @@
-//! Message approvals (docs/DESIGN.md "Message approvals"; router/messages.go): a session holding a sensitive store
+//! Message approvals (docs/DESIGN.md "Message approvals"; rust/router/src/messages.rs): a session holding a sensitive store
 //! takes an UPWARD peer message only when Deyao's phone signed THAT message. A resume prompt (Deyao's own words, typed
 //! in the app) needs the phone's signature in every session. Jarvis's own messages, the session's own wakeups, crons
 //! and watches, and equal or downward peer messages go straight in (DECISIONS 210).

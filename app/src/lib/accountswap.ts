@@ -1,4 +1,4 @@
-// Switch a session's Claude account (router/accountswap.go, docs/API.md "Sessions"): POST api/sessions/{id}/account
+// Switch a session's Claude account (rust/router/src/accountswap.rs, docs/API.md "Sessions"): POST api/sessions/{id}/account
 // {account, continue}. A running session switches now as a background job (202 {started}; its progress is the session's
 // `wake` job with kind "account"); a paused or failed one takes the account at its next start (200 {nextStart}); the
 // account it already uses is a no-op (200 {unchanged}).

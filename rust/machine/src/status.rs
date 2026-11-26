@@ -1,6 +1,6 @@
 //! The session's live status, reported by the machine itself: the supervisor runs a shell locally every 10 s and POSTs
 //! the raw output to /m/status when it changed, and at least once a minute as a heartbeat; the router parses it
-//! (router/registry.go). It prints claude's registry files, ai-title lines, background-job counts, the one-shot marker,
+//! (rust/router/src/registry.rs). It prints claude's registry files, ai-title lines, background-job counts, the one-shot marker,
 //! transcript ids ending on "Please run /login", the credentials file's expiry, refusal entries, the checked account of
 //! an account switch, when Deyao last sent each conversation a prompt, then the subagent/background-job counts the
 //! supervisor holds (workers.rs), and the keeper's harness record (starts, last end): never a token.

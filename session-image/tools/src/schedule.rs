@@ -1,5 +1,5 @@
 //! schedule-wakeup and schedule-cron: a Jarvis 4 session arms, lists and cancels its own router crons
-//! (router/schedule.go, docs/API.md "Wakeups and crons").
+//! (rust/router/src/schedule.rs, docs/API.md "Wakeups and crons").
 //!
 //! Every wakeup repeats (Deyao, 2026-11-17): `schedule-wakeup` arms a router cron whose first firing is the given time
 //! and which then fires every period until cancelled. The calls go to `$JARVIS_URL/api/sessions/$SESSION_ID/crons`.

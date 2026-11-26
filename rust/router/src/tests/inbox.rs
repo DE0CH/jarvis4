@@ -1,4 +1,4 @@
-//! router/inbox_test.go
+//! inbox_test.go
 use crate::inbox::{
     ApiCall, Caller, EXPLANATION_LINES, EXPLANATION_MAX, INTENTS, InboxItem, Origin,
     REQUEST_KIND_GRANT, REQUEST_KIND_REPO, REQUEST_PER_CALLER, RequestIn, RequestParams,

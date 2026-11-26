@@ -1,5 +1,5 @@
 //! jarvis stores [--keys | --json]: every store and the key NAMES it holds (never a value), with what each key is for,
-//! from the router's GET /m/stores (router/storedocs.go), so a session knows which store to ask for. The store list,
+//! from the router's GET /m/stores (rust/router/src/storedocs.rs), so a session knows which store to ask for. The store list,
 //! sensitivity and key names are the core's signed list, checked here against the core's key; the explanations are the
 //! router's record (words, not a trust decision).
 

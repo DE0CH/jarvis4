@@ -72,7 +72,7 @@ export async function uploadFile(uploadId: string, name: string, body: Blob): Pr
   return JSON.parse(text) as Uploaded;
 }
 
-// a content store's file (router/content.go): uploaded as it is (raw bytes), downloaded through the browser
+// a content store's file (rust/router/src/content.rs): uploaded as it is (raw bytes), downloaded through the browser
 export async function uploadContent(store: string, path: string, body: Blob): Promise<{ path: string; size: number }> {
   const p = `api/content/${encodeURIComponent(store)}/file?path=${encodeURIComponent(path)}`;
   let r: Response;
@@ -124,35 +124,35 @@ export type Session = {
   autoPause?: "on" | "off"; notifyIdle?: "on" | "off"; oneShot?: boolean; oneShotDone?: boolean; authFailed?: boolean;
   credsExpiresAt?: string | number; discordChannel?: string; statusUpdatedAt?: string; lastReport?: string; refusals?: Refusal[];
   wakeups?: Wakeup[]; crons?: Cron[]; watches?: Watch[]; resumePrompt?: string;
-  chatScheduleIso?: string; // an aviary session's chat schedules: the soonest next fire (router/schedule.go ChatSchedule)
+  chatScheduleIso?: string; // an aviary session's chat schedules: the soonest next fire (rust/router/src/schedule.rs ChatSchedule)
   createRequestId?: string; repos?: string;
   // a lifecycle action holding the session (others are refused 409) and a permission-mode / restart job
   // what a pause or destroy is waiting on, in plain words (e.g. "waiting for the machine's last snapshot")
   waiting?: string;
-  // the Claude account it runs on (router/claudeaccounts.go), fixed when it was made
+  // the Claude account it runs on (rust/router/src/claudeaccounts.rs), fixed when it was made
   claudeAccount?: string | null;
   // the store the machine is waiting on at boot (the core answered 423 "store X is locked" to its secrets pull)
   lockedStore?: string;
   busy?: { kind: string; since?: string } | null; wake?: { kind: string; phase: string; error?: string; finishedAt?: string | null } | null; apiProxy?: "on" | "off";
   // a memory-starvation episode (router, mirrors Jarvis 1's lib/memory.js): why, the memory now, and the size
-  // the Upgrade button moves it to (always one: the next size doubles the memory, router/sizes.go), its memory and its
+  // the Upgrade button moves it to (always one: the next size doubles the memory, rust/router/src/sizes.rs), its memory and its
   // Fly guest ("8×performance · 32 GB"); absent outside an episode
   memAlert?: { since: string; reason: string; detail: string; nextSize: string | null; nextGb: number | null; nextGuest: string | null } | null; // nextSize null: the running core starts no bigger size (no Upgrade)
-  // what a running session's harness has running besides itself (router/registry.go Workers, from Claude Code's
+  // what a running session's harness has running besides itself (rust/router/src/registry.rs Workers, from Claude Code's
   // hooks): subagents, and every other background job by Claude Code's type label (shell, monitor, workflow, …);
   // absent when the machine doesn't count them (an image from before)
   workers?: { subagents: number; jobs: Record<string, number>; at: number } | null;
   // a running session's latest memory sample
   memory?: { totalMb: number; availMb: number; at: string } | null;
-  // a running session's latest disk sample (router/disk.go): its volume when it has one (volume true), else the root disk
+  // a running session's latest disk sample (rust/router/src/disk.rs): its volume when it has one (volume true), else the root disk
   disk?: { totalMb: number; availMb: number; at: string; volume: boolean; rootTotalMb?: number; rootAvailMb?: number } | null;
   // a low-disk episode: More disk grows the volume to nextGb (canGrow), or why it can't
   diskAlert?: { since: string; reason: string; detail: string; canGrow: boolean; nextGb?: number; why?: string } | null;
   diskGb?: number; // the volume size the line's next machine gets (0 = the core's default, 10 GB)
   // the line's last machine left no signed snapshot: Resume is refused (it would start empty)
   noSnapshot?: string | null;
-  failedAt?: string | null; // router/failures.go: when it became failed (error says why)
-  lost?: LostMachine | null; // router/lostmachine.go: its machine stopped outside Jarvis
+  failedAt?: string | null; // rust/router/src/failures.rs: when it became failed (error says why)
+  lost?: LostMachine | null; // rust/router/src/lostmachine.rs: its machine stopped outside Jarvis
   // the final snapshot failed and the machine (no volume) is kept: state failed with a machine
   snapshotFailed?: string | null;
   // how many messages for it wait in the Inbox for Deyao (PendingMessage, state "pending"); absent = none
@@ -166,7 +166,7 @@ export type Usage = {
   limits: UsageLimit[];
   extraUsage: { enabled: boolean; monthlyLimit: number; usedCredits: number; utilization: number; currency: string; decimalPlaces: number; disabledReason?: string | null; spendLimitReached: boolean } | null;
 };
-// a Claude account (GET api/claude-accounts; router/claudeaccounts.go): the router's Claude key store claude-<name>,
+// a Claude account (GET api/claude-accounts; rust/router/src/claudeaccounts.rs): the router's Claude key store claude-<name>,
 // its login's state (no secrets), whether New session pre-picks it, and the sessions using it
 export type ClaudeAccount = {
   store: string; name: string; default: boolean; sessions: string[];
@@ -184,29 +184,29 @@ export type ArchiveInfo = { file: string; bytes?: number; uploadSeconds?: number
 /** a destroyed session (GET api/records): the session's fields plus where its archive is */
 export type Rec = Session & { destroyedAt: string; archive?: ArchiveInfo | null; archiveError?: string; restored?: { sessionId: string; at: string }[]; live?: { oneShot?: boolean } };
 export type Grant = { id: string; session: string; holder: string; kind: "grant" | "rule"; ends: string };
-// the month's spend, Fly and AWS in one pool (router/budget.go, awsbudget.go): the totals, then each provider's part
+// the month's spend, Fly and AWS in one pool (rust/router/src/budget.rs, awsbudget.go): the totals, then each provider's part
 export type BudgetFly = { spentUsd: number; ratePerHour: number; perMonth: number; running: number; volumes: number; snapshots: number; snapshotGb: number };
-// owner: what the tag jarvis4_owner resolved to (router/awsowner.go); in `owned` the owner is still at work
+// owner: what the tag jarvis4_owner resolved to (rust/router/src/awsowner.rs); in `owned` the owner is still at work
 export type BudgetAWSOther = { id: string; region: string; type: string; state: string; name?: string; owner?: string };
 export type BudgetAWS = { spentUsd: number; estimateUsd: number; billedUsd: number; billedAt?: string | null; ratePerHour: number; perMonth: number;
   running: number; volumes: number; volumeGb: number; snapshots: number; snapshotGb: number; publicIpv4: number; account?: string;
   regions?: string[]; other?: BudgetAWSOther[]; owned?: BudgetAWSOther[]; error?: string | null; billedError?: string | null;
   bucketGb?: number; fabric?: BudgetFabric | null };
-// the fabric's part of the AWS estimate (router/awsbudget.go): its hosts, disks, AMI snapshots and image bucket
+// the fabric's part of the AWS estimate (rust/router/src/awsbudget.rs): its hosts, disks, AMI snapshots and image bucket
 export type BudgetFabric = { estimateUsd: number; ratePerHour: number; perMonth: number; hosts: number; region: string };
 export type Budget = { month: string; spentUsd: number; capUsd: number; warnUsd: number; warned: boolean; capped: boolean; cappedAt?: string | null; ratePerHour: number; perMonth: number; running: number; volumes: number; sampledAt?: string | null;
   fly?: BudgetFly | null; aws?: BudgetAWS | null };
 export type FlyOther = { kind: string; app: string; id: string; name?: string; state?: string; region?: string; created?: string; detail?: string };
 export type FlyView = { apps: number; machines: number; volumes: number; other: FlyOther[]; error?: string | null; checkedAt?: string | null };
-// every Fly machine in jarvis4-sessions (api/machines, router/machines.go): its session or none ("" ), and
+// every Fly machine in jarvis4-sessions (api/machines, rust/router/src/machines.rs): its session or none ("" ), and
 // test = its JARVIS2_URL is a test router's; noDestroy = why Destroy isn't offered ("" = it is)
 // GET /api/machines: `machines` = jarvis4-sessions (sessions, Destroy); `orgs` = every Fly org → app, read-only outside
-// jarvis4-sessions (router/flyorgs.go). `attention`: why a machine stands out (a possible leak), "" = it doesn't.
+// jarvis4-sessions (rust/router/src/flyorgs.rs). `attention`: why a machine stands out (a possible leak), "" = it doesn't.
 export type Machine = { id: string; name: string; state: string; region: string; size: string; guest: string; image: string; created: string; updated: string; sessionId: string; current: boolean; routerUrl: string; test: boolean; noDestroy: string; attention: string; otherSession?: string };
 export type FlyVolumeView = { id: string; name: string; state: string; region: string; sizeGb: number; attachedTo: string; created: string; attention: string };
 export type FlyAppView = { app: string; label: string; own: boolean; status: string; machines: Machine[]; volumes: FlyVolumeView[]; error: string };
 export type FlyOrgView = { org: string; via: string; error: string; checkedAt: string; apps: FlyAppView[] };
-// a Hetzner runner (router/runners.go): a session's throwaway server in the project "runners". `sessionId` = its
+// a Hetzner runner (rust/router/src/runners.rs): a session's throwaway server in the project "runners". `sessionId` = its
 // owner ("" = none); `attention`: why it stands out (no session, a session gone, a paused one nothing will wake);
 // `deletable`: Delete is offered (only for one that stands out)
 export type Runner = { id: number; name: string; status: string; type: string; guest: string; location: string; ipv6: string; created: string; monthly: string; labels?: Record<string, string>; sessionId: string; sessionState?: string; attention?: string; deletable?: boolean };
@@ -218,7 +218,7 @@ export type Approval = {
   id: string; kind: ApprovalKind; created?: string; session?: string | null; label?: string;
   challenge: SignedDoc; machine?: string; options?: Record<string, unknown>;
 };
-// an Inbox entry (router/inbox.go, docs/API.md "Requests"): a request waiting for the phone, or one of the router's
+// an Inbox entry (rust/router/src/inbox.rs, docs/API.md "Requests"): a request waiting for the phone, or one of the router's
 // approvals. The list's title is rendered here from kind + params (lib/inbox.ts); the review page renders what is
 // signed from the signed content itself.
 export type InboxItem = {
@@ -228,11 +228,11 @@ export type InboxItem = {
   session?: string; sessionName?: string; caller: { kind: string; session?: string }; callerText: string;
   call: { method: string; path: string; args?: Record<string, unknown> }; explanation: string; created: string; expires?: string;
   options?: Record<string, string>; open: { kind: string; options: Record<string, unknown> };
-  batch?: string; // router/batches.go: filed in this batch
-  viaCall?: string; // router/apicalls.go: the API-call request whose approved call brought this approval about
+  batch?: string; // rust/router/src/batches.rs: filed in this batch
+  viaCall?: string; // rust/router/src/apicalls.rs: the API-call request whose approved call brought this approval about
   does?: string; // api-call: what the call does, in words the router renders from the call (e.g. an account switch)
 };
-// several Inbox items a caller filed together (router/batches.go): one entry, allowed together on the phone under one
+// several Inbox items a caller filed together (rust/router/src/batches.rs): one entry, allowed together on the phone under one
 // Face ID, denied together here or there. `summary` is the caller's words (unverified).
 export type InboxBatch = {
   id: string; summary: string; caller: { kind: string; session?: string }; callerText: string;
@@ -250,7 +250,7 @@ export type PendingMessage = {
 // a phone-signed per-kind rule: messages of this kind go into this session without asking (revocable, Remove)
 export type MessageRule = { id: string; session: string; kind: string; kindLabel: string; text: string; until: string; created: string };
 export type CoreStatus = { up: boolean; none?: boolean; signingKey?: string; agreementKey?: string }; // none: the box runs the kernel only
-/** the router's last check of the kernel (router/kernelhealth.go); only on a box that runs no core */
+/** the router's last check of the kernel (rust/router/src/kernelhealth.rs); only on a box that runs no core */
 export type KernelHealth = { checked: boolean; healthy?: boolean; problems?: string[] };
 export type State = {
   sessions: Session[]; approvals: Approval[]; core: CoreStatus; inbox?: InboxItem[]; inboxBatches?: InboxBatch[];
@@ -261,7 +261,7 @@ export type State = {
 };
 export type Choice = { id: string; label: string; harness?: string };
 // a store as the router lists it (GET api/stores: the core's signed list, with each key, who wrote it and what the
-// store and each key are for, router/storedocs.go). Read here only for display and pre-selection; the shell verifies
+// store and each key are for, rust/router/src/storedocs.rs). Read here only for display and pre-selection; the shell verifies
 // the core's signature before anything is signed.
 export type KeyWriter = { by: "setup" | "machine" | "core"; machine?: string; line?: string; session?: string; sessionLabel?: string };
 export type StoreKey = { name: string; explanation: string; at?: string; writer?: KeyWriter };
@@ -328,7 +328,7 @@ export function ago(iso: string | Date) {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return "just now"; if (s < 3600) return Math.floor(s / 60) + " min ago"; if (s < 86400) return Math.floor(s / 3600) + " h ago"; return Math.floor(s / 86400) + " d ago";
 }
-// what the Claude app calls it (Jarvis 1's order, router/discord.go sessionTitle): the app's own title — which
+// what the Claude app calls it (Jarvis 1's order, rust/router/src/discord.rs sessionTitle): the app's own title — which
 // follows a rename in the app — then a name pinned in the CLI, the label from New session, the AI title
 export const sessionTitle = (m: Session) => m.serverTitle || m.userTitle || m.label || m.aiTitle || m.title || m.name || m.id;
 export const usd = (n: number) => "USD " + (Math.round(n * 100) / 100).toFixed(2);
@@ -345,7 +345,7 @@ export function when(at: number | string) {
 export function cronEvery(sec: number) {
   return sec === 86400 ? "daily" : sec === 604800 ? "weekly" : sec % 86400 === 0 ? `every ${sec / 86400} d` : sec % 3600 === 0 ? `every ${sec / 3600} h` : `every ${Math.round(sec / 60)} min`;
 }
-// the features that may hold a grant (router/grants.go), in words — the shell's grant page says the same. Messages
+// the features that may hold a grant (rust/router/src/grants.rs), in words — the shell's grant page says the same. Messages
 // Jarvis delivers into a sensitive session are not a grant: each one is approved in the Inbox (lib/messages.ts).
 export const HOLDERS: Record<string, { title: string; sub: string }> = {
   terminal: { title: "Terminal", sub: "read the screen and type into the session" },
@@ -390,7 +390,7 @@ export type IcloudHit = { path: string; size: number; mtime: string; kind: strin
 export type IcloudResult = { query: string; total: number; tookMs: number; notes: string[]; hits: IcloudHit[] };
 export type IcloudFile = { path: string; size?: number; mtime?: string; kind?: string; state?: string; note?: string; error?: string; chunks: { part?: string; src?: string; text: string }[] };
 
-// router/lostmachine.go LostMachine: a session's machine that stopped or went away without Jarvis doing it
+// rust/router/src/lostmachine.rs LostMachine: a session's machine that stopped or went away without Jarvis doing it
 export interface LostMachine {
   machine: string;
   at: string;

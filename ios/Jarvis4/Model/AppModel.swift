@@ -33,7 +33,7 @@ final class AppModel {
   var sessions: [Session] = []
   var approvals: [Approval] = []
   var inbox: [InboxItem] = []
-  /// batches (router/batches.go): several Inbox items filed together, reviewed on one page under one Face ID
+  /// batches (rust/router/src/batches.rs): several Inbox items filed together, reviewed on one page under one Face ID
   var inboxBatches: [InboxBatch] = []
   /// messages waiting to go into a session (delivered under Face ID, or denied) and the per-kind rules in force
   var messages: [PendingMessage] = []
@@ -41,11 +41,11 @@ final class AppModel {
   var coreUp = false
   /// the box runs no core (the kernel only): no Reset or recover
   var noCore = false
-  /// the kernel's health on a box that runs no core (router/kernelhealth.go); nil on a box with a core
+  /// the kernel's health on a box that runs no core (rust/router/src/kernelhealth.rs); nil on a box with a core
   var kernelHealth: KernelHealth?
   /// what the Sessions page warns about for the core or the kernel (nil: nothing)
   var trustWarning: String? { KernelHealth.warning(loaded: loaded, coreUp: coreUp, kernel: kernelHealth) }
-  /// the next core (blue/green, router/nextcore.go): {up, serving: empty | standby | serving | handed-off, signingKey};
+  /// the next core (blue/green, rust/router/src/nextcore.rs): {up, serving: empty | standby | serving | handed-off, signingKey};
   /// .null while the router runs none
   var coreNext: JSON = .null
   var budget: JSON = .null
@@ -57,10 +57,10 @@ final class AppModel {
 
   // ---- lists loaded on demand ----
   var sizes: [Choice] = []
-  /// the Fly regions a session may run in (GET api/regions, router/regions.go) and the router's default
+  /// the Fly regions a session may run in (GET api/regions, rust/router/src/regions.rs) and the router's default
   var regions: [Choice] = []
   var defaultRegion = ""
-  /// where a session's machines run (GET api/regions `runners`, router/awsrunner.go): aws | fly, and the router's default
+  /// where a session's machines run (GET api/regions `runners`, rust/router/src/awsrunner.rs): aws | fly, and the router's default
   var runners: [Choice] = []
   var defaultRunner = ""
   var models: [Choice] = []
@@ -73,7 +73,7 @@ final class AppModel {
   var stores = Loaded<StoreView>()
   var openUnlocks: [UnlockRow] = []
   var machines = Loaded<Machine>()
-  /// the whole answer of api/machines: every Fly org and app (router/flyorgs.go)
+  /// the whole answer of api/machines: every Fly org and app (rust/router/src/flyorgs.rs)
   var machinesDoc: JSON = .null
   var tasks = TasksOverview()
   var tasksLoaded = false

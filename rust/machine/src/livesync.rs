@@ -1,7 +1,7 @@
 //! Live transcript sync: every liveSyncSeconds (default 300) each conversation transcript under ~/.claude/projects that
 //! changed since its last copy goes to the router (POST /m/live-transcript, X-Name = its file name, the whole file),
-//! which puts it at claude-records/.live/<session id>/ for transcript search (router/livesync.go); the "live-sync" command
-//! runs a round at once and then says so (POST /m/live-synced: a session's tail, now, router/livetail.go), and the
+//! which puts it at claude-records/.live/<session id>/ for transcript search (rust/router/src/livesync.rs); the "live-sync" command
+//! runs a round at once and then says so (POST /m/live-synced: a session's tail, now, rust/router/src/livetail.rs), and the
 //! final snapshot sends a round first. The machine holds no
 //! Storage Box credentials. Jarvis's peer-message relays ("You are a delivery relay…") are plumbing and are skipped.
 
@@ -233,7 +233,7 @@ impl LiveSyncer {
     }
 }
 
-/// the "live-sync" command (router/livetail.go): a round now, then POST /m/live-synced, which the router's tail waits for
+/// the "live-sync" command (rust/router/src/livetail.rs): a round now, then POST /m/live-synced, which the router's tail waits for
 pub fn live_round(c: &Client) {
     let n = live_syncer_for(c).once();
     match c.raw("POST", "/m/live-synced", b"{}", &[]) {

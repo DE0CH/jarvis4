@@ -585,7 +585,7 @@ key to decrypt it offline"; the download in the iPhone app, the decryptor a comm
     their base URL). They read untrusted content (transcripts, PDFs, images through ffmpeg), so they sit next to the
     news pod rather than the router or the core, and their NetworkPolicies admit only the router's pod: they have no
     login of their own, and the router forwards behind Access (the app) or the machine signature (any running session,
-    `router/searchsvc.go`). Change: give them a namespace of their own if more services join.
+    `rust/router/src/searchsvc.rs`). Change: give them a namespace of their own if more services join.
 107. **Fixes came along with the port**: Jarvis 1's iCloud pod had restarted 623 times (OOMKilled at 1536Mi). Loading
     its ~750k vectors with `fetchall()` held the blob list next to the matrix at every start and every reload; they now
     stream into a preallocated matrix and later loads add only new vectors (limit 2 GiB). A file now counts a try
@@ -626,7 +626,7 @@ key to decrypt it offline"; the download in the iPhone app, the decryptor a comm
 
 ## Device leases and watches in Jarvis 4, 2026-10-13
 
-113. **Device leases are the router's own** (Jarvis 1's lib/leases.js ported to `router/leases.go`; nothing forwarded
+113. **Device leases are the router's own** (Jarvis 1's lib/leases.js ported to `rust/router/src/leases.rs`; nothing forwarded
     to Jarvis 1). Same rules and request shapes: one holder and a FIFO queue per device (`wechat-phone`, `iphone`,
     `mac` always listed), acquire / renew / describe / return, `lowPriority` never queued, a 1 h renewable lease, expiry
     and gone sessions swept every 30 s, Deyao's take-over / hand-back and force return. The state is in the router's
@@ -650,7 +650,7 @@ key to decrypt it offline"; the download in the iPhone app, the decryptor a comm
       `/setup/leases/:name/take-over`): `iphone` with his note "Unavailable to agents long term …" and `mac`, both
       held by him in Jarvis 1, are held by "deyao" in Jarvis 4 too, so a Jarvis 4 session can't take them. He hands
       them back in the web page's Devices tab (or `infra/setup.py lease hand-back`).
-114. **Watches run on the box, with no secrets** (`router/watches.go`, `services/watch`, `k8s/apps/watch.yaml`).
+114. **Watches run on the box, with no secrets** (`rust/router/src/watches.rs`, `services/watch`, `k8s/apps/watch.yaml`).
     Jarvis 1 ran each check on its box with the session's store plaintext; Jarvis 4's box never holds store plaintext,
     and a watch must fire while its session is paused (no machine). So the router runs each due check on a **watch
     runner** pod in `jarvis2-edge` that holds nothing: no secrets, no service account token, no volume; its
@@ -708,7 +708,7 @@ Jarvis 1 half of 89.
      with the new pair; a participant writes it and then releases the lock (released after 45 s regardless). Jarvis 1
      is one participant for all its sessions (it locks them through Fly exec, as before). Replaces Jarvis 1's exec-based
      guard for Jarvis 4 sessions, which had none (they polled Jarvis 1 every 30 s).
-119. **Re-login is the CLI's OAuth flow in Go** (`router/claudelogin.go`), not a PTY around `claude auth login`
+119. **Re-login is the CLI's OAuth flow in Go** (`rust/router/src/claudelogin.rs`), not a PTY around `claude auth login`
      (lessons/39 drove the real CLI): the router image is distroless with no CLI, and a pending sign-in kept on the volume
      (the PKCE verifier, 15 minutes) survives a rollout, which Jarvis 1 needed a separate broker for. The parameters
      (authorize URL, client id, scopes, manual redirect, token endpoint, the `code#state` paste) are read from claude
@@ -728,7 +728,7 @@ Deyao: move every paused Jarvis 1 session to Jarvis 4, so each continues there a
 tree; Face ID is unavoidable, the approval burden should be small.
 
 122. **An import is a new line whose cert's `restore` names the Jarvis 1 session id and the sha256 of an import
-     manifest** (`router/jarvis1import.go`): at prepare the router streams every file of `.paused/<id>/` once and records
+     manifest** (`rust/router/src/jarvis1import.rs`): at prepare the router streams every file of `.paused/<id>/` once and records
      `{name, sha256, size}` for each; Deyao's Face ID signs the manifest's hash, so it vouches for every byte (DESIGN
      "Inputs to a machine" (a)). It reuses the `restore` key the app already shows ("Restores machine <id>", the hash;
      a Jarvis 1 id is its first machine's id), so no app release is needed. The machine tells the two kinds apart by the
@@ -820,7 +820,7 @@ iCloud index and leases (decided while Deyao was away; the safe, reversible defa
 136. **Start from a paired app is a resume with no phone step** (`POST /api/sessions/:id/start`, 202): the same image and
      stores (approve_by_dead_machine), as the app's own Resume without a prompt. A resume that needs the phone (a newer
      image, a store added) is not reachable from these apps.
-137. **The Browserbase DM moves as it is** (`router/bbbudget.go`): the same re-pricing, USD 10 cap and USD 8 warn line
+137. **The Browserbase DM moves as it is** (`rust/router/src/bbbudget.rs`): the same re-pricing, USD 10 cap and USD 8 warn line
      (router env), DM only. The month's flags are the router's, so until Jarvis 1 is frozen both Jarvises may send the
      same DM once each.
 138. **Org personal is read with a read-only token of its own** (`FLY_PERSONAL_READ_TOKEN`, part `flypersonal`): the
@@ -828,12 +828,12 @@ iCloud index and leases (decided while Deyao was away; the safe, reversible defa
      a check that it lists apps and can't create a machine). Fly has no caveat narrower than read for machine listings,
      and a read returns each machine's whole config: the router could read the Fly env of Jarvis 1's session machines
      (their stores) and of KAMYEE's Jarvis 3 sessions in that org. Unavoidable for listing them; today both apps have no
-     machines, and Jarvis 1's go when it is frozen. Only the fields `router/flyorgs.go` copies leave the router. Change:
+     machines, and Jarvis 1's go when it is frozen. Only the fields `rust/router/src/flyorgs.rs` copies leave the router. Change:
      an Apps caveat leaving out `de0ch-claude-sessions` (Jarvis 1's machines then don't show).
 139. **The apps' server URL changes at retirement, not now.** Both forks name jarvis.deyaochen.com in one constant; moving
      them now would cut Deyao's apps off Jarvis 1's sessions while he still uses it. At the freeze: change the constant,
      ship each through its TestFlight workflow, pair each app once (RUNBOOK "Paired apps").
-140. **A start waits out Fly's org machine limit** (up to 3 hours, a try a minute; `router/flows.go` startMachine):
+140. **A start waits out Fly's org machine limit** (up to 3 hours, a try a minute; `rust/router/src/flows.rs` startMachine):
      the limit counts every machine object (lessons/58: 20 in Jarvis 1's org), and the import starts 16 lines at once
      next to the running ones. A refused create made nothing and the phone's approval isn't spent until certify, so
      the router keeps it and tries again as sessions pause, instead of failing a line Deyao already approved (which
@@ -950,7 +950,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
      answers a challenge exactly as made: the second answer rebuilt the cert from the cert both were filed against, the
      router stored it, and the first store left. R1's core refuses the second instead (409 "isn't the newest"), the same
      loss the other way. Reproduced by core/addstore_test.go `TestTwoPendingAddStoresBothApprovedEndWithBoth` (fails
-     against either of those cores) and router/addstore_test.go (with a stand-in of the live core).
+     against either of those cores) and rust/router/src/tests/addstore.rs (with a stand-in of the live core).
      *The root cause* is that the phone signed a snapshot (the whole store set at filing time) when what it approves is
      a change ("add X to this machine"). *The fix, in the core* (`answer` + `addOnto`): every add-store is answered by
      one rule, with no fresh/stale branch (Deyao, 2026-10-13: the core doesn't decide; a call made wrong is refused):
@@ -1053,7 +1053,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
 ## A session hears what became of its Inbox requests, 2026-10-13
 
 162. **The requesting session is told every decision on what it filed** (Deyao, 2026-10-13: "Approving an Inbox
-     request should send a message or something to notify the session that requested it"; `router/outcomes.go`,
+     request should send a message or something to notify the session that requested it"; `rust/router/src/outcomes.rs`,
      `rust/machine/src/outcomes.rs`). Approved, denied, lapsed (10 minutes), dropped (left without a decision) or failed (an
      approved API call that couldn't run), per item, for everything a session files on its machine key (requests,
      add-store, new-session proposals, batches, the actions' filings incl. API calls). Claude's choices:
@@ -1173,7 +1173,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
 165. **The core keeps each store's last 50 versions; a phone-signed restore puts one back, with no kit and no
      plaintext outside the core** (Deyao, 2026-10-13, after two whole-store writes of 2 keys wiped 24 keys of `identity`
      and `yyc`: "it needs to go through the core and be signed, because I don't want to randomly lose my master key").
-     *Built* (DESIGN "Restoring a store"; `core/history.go`, `router/storerestore.go`, the app's Stores → a store →
+     *Built* (DESIGN "Restoring a store"; `core/history.go`, `rust/router/src/storerestore.rs`, the app's Stores → a store →
      Versions → Restore…, the web page's Propose restore): every change to a store makes a version (its `KeyEntry`s,
      sealed to `P + K`); `versions` lists them signed; `restore_begin` signs exactly what changes; the phone signs that
      document and shares the keys put back under one Face ID; `restore_finish` opens them, seals each one's backup to
@@ -1235,7 +1235,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
      needing the clock, a hash or memory belongs to the guard.
 167. **Upgrade is a ladder with no top: each step doubles the memory** (Deyao, 2026-10-15: "keep tapping Upgrade to go
      to 16 GB, 32 GB and beyond"; no "biggest size", no fixed last rung). Sizes are small (2 GB), medium (4), large (8),
-     then `16gb`, `32gb`, `64gb`, … (`router/sizes.go`; the same block is in `core/fly.go`, which makes the guest, and
+     then `16gb`, `32gb`, `64gb`, … (`rust/router/src/sizes.rs`; the same block is in `core/fly.go`, which makes the guest, and
      `rust/machine/src/deliver.rs`, which names the sizes in the `upgraded` text; `TestSizeBlocksMatch` keeps them equal).
      *Guests* follow Fly's rules (fly.io/docs/machines/guides-examples/machine-sizing: ≤ 2 GB per shared CPU, 2–8 GB per
      performance CPU): up to 16 GB shared (16 GB = 8 shared CPUs, the most a shared guest holds); past it performance,
@@ -1255,7 +1255,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
      | 128gb | 16×performance · 128 GB | 1.7402 | 23 |
      | 256gb | 32×performance · 256 GB | 3.4805 | 11 (Fly's preset list ends at performance-16x; Fly decides) |
 
-     The budget's rates (`router/budget.go`) are now that calculator's, so the cap counts big rungs right.
+     The budget's rates (`rust/router/src/budget.rs`) are now that calculator's, so the cap counts big rungs right.
      *No invented limit*: a size Fly can't make fails at Fly; the Upgrade job then ends with Fly's own error and the
      session resumes on its old size (`resumeBigger`), so it isn't left down (the line's last machine is unused until a
      cert names a successor, so the core answers the second resume as it did the first).
@@ -1345,7 +1345,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
      files the approval again from the newest cert and returns "another store was added to this session while this
      approval waited: approve it again" — the failed item. One store per round, so "only the first" every time a batch
      has two add-stores for one session; batches of other kinds (grants, deploy keys) were unaffected, hence
-     "sometimes". Reproduced by router/addstore_test.go `TestABatchOfAddStoresForOneSessionAllGoInAtOnce` (fails with
+     "sometimes". Reproduced by rust/router/src/tests/addstore.rs `TestABatchOfAddStoresForOneSessionAllGoInAtOnce` (fails with
      exactly that error without the fix). *The fix*: (1) the router: whenever a running machine gets a new cert (an
      add-store answered, a downgrade finished) every other add-store waiting for it is made again from that cert
      (`rebaseAddStores`), keeping the earlier challenges (`earlier`) so a phone that signed one while its page was open
@@ -1377,7 +1377,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
        gives nothing the backups didn't. The seed exists outside the core only on the phone during a Reset/Recover.
      - *Chosen: a sealed line state the router keeps* (newest cert per machine, created/initialised machines, killed,
        used, spent approvals, the input log's head, the stores as wrapped entries), fetched by the router whenever
-       `X-Line-Seq` moves, before the answer goes on (`router/linestate.go`), copied to the bucket every ≤5 min and at
+       `X-Line-Seq` moves, before the answer goes on (`rust/router/src/linestate.rs`), copied to the bucket every ≤5 min and at
        the drain. The app checks it against the derived key and refuses one older than the newest `lineSeq` it has seen
        in the core's state. A key without its state would be unsafe (superseded certs, burnt lines and used
        predecessors would all be live again); the state without a witness lets the router roll back what happened
@@ -1401,7 +1401,7 @@ Deyao: several actions approved together with ONE Face ID; the caller groups the
        metadata with its own credential, which would close the rollback above): a new credential and network path for
        the core; the next step if the rollback bound isn't enough.
      - The sessions running when this was released were made by a random-key core: no later core can sign for them,
-       so they end once more at this release's restart. `router/corechange.go` now marks only sessions whose cert the
+       so they end once more at this release's restart. `rust/router/src/corechange.rs` now marks only sessions whose cert the
        running core's key didn't sign, and only once the core is set up.
 ## The iCloud index rolls out without a gap, 2026-10-15
 
@@ -1427,7 +1427,7 @@ After session sb8e0273d6c308894 ("k-matrix clone: interactive 5") lost its conve
 snapshot failed with "no space left on device", the machine was destroyed anyway and the resume started empty.
 
 175. **The final snapshot streams to the router; the machine needs no free disk for it** (`rust/machine/src/snapstream.rs`,
-     `router/snapstream.go`). The tar.gz is made straight into the request body (`POST /m/snapshot-stream`, signed over
+     `rust/router/src/snapstream.rs`). The tar.gz is made straight into the request body (`POST /m/snapshot-stream`, signed over
      the marker `stream` because the hash isn't known before the bytes, and checked before the router takes a byte); the
      router answers the hash of what it stored, the machine compares it with its own, signs it and commits. The R1 rule
      stands: one signature per machine, after the session is stopped; a later command commits the same one, and a commit
@@ -1437,7 +1437,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      compressing to a tmpfs (RAM is the next thing to run out).
 
 176. **A machine whose final snapshot fails is kept, never destroyed; Deyao gets a "needs you" DM**
-     (`router/snapsafe.go`; with a volume too since DECISIONS 215). Failure = an error the machine reports, a snapshot that stalls (DECISIONS 214), or a booted
+     (`rust/router/src/snapsafe.rs`; with a volume too since DECISIONS 215). Failure = an error the machine reports, a snapshot that stalls (DECISIONS 214), or a booted
      machine silent for 3 min (it can't send one). The session goes `failed` with its machine and `snapshotFailed`; Pause
      again retries, Destroy anyway (`force`) goes on without it. A kill that can't finish (the core's backup or destroy,
      45 min) also keeps the machine and DMs. A machine paused while still booting signs its predecessor's snapshot (its
@@ -1462,7 +1462,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      retention is set on the volume just before the snapshot. *Price* (fly.io/docs/about/pricing, 2026-10: volumes USD
      0.15/GB-month provisioned, snapshots USD 0.08/GB-month stored, the first 10 GB of snapshots free): a 10 GB volume
      costs USD 1.50 per machine-month while it runs, nothing while paused (it is deleted); at about 3 running machines on
-     average that is about USD 4.50/month, which `router/budget.go` already counts (it bills provisioned volumes).
+     average that is about USD 4.50/month, which `rust/router/src/budget.rs` already counts (it bills provisioned volumes).
      Backups: about 10 pauses a day × 3 days × ~3 GB of state ≈ 90 GB stored → about USD 6/month after the free 10 GB
      (less if Fly's incremental storage shares blocks); each failed-snapshot backup adds ~3 GB × 2 months ≈ USD 0.50
      once. The budget cap counts both (180). Needs the
@@ -1473,7 +1473,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      session kept across pauses (it would bill while paused, and a router could then start any machine on it).
 
 178. **Disk is reported like memory, warned about before it fills, and grown with More disk** (`rust/machine/src/disk.rs`,
-     `router/disk.go`). Every 30 s the machine reports its root disk and its volume; the volume is the disk that counts
+     `rust/router/src/disk.rs`). Every 30 s the machine reports its root disk and its volume; the volume is the disk that counts
      when there is one. Under 10 % or 1 GB free starts an episode: one DM, `diskAlert` on the session, ending at 20 % and
      2 GB free. More disk (`POST /api/sessions/:id/disk`, a button on the session in the app and web page) has the core
      extend the volume to twice its size (at most 500 GB); the session's `diskGb` keeps the size for every later machine,
@@ -1503,7 +1503,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      is made); *a trigger in git (`MOVE_AT`)*, not an API call (the box changes only through git); *a failed freeze or
      delta aborts and thaws the old box* (state, peer and drain back); *a refused takeover is not undone* (core
      continuity: a handed-off core stays handed off; the final state is kept for the retry and Deyao is DMed).
-     *The flip* (`router/nextcore.go`): every `/api/core/*` relay takes `X-Jarvis2-Core: next` / `?core=next`, the
+     *The flip* (`rust/router/src/nextcore.rs`): every `/api/core/*` relay takes `X-Jarvis2-Core: next` / `?core=next`, the
      state names the serving core (`activeCore`) so a restart keeps it, and `FLIP_AUTO=1` flips once the next core is
      a standby. *The state backup* (`router/backup.go`, Deyao: "router state backed up to the Storage Box"): age to a
      key whose private half is in `infra`, not on the box (the Storage Box is shared with Jarvis 1's sessions); the
@@ -1512,7 +1512,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      Storage Box at the cut (minutes of downtime).
 ## The budget cap counts everything Fly bills for the sessions, 2026-10-15
 
-180. **Volume snapshots are in the Fly budget estimate, beside machines and provisioned volumes** (`router/budget.go`).
+180. **Volume snapshots are in the Fly budget estimate, beside machines and provisioned volumes** (`rust/router/src/budget.rs`).
      Prices from fly.io/docs/about/pricing, read 2026-10-15: started machines per its calculator (unchanged), volumes
      USD 0.15 per provisioned GB-month (already counted), volume snapshots USD 0.08 per stored GB-month with the first
      10 GB free. Every 30 min the router lists the snapshots of each volume Fly still has and of each deleted volume a
@@ -1596,7 +1596,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      made and kept for its life** (Deyao, 2026-10-15: "there should be multiple claude key stores, one per account, so I
      can choose which account a session starts with and the session uses it (refreshed automatically), and I can manage
      the accounts in the dashboard"). Replaces 116's "the router alone picks which Claude account sessions use".
-     *Built* (`router/claudeaccounts.go`, `router/claudelogin.go`, `rust/machine/src/claudelogin.rs`; API "Claude accounts";
+     *Built* (`rust/router/src/claudeaccounts.rs`, `rust/router/src/claudelogin.rs`, `rust/machine/src/claudelogin.rs`; API "Claude accounts";
      RUNBOOK "The Claude accounts"): one login hub per account, its pair on the router's volume
      (`claude-accounts/<store>.json`), each refreshed by the router alone with the same refresh protocol (115-118), its
      participants the machines of its own sessions. `Session.ClaudeAccount` is set when the session is made (New session
@@ -1718,7 +1718,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      being refused (it holds the pair in the clear and hands it to machines anyway). So the core takes writer `router`
      for `claude-<name>` stores only, unsigned and named "router" on every unlock (the phone accepts it for those stores
      only), and the router writes each account's `CLAUDE_CREDENTIALS` and `CLAUDE_ACCOUNT` into its store at every change
-     (`router/claudestores.go`, from the login loop; a new core gets them within a minute). Claude's choices: *no bucket
+     (`rust/router/src/claudestores.rs`, from the login loop; a new core gets them within a minute). Claude's choices: *no bucket
      backup and no Inbox refresh for these writes*: an earlier pair is worthless once rotated, and running machines take
      refreshes from the long poll (an unlock every 8 hours would be the refusal again). *The router keeps its working
      copy*: the core gives a store back only with the phone, and the router must refresh with nobody there. *The cert
@@ -1755,7 +1755,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
 
 191. **The archive takes every `.live` transcript the snapshot doesn't hold, verified, before any `.live` file goes**
      (2026-10-15: destroying sb8e0273d6c308894 deleted its original conversation, which only `.live` still had;
-     `router/livearchive.go`). Claude's choices: *byte-identical means the same size and sha256* as the snapshot's file of
+     `rust/router/src/livearchive.rs`). Claude's choices: *byte-identical means the same size and sha256* as the snapshot's file of
      that name; *another version of a conversation the snapshot has is kept beside it* as `transcript-<uuid>.live.jsonl`
      (not dropped as "older": it may hold what the snapshot lost); *each copy is read back from the Storage Box and
      checked* before it counts; *a copy that fails is an archive failure* (the session stays paused, as before), and a
@@ -1807,7 +1807,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
 
 193. **The next machine starts as soon as the old one has been told to stop; only its cert waits for Fly's
      "destroyed"** (Deyao, 2026-10-19: "you can start a new machine before the old machine has completely shut down, as
-     reported by Fly, as long as the stop command has been sent"; `router/handover.go`). Upgrade, Restart, More disk and
+     reported by Fly, as long as the stop command has been sent"; `rust/router/src/handover.rs`). Upgrade, Restart, More disk and
      the Resume of a failed session that still has its machine used to run in a row: the final snapshot, the kill until
      Fly reported the old machine destroyed (the serving core: stop, the volume's backup snapshot until Fly reports it
      created, destroy), then the core's start of the new machine (volume and machine create, the image pull, boot,
@@ -1875,7 +1875,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
 ## Leftover volumes are swept by the router with a token that can only delete volumes, 2026-10-20
 
 195. **The router holds a fourth Fly token, `FLY_VOLUME_TOKEN`, which can do nothing but delete volumes in
-     `jarvis4-sessions`, and sweeps leftover session volumes with it every 10 minutes (`router/volsweep.go`).** Deyao
+     `jarvis4-sessions`, and sweeps leftover session volumes with it every 10 minutes (`rust/router/src/volsweep.rs`).** Deyao
      decided (2026-10-20) against a core release for 194's Destroy volume, since a core release needs his Recover. 194
      had weighed this router-only design and noted what it costs: until now the router held no Fly write power at all
      (`FLY_READ_TOKEN`, `FLY_ORG_READ_TOKENS`, `FLY_PERSONAL_READ_TOKEN` are read-only), and DESIGN puts every Fly change
@@ -2000,7 +2000,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
 202. **A session's Claude account can be switched, under the running claude (Deyao, 2026-10-20: "I ran out of usage
      on the chendeyao.uk account; swap its session to chendeyao000@gmail.com, and then type continue into the chat";
      then: the harness is just a process, swap the files it reads under it).** `POST /api/sessions/:id/account
-     {account, continue}` (`router/accountswap.go`), one button in the session's More menu ("Switch", or with
+     {account, continue}` (`rust/router/src/accountswap.rs`), one button in the session's More menu ("Switch", or with
      continue), requestable as an Inbox API call whose item says from → to. Choices:
      - The switch is the router's word, like the account at New session (the login travels over the machine-signed
        long poll, not the cert): no core change, no Face ID of its own. The router's record changes first, so the
@@ -2150,7 +2150,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
 ## Deleted volumes are not leaks, 2026-10-21
 
 208. **A volume Fly lists as `pending_destroy` or `destroying` is already deleted: the Machines view leaves it out and
-     the budget doesn't bill it (`volumeGone`, `router/budget.go`).** Deyao saw 30 "Not attached to a machine: billed for
+     the budget doesn't bill it (`volumeGone`, `rust/router/src/budget.rs`).** Deyao saw 30 "Not attached to a machine: billed for
      nothing" volumes in `jarvis4-sessions` on 2026-10-21. Every one was in state `pending_destroy`: the core's kill had
      deleted it (DECISIONS 177) and Fly keeps a deleted volume listed, soft-deleted, until it purges it. The only volumes
      in `created` were the three of the three running machines; kamyee and personal had none. So no volume had
@@ -2163,7 +2163,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      only on `created` volumes. *Not chosen*: showing deleted volumes greyed out with a note, since Fly itself hides
      them and there is nothing to do about one.
 209. **The Machines view names the apps Jarvis 4 itself runs that aren't session apps, with their monthly cost
-     (Deyao, 2026-10-21; `jarvisOwnApps`, `router/flyorgs.go`).** `jarvis2-log-shipper` showed "Used by: No Jarvis" and
+     (Deyao, 2026-10-21; `jarvisOwnApps`, `rust/router/src/flyorgs.rs`).** `jarvis2-log-shipper` showed "Used by: No Jarvis" and
      its machine the amber "In an app no Jarvis runs sessions in". Its label is now "Jarvis 4's log shipper: sends the
      session machines' logs to Grafana Cloud · USD 2.52/month" and its machine isn't flagged for being there (a stopped
      or failed one still is). The cost is computed from its started machines' guests at budget.go's rates (Fly's
@@ -2250,7 +2250,7 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
 214. **A pause or destroy waits for the machine's final snapshot as long as the snapshot makes progress, with no
      overall limit (Deyao, 2026-10-21: "get rid of the 10 min timeout — it's too crude, and a large upload or a bad
      network might actually take very long").** The fixed `SNAPSHOT_WAIT` (600 s) cut off "YYC AI on Jarvis 3"
-     (machine 811114df974358) mid-snapshot: the session left no snapshot and didn't resume. Now (`router/snapwait.go`)
+     (machine 811114df974358) mid-snapshot: the session left no snapshot and didn't resume. Now (`rust/router/src/snapwait.rs`)
      the wait ends only when the snapshot arrives or the machine reports it failed, when nothing has moved for
      `SNAPSHOT_STALL_SECONDS` (600: the stream is stuck, or the supervisor before it), or when nothing has moved for 3
      min and the machine's status reports stopped as long (it is gone; its supervisor reports at least every 60 s, also
@@ -2273,13 +2273,13 @@ snapshot failed with "no space left on device", the machine was destroyed anyway
      snapshot never began (DECISIONS 214's "mid-snapshot" was wrong). Because the machine had a volume, the kill went on,
      and the core's volume backup was its only copy; Fly then refused to restore it ("didn't reach a mountable state",
      every encrypted volume snapshot of app jarvis4-sessions). Now:
-     - `router/snapsafe.go`: any failed final snapshot keeps the machine (and its volume), the session `failed`,
+     - `rust/router/src/snapsafe.rs`: any failed final snapshot keeps the machine (and its volume), the session `failed`,
        Deyao DMed, exactly as DECISIONS 176 did for machines without a volume; Destroy anyway still goes on.
      - `rust/machine/src/restore.rs` `write_changes` (the only step between the freeze and the snapshot's first progress line: a
        `git status` per repo, which had no limit) runs at most 60 s, with no optional locks and no fsmonitor (the
        session's processes are stopped), its whole process group killed at the limit; the snapshot goes on without the
        changes file. It logs how long it took.
-     - `router/http.go` `requireMachine` checks X-Time as the request arrives, before reading the body. That machine's
+     - `rust/router/src/http.rs` `requireMachine` checks X-Time as the request arrives, before reading the body. That machine's
        live transcript sync (20 MB) had failed all morning with "X-Time too far off": the upload took over 2 min, so
        the time was stale by the time the body was read. The streaming endpoints already checked first.
      The core's volume backup at the kill stays (dropping it changes the core and needs a Recover: Deyao, 2026-10-21,
@@ -2465,10 +2465,10 @@ the core change of 222), so blue restarted empty. At 07:35:01 the drain ended, g
 blue refused the takeover with 409 "this core isn't standing by": no core served until green was restarted empty
 (463ae61) and Recovered with the router's kept final state. Three fixes, router and CI only (no core change):
 
-223. **The flip hands off only to the standby it checked before the drain** (`router/nextcore.go` `FlipCore`). It
+223. **The flip hands off only to the standby it checked before the drain** (`rust/router/src/nextcore.rs` `FlipCore`). It
      notes the standby's signing key before the drain, looks at the next core every 30 s during the drain
      (`drainWatchEvery`) and once more after it. If it is no longer a standby with that key (restarted empty, wiped,
-     Recovered with another kit, not answering), the drain ends at once (`drainUntil`'s abort, router/drain.go), nothing
+     Recovered with another kit, not answering), the drain ends at once (`drainUntil`'s abort, rust/router/src/drain.rs), nothing
      is handed off, the router undrains, logs it and DMs Deyao; the serving core goes on and a new Recover alongside
      starts a new flip. A final state kept from an earlier attempt (the serving core already handed off) skips the
      abort, since nothing serves either way and the takeover is the only way back. Tested:
@@ -2501,7 +2501,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      refused; the tick finishes it without a takeover call; `activeCore` set, `core-final.json` gone, kept over a
      restart), `TestNoFinishWhileTheCurrentCoreServes`.
 
-226. **A destroy's archive uploads in parallel and says how far it is** (replaced by 227) (`router/archive.go` `uploadSnapshotFiles`,
+226. **A destroy's archive uploads in parallel and says how far it is** (replaced by 227) (`rust/router/src/archive.rs` `uploadSnapshotFiles`,
      `archiveProgress`). The archive put the snapshot's transcripts and `~/artifacts` files on the Storage Box one PUT
      at a time, and every file's directory again segment by segment from `claude-records/` (a MKCOL per segment), so a
      session with thousands of artifact files spent most of its destroy in round trips (2026-10-22: 2094 files took
@@ -2520,7 +2520,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      parents made; all arrive, counts right, `waiting` cleared, no temp files; a failing PUT fails the archive and
      leaves no temp files), `TestArchiveProgressText`.
 
-227. **A destroy's archive is ONE streamed .tar.gz in Jarvis 4's own folder** (Deyao, 2026-10-22; `router/archivetar.go`).
+227. **A destroy's archive is ONE streamed .tar.gz in Jarvis 4's own folder** (Deyao, 2026-10-22; `rust/router/src/archivetar.rs`).
      The archive put each transcript and artifact on the Storage Box as its own file (in parallel since 226, still a
      WebDAV round trip per file), in `claude-records/<date> <title>/` beside Jarvis 2's archives, with an index file in
      `claude-records/.index/` that both routers rewrote. Now the router writes tar → gzip into a pipe that a chunked PUT
@@ -2537,7 +2537,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      record is one of these archives.
 
 228. **A machine stopped outside Jarvis is noticed and said so plainly; Resume starts a new machine from the newest
-     signed snapshot. A machine's key pair lives in its memory only** (Deyao, 2026-10-23; `router/lostmachine.go`,
+     signed snapshot. A machine's key pair lives in its memory only** (Deyao, 2026-10-23; `rust/router/src/lostmachine.rs`,
      `rust/machine/src/keeper.rs` `memory_dir`). 2026-10-22: Claude ran `fly machine stop` on Jarvis 2's "YYC news monitor 2";
      Jarvis 2 showed it "started, busy" for a long time, then "failed" with its machine still listed, and nothing said
      whether its work was lost. Now the leader looks at Fly every 20 s (read-only token): a session Jarvis has running
@@ -2558,7 +2558,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      new machine restores the newest snapshot), `TestALostMachineWithoutASnapshotIsRefused`,
      `TestJarvisOwnStopIsNotLost`, `machine` `TestMemoryDirIsATmpfs` (as root).
 
-229. **A failed session always says why and since when, everywhere it is listed** (`router/failures.go`). 2026-10-22:
+229. **A failed session always says why and since when, everywhere it is listed** (`rust/router/src/failures.rs`). 2026-10-22:
      Jarvis 2's "Kates work" failed on its first start, with no machine, and `infra/setup.py sessions -v` showed no
      reason. Every write of the state stamps a failed session's `failedAt` (cleared once it is anything else) and gives
      a failed session with no error one saying the path that failed it gave none (a bug to fix there); each new failure
@@ -2587,7 +2587,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      spawner and only with the trailer.
 
 231. **The kernel's spawner keeps only what protects something; retrying, adopting and bookkeeping are the router's**
-     (Deyao, 2026-10-24; `kernel/spawner`, `router/kernelline.go`). Its design was "Fly: single calls, no waiting or
+     (Deyao, 2026-10-24; `kernel/spawner`, `rust/router/src/kernelline.rs`). Its design was "Fly: single calls, no waiting or
      retrying (the router retries)", and it had grown a spawn record keyed by the cert with a Fly lookup after a lost
      answer, a volume-placement retry loop, a refusal to kill without a required snapshot, an orphan-volume list, disk
      sizes, an in-place Start and a volume Extend. A component the root key vouches for should hold only what keeps a
@@ -2610,7 +2610,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      `TestAKernelSpawnIsRetriedByTheRouter`, `TestAKernelKillKeepsWhatItMust`, `TestAKernelStartCarriedOn`.
 
 232. **Secrets hands out, the minter uses** (Deyao, 2026-10-23/24; `kernel/minter`, `kernel/secrets`,
-     `router/storeversions.go`). The kernel's secrets only hands secrets out: it never uses one, and keeps nothing it
+     `rust/router/src/storeversions.rs`). The kernel's secrets only hands secrets out: it never uses one, and keeps nothing it
      doesn't need. (1) A new kernel component, the **minter**, its own binary, Deployment and roster member, is the
      only one with GitHub egress (`egress: github`; secrets has none and reaches only the minter in the cluster,
      `KERNEL_MINTER_URL`). A deploy-key call: secrets checks the phone-signed begin and opens `github-deploy-keys` with
@@ -2636,7 +2636,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
 
 233. **A kernel release is a flip to the other kernel copy: it interrupts nothing and costs one Face ID** (Deyao,
      2026-10-24; `kernel/internal/serve/flip.go`, `kernel/sig/identity.go`, `kernel/secrets/continuity.go`,
-     `router/kernelflip.go`, `infra/kernel-pin.py`, RUNBOOK "A kernel release"). Every component makes fresh RAM-only
+     `rust/router/src/kernelflip.rs`, `infra/kernel-pin.py`, RUNBOOK "A kernel release"). Every component makes fresh RAM-only
      keys at start (kept: Deyao's design), so a release restarted components in place, staled the root-signed roster and
      locked Jarvis 4 until Deyao re-signed it; worse, live sessions' grants were signed by the old mover and merger keys
      and stopped opening (pause, resume and pulls failed). Now: (1) **two copies**, blue and green, of all nine
@@ -2704,7 +2704,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      `infra/setup_roster_test.py`; the interop Kernel test (the payload with retired keys and `secretsBoot` byte for byte
      Go's, the app's takeover checks).
 
-234. **A store restore's removals survive a Recover** (`router/storeversions.go`, the app's `CoreSetup.checkKeyBackup`).
+234. **A store restore's removals survive a Recover** (`rust/router/src/storeversions.rs`, the app's `CoreSetup.checkKeyBackup`).
      A kernel restore that removed a key deleted it in secrets but left its last backup in the bucket (the router's
      credential can't delete; a delete marker needed a writer the app's Recover takes, and `replay` was none), so a
      Recover from the bucket brought the removed key back. Now each removal, once secrets answered it, gets a delete
@@ -2823,7 +2823,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      the terminal interface (say claude code) that i can use an actual terminal emulator for"; his answers: choose the
      region per session; SSH via cloudflared; a new shell, from which he mostly types `tmux attach -t claude`; his
      Access login is enough, no Face ID grant). Fly has no Hong Kong region; Singapore (`sin`) and Tokyo (`nrt`) are
-     the nearest. New session offers London, Singapore and Tokyo (`router/regions.go`, `GET /api/regions`); the
+     the nearest. New session offers London, Singapore and Tokyo (`rust/router/src/regions.rs`, `GET /api/regions`); the
      session keeps its `region` and every machine it starts (the kernel's spawn, the old core's start, a handover's
      spare) asks for it, so a region is per session, not per box. The router, its database and the snapshots stay in
      Falkenstein: a session far from them pays that distance on its snapshots and router calls, not on typing. The
@@ -2906,7 +2906,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      at AWS's published on-demand rates (Price List API, read 2026-11-04); that rate joins Fly's in the same month's total
      against `FLY_BUDGET_USD` (50, DM at 45), and the cap pauses running sessions on both runners. Cost Explorer's
      month-to-date usage for the router's own account, read every 6 h, is a floor under the AWS part (it lags a day but
-     includes data transfer, t3 surplus credits and anything the estimate doesn't list). router/awsbudget.go,
+     includes data transfer, t3 surplus credits and anything the estimate doesn't list). rust/router/src/awsbudget.rs,
      docs/PLAN-aws.md "Budget". Billing: jarvis4 runs in Deyao's own account 795109470764 (the organisation's
      management account), YYC in its member account 551897326524, so the bill separates them by account; every
      jarvis4 resource is also tagged `app=jarvis4`, an active cost allocation tag. *Not chosen*: Cost Explorer alone
@@ -2919,7 +2919,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      its AWS machines every 2 s with its read-only key and writes one entry (source `aws`) per change of the instance's
      state, with EC2's `stateReason` and `stateTransitionReason`: launched (at EC2's launch time), running (its public
      IPv4), shutting-down, terminated, gone. The router's steps add when the spawner launched the instance and when its
-     keys arrived. Claude's choices: *a router-side DescribeInstances of its own* (router/awsread.go, its own SigV4):
+     keys arrived. Claude's choices: *a router-side DescribeInstances of its own* (rust/router/src/awsread.rs, its own SigV4):
      the spawner package's listing reads no reasons, and kernel/ changes only with a kernel release; *no entry for the
      state an instance already had when the operation began* (a pause of a running machine starts with its
      shutting-down), as Fly's events from before the operation are left out. *Not chosen*: EventBridge or CloudTrail
@@ -2994,7 +2994,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
 255. **The session is told of memory or disk pressure by its own supervisor, and told not to upgrade** (Deyao,
      2026-11-12: "add a jarvis watcher (similar to the idle/stall watcher) that says disk pressure/memory pressure, do
      not upgrade. discord Deyao if upgrade is necessary or recommended"). `rust/machine/src/pressure.rs` reads its own
-     machine's memory and disk every 30 s and decides by the router's rules (router/memory.go, router/disk.go), so the
+     machine's memory and disk every 30 s and decides by the router's rules (rust/router/src/memory.rs, rust/router/src/disk.rs), so the
      session hears of the episode Deyao is DMed about: the message goes into the harness through the Jarvis channel
      at the start of an episode and every 15 min while it lasts, with the numbers and the biggest processes. A memory
      episode ends after 15 healthy minutes, a disk one once 20 % and 2 GB are free again. The text tells the session
@@ -3006,7 +3006,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      (Deyao, 2026-11-12: "there should be an ownership or something tracked by jarvis 4 for it's not warning me about
      random false positives": the three bake builders showed as "Not a session" on every image pin). Whatever starts
      an instance outside the spawner tags it `jarvis4_owner`; one kind today, `github-run:<run id>` (a run of a workflow
-     of this repo: `infra/aws/bake.sh`'s builder and test instances). `router/awsowner.go` asks GitHub for the run each
+     of this repo: `infra/aws/bake.sh`'s builder and test instances). `rust/router/src/awsowner.rs` asks GitHub for the run each
      budget tick: while it is queued or in progress the instance is in the view's `owned` ("Owned by a job", with the
      workflow and run); once the run is over, an instance it left is back in `other` ("No owner", amber) naming the run
      that left it. No tag, an unknown kind, or a run GitHub can't show is a warning with the reason. A finished run is
@@ -3015,7 +3015,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      registering with the router (a router credential in CI for a row of a view).
 
 257. **A new session starts on aviary** (Deyao, 2026-11-13: "change the default harness to aviary when starting a new
-     session on jarvis"). `router/harness.go` `defaultHarness`: aviary where the policy offers it, else Claude Code;
+     session on jarvis"). `rust/router/src/harness.rs` `defaultHarness`: aviary where the policy offers it, else Claude Code;
      used for a create that names no harness, for `/api/models` (`default`, `defaultHarness`), and as the harness New
      session opens on in the web page and the iPhone app until another is picked by hand. *Not chosen*: a constant
      in each client (the test stacks' policies offer only Claude Code, and would start sessions they cannot run).
@@ -3059,7 +3059,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
 264. **A session's ask for a repo that has its key is the add-store of the key's store** (Deyao, 2026-11-17:
      "sessions keep asking me to make a new deploy key even when one already exists in a key store"). `repo/add`
      never looked at the repo list, so every session told to push to a repo (`jarvis-request add-repo`) filed a
-     "make a deploy key" request, a new key for a repo whose store `github-<repo>` was there. Now (`router/repos.go`
+     "make a deploy key" request, a new key for a repo whose store `github-<repo>` was there. Now (`rust/router/src/repos.rs`
      `existingRepoStore`), from a session (its requests or actions, alone or as a batch item), for a repo on the
      list with a key, when the session runs and doesn't hold the store: the router files the add-store approval of
      that store and no request. A new key is still asked for by a repo with no key, by a session that holds the
@@ -3071,7 +3071,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      (project runners) were made by each session with the project's token from the `default` store and a label only
      the script set: Jarvis 4 showed none of them and nothing ended them. Now the router holds the project's only
      token (`HETZNER_RUNNERS_TOKEN`, part `runners`; API token `jarvis4-router`) and a session asks it for a runner
-     (`/m/api/sessions/ID/runners`, `router/runners.go`): the router sets the label `session=<id>`, so no server is
+     (`/m/api/sessions/ID/runners`, `rust/router/src/runners.rs`): the router sets the label `session=<id>`, so no server is
      made without an owner. Destroy deletes the session's runners. A pause deletes them unless a wakeup, cron or
      watch is armed (Deyao: "Delete on idle pause. Kept when theres scheduled wakeup"); the pause inside a restart,
      an Upgrade or a move to a bigger machine or disk keeps them (`pauseWith`, the job's `restart` argument). The
@@ -3149,7 +3149,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      its harness took it; when the answer doesn't reach the router (the harness took over 60 s), the router retried,
      met the machine's replay refusal 5 times and marked run 6 missed without counting it, so every later occurrence
      sent run 6 again and was refused for ever. Now that refusal (its wording, read by `sessionHasRun` in
-     router/schedule.go and pinned by rust/machine/src/tests/r1.rs) counts the run as delivered at the session's own number, for
+     rust/router/src/schedule.rs and pinned by rust/machine/src/tests/r1.rs) counts the run as delivered at the session's own number, for
      a scheduled firing and a Run now alike: no missed mark, no DM, the next occurrence carries the next number. A cron
      stuck before the fix loses one occurrence (it is the one counted) and runs on. *Not chosen*: a structured field in
      the machine's answer (machines on older images would stay stuck until restarted).
@@ -3157,7 +3157,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      with one DM or leaving it). "chat-marks" of session "Mock UI for Aviary session status indicators" DMed "the
      session has failed: Restart it (or Resume)" every period: its pause's final snapshot had met a one-off gateway
      502 ("try again"), which leaves the session failed with its machine kept, and nothing retried. Now a wakeup's or
-     cron's firing goes through `deliverScheduled` (router/schedule.go), as Run now already did: a failed session is
+     cron's firing goes through `deliverScheduled` (rust/router/src/schedule.rs), as Run now already did: a failed session is
      resumed first (Resume finishes a failed pause's snapshot first, or starts a failed start again), then delivered.
      A resume that fails again fails the firing like any other failure (back-off, then a DM after 5 attempts). Other
      deliveries (peer messages, approved held messages) still don't start a failed session.
@@ -3233,7 +3233,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
      id is what its proposal answered, and a session has one proposal at a time. *Change*: none expected.
 277. **A session's tail, now** (Deyao, 2026-11-20: "in addition to the transcript search that lags current by some
      time, have a function to get the tail of a session in a timely manner"; asked who may read one: "Same as
-     transcript search", any session). `jarvis-tail SESSION` (`GET /m/api/tail/{session}`, `router/livetail.go`):
+     transcript search", any session). `jarvis-tail SESSION` (`GET /m/api/tail/{session}`, `rust/router/src/livetail.rs`):
      for a running session the router sends the `live-sync` command and waits (up to 45 s) for the machine's
      `POST /m/live-synced`, sent after it has sent every transcript that changed (the live sync's own path, so the
      `.live` copies and transcript search gain from it too); then it Range-reads the end of the conversation's
@@ -3261,7 +3261,7 @@ blue refused the takeover with 409 "this core isn't standing by": no core served
 279. **An object read that a reset cuts off goes on from where it broke** (Deyao, 2026-11-22: "the router
      retries"). The router reaches the bucket's IPv4 through WARP, which resets long reads now and then; on
      2026-11-21 that failed four Destroys ("fetching the snapshot: … connection reset by peer") and a pause (the
-     snapshot's read-back), each waiting for someone to try again. `s3Objects.Get` (router/objstore.go
+     snapshot's read-back), each waiting for someone to try again. `s3Objects.Get` (rust/router/src/objstore.rs
      `resumingObject`; the Rust port's `Resuming`) re-requests the object from the byte it reached, up to 5 times
      (2, 4, 6, 8, 10 s apart), so every caller (archive, read-back, facts, downloads) gets it without a retry of its
      own. An S3 error answer is not retried. *Change*: if WARP's resets get worse, reach the bucket over IPv6

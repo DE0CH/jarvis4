@@ -1,4 +1,4 @@
-// Devices tab: the shared devices sessions lease (router/leases.go, Jarvis 1's Devices tab): for each, the holder (a
+// Devices tab: the shared devices sessions lease (rust/router/src/leases.rs, Jarvis 1's Devices tab): for each, the holder (a
 // session, or Deyao himself), the queue with each waiter's purpose and description, and the last events. Take over
 // (Deyao uses it himself; the holder is told and queued first), Hand back (the next waiter is woken), Force return
 // (a stuck holder). Two-phase: a card changes only when /api/state shows the change.

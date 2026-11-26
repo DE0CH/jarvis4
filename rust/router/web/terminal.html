@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark">
 <title>Terminal</title>
 <!--
-  The session's terminal (router/termpage.go, GET /term/{id}). Behaviour as the app's old React Native page
+  The session's terminal (rust/router/src/termpage.rs, GET /term/{id}). Behaviour as the app's old React Native page
   (app/src/pages/Terminal.tsx + ui/ansi.ts): one tmux capture at a time, a second after the last answered, drawn
   from its colour escapes; keys and text sent in order, one request at a time; the remote window fitted to this
   screen. The iPhone app shows this page in a web view and listens on the `jarvis2` message handler:
@@ -297,7 +297,7 @@
   }
   keepFocus($("send"));
 
-  // the keys the router passes to tmux (router/terminal.go tmuxKeys)
+  // the keys the router passes to tmux (rust/router/src/terminal.rs tmuxKeys)
   const KEYS = [["Enter", "Enter"], ["Esc", "Escape"], ["Tab", "Tab"], ["⇧Tab", "BTab"], ["↑", "Up"], ["↓", "Down"], ["←", "Left"], ["→", "Right"],
     ["⌫", "BSpace"], ["^C", "C-c"], ["^D", "C-d"], ["^R", "C-r"], ["^U", "C-u"], ["PgUp", "PageUp"], ["PgDn", "PageDown"]];
   const ARIA = { Enter: "Enter", Escape: "Escape", Tab: "Tab", BTab: "Shift Tab", Up: "Up", Down: "Down", Left: "Left", Right: "Right",

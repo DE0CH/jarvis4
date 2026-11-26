@@ -148,7 +148,7 @@ read)"), and the setup session (`infra/setup.py write`). The writer takes the st
 the core's signed identity and store key (a machine checks them against its core key), seals the value to the store
 key and, for the backup, to the master key (`info jarvis2/backup`, the same associated data), and signs
 `WriterText = "jarvis2-store-key\n" store \n key \n E \n sha256(data) \n backupSha256` (a delete: empty `E`, data
-and backup), where `backupSha256 = sha256(backup.e + "\n" + backup.data)`. The router (`router/storedocs.go`) writes
+and backup), where `backupSha256 = sha256(backup.e + "\n" + backup.data)`. The router (`rust/router/src/storedocs.rs`) writes
 **the backup first**, `keys/<store>/<key>.json` in Deyao's Hetzner Object Storage bucket `jarvis2-backup-de0ch`
 (**versioned**: a new version never removes an old one, and the router's credential may only add versions under
 `keys/`), then the key into the core; no key reaches the core without its backup. The backup object holds the sealed
@@ -211,7 +211,7 @@ The master-key-sealed bucket backups stay the disaster path (Recover), untouched
   {store, seq}`) from the web page (Propose restore) or the setup session (`infra/setup.py request restore STORE V`);
   never a session, never in a batch. Only the phone approves.
 - **Once the kernel serves** (DECISIONS 232): the kernel's secrets keeps no history. The router keeps each store's
-  last 50 versions in Postgres (`router/storeversions.go`, `store_versions`): after every write secrets took, each entry
+  last 50 versions in Postgres (`rust/router/src/storeversions.rs`, `store_versions`): after every write secrets took, each entry
   it saw written (`P + K`-wrapped), secrets' signed `key-written` receipt for it and the backup object written with it
   (a key it never saw written, a Recover's, counts as unseen: kept as it is, never put back). The same routes answer:
   the list, and a plan (`replay: true`: keys put back with their receipts, removed, kept, and those it can't put back),
@@ -289,7 +289,7 @@ signing keys, the killed and used sets (a line can't fork, a burnt line stays bu
 log's head and length, and the stores as it holds them (each key wrapped to P + K, so no plaintext). After every call
 that changes it the core seals it under the line-state key and signs a head `{seq, sha256}`; every answer names the
 newest `seq` (`X-Line-Seq`) and the router fetches and keeps the newest before it passes the answer on
-(`router/linestate.go`: its volume at once, the backup bucket at most every 5 minutes and at its drain, so a router or
+(`rust/router/src/linestate.rs`: its volume at once, the backup bucket at most every 5 minutes and at its drain, so a router or
 box that comes back without its volume still has it). At a Recover the app reads it through the router, checks the head
 against the derived key, its hash, and that its `seq` is at least the highest the app itself has seen in the core's
 signed state, and puts it into the bundle; the core restores it. A Recover takes the deploy-key stores from it (they
@@ -318,7 +318,7 @@ a planned move comes with the blue/green flow.
 **Archives from any earlier core.** A restore checks the archived cert against the machine's core key, or, for an
 earlier core's cert, through the master key: the running core's signed state names its master, the master signed the
 claim naming the earlier core (the archive's `core-cert.json`; a seeded claim names its derived key as `identity`), and
-that core's key signed the cert (`rust/machine/src/restore.rs`, `router/restore.go`).
+that core's key signed the cert (`rust/machine/src/restore.rs`, `rust/router/src/restore.rs`).
 
 **A kill the core can't check** (a machine an earlier core initialised) names no snapshot instead of refusing, so
 destroying an earlier core's session never fails on it.
@@ -328,7 +328,7 @@ the sessions he is working in). The master key claimed that core (the router kee
 running core's own claim: `core-certs.json`), so its certs count: at a machine's kill the router sends its cert and that
 claim (`legacy`), and the core, after checking the claim is its master's, that it names the core that signed the cert,
 and that the machine's current key (the cert's) signed the final snapshot, records the kill and signs the same cert
-as its own (`adopted`), which becomes the session's cert (`core/legacy.go`, `router/legacy.go`). A paused session is
+as its own (`adopted`), which becomes the session's cert (`core/legacy.go`, `rust/router/src/legacy.rs`). A paused session is
 taken over at once (its machine is long gone: Fly answers 404, which counts as destroyed), a running one at its own
 next pause; nothing is forced. Each resumes like any other: the dead-machine responder, its snapshot, its image (the
 successor's machine checks the re-signed predecessor cert with the new key, so an old image works). What it loses:
@@ -339,7 +339,7 @@ earlier cert of a line is the newest (an older one can only have fewer stores: a
 snapshot) and that a line the earlier core already continued isn't taken over from an older machine (that core's used
 set is gone): once per machine, only for cores the master key claimed, only with a signed snapshot.
 
-**The flip (`router/nextcore.go`).** The router has one serving core (`CORE_URL`) and, with `NEXT_CORE_URL`, a next one.
+**The flip (`rust/router/src/nextcore.rs`).** The router has one serving core (`CORE_URL`) and, with `NEXT_CORE_URL`, a next one.
 The app's Reset-or-Recover calls (`/api/core/identity`, `/api/core/claim`, `/api/core/wipe`) reach the next core with
 `?core=next` (or `X-Jarvis2-Core: next`), so Deyao Recovers it as a standby while the serving core goes on. The flip —
 `POST /setup/core/flip` (setup-signed), or by itself with `FLIP_AUTO=1` once the next core is a standby — drains,
@@ -440,12 +440,12 @@ Secure Enclave key, kept across Reset and Recover — inside the master-signed s
 device's signature over the statement (`deviceKey`/`deviceSig` on POST /api/core/claim). A claim under the pinned master
 pins the device key it names; a claim countersigned by the pinned device key moves the master pin (a Reset).
 
-**The router is two stateless replicas (docs/STATE.md step 10).** Every record is in Postgres (`router/statedb.go`):
+**The router is two stateless replicas (docs/STATE.md step 10).** Every record is in Postgres (`rust/router/src/statedb.rs`):
 a `State.Do` takes the `state_version` row FOR UPDATE, so changes are serialised across the replicas, and a replica whose
 copy is older reloads it first; a write the database refuses is retried on a fresh copy and never dropped quietly (an
 HTTP caller gets a 503, a job is left for another replica). Any replica serves anything: the app, the web page, setup
 and the machines' API (through m-gateway); the periodic loops run on the replica holding the scheduler's lease
-(`router/leaderlease.go`), and a job another replica began is carried on from the records (`router/jobs.go`). A rollout
+(`rust/router/src/leaderlease.rs`), and a job another replica began is carried on from the records (`rust/router/src/jobs.rs`). A rollout
 replaces one pod at a time (`maxUnavailable: 0`): a stopping replica answers `GET /readyz` with 503 so it leaves the
 Service, hands the lease on, lets its jobs end, then closes its listeners. The pods keep nothing (scratch is an
 emptyDir); the database has its own backups.
@@ -547,9 +547,9 @@ by the core, approved by the phone; the box alone can never make one, and no AI 
   the same one, so the router holds no earlier signed state to roll a successor back to →
   `kill(machine, snapshot hash + its signature)`: the successor's cert names that snapshot and no other. Its carried secrets (sealed by the core at its last pull) are already next to the snapshot.
   The snapshot streams into the router as it is made, so it needs no free disk on the machine; the machine signs the
-  router's hash of what arrived (`router/snapstream.go`). A machine paused while still booting signs its predecessor's
+  router's hash of what arrived (`rust/router/src/snapstream.rs`). A machine paused while still booting signs its predecessor's
   snapshot (the one its cert names: it has no state of its own yet) and stops booting, so the line keeps it.
-  **A pause never loses state (2026-10-15, `router/snapsafe.go`):** a machine whose snapshot fails (an error, the snapshot
+  **A pause never loses state (2026-10-15, `rust/router/src/snapsafe.rs`):** a machine whose snapshot fails (an error, the snapshot
   making no progress for 10 min, or a machine gone silent) is kept, never destroyed, with or without a volume (session
   `failed`, `snapshotFailed`, a "needs you" DM; DECISIONS 215); only Destroy anyway goes on without it. A line
   whose last kill named no snapshot doesn't resume (it would start empty): the session says why (`noSnapshot`) and
@@ -575,7 +575,7 @@ by the core, approved by the phone; the box alone can never make one, and no AI 
 
 - **A router rollout never cuts a flow off (Deyao, 2026-10-13).** Every flow above runs in a goroutine of the replica
   that began it; each is tracked (the session lifecycle lock and the approval answer begin one), and the long ones are
-  jobs in the records (`router/jobs.go`). On SIGTERM the replica leaves the Service, lets its running jobs end (the
+  jobs in the records (`rust/router/src/jobs.rs`). On SIGTERM the replica leaves the Service, lets its running jobs end (the
   pod's grace period, 30 min, covers the longest one) and exits; a job still running then, or one cut off by a crash,
   is carried on by the other replica from the records ("The router is two stateless replicas").
 
@@ -608,7 +608,7 @@ unattended resumes (a wakeup, a cron, a task run with nobody there) he chose: **
   sessions). The carry key is derived from the master key's seed, so a Recover with the same kit opens every earlier
   blob, and the line state brings back the killed/used sets. Only a core with OTHER keys (a Reset, a claim from an app
   without continuity, a core from before it) can open none of the earlier blobs or continue their lines. The router
-  watches the core's identity (`router/corechange.go`, every 30 s, once the core is set up: an empty core shows only its
+  watches the core's identity (`rust/router/src/corechange.rs`, every 30 s, once the core is set up: an empty core shows only its
   boot keys); when it changes, every session whose cert the new key didn't sign is marked `oldCore` and destroyed the
   normal way once it is paused — archived as a record in Previous, its snapshots and blob deleted, its machine and
   Discord channel cleaned up (a running one goes when it next pauses). Restoring one from Previous is an ordinary new
@@ -856,7 +856,7 @@ secret value; as a second line of defence every secret value the supervisor hold
 before a line leaves the machine. The app (iPhone and web) shows it in the session's Log, next to the read-only
 terminal: one stream with the lifecycle log below (`GET /api/sessions/:id/events`).
 
-**The lifecycle log** (router, `router/lifecycle.go`). Each boot, pause, resume, Upgrade and destroy is an operation
+**The lifecycle log** (router, `rust/router/src/lifecycle.rs`). Each boot, pause, resume, Upgrade and destroy is an operation
 with its own log: the router's own steps, what Fly is doing (the machine's Fly events and Fly's platform log lines:
 create, image pull, start, stop, destroy, with times), read by the router with its read-only Fly token while the
 operation runs; for an AWS machine, what EC2 is doing (each change of the instance's state with EC2's reasons:
@@ -929,7 +929,7 @@ Deyao handing a feature a shell, and the session's own allow list is the session
 | An archived snapshot (restore) | (a) its sha256 in the config, plus the old cert (core-signed) and its machine's signature |
 | Repo contents (CLAUDE.md, hooks, skills) | (d) GitHub, for exactly the repos the cert names (a cert whose config names none: the repos of the deploy-key stores in the cert) |
 | Secrets | the cert's stores, sealed to the machine by the core; held by the supervisor in RAM only (env-name keys only), served on its socket and put in the harness's env |
-| The Claude login | (d) Anthropic: the router hands the pair of the session's Claude account (DECISIONS 185: one Claude key store per account, `claude-<name>`, the router's own; picked when the session is made and kept until Deyao switches it, `POST /api/sessions/:id/account` (DECISIONS 202), the router's word) over `/m/claude-login` (machine-signed); taken at boot, kept in step by a long poll with the router's refresh protocol (`rust/machine/src/claudelogin.rs`, `router/claudelogin.go`, `router/claudeaccounts.go`); no router write, no grant, no machine-side account check (Deyao, 2026-10-15) |
+| The Claude login | (d) Anthropic: the router hands the pair of the session's Claude account (DECISIONS 185: one Claude key store per account, `claude-<name>`, the router's own; picked when the session is made and kept until Deyao switches it, `POST /api/sessions/:id/account` (DECISIONS 202), the router's word) over `/m/claude-login` (machine-signed); taken at boot, kept in step by a long poll with the router's refresh protocol (`rust/machine/src/claudelogin.rs`, `rust/router/src/claudelogin.rs`, `rust/router/src/claudeaccounts.rs`); no router write, no grant, no machine-side account check (Deyao, 2026-10-15) |
 | Wakeups, crons | (c) the session's own signed request + the core's attestation; the line records what it delivered (in the snapshot): a wakeup once, a cron once per run and at most every half period |
 | "continue" after a re-login, "upgraded" after an Upgrade (the 15-minute watchdog is the supervisor's own: rust/machine/src/stall.rs) | the image: texts built into it; the router picks when, never what (numbers, or a size: small, medium, large or a doubling past it) |
 | An Inbox request's outcome | (c) the session's own signed filing (an Inbox request, or the wakeup/cron/watch whose message Deyao denied or let lapse) + image texts; per item the router names an outcome word, an id, a status number, and a proof the machine checks for approvals (phone grant, core-signed cert or approval, core key answer); the core attests it; each item once |
@@ -955,7 +955,7 @@ Deyao: a message from a session holding less into a session holding a sensitive 
 message**, never by letting a router feature in for a while; Jarvis's own messages never need him (Deyao, 2026-10-21;
 DECISIONS 210). So an **upward peer message** into such a session (from a session holding fewer stores, or less
 permissive), and every resume prompt that goes into an already running session (any session: nothing else vouches for
-Deyao's words from the app), waits in the Inbox as a **pending message** (`router/messages.go`, `rust/machine/src/messages.rs`).
+Deyao's words from the app), waits in the Inbox as a **pending message** (`rust/router/src/messages.rs`, `rust/machine/src/messages.rs`).
 Jarvis's own messages (an Inbox outcome, the watchdog's check-in, a login "continue", a lease or upgrade note), the
 session's own wakeups, cron runs and watches, and equal or downward peer messages (already approved with one tap in
 the Inbox, "Peer messages") go straight in, vouched for by the
@@ -1067,7 +1067,7 @@ Jarvis 1 got through Fly exec. The core's Fly token can exec only `jarvis2-init`
 (Deyao, 2026-10-09); the core only adds three fields to every succession cert: the phone's signing key, whether
 any of the line's stores is sensitive, and the **line id** (the line's first machine; a successor inherits it).
 
-- Each feature is a **holder** with its own key pair on the router's volume (`router/grants.go`).
+- Each feature is a **holder** with its own key pair on the router's volume (`rust/router/src/grants.rs`).
 - A holder's request (`{id, session: line, holder, cmd, timeout, at}`) is signed by its key and reaches the
   machine through `/m/commands`; the result goes back signed by the machine (`/m/exec-result`).
 - The machine runs it (`bash -lc` as the session user) when one of these allows it:
@@ -1093,7 +1093,7 @@ any of the line's stores is sensitive, and the **line id** (the line's first mac
 
 ## Target design: succession certs, grants and the kernel (Deyao, 2026-10-14)
 
-Built beside the old core (DECISIONS 216; kernel/, router/kernelline.go, rust/machine/src/kernelboot.rs, the app's Security/KernelSetup.swift),
+Built beside the old core (DECISIONS 216; kernel/, rust/router/src/kernelline.rs, rust/machine/src/kernelboot.rs, the app's Security/KernelSetup.swift),
 not yet on the box: docs/RUNBOOK.md "Bringing the kernel up". DECISIONS 166 has the why, docs/PLAN-grants.md the build. It replaces the core's succession-cert options,
 the holders' shell grants ("Grants" above), the core's automatic locks and the Claude login's own channel.
 
@@ -1194,7 +1194,7 @@ and end are lifecycles the router manages, each certified by succession certs:
 
 - New session: the phone signs (sink, source-x, P); the spawner spawns from it.
 - Pause: a kill into a fresh source. Resume: a spawn from it.
-- A machine stopped outside Jarvis (`fly machine stop`, an exit, Fly's own doing; `router/lostmachine.go`): it is
+- A machine stopped outside Jarvis (`fly machine stop`, an exit, Fly's own doing; `rust/router/src/lostmachine.rs`): it is
   never started again in place (its key pair was in its memory only, so it couldn't prove it is the machine its cert
   names). Resume is a kill into a fresh source naming the newest signed snapshot, then a spawn from it; what the session
   did after that snapshot is lost. With no signed snapshot at all, Resume refuses (`noSnapshot`).

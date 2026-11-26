@@ -1,5 +1,5 @@
 //! The Claude login: the OAuth pair of the session's Claude account, kept and refreshed by the router
-//! (router/claudelogin.go, claudeaccounts.go: one account per session). A session with an account takes the pair at
+//! (rust/router/src/claudelogin.rs, claudeaccounts.go: one account per session). A session with an account takes the pair at
 //! boot over the signed /m channel and keeps in step for the machine's life (creds_sync): a long poll that answers with
 //! a newer pair, or with "a refresh is coming": then creds_sync takes the CLI's own refresh lock
 //! (~/.claude/.oauth_refresh.lock, lessons/74) until the new pair is written, so a claude process that gets a 401 in

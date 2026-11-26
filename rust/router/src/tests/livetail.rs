@@ -1,4 +1,4 @@
-//! router/livetail_test.go
+//! livetail_test.go
 use crate::livesync::{LiveSync, forget_live_dir};
 use crate::livetail::{LIVE_TAIL_WAIT_MS, last_entry_time};
 use crate::tails::{TOOL_CLIP, parse_transcript, parse_transcript_with};

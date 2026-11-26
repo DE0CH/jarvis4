@@ -1,4 +1,4 @@
-//! Peer messages, machine side (docs/DESIGN.md "Peer messages"; router/peermsg.go): a "peer" delivery carries another
+//! Peer messages, machine side (docs/DESIGN.md "Peer messages"; rust/router/src/peermsg.rs): a "peer" delivery carries another
 //! session's words with the sender the router verified from its machine key, both sessions' stores and modes and the
 //! direction. The core attests the note's JSON. This machine takes a note only with Deyao's approval, whatever its
 //! direction (DECISIONS 272), checks the direction against its own cert and wraps the text with all of it, from texts
@@ -8,7 +8,7 @@ use crate::{gojson, re};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 
-/// as router/peermsg.go (the same fields in the same order: the core attests its JSON; a list the router sent as null
+/// as rust/router/src/peermsg.rs (the same fields in the same order: the core attests its JSON; a list the router sent as null
 /// stays null)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]

@@ -1,4 +1,4 @@
-//! The final snapshot without free disk (router/snapstream.go): the tar is made straight into the request body (POST
+//! The final snapshot without free disk (rust/router/src/snapstream.rs): the tar is made straight into the request body (POST
 //! /m/snapshot-stream, signed over the marker "stream" because the hash isn't known before the bytes), the router
 //! answers the hash it stored, the machine checks it against its own, signs it and commits (POST /m/snapshot-commit).
 //! The R1 rule stands: the machine signs exactly one snapshot in its life, after stopping the session; a later snapshot

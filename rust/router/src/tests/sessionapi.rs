@@ -1,4 +1,4 @@
-//! router/sessionapi_test.go
+//! sessionapi_test.go
 use crate::inbox::Caller;
 use crate::schedule::{RESUME_PROMPT_MAX, Schedule, Wakeup};
 use crate::searchsvc::ICLOUD_INDEX_BASE;

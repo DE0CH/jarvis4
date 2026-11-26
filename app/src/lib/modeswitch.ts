@@ -1,4 +1,4 @@
-// The permission-mode switch's answers (router/sessionops.go, docs/API.md "Sessions"), as the web page reports them.
+// The permission-mode switch's answers (rust/router/src/sessionops.rs, docs/API.md "Sessions"), as the web page reports them.
 // Raising a running session to bypass needs a fresh phone grant for the terminal: the router files that grant in the
 // Inbox and switches once the phone signs it (202 {waiting: "inbox"}); the session shows it as modeAfterGrant.
 export type ModeAnswer = { ok?: boolean; started?: boolean; unchanged?: boolean; nextStart?: boolean; waiting?: string; inboxId?: string; duplicate?: boolean; permissionMode?: string };

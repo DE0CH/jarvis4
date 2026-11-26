@@ -555,7 +555,7 @@ fn lease_deliveries() {
     };
     let (text, attested) =
         delivery_text(&lease("lease-granted", "mac", 60, Some(acq.clone())), &keys).unwrap();
-    // router/leases_test.go TestLeaseTextsMatchTheMachine checks the same string
+    // rust/router/src/tests/leases.rs TestLeaseTextsMatchTheMachine checks the same string
     let want = r#"[lease "mac" granted] This session now holds the shared device "mac" (you were queued for it). It is yours for 60 min, renewed automatically by the device helpers on every action; return it when done (scripts/lease.py return mac). The previous holder may have left it in any state: inspect it first. Your note: go on"#;
     assert_eq!(text, want);
     assert_eq!(attested, want.as_bytes());

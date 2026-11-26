@@ -1,4 +1,4 @@
-//! router/messages_test.go (the kernel-line cases wait for the kernel tests)
+//! messages_test.go (the kernel-line cases wait for the kernel tests)
 use crate::core::Doc;
 use crate::messages::{
     MESSAGE_TTL, MessageApproval, MessageRule, PendingMessage, REQUEST_KIND_MSG, message_text,

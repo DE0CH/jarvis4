@@ -1,4 +1,4 @@
-//! router/jarvis1import_test.go
+//! jarvis1import_test.go
 use crate::inbox::{Caller, Origin};
 use crate::jarvis1import::{
     J1_MANIFEST_FILE, J1_PAUSED_ROOT, J1ImportIn, J1ImportManifest, J1Prep, j1_doc, j1_forget,

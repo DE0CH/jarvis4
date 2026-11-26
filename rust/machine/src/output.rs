@@ -1,4 +1,4 @@
-//! An AWS machine's own logs to Grafana (router/awslogs.go; docs/PLAN-aws.md "Logs"). On Fly, Fly reads the machine's
+//! An AWS machine's own logs to Grafana (rust/router/src/awslogs.rs; docs/PLAN-aws.md "Logs"). On Fly, Fly reads the machine's
 //! stdout and stderr; an EC2 instance's container output goes only to the instance's journal, so on AWS the machine
 //! sends it itself, through the router:
 //!

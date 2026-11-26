@@ -1,8 +1,8 @@
-// Machines: every Fly machine and volume in every Fly org Jarvis can see (api/machines, router/flyorgs.go): this
+// Machines: every Fly machine and volume in every Fly org Jarvis can see (api/machines, rust/router/src/flyorgs.rs): this
 // Jarvis's own app (jarvis4-sessions) with each machine's session or "No session", and the other apps read-only (an org
 // read through Jarvis 1 says so). Whatever stands out is flagged in amber. Destroy only for a machine of this Jarvis's
 // own app that belongs to no session; the router re-checks that and destroys it through the core's kill.
-// Last: the Hetzner runners (project "runners", router/runners.go), each with the session that owns it; one with no
+// Last: the Hetzner runners (project "runners", rust/router/src/runners.rs), each with the session that owns it; one with no
 // session, a session that is gone or a paused session nothing will wake is flagged and can be deleted.
 import SwiftUI
 

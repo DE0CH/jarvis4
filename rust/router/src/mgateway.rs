@@ -1,4 +1,4 @@
-//! The machines' gateway (docs/STATE.md 5, step 9; router/mgateway.go): `router m-gateway` runs the Fly org's
+//! The machines' gateway (docs/STATE.md 5, step 9; mgateway.rs): `router m-gateway` runs the Fly org's
 //! WireGuard peer (the address the machines know: KERNEL_MACHINE_URL / MACHINE_URL, http://<peer>._peer.internal:8081)
 //! and passes every request it takes there to the router's machines' port (M_GATEWAY_TO, the router Service's :8081),
 //! streamed both ways (snapshot uploads, long polls). It holds no state and checks nothing: every /m request is signed
@@ -30,7 +30,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-/// the Fly peer's MTU (router/wg.go) and the AWS machines' (lesson 89: WireGuard through WARP)
+/// the Fly peer's MTU (wgserve.rs) and the AWS machines' (lesson 89: WireGuard through WARP)
 const FLY_MTU: usize = 1420;
 const AWS_MTU: usize = 1200;
 const PORT: u16 = 8081;

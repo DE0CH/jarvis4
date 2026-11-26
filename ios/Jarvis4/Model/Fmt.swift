@@ -7,14 +7,14 @@ enum Fmt {
     "hkg": "Hong Kong", "syd": "Sydney"]
   static let busyLabel: [String: String] = ["starting": "Starting…", "restarting": "Restarting…", "pausing": "Pausing…", "destroying": "Destroying…", "mode": "Switching mode…",
                                               "upgrading": "Upgrading…", "upgrade": "Upgrading…", "growing-disk": "Adding disk…", "disk": "Adding disk…", "account": "Switching account…"]
-  /// the More disk job's steps (router/disk.go), as the busy label
+  /// the More disk job's steps (rust/router/src/disk.rs), as the busy label
   static let diskPhase: [String: String] = ["extending": "Adding disk…", "snapshotting": "Snapshotting…", "resuming": "Resuming…"]
-  /// a Claude account switch's steps (router/accountswap.go), as the busy label
+  /// a Claude account switch's steps (rust/router/src/accountswap.rs), as the busy label
   static let accountPhase: [String: String] = ["starting": "Switching account…", "switching": "Switching account…", "taking the login": "Taking the login…",
                                                "checking the account": "Checking the account…", "Remote Control": "Bringing Remote Control back…",
                                                "restarting Claude": "Restarting Claude…", "delivering continue": "Typing “continue”…"]
   /// "Upgrade to Large (8 GB)"; past the named sizes, which are named by their memory ("16gb"), "Upgrade to 16 GB"
-  /// (router/sizes.go: every next size doubles the memory)
+  /// (rust/router/src/sizes.rs: every next size doubles the memory)
   static func upgradeTitle(_ a: MemAlert) -> String {
     guard let size = a.nextSize else { return "Upgrade" }
     let gb = a.nextGB.map { "\($0) GB" } ?? size
@@ -100,7 +100,7 @@ struct Harness: Identifiable, Equatable {
   }
 }
 
-/// the router's features that may hold a grant (router/grants.go holderNames), in words
+/// the router's features that may hold a grant (rust/router/src/grants.rs holderNames), in words
 struct Holder: Identifiable, Equatable {
   let id: String, title: String, sub: String, symbol: String
   static let all = [

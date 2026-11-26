@@ -11,7 +11,7 @@ the migration, and what is deleted at the end. The database itself is already de
 
 The router is one process that owns everything; a second process may only proxy to it.
 
-### 1.1 state.json (router/state.go)
+### 1.1 state.json (rust/router/src/state.rs)
 
 `State` (state.go:147) holds `persisted` (state.go:116) in memory under one mutex; `State.Do` (state.go:207) runs a
 closure under the lock and rewrites the whole file `DATA_DIR/state.json` atomically (state.go:214, tmp + rename) after
@@ -369,13 +369,13 @@ Each step ships alone, keeps the router working, and is a clean cut for what it 
 2. **Schema + connection**: the router gets `DATABASE_URL` (Secret `router-db` in jarvis4-router, written with
    `JARVIS4_DB_ROUTER_PASSWORD` from the infra store) and a migrations runner (embedded SQL files, applied under
    `pg_advisory_lock` at start); `/healthz` and the status page show the database (primary reachable, schema
-   version, replication lag). Nothing moves yet. Done: router/db.go (pgx), router/migrations/, `infra/router-secrets.py
+   version, replication lag). Nothing moves yet. Done: rust/router/src/db.rs (pgx), rust/router/migrations/, `infra/router-secrets.py
    --box cluster --part db DATABASE_URL=dburl:JARVIS4_DB_ROUTER_PASSWORD`; the router's tests run against a real
    Postgres (`TEST_DATABASE_URL`, a schema per test; CI's test job has a postgres:18 service container).
 3. **state.json → Postgres in one cut**: `State.Do` keeps its signature but loads from and writes to the tables
    (inside a transaction, the rows its closure touched); a one-shot import reads the volume's state.json into the
    tables at the first start of that version and renames the file. Still one replica, still the flock: this step is
-   only the storage. The volume backup (backup.go) stops including state.json. Done: router/statedb.go,
+   only the storage. The volume backup (backup.go) stops including state.json. Done: rust/router/src/statedb.rs,
    migrations/0002_state.sql. For this step each collection of `persisted` is its own table `(id, doc jsonb)` (records
    `(ord, doc)`), with generated hot columns where a query already wants them (sessions.state, sessions.machine_id,
    approvals.kind/session_id); the other fields are `settings` rows `state.<json key>`. Do still runs under one lock
@@ -444,15 +444,15 @@ Each step ships alone, keeps the router working, and is a clean cut for what it 
 
 ## 7. What is deleted
 
-- `router/state.go`'s file storage (`save`, state.json, `snapshotPath`) and the `persisted` in-memory copy.
+- `rust/router/src/state.rs`'s file storage (`save`, state.json, `snapshotPath`) and the `persisted` in-memory copy.
 - `router/leader.go` (the flock, the standby proxy, `handOver`), and main.go's leader/standby/handover sequence
   (main.go:79-145, :231-262).
-- `router/drain.go` (begin/drain/endCutOff: a cut-off action is now a job another replica carries on) and the
+- `rust/router/src/drain.rs` (begin/drain/endCutOff: a cut-off action is now a job another replica carries on) and the
   `errDraining` 503.
 - `router/movegate.go` (stopDeliveries/freezeRequests: nothing is handed over).
 - `router/move.go` and the moved/moved-in markers (a box move is a database restore elsewhere plus a Flux sync).
 - `router/backup.go` (the volume tarball: the database has its own backups; key backups in the bucket stay).
-- `router/handover.go`'s in-memory `spares` (the spare becomes a job step) and `snapwait.go`'s in-memory waits.
+- `rust/router/src/handover.rs`'s in-memory `spares` (the spare becomes a job step) and `snapwait.go`'s in-memory waits.
 - The router's PersistentVolumeClaim and `ROUTER_RESTORE`.
 - The RUNBOOK and DESIGN sections about the drain, the leader and box moves are rewritten in the same commits.
 

@@ -66,7 +66,7 @@ struct SettingsView: View {
   }
 }
 
-/// the next core (blue/green, router/nextcore.go): a core release runs next to the serving core; it is Recovered alongside
+/// the next core (blue/green, rust/router/src/nextcore.rs): a core release runs next to the serving core; it is Recovered alongside
 /// with the same kit (a standby) and serves once the router flips to it
 private struct NextCoreSection: View {
   @Environment(AppModel.self) private var model
@@ -94,7 +94,7 @@ private struct NextCoreSection: View {
   }
 }
 
-/// the Claude accounts (GET api/claude-accounts, router/claudeaccounts.go): one Claude key store per account
+/// the Claude accounts (GET api/claude-accounts, rust/router/src/claudeaccounts.rs): one Claude key store per account
 /// (claude-<name>), each refreshed by the router; a section per account (its login, usage, Refresh token, Re-login,
 /// Make default, Remove) and Add (a name, then the account's sign-in: open the page, sign in, paste the code it shows)
 private struct ClaudeAccountsSections: View {
@@ -329,7 +329,7 @@ private struct FlySection: View {
           LabeledContent("AWS estimate", value: Fmt.usd(aws["estimateUsd"].double ?? 0))
           LabeledContent("AWS billed", value: Fmt.usd(aws["billedUsd"].double ?? 0))
           if !aws["fabric"].isNull {
-            // the fabric's part of the AWS estimate (router/awsbudget.go)
+            // the fabric's part of the AWS estimate (rust/router/src/awsbudget.rs)
             LabeledContent("Of which the fabric", value: Fmt.usd(aws["fabric"]["estimateUsd"].double ?? 0))
           }
           LabeledContent("AWS running", value: "\(aws["running"].int ?? 0)")

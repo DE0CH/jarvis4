@@ -86,7 +86,7 @@ extension AppModel {
     }
   }
 
-  /// More disk out of a low-disk episode (router/disk.go): the core grows the machine's volume to twice its size; when
+  /// More disk out of a low-disk episode (rust/router/src/disk.rs): the core grows the machine's volume to twice its size; when
   /// Fly says the machine must restart for it, the router pauses (its signed snapshot) and resumes it. One tap, as
   /// Upgrade. The pending label holds until the job is done or failed.
   func moreDisk(_ id: String) async {
@@ -188,7 +188,7 @@ extension AppModel {
     }
   }
 
-  /// Switch the session's Claude account (router/accountswap.go). Running: a router job takes the new account's login
+  /// Switch the session's Claude account (rust/router/src/accountswap.rs). Running: a router job takes the new account's login
   /// and restarts Claude in the same conversation (its `wake`, kind "account"), typing "continue" when asked; the
   /// pending label holds until the job is done or failed. Paused or failed: applies at its next start. Returns nil when
   /// the router took the request (the sheet closes), else its error for the sheet to show.

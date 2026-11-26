@@ -1,4 +1,4 @@
-// An API call a session's actions asked to run as Deyao (router/apicalls.go, kind "api-call"), on its own review sheet
+// An API call a session's actions asked to run as Deyao (rust/router/src/apicalls.rs, kind "api-call"), on its own review sheet
 // (Deyao, 2026-10-15): the call itself (method, path, body), who asked, and the caller's reason. Approve runs it as
 // him, with no Face ID (Face ID signs only what the core verifies). The sheet then stays up for the core requests the
 // call brought about (a resume call → the resume-upgrade approval for that session): the router links each to the call

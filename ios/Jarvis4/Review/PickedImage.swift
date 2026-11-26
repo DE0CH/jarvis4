@@ -77,7 +77,7 @@ enum ImagePrep {
     return CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary).map { UIImage(cgImage: $0) }
   }
 
-  /// the router's safeName (router/uploads.go): a basename, no control characters, whitespace → "_", ≤ 200 bytes
+  /// the router's safeName (rust/router/src/uploads.rs): a basename, no control characters, whitespace → "_", ≤ 200 bytes
   static func safeName(_ raw: String) -> String {
     let base = raw.split(whereSeparator: { $0 == "/" || $0 == "\\" }).last.map(String.init) ?? ""
     var s = base.unicodeScalars.filter { $0.value >= 0x20 }.map { String($0) }.joined()

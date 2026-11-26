@@ -1,4 +1,4 @@
-//! router/awslogs_test.go
+//! awslogs_test.go
 use crate::awslogs::{
     AWS_LOGS, AwsLogLine, AwsLogQueue, MACHINE_OUT_LINES, aws_log_labels, clean_console,
     console_new, console_off_until, console_reset, loki_push, push_once,

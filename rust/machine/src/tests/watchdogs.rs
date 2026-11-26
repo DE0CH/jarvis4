@@ -245,7 +245,7 @@ fn pressure_episode() {
     assert!(!d.on, "a clear disk didn't end the episode");
 }
 
-/// the reasons are the router's (router/memory.go, router/disk.go)
+/// the reasons are the router's (rust/router/src/memory.rs, rust/router/src/disk.rs)
 #[test]
 fn pressure_reasons() {
     let _e = TestEnv::new();

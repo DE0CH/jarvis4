@@ -1,4 +1,4 @@
-//! Restoring a destroyed session's archived snapshot into a NEW line (router/restore.go), and the repos' state recorded
+//! Restoring a destroyed session's archived snapshot into a NEW line (rust/router/src/restore.rs), and the repos' state recorded
 //! in every snapshot (for the router's uncommitted-work check of a paused session).
 //!
 //! A new line (a cert with no predecessor) whose cert names a restore (Config.restore: the old machine and the
@@ -21,7 +21,7 @@ use std::process::Stdio;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
-/// the repos' state when the snapshot was taken (router/archive.go reads it); in the snapshot's paths
+/// the repos' state when the snapshot was taken (rust/router/src/archive.rs reads it); in the snapshot's paths
 pub const CHANGES_FILE: &str = ".jarvis2-changes.txt";
 
 /// one "<repo> <uncommitted files> <unpushed commits, -1 = no upstream>" line per repo

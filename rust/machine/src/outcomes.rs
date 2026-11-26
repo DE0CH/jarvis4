@@ -1,4 +1,4 @@
-//! Request outcomes (router/outcomes.go): what became of an Inbox request THIS session filed (approved, denied,
+//! Request outcomes (rust/router/src/outcomes.rs): what became of an Inbox request THIS session filed (approved, denied,
 //! lapsed, dropped or failed). The text is built here from the session's own filing, exactly as one of this line's
 //! machines signed it, and texts built into this image for each outcome; the router names only strict-format values per
 //! item: the outcome (a word), an Inbox or session id, an HTTP status (a number), and a proof. An approval that leaves
@@ -34,7 +34,7 @@ fn is_zero(n: &i64) -> bool {
     *n == 0
 }
 
-/// what the core attested (router/outcomes.go builds the same bytes)
+/// what the core attested (rust/router/src/outcomes.rs builds the same bytes)
 #[derive(Serialize)]
 struct OutcomeRecord {
     request: String,

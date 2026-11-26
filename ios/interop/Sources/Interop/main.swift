@@ -102,7 +102,7 @@ check(throwsErr { _ = try CoreSetup.readBackups(served + [served[0]], master: ma
 let nocore = try? CoreSetup.readBackups(dumps["jarvis2-backup-nocore"] ?? [], master: master, setupKey: setupKey)
 check(nocore?.map(\.name) == ["default"] && (try? CoreSetup.keysBundle(nocore ?? [], storeKey: master.publicKey)) != nil, "backups without the core store still make a bundle (the token comes later)")
 
-// ---- key backups (keys/<store>/<key>.json, router/storedocs.go) laid over the whole-store ones ----
+// ---- key backups (keys/<store>/<key>.json, rust/router/src/storedocs.rs) laid over the whole-store ones ----
 let keyObjs = dumps["jarvis2-backup-keys"] ?? []
 check(keyObjs.count == 6, "the stand-in key backups (\(keyObjs.map(\.key)))")
 let merged: [RecoveredStore]
@@ -328,7 +328,7 @@ check(lsDoc.map { d in throwsErr { _ = try CoreSetup.checkLineState(CoreSetup.Li
 check(lsDoc.map { d in throwsErr { _ = try CoreSetup.checkLineState(d, coreKey: coreKeys.signingKey, atLeast: 0) } } == true, "…or one another core signed")
 check(lsDoc.map { d in !CoreSetup.lineStateSigned(d, coreKey: coreKeys.signingKey) && CoreSetup.lineStateSigned(d, coreKey: coreKey) } == true, "…and the Recover takes one another core signed as none")
 
-// ---- restore: a store put back to an earlier version (core/history.go, router/storerestore.go): the phone signs the
+// ---- restore: a store put back to an earlier version (core/history.go, rust/router/src/storerestore.rs): the phone signs the
 // core's begin document and shares the keys put back; no kit. The core's backups (writer "restore") check at Recover.
 func setupDelete(_ store: String, _ key: String) -> [String: Any] {
   let text = Checks.writerText(store: store, key: key, e: "", dataSha256: "", backupSha256: "")
@@ -505,7 +505,7 @@ check(throwsErr { try Checks.matchesSettings(rC, Checks.Settings(label: "T", pro
       "refused when the router dropped the attachments")
 let chBadA = challenge(["predecessor": NSNull(), "stores": ["default"], "options": ["harness": "claude", "permissionMode": "auto", "config": #"{"v":1,"attachments":[{"name":"x.png","sha256":"\#(hA)","size":1,"path":"/etc"}]}"#], "image": img])
 check(throwsErr { _ = try Checks.review(challenge: chBadA, coreKey: coreKey) }, "an attachment with a field the app can't show is refused")
-// content stores (router/content.go): exactly the ones the page picked, shown as signed
+// content stores (rust/router/src/content.rs): exactly the ones the page picked, shown as signed
 let confK = #"{"v":1,"prompt":"p","content":["notes","proton-email"]}"#
 let rK = try! Checks.review(challenge: challenge(["predecessor": NSNull(), "stores": ["default"], "options": ["harness": "claude", "permissionMode": "auto", "config": confK], "image": img]), coreKey: coreKey)
 let pickedK = Checks.Settings(label: "", prompt: "p", model: "", repos: [], oneShot: false, apiProxy: false, content: ["proton-email", "notes"])
@@ -745,7 +745,7 @@ check(ras == 200 && rl?.repos.map(\.repo) == ["DE0CH/claude-env"] && rl?.repos.f
 _ = deployKey("remove", "DE0CH/claude-env", base: rbase, prefix: "/api/repos/key")
 check((try? JSONDecoder().decode(ReposDTO.self, from: call("/api/repos", base: rbase).1))?.repos.isEmpty == true, "…and off it after remove")
 
-// ---- the Inbox (router/inbox.go): a request filed through an intent endpoint opens the same review page ----
+// ---- the Inbox (rust/router/src/inbox.rs): a request filed through an intent endpoint opens the same review page ----
 let (qs, qd) = call("/api/requests/repo/add", ["repo": "https://github.com/DE0CH/claude-env", "explanation": "for the skill"], base: rbase)
 let qid = ((try? JSONSerialization.jsonObject(with: qd)) as? [String: Any])?["id"] as? String ?? ""
 let (gs, gd) = call("/api/requests/" + qid, base: rbase)

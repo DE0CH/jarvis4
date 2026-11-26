@@ -10,23 +10,23 @@ manifest so it restarts with the new Secret. SRC is `env:VAR` (default `env:KEY`
   (default)      router.enc.yaml, Secret router-secrets (jarvis4-router) — LOBSTER_TOKEN, STORAGEBOX_HOST/USER/PASSWORD,
                  JARVIS2_TUNNEL_KEY, FLY_READ_TOKEN (infra/fly-read-token.sh: read-only on app jarvis4-sessions)
   --part wg      router-wg.enc.yaml, Secret router-wg — wg.conf only: the router's WireGuard peer jarvis4-box in Fly org
-                 jarvis2-370 (`fly wireguard create jarvis2-370 lhr jarvis4-box FILE`; router/wg.go), mounted at /wg
+                 jarvis2-370 (`fly wireguard create jarvis2-370 lhr jarvis4-box FILE`; rust/router/src/wgserve.rs), mounted at /wg
   --part backup  router-backup.enc.yaml, Secret router-secrets-backup — the backup bucket's read credential
                  (BACKUP_READ_ACCESS_KEY, BACKUP_READ_SECRET_KEY; infra/backup-read-key.py)
   --part github  router-github.enc.yaml, Secret router-secrets-github — GITHUB_READ_TOKEN only (the repo picker's list
                  token). It is the LAST envFrom in router.yaml, so it wins over any other source of the same key
   --part flyorgs router-flyorgs.enc.yaml, Secret router-secrets-flyorgs — FLY_ORG_READ_TOKENS only:
-                 {"<org slug>": "<read-only org token>"} for the Machines view's other orgs (router/flyorgs.go)
+                 {"<org slug>": "<read-only org token>"} for the Machines view's other orgs (rust/router/src/flyorgs.rs)
   --part flypersonal  router-flypersonal.enc.yaml — FLY_PERSONAL_READ_TOKEN only (infra/fly-personal-read-token.sh)
   --part flyvolumes  router-flyvolumes.enc.yaml — FLY_VOLUME_TOKEN only: the token that can do nothing but delete
-                 volumes in jarvis4-sessions (infra/fly-volume-token.sh), for the leftover-volume sweep (router/volsweep.go)
-  --part browserbase  router-browserbase.enc.yaml — BROWSERBASE_API_KEY only (router/bbbudget.go)
-  --part devices router-devices.enc.yaml — CF_DEVICE_TOKENS_API only (router/devices.go)
+                 volumes in jarvis4-sessions (infra/fly-volume-token.sh), for the leftover-volume sweep (rust/router/src/volsweep.rs)
+  --part browserbase  router-browserbase.enc.yaml — BROWSERBASE_API_KEY only (rust/router/src/bbbudget.rs)
+  --part devices router-devices.enc.yaml — CF_DEVICE_TOKENS_API only (rust/router/src/devices.rs)
   --part livepush  router-livepush.enc.yaml — LIVE_PUSH_URL and LIVE_PUSH_SECRET: where the router POSTs Deyao's running
-                 sessions for a live dashboard panel, and the header secret it sends (router/livepush.go)
+                 sessions for a live dashboard panel, and the header secret it sends (rust/router/src/livepush.rs)
   --part runners router-runners.enc.yaml, Secret router-secrets-runners — HETZNER_RUNNERS_TOKEN only: the Read & Write
                  API token `jarvis4-router` of the Hetzner Cloud project runners, the only one sessions' runners are
-                 made and deleted with (router/runners.go)
+                 made and deleted with (rust/router/src/runners.rs)
   --part alloy   alloy.enc.yaml, Secret alloy in jarvis2-obs — GRAFANA_LOGS_URL/USER, GRAFANA_METRICS_URL/USER,
                  GRAFANA_WRITE_TOKEN: the host's Grafana Alloy reads it (infra/alloy/; no pod uses it)
   --part icloud-index  (k8s/cluster/services/secrets) icloud-index.enc.yaml, Secret icloud-index-secrets — OPENROUTER_API,
@@ -39,17 +39,17 @@ manifest so it restarts with the new Secret. SRC is `env:VAR` (default `env:KEY`
                  Storage credential of the database's WAL archive and base backups (bucket jarvis4-db-de0ch,
                  k8s/cluster/postgres/db/), e.g. ACCESS_KEY_ID=env:HETZNER_S3_ACCESS_KEY
   --part db      router-db.enc.yaml, Secret router-db in jarvis4-router — DATABASE_URL only: the router's connection to
-                 the database (router/db.go), DATABASE_URL=dburl:JARVIS4_DB_ROUTER_PASSWORD (the infra store's password of
+                 the database (rust/router/src/db.rs), DATABASE_URL=dburl:JARVIS4_DB_ROUTER_PASSWORD (the infra store's password of
                  role router, made into postgres://router:…@jarvis4-db-rw.jarvis4-db.svc.cluster.local:5432/jarvis4?sslmode=require)
   --part wg-b    router-wg-b.enc.yaml, Secret router-wg-b — wg.conf of the second machines' gateway's peer jarvis4-gw-b
-                 (`fly wireguard create jarvis2-370 lhr jarvis4-gw-b FILE`; router/mgateway.go), wg.conf=file:FILE
+                 (`fly wireguard create jarvis2-370 lhr jarvis4-gw-b FILE`; rust/router/src/mgateway.rs), wg.conf=file:FILE
   --part aws     router-aws.enc.yaml, Secret router-secrets-aws — AWS_READ_ACCESS_KEY_ID / AWS_READ_SECRET_ACCESS_KEY: the
-                 router's read-only AWS key (IAM user jarvis4-router-read, infra/aws/iam.tf): the AWS machines (router/awsrunner.go)
+                 router's read-only AWS key (IAM user jarvis4-router-read, infra/aws/iam.tf): the AWS machines (rust/router/src/awsrunner.rs)
   --part wg-aws  router-wg-aws.enc.yaml, Secret router-wg-aws — WG_AWS_KEYS only: the m-gateways' WireGuard private keys
-                 for the AWS machines, comma-separated by ordinal (router/awsgw.go; their public halves are WG_AWS_GATEWAYS
+                 for the AWS machines, comma-separated by ordinal (rust/router/src/wgserve.rs; their public halves are WG_AWS_GATEWAYS
                  in router.yaml)
   --part seal    router-seal.enc.yaml, Secret router-seal — ROUTER_SEAL_KEY only: the AES-256 key the router seals its secrets
-                 in the database with (router/sealed.go; base64 of 32 random bytes; JARVIS4_ROUTER_SEAL_KEY in the infra
+                 in the database with (rust/router/src/sealed.rs; base64 of 32 random bytes; JARVIS4_ROUTER_SEAL_KEY in the infra
                  store). A rotation: the new key as ROUTER_SEAL_KEY and the old as ROUTER_SEAL_KEY_OLD, until it restarted
   --part objects router-objects.enc.yaml, Secret router-secrets-objects — OBJECTS_ACCESS_KEY / OBJECTS_SECRET_KEY: the
                  router's credential for jarvis4-snapshots-de0ch only (infra/objects-key.py install)
@@ -57,7 +57,7 @@ manifest so it restarts with the new Secret. SRC is `env:VAR` (default `env:KEY`
                  password: the database owner, made at initdb (the same password is JARVIS4_DB_ROUTER_PASSWORD in the
                  infra store, for the router's own copy; docs/STATE.md)
   --part router-fabric  router-fabric.enc.yaml, Secret router-secrets-fabric — FABRIC_HERMIT_TOOLS_TOKEN,
-                 FABRIC_HERMIT_MAGPIE_TOKEN (router/fabricrunner.go), FABRIC_HERMIT_ADMIN_TOKEN (router/fabricops.go:
+                 FABRIC_HERMIT_MAGPIE_TOKEN (rust/router/src/fabricrunner.rs), FABRIC_HERMIT_ADMIN_TOKEN (rust/router/src/fabricops.rs:
                  the operator page), e.g. =env:FABRIC_TOKEN_TOOLS / FABRIC_TOKEN_MAGPIE_ROUTER / FABRIC_TOKEN_ADMIN
   --part fabric  k8s/cluster/fabric/secrets/hermit.enc.yaml, Secret hermit in jarvis4-fabric — the fabric hermit's env
                  (HERMIT_*: database, token keys, its callers' tokens, the fabric's TLS, the AWS scaler's key, JuiceFS)
@@ -97,9 +97,9 @@ PARTS = {  # part → (file, Secret name, annotation, namespace)
     "browserbase": ("router-browserbase.enc.yaml", "router-secrets-browserbase", "jarvis2/secrets-rev-browserbase", RNS),
     "devices": ("router-devices.enc.yaml", "router-secrets-devices", "jarvis2/secrets-rev-devices", RNS),
     "runners": ("router-runners.enc.yaml", "router-secrets-runners", "jarvis2/secrets-rev-runners", RNS),
-    "livepush": ("router-livepush.enc.yaml", "router-secrets-livepush", "jarvis2/secrets-rev-livepush", RNS),  # router/livepush.go
+    "livepush": ("router-livepush.enc.yaml", "router-secrets-livepush", "jarvis2/secrets-rev-livepush", RNS),  # rust/router/src/livepush.rs
     "wg-b": ("router-wg-b.enc.yaml", "router-wg-b", "jarvis2/secrets-rev-wg-b", RNS),  # m-gateway-1's peer jarvis4-gw-b
-    "seal": ("router-seal.enc.yaml", "router-seal", "jarvis2/secrets-rev-seal", RNS),  # the router's seal key (router/sealed.go)
+    "seal": ("router-seal.enc.yaml", "router-seal", "jarvis2/secrets-rev-seal", RNS),  # the router's seal key (rust/router/src/sealed.rs)
     "objects": ("router-objects.enc.yaml", "router-secrets-objects", "jarvis2/secrets-rev-objects", RNS),  # jarvis4-snapshots-de0ch (infra/objects-key.py)
     "db": ("router-db.enc.yaml", "router-db", "jarvis2/secrets-rev-db", RNS),  # the router's DATABASE_URL (docs/STATE.md)
     "aws": ("router-aws.enc.yaml", "router-secrets-aws", "jarvis2/secrets-rev-aws", RNS),  # the router's read-only AWS key

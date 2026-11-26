@@ -1,4 +1,4 @@
-//! Task lines (router/tasks.go, DECISIONS 32-37): a machine whose signed harness is "task:<template>" runs that
+//! Task lines (rust/router/src/tasks.rs, DECISIONS 32-37): a machine whose signed harness is "task:<template>" runs that
 //! template from the image (/opt/jarvis/tasks/<template>, fixed by the cert's image digest) instead of a harness,
 //! reports the result to /m/task-result, and waits to be paused. No AI is in the loop unless the template is a prompt
 //! (claude -p). No shell grant is involved, so a line holding a sensitive store runs unattended too.
@@ -50,7 +50,7 @@ pub struct TaskSpec {
     pub model: String,
 }
 
-/// as router/tasks.go reads it
+/// as rust/router/src/tasks.rs reads it
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct TaskResult {
     pub run: String,

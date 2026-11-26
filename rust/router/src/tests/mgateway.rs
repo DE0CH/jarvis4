@@ -1,4 +1,4 @@
-//! router/mgateway_test.go, and a machine's request through the gateway's WireGuard peer (the machine played with
+//! mgateway_test.go, and a machine's request through the gateway's WireGuard peer (the machine played with
 //! boringtun and smoltcp, as rust/machine dials it)
 use crate::mgateway::{gateway_config, parse_to, proxy_handler, refused_path};
 use crate::testutil::*;

@@ -1,4 +1,4 @@
-//! A Jarvis 1 import (router/jarvis1import.go): a new line whose cert's restore names a paused Jarvis 1 session (its id)
+//! A Jarvis 1 import (rust/router/src/jarvis1import.rs): a new line whose cert's restore names a paused Jarvis 1 session (its id)
 //! and the sha256 of the router's import manifest {kind "jarvis1-import", session, files: [{name, sha256, size}]}.
 //! Deyao's Face ID signed that hash, so it vouches for every byte the manifest lists; this machine takes each file
 //! through the router and refuses any whose sha256 or size differs from the manifest. Then it does what Jarvis 1's

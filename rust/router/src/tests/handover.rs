@@ -1,4 +1,4 @@
-//! router/handover_test.go: a handover starts the next machine once the old one has been told to stop, without
+//! handover_test.go: a handover starts the next machine once the old one has been told to stop, without
 //! waiting for Fly to report the old one destroyed; the cert still waits for the kill, which names the final snapshot
 //! (handover.rs, DECISIONS 193).
 use crate::flows::{INIT_STEP_MS, KILL_STEP_MS, KILL_TRANSIENT_STEP_MS};

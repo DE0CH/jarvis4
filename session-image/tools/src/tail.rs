@@ -1,4 +1,4 @@
-//! jarvis-tail: another session's conversation as it is now (router/livetail.go), where transcript search sees a
+//! jarvis-tail: another session's conversation as it is now (rust/router/src/livetail.rs), where transcript search sees a
 //! running session only up to about 10 minutes late (its 5-minute live sync, then the indexer's 5-minute crawl).
 //!
 //!   jarvis-tail SESSION            SESSION: its id (s…) or its exact title; the last 40 messages with tool calls

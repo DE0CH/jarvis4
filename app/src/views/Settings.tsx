@@ -139,7 +139,7 @@ function AccountCard({ a, reload }: { a: ClaudeAccount; reload: () => void }) {
   );
 }
 
-// the Claude accounts (GET api/claude-accounts; router/claudeaccounts.go): one Claude key store per account, each
+// the Claude accounts (GET api/claude-accounts; rust/router/src/claudeaccounts.rs): one Claude key store per account, each
 // refreshed by the router; New session pre-picks the default one. Add: a name, then the account's sign-in.
 function ClaudeAccountsCards() {
   const [l, setL] = useState<ClaudeAccounts | null>(null), [err, setErr] = useState<string | null>(null);

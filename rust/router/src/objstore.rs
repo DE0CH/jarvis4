@@ -57,7 +57,7 @@ const RESUME_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 type Opener = Box<dyn FnMut(u64) -> Result<Box<dyn Read + Send>> + Send>;
 
 /// an object's read that a dropped connection doesn't end: a read that fails goes on from the same offset on a new
-/// request (router/objstore.go resumingObject: the bucket's IPv4 through WARP resets a long read now and then; on
+/// request (objstore.rs resumingObject: the bucket's IPv4 through WARP resets a long read now and then; on
 /// 2026-11-21 that failed four Destroys and a pause until someone tried again; Deyao, 2026-11-22)
 pub struct Resuming {
     cur: Box<dyn Read + Send>,

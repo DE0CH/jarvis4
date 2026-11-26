@@ -1,4 +1,4 @@
-//! router/runners_test.go (TestRunnersGoWithTheirSession and TestARestartKeepsRunners run on the core-line rig: the
+//! runners_test.go (TestRunnersGoWithTheirSession and TestARestartKeepsRunners run on the core-line rig: the
 //! runners' part of a pause and destroy is the same on a kernel line)
 use crate::runners::{
     HETZNER, HetznerFn, MAX_SESSION_RUNNERS, RUNNERS_FORCE, key_body, runner_key_name,

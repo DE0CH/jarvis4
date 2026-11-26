@@ -158,7 +158,7 @@ pub fn live_info(store: &str, key: &str) -> String {
     format!("jarvis2/live-key\n{store}\n{key}")
 }
 
-/// what the router takes (router/storedocs.go keyWriteIn), sealed and signed here
+/// what the router takes (rust/router/src/storedocs.rs keyWriteIn), sealed and signed here
 #[allow(clippy::too_many_arguments)] // the router's fields, one each
 pub fn key_write_request(
     store_key: &str,

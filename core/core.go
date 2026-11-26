@@ -312,7 +312,7 @@ func (c *Core) Identity() (map[string]any, error) {
 	// bundle: the claim bundle format this core takes (keys.go: stores of keys), so the app wraps a Recover for it
 	// continuity: this core takes a claim bundle's coreSeed and lineState (continuity.go)
 	// sizeLadder: this core starts every size of the ladder (fly.go: small, medium, large, then 16gb, 32gb, …); a core
-	// without it starts only small, medium and large, so the router offers no Upgrade past large (router/memory.go)
+	// without it starts only small, medium and large, so the router offers no Upgrade past large (rust/router/src/memory.rs)
 	return map[string]any{"signingKey": k["signingKey"], "agreementKey": k["agreementKey"], "boxSig": c.BoxSig, "state": d, "bundle": "keys", "continuity": 1, "sizeLadder": 1}, nil
 }
 

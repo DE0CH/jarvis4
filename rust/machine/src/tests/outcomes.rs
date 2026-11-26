@@ -88,7 +88,7 @@ fn request_outcomes() {
         ),
         "{text}"
     );
-    // the same bytes router/outcomes.go outcomeAttested makes (TestOutcomeAttestedBytes there)
+    // the same bytes rust/router/src/outcomes.rs outcomeAttested makes (TestOutcomeAttestedBytes there)
     let want = format!(
         r#"{{"request":"{}","items":[{{"item":0,"outcome":"denied","ref":"q0a1","status":0,"proof":""}}]}}"#,
         grant_req.sig
@@ -400,7 +400,7 @@ fn filed_by_command_paths() {
     }
 }
 
-/// the same JSON the router attests (router/peermsg_test.go TestPeerNoteJSON has this string too)
+/// the same JSON the router attests (rust/router/src/tests/peermsg.rs TestPeerNoteJSON has this string too)
 const PEER_NOTE_JSON: &str = r#"{"from":"sa","fromTitle":"A","fromStores":["default"],"fromMode":"auto","to":"sb","toStores":["default"],"toMode":"auto","direction":"equal","text":"hi"}"#;
 
 #[test]

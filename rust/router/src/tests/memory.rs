@@ -1,4 +1,4 @@
-//! router/memory_test.go
+//! memory_test.go
 use crate::autopilot::Liveness;
 use crate::memory::{
     MEM_CLEAR, MemAlert, MemProc, MemSample, MemState, mem_message, mem_silent_tick, mem_view,

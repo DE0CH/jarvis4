@@ -16,7 +16,7 @@ struct TaskEditView: View {
   @State private var started = false
   @State private var busy = false
   @State private var error: String?
-  /// a prompt template runs claude -p on a Claude account (router/claudeaccounts.go): the default pre-picked, fixed
+  /// a prompt template runs claude -p on a Claude account (rust/router/src/claudeaccounts.rs): the default pre-picked, fixed
   @State private var accounts: [JSON] = []
   @State private var account = ""
 

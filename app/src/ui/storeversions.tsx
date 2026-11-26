@@ -1,5 +1,5 @@
 // A store's earlier versions (core/history.go, POST api/core/stores/versions): what made each one and its key names,
-// never a value. The web page only proposes a restore (an Inbox request, router/storerestore.go); the iPhone app reviews
+// never a value. The web page only proposes a restore (an Inbox request, rust/router/src/storerestore.rs); the iPhone app reviews
 // the core's signed document of exactly what changes and signs it with Face ID.
 import { useState } from "react";
 import { View } from "react-native";

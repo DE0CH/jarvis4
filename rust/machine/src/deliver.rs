@@ -157,7 +157,7 @@ pub fn replay_guard(d: &Delivery, now: i64, record: bool) -> Result<()> {
             every = (e as i64).max(15 * 60);
         }
         if d.run <= last.run {
-            // the router parses this wording (router/schedule.go sessionHasRun): the run is delivered, its count is ours
+            // the router parses this wording (rust/router/src/schedule.rs sessionHasRun): the run is delivered, its count is ours
             bail!(
                 "cron run {} was already delivered (last {})",
                 d.run,
@@ -494,7 +494,7 @@ pub fn deliver(c: &Client, d: Delivery) -> Result<()> {
     replay_guard(&d, now, true)
 }
 
-/// Deyao's resume prompt as the router keeps it (router/sessionapi.go cleanResumePrompt): CRLF → LF, trimmed, at most
+/// Deyao's resume prompt as the router keeps it (rust/router/src/sessionapi.rs cleanResumePrompt): CRLF → LF, trimmed, at most
 /// 4000 characters; "" when empty or longer
 pub fn resume_prompt_text(p: &str) -> String {
     let p = p.replace("\r\n", "\n").replace('\r', "\n");
@@ -688,7 +688,7 @@ pub fn type_into_host(text: &str) -> Result<()> {
     }
 }
 
-/// the in-machine sender (router/peer.go's, the same program). argv: base64 text, target name ("" = the one live
+/// the in-machine sender (rust/router/src/peer.rs's, the same program). argv: base64 text, target name ("" = the one live
 /// session), from-mode, from-name.
 pub const PEER_PY: &str = r#"
 import base64, glob, hashlib, json, os, socket, sys, uuid
@@ -738,7 +738,7 @@ s.close()
 done(True, "delivered to %s (pid %s)" % (t.get("name") or "?", t.get("pid")), target=t.get("name") or "", ack=ack[:500])
 "#;
 
-// ---- machine sizes (the same block is in router/sizes.go, core/fly.go and kernel/spawner/fly.go) -----------------
+// ---- machine sizes (the same block is in rust/router/src/sizes.rs, core/fly.go and kernel/spawner/fly.go) -----------------
 
 /// The sizes: small (2 GB), medium (4 GB), large (8 GB), then every doubling past large, named by its memory
 const NAMED_SIZES: &[(&str, i64)] = &[("small", 2), ("medium", 4), ("large", 8)];
@@ -775,7 +775,7 @@ pub fn size_text(size: &str) -> String {
     format!("{} GB", size_mem_gb(size))
 }
 
-/// after an Upgrade (router/memory.go), the first message on the bigger machine
+/// after an Upgrade (rust/router/src/memory.rs), the first message on the bigger machine
 pub fn upgraded_text(from: &str, to: &str) -> Result<String> {
     if size_mem_gb(from) == 0 || size_mem_gb(to) == 0 {
         bail!("upgraded: not a machine size");
@@ -789,7 +789,7 @@ pub fn upgraded_text(from: &str, to: &str) -> Result<String> {
         + "This is an automated message from Jarvis.")
 }
 
-// ---- leases (router/leases.go builds the same texts) -------------------------------------------------------------
+// ---- leases (rust/router/src/leases.rs builds the same texts) -------------------------------------------------------------
 
 re!(LEASE_NAME_RE = r"^[a-z0-9][a-z0-9-]{0,40}$");
 re!(LEASE_SPACE_RE = r"\s+");
@@ -864,7 +864,7 @@ pub fn lease_text(d: &Delivery, keys: &[String]) -> Result<String> {
     Ok(t)
 }
 
-// ---- watches (router/watches.go) ---------------------------------------------------------------------------------
+// ---- watches (rust/router/src/watches.rs) ---------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]

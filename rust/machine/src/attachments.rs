@@ -1,4 +1,4 @@
-//! First-prompt attachments (router/uploads.go). The router stages the files the New Session form uploaded and binds
+//! First-prompt attachments (rust/router/src/uploads.rs). The router stages the files the New Session form uploaded and binds
 //! them to this session; the first machine fetches them over the machine-signed /m/attachments before the harness
 //! starts, then the router drops them. Jarvis 1's session-attachments script does the rest (copies them into
 //! ~/uploads, writes the paths into the first message), reading from a local file:// "box":

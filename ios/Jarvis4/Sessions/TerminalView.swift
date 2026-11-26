@@ -1,4 +1,4 @@
-// The terminal: the router's own terminal page (GET /term/{id}, router/web/terminal.html) in a WKWebView. WebKit runs
+// The terminal: the router's own terminal page (GET /term/{id}, rust/router/web/terminal.html) in a WKWebView. WebKit runs
 // the page in its own process, so the app carries no terminal code. The page goes through Cloudflare Access like every
 // request: it is loaded with the app's Access login (the `cf-access-token` header, the CF_Authorization cookie for the
 // router's host, and every fetch of the page given the header), in a non-persistent website data store, so nothing

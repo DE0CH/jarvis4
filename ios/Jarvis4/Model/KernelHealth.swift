@@ -1,6 +1,6 @@
 // What the Sessions page warns about for the box's trusted base. A box with the old core: "Core not answering" while
 // the core doesn't answer. A Jarvis 4 box runs no core (the router's NO_CORE=1): GET /api/state carries the kernel's
-// health instead (router/kernelhealth.go), and the warning names what is wrong with the kernel, if anything.
+// health instead (rust/router/src/kernelhealth.rs), and the warning names what is wrong with the kernel, if anything.
 // Plain Foundation (no SwiftUI, no app JSON type), so `swift run Units` checks it on its own.
 import Foundation
 

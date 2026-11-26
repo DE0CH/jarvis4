@@ -1,4 +1,4 @@
-// npm test: the web page's Claude account switch (router/accountswap.go)
+// npm test: the web page's Claude account switch (rust/router/src/accountswap.rs)
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { accountOutcome, accountUnusable, ACCOUNT_PHASE } from "../src/lib/accountswap.ts";

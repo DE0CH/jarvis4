@@ -21,7 +21,7 @@ pub struct SnapRouter {
     pub legacy: usize,
 }
 
-/// the router's side of router/snapstream.go, checking the machine's signatures (the fake router checks each request's)
+/// the router's side of rust/router/src/snapstream.rs, checking the machine's signatures (the fake router checks each request's)
 pub fn snap_router(key: &Keys) -> (FakeRouter, Arc<Mutex<SnapRouter>>) {
     let st = Arc::new(Mutex::new(SnapRouter::default()));
     let (s2, pk) = (st.clone(), key.sig.public_key());

@@ -9,7 +9,7 @@ use crate::{logf, util};
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-/// the same capture the router's terminal holder runs (router/terminal.go snapCmd)
+/// the same capture the router's terminal holder runs (rust/router/src/terminal.rs snapCmd)
 pub const SCREEN_CMD: &str = r#"tmux capture-pane -p -e -t claude; printf '\n__CUR__%s\n' "$(tmux display-message -p -t claude '#{cursor_x},#{cursor_y},#{pane_width},#{pane_height},#{cursor_flag}')""#;
 
 const SCREEN_EVERY: Duration = Duration::from_secs(2);

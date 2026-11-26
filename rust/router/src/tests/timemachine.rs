@@ -1,4 +1,4 @@
-//! router/timemachine_test.go
+//! timemachine_test.go
 use crate::fabricrunner::{FABRIC_FORCE, FabricLine};
 use crate::testutil::*;
 use crate::timemachine::{FABRIC_HERMIT_CALL, TimeMachine, frozen_verdict};

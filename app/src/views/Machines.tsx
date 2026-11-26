@@ -1,13 +1,13 @@
-// Machines tab: every Fly machine in every org Deyao has (api/machines, router/machines.go + flyorgs.go), grouped
+// Machines tab: every Fly machine in every org Deyao has (api/machines, rust/router/src/machines.rs + flyorgs.go), grouped
 // org → app, so a leak anywhere shows (Deyao, 2026-10-11). jarvis4-sessions is this Jarvis's own: each machine with
 // the session it belongs to or "No session", and "test" when it points at a test router (its JARVIS2_URL is not
 // production's); Destroy only for a machine with no session (the router re-checks and destroys it through the
 // core's kill). Every other app and org is read-only: jarvis2-370 reads from Fly, personal from Jarvis 1's
 // list. A machine that stands out (stopped, failed, stuck, no session, an app no Jarvis uses) or a volume attached
 // to nothing shows why in amber, and the count heads the page.
-// Below the Fly orgs: the Hetzner runners (project "runners", router/runners.go), each with the session that owns it;
+// Below the Fly orgs: the Hetzner runners (project "runners", rust/router/src/runners.rs), each with the session that owns it;
 // one with no session, a session that is gone or a paused session nothing will wake shows why in amber and has Delete.
-// Then a link to the fabric's operator page (router/fabricops.go).
+// Then a link to the fabric's operator page (rust/router/src/fabricops.rs).
 import { api, ago, REGION, sessionTitle, type Machine, type FlyAppView, type FlyOrgView, type FlyVolumeView, type Runner, type RunnersView } from "../lib/api";
 import { useStore, getStore, ask, exclusive, pend, failed, setTab, loadMachines, toast } from "../lib/store";
 import { BadgeList, Callout, Card, Flex, Heading, Lbl, Muted, P, Pill, Row, Rows, Spinner } from "../ui/kit";
@@ -198,7 +198,7 @@ function RunnersSection({ rv }: { rv: RunnersView }) {
 }
 
 // the fabric's hosts, sandboxes and scaler: its hermit's own operator page, as YYC AI's admins see theirs
-// (router/fabricops.go; Deyao, 2026-11-20), opened in a tab of its own
+// (rust/router/src/fabricops.rs; Deyao, 2026-11-20), opened in a tab of its own
 function FabricSection() {
   return (
     <Flex dir="column" mt={6} data={{ fabricOps: "1" }}>

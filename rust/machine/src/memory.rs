@@ -1,4 +1,4 @@
-//! Memory: the machine's own RAM report for the router's starvation watch (router/memory.go), and the "free" command
+//! Memory: the machine's own RAM report for the router's starvation watch (rust/router/src/memory.rs), and the "free" command
 //! that goes before an Upgrade's snapshot.
 //!
 //! Every 10 s the supervisor reads /proc (MemTotal, MemAvailable, the kernel's oom_kill count, PSI memory "full" avg60,

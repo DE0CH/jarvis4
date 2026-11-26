@@ -1,4 +1,4 @@
-//! router/nextcore_test.go
+//! nextcore_test.go
 use crate::nethttp::{Req, write_error, write_json};
 use crate::nextcore::{DRAIN_WATCH_EVERY_MS, FLIP_AUTO_FORCE, HttpHandoff};
 use crate::router::Router;

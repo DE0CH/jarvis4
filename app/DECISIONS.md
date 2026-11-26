@@ -35,7 +35,7 @@ fixes, 34–40 carried over from the old app and still true, 41–43 the web pag
    software key).
 9. **Reset or recover is a full-screen cover** at first launch and after the router reports another core, and from
    Settings. Close leaves it (the app can still view, nothing can be signed).
-10. **The terminal is the router's page** (`GET /term/{id}`, `router/web/terminal.html`) in a `WKWebView` (Deyao: "just
+10. **The terminal is the router's page** (`GET /term/{id}`, `rust/router/web/terminal.html`) in a `WKWebView` (Deyao: "just
     open a web page"): WebKit's content runs in its own process, so the app carries no terminal code. The page is loaded
     with the app's Access login: the `cf-access-token` header on the first load, the `CF_Authorization` cookie for the
     router's host and a fetch wrapper that adds the header, all in a non-persistent data store. `WKWebView` rather than

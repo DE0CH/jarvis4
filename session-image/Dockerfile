@@ -43,10 +43,10 @@ COPY --from=aviary /out/aviary-gateway /usr/local/bin/
 COPY --from=tools /out/jarvis-tools /usr/local/bin/jarvis-tools
 # the aviary release's pins as the harness reads them (aviary-sandbox: aviary's sandbox image, by digest)
 COPY --chmod=644 session-image/aviary.json /usr/local/share/aviary.json
-# task templates (tasks/<name>/, router/tasks.go): a task line's machine runs one of these instead of a harness;
+# task templates (tasks/<name>/, rust/router/src/tasks.rs): a task line's machine runs one of these instead of a harness;
 # the image digest in the line's cert fixes which code that is
 COPY tasks/ /opt/jarvis/tasks/
-# jarvis-request: a session asks Deyao for something that needs his Face ID (an Inbox request, router/inbox.go)
+# jarvis-request: a session asks Deyao for something that needs his Face ID (an Inbox request, rust/router/src/inbox.rs)
 COPY --chmod=755 session-image/bin/jarvis-request /usr/local/bin/jarvis-request
 # peer messages (docs/DESIGN.md "Peer messages"): Claude Code refuses every direct cross-session message
 # (managed settings: crossSessionInbound refuse); sessions talk through Jarvis (jarvis-message), and Jarvis's own

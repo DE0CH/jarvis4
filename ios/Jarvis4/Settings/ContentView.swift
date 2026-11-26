@@ -1,6 +1,6 @@
-// Content stores (api/content, router/content.go): folders of files on the Storage Box that a session gets in
+// Content stores (api/content, rust/router/src/content.rs): folders of files on the Storage Box that a session gets in
 // ~/content/<name>/. Here: the list, a store's files (swipe to delete one), a new store, deleting a store. Uploading is
-// the web page's. Paired apps (api/devices, router/devices.go): Deyao's OpenClaw and Paseo apps, swipe to remove.
+// the web page's. Paired apps (api/devices, rust/router/src/devices.rs): Deyao's OpenClaw and Paseo apps, swipe to remove.
 import SwiftUI
 
 struct ContentStoresView: View {

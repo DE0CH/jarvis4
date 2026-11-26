@@ -1,7 +1,7 @@
 # The Jarvis 4 router on the one cluster (docs/PLAN-cluster.md step 5): the app's API, the web page and setup (through
 # the tunnel jarvis2-cluster, from cloudflared in jarvis2-edge: jarvis4.deyaochen.com behind Access) and the machines'
 # API (/m on :8081, reached only through m-gateway below, which runs the WireGuard peer jarvis4-box in Fly org
-# jarvis2-370). Reaches the kernel (jarvis4-kernel), Postgres (jarvis4-db: every record, router/statedb.go), the
+# jarvis2-370). Reaches the kernel (jarvis4-kernel), Postgres (jarvis4-db: every record, rust/router/src/statedb.rs), the
 # services and the internet (Access certs, Fly, Discord, the Storage Box, the bucket jarvis4-snapshots-de0ch). Its
 # pods hold nothing (scratch is an emptyDir): two replicas, any of which serves anything (docs/STATE.md step 10).
 apiVersion: apps/v1
@@ -9,8 +9,8 @@ kind: Deployment
 metadata: { name: router, namespace: jarvis4-router }
 spec:
   # two replicas, spread over the nodes; a rollout replaces one at a time (maxUnavailable 0) and a pod leaves the
-  # Service before it stops (GET /readyz: 503), lets its jobs end, then goes (router/main.go); the periodic loops run
-  # on the one holding the scheduler's lease (router/leaderlease.go)
+  # Service before it stops (GET /readyz: 503), lets its jobs end, then goes (rust/router/src/main.rs); the periodic loops run
+  # on the one holding the scheduler's lease (rust/router/src/leaderlease.rs)
   replicas: 2
   minReadySeconds: 5
   strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
@@ -22,7 +22,7 @@ spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       # SIGTERM: out of the Service, then this replica's jobs end (JOB_GRACE_SECONDS 1740) before it exits; a job still
-      # running then is carried on by the other replica (router/jobs.go)
+      # running then is carried on by the other replica (rust/router/src/jobs.rs)
       terminationGracePeriodSeconds: 1800
       affinity:
         podAntiAffinity:
@@ -53,10 +53,10 @@ spec:
             # every earlier CI-pinned session image with its signature (session-image-sigs.txt here, images.yml)
             - { name: SESSION_IMAGE_SIGS_FILE, value: /sigs/session-image-sigs.txt }
             - { name: FLY_REGION, value: lhr }
-            # the AWS runner (router/awsrunner.go, docs/PLAN-aws.md): the runner a new session gets when it names none,
+            # the AWS runner (rust/router/src/awsrunner.rs, docs/PLAN-aws.md): the runner a new session gets when it names none,
             # and the m-gateways' WireGuard for the AWS machines (public keys; the private halves: Secret router-wg-aws)
             - { name: DEFAULT_RUNNER, value: fly }
-            # the AWS machines' logs (router/awslogs.go): the shipper in jarvis2-obs (k8s/cluster/obs/aws-log-shipper.yaml)
+            # the AWS machines' logs (rust/router/src/awslogs.rs): the shipper in jarvis2-obs (k8s/cluster/obs/aws-log-shipper.yaml)
             - { name: AWS_LOG_SHIPPER_URL, value: "http://aws-log-shipper.jarvis2-obs.svc.cluster.local:3100/loki/api/v1/push" }
             - { name: WG_AWS_GATEWAYS, value: "EEHeJdYheW1fsC/HSnqReGYMbkW9UUuh5QTMvwfEDmU=@10.99.0.1,w8kqS2AxSl8b5OxibyMWLf83GxMCjLEJel98M0vaykg=@10.99.0.2" }
             # the router's WireGuard peer in Fly org jarvis2-370 (fly wireguard create jarvis2-370 lhr jarvis4-box)
@@ -69,24 +69,24 @@ spec:
             - { name: ACCESS_HEALTH_AUD, value: 855266d6e0f83f5d5db551c615ce18e1d148a45d58d7e40cf09ad411200b7552 }
             - { name: HEALTH_CLIENT_ID, value: "f8d3af1465028cfa370fdf13bd9d4cea.access" }
             # hermit-jarvis (the aviary harness's hermit, DE0CH/deyao-ai k8s/chat): its own Access service token hermit-jarvis,
-            # admitted on the device routes (router/devices.go admitClaims; DE0CH/aviary jarvis/hermit/README.md "Its credential")
+            # admitted on the device routes (rust/router/src/devices.rs admitClaims; DE0CH/aviary jarvis/hermit/README.md "Its credential")
             - { name: HERMIT_CLIENT_ID, value: "88b0572a2b74d062bde8e7ff1d7fde61.access" }
             # the setup session's PUBLIC key (keys/setup.pub): the router checks it on every /setup call
             - { name: SETUP_KEY, value: "BEhYIkmGeCkg7D8vdKhRe8b00asMI8a9EyXNW41eBbIphkf6lZmy/c9FsRlqoXLD5JyRZgVOxLzM7OBv47Uy2Ms=" }
             # each session's channel goes under the Discord category "Jarvis 4" (guild 1482150592414486748)
             - { name: DISCORD_SESSIONS_CATEGORY, value: "Jarvis 4" }
-            # the one cap on Fly (app jarvis4-sessions) + AWS session spend (router/budget.go, awsbudget.go): DM at
+            # the one cap on Fly (app jarvis4-sessions) + AWS session spend (rust/router/src/budget.rs, awsbudget.go): DM at
             # USD 135, every running session paused at USD 150 a month (Deyao, 2026-11-25)
             - { name: FLY_BUDGET_USD, value: "150" }
             - { name: FLY_BUDGET_WARN_USD, value: "135" }
             - { name: BROWSERBASE_BUDGET_USD, value: "10" }
             - { name: BROWSERBASE_BUDGET_WARN_USD, value: "8" }
-            # the fabric runner (router/fabricrunner.go, docs/PLAN-fabric.md): its listener for the fabric machines
+            # the fabric runner (rust/router/src/fabricrunner.rs, docs/PLAN-fabric.md): its listener for the fabric machines
             # (/m and GET /fabric/env), reached through the fabric gateway at a node's private address (Service
             # router-fabric, k3s ServiceLB). New session offers the fabric runner and the
             # listener runs because FABRIC_HERMIT_URL is set; the tokens are Secret router-secrets-fabric (router-secrets.py --part router-fabric)
             - { name: FABRIC_HERMIT_URL, value: "http://hermit.jarvis4-fabric.svc.cluster.local" }
-            # the budget counts the fabric's image bucket (router/awsbudget.go; S3 Standard in its region)
+            # the budget counts the fabric's image bucket (rust/router/src/awsbudget.rs; S3 Standard in its region)
             - { name: AWS_BUDGET_BUCKETS, value: "eu-central-1/jarvis4-fabric-images-795109470764" }
             - { name: FABRIC_MACHINE_ADDR, value: ":3128" }
             - { name: FABRIC_SESSION_IMAGE, value: "ghcr.io/de0ch/jarvis4-session-fabric:sha-7c40ec57ee1d@sha256:6d213121f3e58ca636089f7d4b539bd63dd3ed4303ce731d6c0d47c468f7c373" }
@@ -148,7 +148,7 @@ spec:
     - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16] } }]
       ports: [{ port: 443 }]
 ---
-# the fabric machines' way in (router/fabricrunner.go): k3s ServiceLB binds 3128 on every node's addresses (the nodes'
+# the fabric machines' way in (rust/router/src/fabricrunner.rs): k3s ServiceLB binds 3128 on every node's addresses (the nodes'
 # firewall admits nothing from outside; the private guard admits the fabric gateway), and the gateway forwards the
 # sandboxes' 10.204.1.1:3128 to one node's private address (hermit.json fabric.egressTarget)
 apiVersion: v1
@@ -166,7 +166,7 @@ spec:
   minAvailable: 1
   selector: { matchLabels: { app: router } }
 ---
-# m-gateway (docs/STATE.md 5, step 9; router/mgateway.go): two gateways, each the Fly org's WireGuard peer of its
+# m-gateway (docs/STATE.md 5, step 9; rust/router/src/mgateway.rs): two gateways, each the Fly org's WireGuard peer of its
 # own (m-gateway-0: jarvis4-box, m-gateway-1: jarvis4-gw-b), the machines' only way to the router: every request a
 # gateway takes on :8081 goes to the router Service's :8081 (any replica). The machines know both (MACHINE_URL /
 # KERNEL_MACHINE_URL) and dial the other when one doesn't answer (rust/machine/src/routerdial.rs). A StatefulSet so a rollout
@@ -205,7 +205,7 @@ spec:
             - { name: POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
             - { name: WG_CONFIGS, value: "/wg-a/wg.conf,/wg-b/wg.conf" }
             - { name: M_GATEWAY_TO, value: "http://router.jarvis4-router.svc.cluster.local:8081" }
-            # the AWS machines' WireGuard (router/awsgw.go): this pod's address by its ordinal; WG_AWS_KEYS from the Secret
+            # the AWS machines' WireGuard (rust/router/src/wgserve.rs): this pod's address by its ordinal; WG_AWS_KEYS from the Secret
             - { name: WG_AWS_GATEWAYS, value: "EEHeJdYheW1fsC/HSnqReGYMbkW9UUuh5QTMvwfEDmU=@10.99.0.1,w8kqS2AxSl8b5OxibyMWLf83GxMCjLEJel98M0vaykg=@10.99.0.2" }
           envFrom: [{ secretRef: { name: router-wg-aws, optional: true } }]
           readinessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 2, failureThreshold: 2 }

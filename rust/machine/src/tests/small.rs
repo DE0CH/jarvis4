@@ -207,7 +207,7 @@ fn app_title() {
     assert_eq!(a.current(), "Inside the shape", "after a failure");
 }
 
-/// the "live-sync" command (router/livetail.go): what changed goes first, then /m/live-synced, which the router's tail
+/// the "live-sync" command (rust/router/src/livetail.rs): what changed goes first, then /m/live-synced, which the router's tail
 /// waits for; an unchanged transcript isn't sent again, and the round is still told
 #[test]
 fn live_round_tells_the_router() {

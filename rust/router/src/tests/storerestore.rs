@@ -1,4 +1,4 @@
-//! router/storerestore_test.go
+//! storerestore_test.go
 use super::storedocs::{BucketState, store_router};
 use crate::nethttp::{write_error, write_json};
 use crate::storedocs::backup_sha;

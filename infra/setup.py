@@ -44,7 +44,7 @@ both). Values never print.
                                        its secrets and its own empty secrets as secretsBoot; printed, sig.Roster.Payload
                                        made byte for byte, signed with the setup key and filed with the router; Deyao
                                        signs it with the root key in the app. The other copy's roster, once signed,
-                                       starts the copy flip (router/kernelflip.go)
+                                       starts the copy flip (rust/router/src/kernelflip.rs)
   infra/setup.py kernel-flipped        after a copy flip: k8s/cluster/kernel/active-kernel.txt names the copy that
                                        serves now, its Deployments' release hold goes, the other copy goes to replicas 0
                                        (infra/kernel-pin.py flipped); commit and push
@@ -61,7 +61,7 @@ both). Values never print.
                                        sent to the core sealed to its key, and backed up as the `core` store
   infra/setup.py claude-accounts       the router's Claude accounts (no secrets): per account its email, expiry,
                                        refresh state, participants of the refresh protocol, the sessions using it,
-                                       and which is the default (router/claudeaccounts.go)
+                                       and which is the default (rust/router/src/claudeaccounts.rs)
   infra/setup.py claude-login          the same for the default account only
   infra/setup.py repos                 the router's repo list (repo, store, key fingerprint)
   infra/setup.py sessions [-v]         the router's sessions: id, current machine, state, title, and a failed one's reason
@@ -583,7 +583,7 @@ def main():
     elif cmd == "sessions":
         for s in call("GET", "/setup/sessions")["sessions"]:
             print(s["id"], s["machineId"] or "-", s["state"], s["title"])
-            if s.get("error"):  # why it failed (router/failures.go), or what a stopped machine left (router/lostmachine.go)
+            if s.get("error"):  # why it failed (rust/router/src/failures.rs), or what a stopped machine left (rust/router/src/lostmachine.rs)
                 print("    error" + (f" (since {s['failedAt']})" if s.get("failedAt") else "") + ":", s["error"])
             if "-v" in args:  # the autopilot's view: status, background jobs, last report
                 print("   ", json.dumps({k: v for k, v in s.items() if k not in ("id", "machineId", "state", "title", "error")}, sort_keys=True))

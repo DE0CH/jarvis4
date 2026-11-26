@@ -1,7 +1,7 @@
 //! The pressure watch (Deyao, 2026-11-12: "a jarvis watcher (similar to the idle/stall watcher) that says disk
 //! pressure/memory pressure, do not upgrade; discord Deyao if upgrade is necessary or recommended"): a component of the
 //! supervisor, beside the stall watch. Every 30 s it reads its own machine's memory and disk and decides by the router's
-//! rules (router/memory.go, router/disk.go) whether the machine is short of memory or of disk. A process the harness's
+//! rules (rust/router/src/memory.rs, rust/router/src/disk.rs) whether the machine is short of memory or of disk. A process the harness's
 //! own memory guard killed counts too. A new episode is told to the session's harness at once, and again every 15
 //! minutes while it lasts, as the one Jarvis message that interrupts the running turn instead of joining it at the next
 //! tool result (Deyao, 2026-11-20: it is time-sensitive, and the running tool call may be what fills the machine;
@@ -20,12 +20,12 @@ use std::time::{Duration, Instant};
 
 const PRESSURE_EVERY: Duration = Duration::from_secs(30);
 pub const PRESSURE_AGAIN: Duration = Duration::from_secs(15 * 60);
-/// router/memory.go memClear
+/// rust/router/src/memory.rs memClear
 pub const PRESSURE_MEM_CLEAR: Duration = Duration::from_secs(15 * 60);
-// router/memory.go
+// rust/router/src/memory.rs
 const PRESSURE_PSI_FULL_PCT: f64 = 10.0;
 const PRESSURE_LOW_AVAIL_PCT: f64 = 5.0;
-// router/disk.go
+// rust/router/src/disk.rs
 const PRESSURE_DISK_LOW_PCT: f64 = 10.0;
 const PRESSURE_DISK_LOW_KB: i64 = 1024 * 1024;
 const PRESSURE_DISK_CLEAR_PCT: f64 = 20.0;
@@ -154,7 +154,7 @@ impl GuardLog {
 }
 
 impl PressureWatch {
-    /// why the machine is short of memory now ("" when it is not), as router/memory.go observe decides
+    /// why the machine is short of memory now ("" when it is not), as rust/router/src/memory.rs observe decides
     pub fn mem_reason(&mut self, s: &MemSample) -> String {
         let guard_kills = self.guard.kills();
         let reason = if !guard_kills.is_empty() {
@@ -186,7 +186,7 @@ impl PressureWatch {
     }
 }
 
-/// the numbers and the biggest processes (router/memory.go describeMem)
+/// the numbers and the biggest processes (rust/router/src/memory.rs describeMem)
 pub fn mem_detail(s: &MemSample) -> String {
     let top: Vec<String> = s
         .top

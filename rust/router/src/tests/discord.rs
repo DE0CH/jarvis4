@@ -1,4 +1,4 @@
-//! router/discord_test.go
+//! discord_test.go
 use crate::discord::{
     DISC_FETCH, DiscordClient, DiscordRateLimited, ExportSink, channel_name, discord_destroy,
     discord_env, split_message,

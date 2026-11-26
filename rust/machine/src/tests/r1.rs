@@ -116,7 +116,7 @@ fn a_wakeup_is_delivered_once_and_a_cron_once_per_run() {
     );
     let mut cr = cron(&k, r#"{"prompt":"p","everySeconds":3600}"#);
     not_replayed(&cr, NOW).unwrap();
-    // the router reads this exact wording as "the session already has run 1" and counts it (router/schedule.go
+    // the router reads this exact wording as "the session already has run 1" and counts it (rust/router/src/schedule.rs
     // sessionHasRun): change both together
     let r = not_replayed(&cr, NOW + 7200);
     assert!(

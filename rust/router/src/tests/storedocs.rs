@@ -1,4 +1,4 @@
-//! router/storedocs_test.go
+//! storedocs_test.go
 use crate::backups::BackupBucket;
 use crate::nethttp::{write_error, write_json};
 use crate::router::Router;

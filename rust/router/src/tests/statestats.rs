@@ -1,4 +1,4 @@
-//! router/statestats_test.go (the load line is checked as DoLoad::line writes it: tests can't read the log)
+//! statestats_test.go (the load line is checked as DoLoad::line writes it: tests can't read the log)
 use crate::budget::BudgetState;
 use crate::state::{Persisted, Record, Session, State};
 use crate::statedb::{CHANGES_KEPT, CHANGES_MARKER, rows_of};

@@ -1,6 +1,6 @@
 //! `jarvis-machine sign-request METHOD PATH < body`: this machine's signature over a request for a service outside
 //! Jarvis 4, printed as the router's three headers (JSON: X-Machine, X-Time, X-Sig), the same signature every /m call
-//! carries. The service asks the router whose it is (router/machinesig.go), which never checks one over a path under
+//! carries. The service asks the router whose it is (rust/router/src/machinesig.rs), which never checks one over a path under
 //! /m: a signature made here can't stand in for a router call. Today's user: aviary-gateway's boot.
 
 use crate::client::Client;

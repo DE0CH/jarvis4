@@ -1,4 +1,4 @@
-// An approval on the kernel (router/kernelline.go): a new source for a session (a new session, a restore, a resume on
+// An approval on the kernel (rust/router/src/kernelline.rs): a new source for a session (a new session, a restore, a resume on
 // another image) or an add-store (two certs: the store into a new source, that source onto the running machine). The
 // page reads what it shows from the certs themselves (KernelChecks: strictly, against the approval's session and
 // store), signs them under ONE Face ID with the phone's key, and in the same Face ID unlocks in the kernel's secrets

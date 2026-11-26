@@ -1,4 +1,4 @@
-// A batch from the Inbox (docs/DESIGN.md "Requests", router/batches.go): several items a caller filed together,
+// A batch from the Inbox (docs/DESIGN.md "Requests", rust/router/src/batches.rs): several items a caller filed together,
 // reviewed on one page and allowed under ONE Face ID. On top, the caller's summary (unverified, its words); below it
 // every item with its own "What you sign (exact)", rendered from that item's signed content exactly as its own page
 // renders it, and the call and reason the router recorded. Allow all: one Face ID (PhoneKeys.authorize), then every
@@ -521,7 +521,7 @@ extension InboxItem {
     case "peer-message": return "Peer message"
     case "message": return "Deliver a message"
     case "new-session": return j["options"]["restore"].text != nil ? "Restore" : "New session"
-    // a kind this build doesn't know (router/inbox_kinds_test.go keeps the list in step): say so, never guess
+    // a kind this build doesn't know (rust/router/src/tests/small.rs every_inbox_kind_is_known_to_the_apps keeps the list in step): say so, never guess
     default: return "Unknown request (\(kind)): update the app"
     }
   }

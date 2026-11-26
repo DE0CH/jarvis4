@@ -70,7 +70,7 @@ the kit). Order (Deyao): the kernel, the iOS app, the new cluster, then the stat
 - The setup session files that copy's roster (`infra/setup.py kernel-roster --copy <it>`): its components' fresh keys,
   the serving secrets as its secrets, its own empty secrets as `secretsBoot`, the serving copy's members as retired.
   Deyao signs it in the app: the release's one Face ID, at his leisure (nothing waits on it: the serving copy goes on).
-- Then the router flips by itself (router/kernelflip.go), each step kept so a restart carries on: with every kernel
+- Then the router flips by itself (rust/router/src/kernelflip.rs), each step kept so a restart carries on: with every kernel
   call held, each serving component hands over (`POST /handoff` with the new roster) and freezes in the same step; the
   notarizer (defined and succeeded sources), the spawner (machines, kill certs, the Fly token) and secrets (its seed,
   the claim's keys, a final line state with the open unlocks) seal their state to the new copy's agreement key from the
