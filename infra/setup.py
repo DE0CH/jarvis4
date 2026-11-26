@@ -4,7 +4,7 @@
 both). Values never print.
 
   JARVIS2_SETUP_KEY               the setup key (PEM, P-256); or ~/.jarvis/setup-key.pem
-  JARVIS2_SETUP_ACCESS_ID/SECRET  the Access service token for /setup; or ~/.jarvis/cloudflare.env
+  JARVIS4_SETUP_ACCESS_ID/SECRET  the Access service token for /setup (jarvis4-setup); or ~/.jarvis/cloudflare.env
   HETZNER_S3_*                    the backup buckets (writes jarvis4-backup-de0ch, reads jarvis2-backup-de0ch)
 
   infra/setup.py status                the router's health: secret names present, session image, core up
@@ -171,7 +171,7 @@ def setup_key():
 
 
 def access():
-    i, s = os.environ.get("JARVIS2_SETUP_ACCESS_ID"), os.environ.get("JARVIS2_SETUP_ACCESS_SECRET")
+    i, s = os.environ.get("JARVIS4_SETUP_ACCESS_ID"), os.environ.get("JARVIS4_SETUP_ACCESS_SECRET")
     if not (i and s):
         v = dict(l.rstrip("\n").split("=", 1) for l in open(os.path.join(D, "cloudflare.env")) if "=" in l)
         i, s = v["SETUP_ACCESS_ID"], v["SETUP_ACCESS_SECRET"]
