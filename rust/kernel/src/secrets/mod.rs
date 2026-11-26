@@ -16,6 +16,8 @@ pub mod http;
 pub mod keys;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_deploykeys;
 
 use crate::minter::{MintError, Request as MintRequest};
 use continuity::{LineStateDoc, MODE_HANDED_OFF, MODE_SERVING};
@@ -118,7 +120,7 @@ pub struct Secrets {
     pub(crate) mu: Mutex<Inner>,
     /// the root key's roster: the other components' identities (and its own) are checked with it
     pub trust: Arc<Trust>,
-    minter: Option<Box<dyn MinterApi>>,
+    minter: Mutex<Option<Arc<dyn MinterApi>>>,
     exit: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     /// the clock (a test's own)
     pub now: fn() -> GoTime,
@@ -232,7 +234,7 @@ impl Secrets {
                 took: String::new(),
             }),
             trust: Arc::new(Trust::new(root_pub)),
-            minter: m,
+            minter: Mutex::new(m.map(Arc::from)),
             exit: Mutex::new(None),
             now: GoTime::now,
         }
@@ -798,9 +800,19 @@ impl Secrets {
         )
     }
 
-    /// the minter's one GitHub call for an approval
+    /// where an approved deploy-key call goes from now on
+    pub fn set_minter(&self, m: Arc<dyn MinterApi>) {
+        *self.minter.lock().unwrap_or_else(|e| e.into_inner()) = Some(m);
+    }
+
+    /// the minter's one GitHub call for an approval (made without secrets' lock: GitHub may take seconds)
     pub(crate) fn mint(&self, r: &MintRequest) -> Result<Doc> {
-        match &self.minter {
+        let m = self
+            .minter
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        match &m {
             None => Err(fail(503, "no minter configured (KERNEL_MINTER_URL)")),
             Some(m) => m.mint(r).map_err(|e| match e.downcast_ref::<MintError>() {
                 Some(me) => fail(me.status, me.msg.clone()),
