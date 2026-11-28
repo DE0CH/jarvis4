@@ -753,7 +753,7 @@ Storage Box copies. Nothing else waits on it; the router reports search unreacha
 
 1. Delete the server in the jarvis2 Hetzner project (API or console).
 2. `infra/cloudflare.py ~/.jarvis/cloudflare.env` (with `ROTATE=1` if that file is gone: a new setup service
-   token; put it in the `infra` store as JARVIS2_SETUP_ACCESS_ID/SECRET).
+   token; put it in the `infra` store as JARVIS4_SETUP_ACCESS_ID/SECRET, which infra/setup.py reads).
 3. `BOX_KIND=control WG_PEER=jarvis2-box infra/create.sh` — a new box key (`keys/box-next.pub`: rename it to
    `keys/box.pub`) and age key (`keys/control-age.pub`), the WireGuard peer made again (the old router held the old
    one), attached to the Network at 10.77.0.2, no SSH, no open port, no IPv4 (above). Then every control part of
