@@ -90,7 +90,7 @@ resource "aws_security_group" "session" {
 }
 
 resource "aws_launch_template" "session" {
-  name                                 = "jarvis4-session"
+  name = "jarvis4-session"
   # the Go kernel's path, as the resource was made (now rust/kernel/src/spawner/aws.rs): a new description replaces it
   description                          = "Jarvis 4 session machine (kernel/spawner/aws.go sets type, disk, tags, user-data)"
   image_id                             = length(data.aws_ami_ids.baked.ids) > 0 ? data.aws_ami_ids.baked.ids[0] : var.ami

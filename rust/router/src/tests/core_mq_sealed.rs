@@ -30,12 +30,11 @@ fn a_new_core_destroys_the_earlier_cores_paused_sessions() {
     let fc2 = FakeCore::new(); // a restart: a new core
     t.core.set_url(&fc2.srv.url);
     t.core_change_tick();
-    wait_for("s1 destroyed", || sessions(&t) == 1);
-    assert_eq!(
-        t.read_carry("m1"),
-        "",
-        "the carried secrets outlived the session"
-    );
+    // finish() takes the session out of the list first and drops its carried secrets after the state lock, so the
+    // wait is for the last of the two, never a read the moment the session is gone
+    wait_for("s1 destroyed and its carried secrets gone", || {
+        sessions(&t) == 1 && t.read_carry("m1").is_empty()
+    });
     assert!(
         t.st.do_(|d| d.records.len() == 1 && d.records[0].session.id == "s1"),
         "no record in Previous"
