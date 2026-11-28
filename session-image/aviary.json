@@ -1,6 +1,6 @@
 {
-  "release": "aviary-ba579f459e25",
-  "sandbox": "ghcr.io/de0ch/hermit-sandbox@sha256:6fe093b69b127f82eab84dc3f06673698e366d679ff61bfc2d38e61ada65a2db",
-  "gateway": "jarvis-c0148c2e588f",
-  "gateway_sha256": "0e0764d23ee411ba9e9c862ac72106016bc6d7626e2e6efa7c72efa07c2af9cd"
+  "release": "aviary-b48ca4563050",
+  "sandbox": "ghcr.io/de0ch/hermit-sandbox@sha256:aa930475bc6616ae79a82bd6169c9bc027eac71beb1b0389b03f95abfea909ed",
+  "gateway": "jarvis-b48ca4563050",
+  "gateway_sha256": "c4ddc459370b794204618dd0dc74c2e9c82bdea62bfb502c02456ee327367e6c"
 }
