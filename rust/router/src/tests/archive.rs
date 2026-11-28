@@ -164,11 +164,10 @@ fn destroy_archives_then_records() {
         "record {a:?}"
     );
     assert_eq!(rec.session.archive_file, rig_archive());
-    wait_for("the snapshot gone", || rg.snap("m1").is_none());
-    assert!(
-        rg.objects.list("snapshots/").unwrap_or_default().is_empty(),
-        "the snapshot stayed in the bucket"
-    );
+    // snap_drop deletes the row, then the object: wait for the last of the two, never a list the moment the row goes
+    wait_for("the snapshot's row and its object gone", || {
+        rg.snap("m1").is_none() && rg.objects.list("snapshots/").unwrap_or_default().is_empty()
+    });
     // the tail of the archived conversation
     let tail = rg
         .record_tail("s1")

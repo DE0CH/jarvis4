@@ -777,18 +777,23 @@ fn replica_up(w: &Path) -> Result<()> {
     }
 
     // what the setup answers (rust/replica-setup) need: infra/setup.py pointed at this stack
-    let env = format!(
+    fs::write(w.join("env"), setup_env(w, &py, &secret))?;
+    run(Command::new("chmod").arg("600").arg(w.join("env")), "chmod")?;
+    println!("ok: core :8090, router :18080, peer {peer}, session image {simg}");
+    Ok(())
+}
+
+/// The environment rust/replica-setup runs infra/setup.py in: pointed at this stack, the /setup Access headers
+/// set to anything (the local router has no Access in front of it), the backup bucket on the local S3 server
+fn setup_env(w: &Path, py: &Path, secret: &str) -> String {
+    format!(
         "export JARVIS2_URL=http://127.0.0.1:18080 JARVIS_KEYS_DIR=\"{w}/keys\" JARVIS_BACKUP_BUCKET=jarvis2-backup-replica\n\
-         export JARVIS2_SETUP_KEY=\"$(cat \"{w}/setup-key.pem\")\" JARVIS2_SETUP_ACCESS_ID=none JARVIS2_SETUP_ACCESS_SECRET=none\n\
+         export JARVIS2_SETUP_KEY=\"$(cat \"{w}/setup-key.pem\")\" JARVIS4_SETUP_ACCESS_ID=none JARVIS4_SETUP_ACCESS_SECRET=none\n\
          export HETZNER_S3_ENDPOINT=http://{S3} HETZNER_S3_REGION=fsn1 HETZNER_S3_ACCESS_KEY=replica HETZNER_S3_SECRET_KEY=\"{secret}\"\n\
          export REPLICA_W=\"{w}\" REPLICA_PY=\"{py}\"\n",
         w = w.display(),
         py = py.display()
-    );
-    fs::write(w.join("env"), env)?;
-    run(Command::new("chmod").arg("600").arg(w.join("env")), "chmod")?;
-    println!("ok: core :8090, router :18080, peer {peer}, session image {simg}");
-    Ok(())
+    )
 }
 
 #[cfg(test)]
@@ -826,5 +831,32 @@ mod tests {
         let s = hex_secret();
         assert!(s.len() == 32 && s.chars().all(|c| c.is_ascii_hexdigit()));
         let _ = fs::remove_dir_all(&d);
+    }
+
+    /// The replica runs only on main (the `replica` environment): a name infra/setup.py stops reading must fail here, on
+    /// every branch. 2026-11-26/28: setup.py moved to JARVIS4_SETUP_ACCESS_*, the replica kept exporting
+    /// JARVIS2_SETUP_ACCESS_*, and every main run failed "No such file … ~/.jarvis/cloudflare.env".
+    #[test]
+    fn the_setup_env_sets_every_variable_setup_py_reads_for_access() {
+        let py = fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../infra/setup.py"))
+            .expect("infra/setup.py");
+        let body = py
+            .split("def access():")
+            .nth(1)
+            .expect("setup.py has access()");
+        let body = body.split("\ndef ").next().unwrap_or(body);
+        let names: Vec<&str> = body
+            .split("os.environ.get(\"")
+            .skip(1)
+            .filter_map(|r| r.split('"').next())
+            .collect();
+        assert!(!names.is_empty(), "access() reads no variable");
+        let env = setup_env(Path::new("/w"), Path::new("/py"), "s");
+        for n in names {
+            assert!(
+                env.contains(&format!(" {n}=")),
+                "the replica's setup env lacks {n}: {env}"
+            );
+        }
     }
 }
