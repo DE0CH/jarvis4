@@ -29,7 +29,7 @@ RUN set -eu; \
     install -D -m 755 /aviary-gateway /out/aviary-gateway
 
 # the session's own tools (session-image/tools/: schedule-wakeup, schedule-cron, retire-session, time-machine, jarvis-tail,
-# aviary-sandbox, session-entrypoint, workspace-layer), one
+# aviary-sandbox, session-entrypoint, workspace-layer, yyc-talos), one
 # Rust binary built and tested here so a session runs it and never builds it (Deyao, 2026-11-17: shell scripts are
 # banned). aviary-sandbox's own test needs root and mounts: images.yml runs it (cargo test -- --ignored under sudo)
 FROM rust:1.99.1-bookworm AS tools
@@ -74,7 +74,7 @@ COPY --chmod=644 session-image/claude-code/managed-settings.json session-image/c
 RUN printf '#!/bin/sh\nexec /usr/local/bin/jarvis-machine init\n' > /usr/local/bin/jarvis2-init \
  && chmod 755 /usr/local/bin/jarvis2-init \
  && ln -s /usr/local/bin/jarvis-machine /usr/local/bin/jarvis \
- && for t in schedule-wakeup schedule-cron retire-session time-machine jarvis-tail aviary-sandbox session-entrypoint workspace-layer; do ln -sfn /usr/local/bin/jarvis-tools /usr/local/bin/$t; done \
+ && for t in schedule-wakeup schedule-cron retire-session time-machine jarvis-tail aviary-sandbox session-entrypoint workspace-layer yyc-talos; do ln -sfn /usr/local/bin/jarvis-tools /usr/local/bin/$t; done \
  && chmod -R a+rX,go-w /opt/jarvis/tasks
 USER claude
 # what the harness reads as user claude must be readable by it (see /etc/claude-code above): every directory searchable,

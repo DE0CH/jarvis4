@@ -73,9 +73,9 @@ fn progress_every() -> Duration {
     )
 }
 
-/// The machine's session commands the sandbox gets (the three names of jarvis-tools are links to it on the machine;
+/// The machine's session commands the sandbox gets (the names after jarvis-tools are links to it on the machine;
 /// a bind follows the link, and the tool goes by the name it is run under).
-pub const TOOLS: [&str; 11] = [
+pub const TOOLS: [&str; 12] = [
     "jarvis-machine",
     "jarvis-request",
     "jarvis-message",
@@ -87,6 +87,7 @@ pub const TOOLS: [&str; 11] = [
     "schedule-cron",
     "retire-session",
     "time-machine",
+    "yyc-talos",
 ];
 const ROOT: &str = "/run/aviary-sandbox-root";
 

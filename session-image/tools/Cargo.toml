@@ -2,7 +2,7 @@
 name = "jarvis-tools"
 version = "0.1.0"
 edition = "2024"
-description = "A Jarvis 4 session's own tools: schedule-wakeup, schedule-cron (its router crons), retire-session, time-machine, jarvis-tail, aviary-sandbox, session-entrypoint and workspace-layer"
+description = "A Jarvis 4 session's own tools: schedule-wakeup, schedule-cron (its router crons), retire-session, time-machine, jarvis-tail, aviary-sandbox, session-entrypoint, workspace-layer and yyc-talos"
 
 [[bin]]
 name = "jarvis-tools"
@@ -10,7 +10,9 @@ path = "src/main.rs"
 
 [dependencies]
 libc = "0.2"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.9"
 ureq = { version = "2", default-features = false, features = ["json"] }
 
 [profile.release]

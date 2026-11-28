@@ -1,0 +1,111 @@
+# A fixture: DE0CH/yyc-code news-stream/deploy/clusters/talos/yyc-talos.toml as of 2026-11-28 (yyc_talos.rs's tests)
+# What the session tool `yyc-talos` (DE0CH/jarvis4 session-image/tools/src/yyc_talos.rs, built into the session image)
+# does for this cluster (README "Operator access", "Node work"): this file holds yyc-talos's facts, the tool only the
+# mechanism, so a role, a patch or an add-on version changes here. The Talos release itself is release.env's.
+#
+#   yyc-talos tunnel                 the control nodes' Talos and Kubernetes APIs on 127.0.0.1 through the jump host, from
+#                                    nothing (the tools below, the SSH key, then talosconfig and kubeconfig); stays up
+#   yyc-talos talosconfig            ~/talos/talosconfig for the tunnel's endpoints
+#   yyc-talos kubeconfig             ~/talos/kubeconfig (admin, through the tunnel)
+#   yyc-talos gen NODE ROLE          ~/talos/NODE.yaml, a node's machine config (never committed), validated
+#   yyc-talos apply NODE IP [--dry-run]   apply it to the running node (mode auto), one node at a time
+#   yyc-talos addons                 install or upgrade the Helm add-ons below
+#   yyc-talos manifests              kubectl apply -k of this folder (kustomization.yaml)
+
+cluster = "yyc-talos"
+endpoint = "https://10.0.0.21:6443"
+
+[secrets]
+talos = "YYC_TALOS_SECRETS"           # talosctl's secrets bundle
+warp_prefix = "YYC_TALOS_WARP_"       # + the node name after "yyc-talos-", upper case, - as _ (warp-register.py)
+ssh_key = "YYC_CLUSTER_SSH_KEY"       # the jump host's root key
+access_id = "YYC_DEPLOY_ACCESS_CLIENT_ID"       # Access service token of jump.yyc-internal.com (tunnel yyc-deploy)
+access_secret = "YYC_DEPLOY_ACCESS_CLIENT_SECRET"
+
+# The jump host: sshd on yyc-nat2's alias 10.0.0.30 (nat/nat2.yaml), reached through Cloudflare Access only.
+[tunnel]
+host = "root@10.0.0.30"
+host_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixtureFixtureFixtureFixtureFixtureFixture"
+access_hostname = "jump.yyc-internal.com"
+forwards = [
+  "50001:10.0.0.21:50000", "50002:10.0.0.22:50000", "50003:10.0.0.23:50000",
+  "6443:10.0.0.21:6443", "6444:10.0.0.22:6443", "6445:10.0.0.23:6443",
+]
+talos_endpoints = ["127.0.0.1:50001", "127.0.0.1:50002", "127.0.0.1:50003"]
+kubeconfig_node = "10.0.0.21"
+kube_server = "https://127.0.0.1:6443"
+
+# Machine configs: patches/common.yaml for every role, then the role's own (paths from this folder). `warp`: the node
+# goes out through its own WARP warp0 (a public IPv6 and no NAT); without it, through yyc-nat2 (patches/private.yaml).
+[gen]
+common = ["patches/common.yaml"]
+
+[roles.controlplane]
+output = "controlplane"
+patches = ["patches/controlplane.yaml", "patches/public.yaml", "patches/eth0-dhcp.yaml"]
+warp = true
+
+[roles.news]   # the old x86 servers with a public IP (plan talos-apps-move.md)
+output = "worker"
+patches = ["patches/public.yaml", "patches/eth0-dhcp.yaml", "node-patches/news.yaml"]
+warp = true
+
+[roles.db]
+output = "worker"
+patches = ["patches/public.yaml", "patches/eth0-dhcp.yaml", "node-patches/db.yaml"]
+warp = true
+
+[roles.worker]
+output = "worker"
+patches = ["patches/worker.yaml", "patches/private.yaml"]
+warp = false
+
+[roles.news-private]   # a news node with no public IP
+output = "worker"
+patches = ["patches/private.yaml", "node-patches/news.yaml"]
+warp = false
+
+[roles.db-private]   # a database node with no public IP
+output = "worker"
+patches = ["patches/private.yaml", "node-patches/db.yaml"]
+warp = false
+
+# Helm add-ons, in this order (values in addons/<values>.values.yaml), after the `before` manifests.
+[addons]
+before = ["priorityclasses.yaml", "storageclass.yaml"]
+repos = [
+  { name = "cilium", url = "https://helm.cilium.io" },
+  { name = "hcloud", url = "https://charts.hetzner.cloud" },
+  { name = "sealed-secrets", url = "https://bitnami.github.io/sealed-secrets" },
+  { name = "jetstack", url = "https://charts.jetstack.io" },
+  { name = "cnpg", url = "https://cloudnative-pg.github.io/charts" },
+  { name = "juicefs", url = "https://juicedata.github.io/charts/" },
+]
+charts = [
+  { release = "cilium", chart = "cilium/cilium", version = "1.20.4", namespace = "kube-system", values = "cilium" },
+  { release = "hccm", chart = "hcloud/hcloud-cloud-controller-manager", version = "1.39.2", namespace = "kube-system", values = "hcloud-ccm" },
+  { release = "hcloud-csi", chart = "hcloud/hcloud-csi", version = "2.24.1", namespace = "kube-system", values = "hcloud-csi" },
+  { release = "sealed-secrets-controller", chart = "sealed-secrets/sealed-secrets", version = "2.20.0", namespace = "kube-system", values = "sealed-secrets" },
+  { release = "cert-manager", chart = "jetstack/cert-manager", version = "v1.21.2", namespace = "cert-manager", values = "cert-manager" },
+  { release = "cloudnative-pg", chart = "cnpg/cloudnative-pg", version = "0.29.1", namespace = "cnpg-system", values = "cloudnative-pg" },
+  { release = "plugin-barman-cloud", chart = "cnpg/plugin-barman-cloud", version = "0.8.1", namespace = "cnpg-system", values = "plugin-barman-cloud" },
+  { release = "juicefs-csi-driver", chart = "juicefs/juicefs-csi-driver", version = "0.33.0", namespace = "kube-system", values = "juicefs-csi" },
+]
+
+# The command-line tools, fetched on first use into ~/.cache/yyc-talos and checked against these sums (talosctl:
+# release.env's version, checked against that release's sha256sum.txt). linux amd64.
+[tools.kubectl]
+version = "v1.37.3"
+url = "https://dl.k8s.io/release/{version}/bin/linux/amd64/kubectl"
+sha256 = "9a1b55af2795b25dd288dbef62387db9b5530087ab918d28c6ad067f2e3cb07c"
+
+[tools.helm]
+version = "v3.22.1"
+url = "https://get.helm.sh/helm-{version}-linux-amd64.tar.gz"
+sha256 = "896cf63684a42a723d61c980369d6e588330927deb13676ca0d85006dd6da0ea"
+member = "linux-amd64/helm"   # the binary inside the archive
+
+[tools.cloudflared]
+version = "2026.11.2"
+url = "https://github.com/cloudflare/cloudflared/releases/download/{version}/cloudflared-linux-amd64"
+sha256 = "56f13335143ec0e22772963290683a84a04114a35ec64cbc794a4d39ff9bb8cf"

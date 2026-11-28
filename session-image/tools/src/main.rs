@@ -8,6 +8,7 @@
 //!   aviary-sandbox                  (as root) an aviary session's sandbox in aviary's own image (aviary_sandbox.rs)
 //!   session-entrypoint              the session's steps before its harness, then the harness (entrypoint.rs)
 //!   workspace-layer                 the multi-repo workspace's CLAUDE.md, links and settings (workspace_layer.rs)
+//!   yyc-talos                       YYC's Talos cluster: tunnel, configs, node configs, add-ons (yyc_talos.rs)
 //! or `jarvis-tools <tool> …`. Every router call goes to `$JARVIS_URL/api/sessions/$SESSION_ID/…`: the machine's local
 //! proxy signs it with the machine key and forwards it to the router (/m/api).
 
@@ -19,6 +20,7 @@ mod schedule;
 mod tail;
 mod timemachine;
 mod workspace_layer;
+mod yyc_talos;
 
 use serde_json::Value;
 use std::process::ExitCode;
@@ -90,13 +92,14 @@ fn main() -> ExitCode {
         "jarvis-tail" => (tail::run(&args), "ERROR"),
         "session-entrypoint" => (entrypoint::run(), entrypoint::TAG),
         "workspace-layer" => (workspace_layer::run(&args), workspace_layer::TAG),
+        "yyc-talos" => (yyc_talos::run_cli(&args), "ERROR"),
         "retire-session" => (
             retire::run(args.first().is_some_and(|a| a == "--check")),
             "BLOCKED",
         ),
         _ => (
             Err(
-                "usage: jarvis-tools schedule-wakeup|schedule-cron|retire-session|time-machine|jarvis-tail|aviary-sandbox|workspace-layer|session-entrypoint …"
+                "usage: jarvis-tools schedule-wakeup|schedule-cron|retire-session|time-machine|jarvis-tail|aviary-sandbox|workspace-layer|session-entrypoint|yyc-talos …"
                     .into(),
             ),
             "ERROR",
