@@ -12,7 +12,9 @@
 //!   yyc-talos apply NODE IP [--dry-run] apply ~/talos/NODE.yaml to the running node IP (mode auto)
 //!   yyc-talos addons                    install or upgrade the Helm add-ons (KUBECONFIG, default ~/talos/kubeconfig)
 //!   yyc-talos manifests                 kubectl apply -k of the folder
-//!   yyc-talos tool NAME                 the path of the pinned talosctl, kubectl, helm or cloudflared (fetched on first use)
+//!   yyc-talos tool NAME                 the path of the pinned talosctl, kubectl, helm, cloudflared or hcloud (fetched on first use)
+//!   yyc-talos resize-db NODE TYPE       change a database node's Hetzner server type in place with no downtime: refused on
+//!                                       a Postgres primary's node (db/switchover.py first); the other copies keep serving
 //!
 //! The folder: the yyc-code checkout around the working directory, else ~/src/yyc-code (cloned when missing). Out:
 //! `$TALOS_OUT`, default ~/talos (mode 700; every file in it 600). Secrets come one at a time from `session-secret`, are
@@ -34,7 +36,7 @@ use std::time::{Duration, Instant};
 pub const FOLDER: &str = "news-stream/deploy/clusters/talos";
 const REPO: &str = "https://github.com/DE0CH/yyc-code.git";
 
-const USAGE: &str = "usage: yyc-talos tunnel | talosconfig | kubeconfig | gen NODE ROLE | apply NODE IP [--dry-run] | addons | manifests | tool talosctl|kubectl|helm|cloudflared";
+const USAGE: &str = "usage: yyc-talos tunnel | talosconfig | kubeconfig | gen NODE ROLE | apply NODE IP [--dry-run] | addons | manifests | tool talosctl|kubectl|helm|cloudflared|hcloud | resize-db NODE TYPE";
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -46,6 +48,7 @@ pub struct Config {
     pub roles: BTreeMap<String, Role>,
     pub addons: Addons,
     pub tools: BTreeMap<String, Tool>,
+    pub resize_db: ResizeDb,
 }
 
 #[derive(Debug, Deserialize)]
@@ -55,6 +58,19 @@ pub struct Secrets {
     pub ssh_key: String,
     pub access_id: String,
     pub access_secret: String,
+    /// the Hetzner project's API token (hcloud's HCLOUD_TOKEN when that is not set)
+    pub hetzner: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResizeDb {
+    pub namespace: String,
+    /// the CloudNativePG clusters whose primary must not be on the node
+    pub primaries: Vec<String>,
+    /// the cluster whose copies are counted and waited for
+    pub copies: String,
+    /// how far a standby may be behind to count as caught up
+    pub max_lag_bytes: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -120,7 +136,7 @@ pub struct Release {
 
 pub fn parse_config(text: &str) -> Result<Config, String> {
     let c: Config = toml::from_str(text).map_err(|e| format!("yyc-talos.toml: {e}"))?;
-    for t in ["kubectl", "helm", "cloudflared"] {
+    for t in ["kubectl", "helm", "cloudflared", "hcloud"] {
         if !c.tools.contains_key(t) {
             return Err(format!("yyc-talos.toml: no [tools.{t}]"));
         }
@@ -343,6 +359,66 @@ pub fn sum_of(listing: &str, name: &str) -> Option<String> {
         let (sum, file) = (it.next()?, it.next()?);
         (file.trim_start_matches('*') == name && sum.len() == 64).then(|| sum.to_string())
     })
+}
+
+/// A database pod: its name, its node (none while unscheduled), whether its first container is ready
+#[derive(Debug, PartialEq)]
+pub struct Pod {
+    pub name: String,
+    pub node: Option<String>,
+    pub ready: bool,
+}
+
+/// `kubectl get pods -o json`'s items
+pub fn parse_pods(json: &str) -> Result<Vec<Pod>, String> {
+    let v: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| format!("kubectl's pod list: {e}"))?;
+    Ok(v["items"]
+        .as_array()
+        .map(|a| a.as_slice())
+        .unwrap_or_default()
+        .iter()
+        .map(|p| Pod {
+            name: p["metadata"]["name"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            node: p["spec"]["nodeName"]
+                .as_str()
+                .filter(|n| !n.is_empty())
+                .map(String::from),
+            ready: p["status"]["containerStatuses"][0]["ready"]
+                .as_bool()
+                .unwrap_or(false),
+        })
+        .collect())
+}
+
+/// The node's own copy: the pod on it, or one waiting unscheduled for the room the resize makes
+pub fn pick_copy(pods: &[Pod], node: &str) -> Option<String> {
+    pods.iter()
+        .find(|p| p.node.as_deref() == Some(node))
+        .or_else(|| pods.iter().find(|p| p.node.is_none()))
+        .map(|p| p.name.clone())
+}
+
+/// Every copy but the node's own, on the other nodes, ready
+pub fn others_ready(pods: &[Pod], node: &str, copy: &str) -> bool {
+    pods.iter()
+        .filter(|p| p.name != copy && p.node.as_deref() != Some(node))
+        .all(|p| p.ready)
+}
+
+/// All copies ready, and every standby streaming within `max_lag` bytes of the primary (`lag`: psql's
+/// `max lag bytes|streaming standbys`)
+pub fn caught_up(want: u32, ready: u32, lag: &str, max_lag: i64) -> bool {
+    let Some((bytes, n)) = lag.trim().split_once('|') else {
+        return false;
+    };
+    match (bytes.parse::<i64>(), n.parse::<u32>()) {
+        (Ok(b), Ok(n)) => ready == want && want > 0 && n == want - 1 && b < max_lag,
+        _ => false,
+    }
 }
 
 // ---- effects ----
@@ -803,6 +879,203 @@ fn manifests(c: &Ctx) -> Result<(), String> {
     run(k.arg("apply").arg("-k").arg(&c.dir))
 }
 
+fn say(m: &str) {
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() % 86400)
+        .unwrap_or(0);
+    println!("{:02}:{:02}:{:02} {m}", t / 3600, t / 60 % 60, t % 60);
+}
+
+/// Poll `ok` once a second for at most `secs`
+fn wait_for(secs: u64, what: &str, mut ok: impl FnMut() -> bool) -> Result<(), String> {
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(secs) {
+        if ok() {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    Err(format!("STOP: {what}: not within {secs} s"))
+}
+
+fn capture(cmd: &mut Command) -> Result<String, String> {
+    let name = cmd.get_program().to_string_lossy().to_string();
+    let o = cmd
+        .stderr(Stdio::inherit())
+        .output()
+        .map_err(|e| format!("{name}: {e}"))?;
+    if !o.status.success() {
+        return Err(format!("{name} failed ({})", o.status));
+    }
+    Ok(String::from_utf8_lossy(&o.stdout).to_string())
+}
+
+struct Db<'a> {
+    c: &'a Ctx,
+    kubectl: PathBuf,
+    hcloud: PathBuf,
+    token: String,
+    node: String,
+}
+
+impl Db<'_> {
+    fn kube(&self) -> Command {
+        let mut k = Command::new(&self.kubectl);
+        kube_env(self.c, &mut k);
+        k
+    }
+    fn k(&self, args: &[&str]) -> Result<String, String> {
+        capture(
+            self.kube()
+                .arg("-n")
+                .arg(&self.c.cfg.resize_db.namespace)
+                .args(args),
+        )
+    }
+    fn hc(&self, args: &[&str]) -> Result<String, String> {
+        capture(
+            Command::new(&self.hcloud)
+                .env("HCLOUD_TOKEN", &self.token)
+                .args(args),
+        )
+    }
+    fn server(&self) -> Result<serde_json::Value, String> {
+        serde_json::from_str(&self.hc(&["server", "describe", &self.node, "-o", "json"])?)
+            .map_err(|e| format!("hcloud's server: {e}"))
+    }
+    fn pods(&self) -> Result<Vec<Pod>, String> {
+        let sel = format!("cnpg.io/cluster={}", self.c.cfg.resize_db.copies);
+        parse_pods(&self.k(&["get", "pods", "-l", &sel, "-o", "json"])?)
+    }
+    fn cluster(&self, name: &str, path: &str) -> Result<String, String> {
+        self.k(&[
+            "get",
+            "cluster",
+            name,
+            "-o",
+            &format!("jsonpath={{{path}}}"),
+        ])
+    }
+    fn node_ready(&self) -> bool {
+        capture(self.kube().args([
+            "get",
+            "node",
+            &self.node,
+            "-o",
+            "jsonpath={.status.conditions[?(@.type==\"Ready\")].status}",
+        ]))
+        .is_ok_and(|s| s.trim() == "True")
+    }
+    fn off(&self) -> bool {
+        self.server().is_ok_and(|s| s["status"] == "off")
+    }
+    fn healthy(&self) -> bool {
+        let r = &self.c.cfg.resize_db;
+        let get = |p: &str| {
+            self.cluster(&r.copies, p)
+                .ok()
+                .and_then(|v| v.trim().parse::<u32>().ok())
+        };
+        let (Some(want), Some(ready)) = (get(".spec.instances"), get(".status.readyInstances"))
+        else {
+            return false;
+        };
+        let Ok(primary) = self.cluster(&r.copies, ".status.currentPrimary") else {
+            return false;
+        };
+        let q = "select coalesce(max(pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn)), 0)::bigint, count(*) from pg_stat_replication where state = 'streaming'";
+        self.k(&[
+            "exec",
+            primary.trim(),
+            "-c",
+            "postgres",
+            "--",
+            "psql",
+            "-qAtX",
+            "-c",
+            q,
+        ])
+        .is_ok_and(|lag| caught_up(want, ready, &lag, r.max_lag_bytes))
+    }
+    fn cordon(&self, on: bool) -> Result<String, String> {
+        capture(
+            self.kube()
+                .arg(if on { "cordon" } else { "uncordon" })
+                .arg(&self.node),
+        )
+    }
+}
+
+fn resize_db(c: &Ctx, node: &str, typ: &str) -> Result<(), String> {
+    let token = match std::env::var("HCLOUD_TOKEN").ok().filter(|v| !v.is_empty()) {
+        Some(t) => t,
+        None => String::from_utf8(secret(&c.cfg.secrets.hetzner)?).map_err(|e| e.to_string())?,
+    };
+    let d = Db {
+        c,
+        kubectl: tool(c, "kubectl")?,
+        hcloud: tool(c, "hcloud")?,
+        token,
+        node: node.to_string(),
+    };
+    let r = &c.cfg.resize_db;
+    for cl in &r.primaries {
+        let p = d.cluster(cl, ".status.currentPrimary")?;
+        let on = d.k(&["get", "pod", p.trim(), "-o", "jsonpath={.spec.nodeName}"])?;
+        if on.trim() == node {
+            return Err(format!(
+                "STOP: {node} holds {cl}'s primary {}: db/switchover.py first",
+                p.trim()
+            ));
+        }
+    }
+    let copy = pick_copy(&d.pods()?, node)
+        .ok_or_else(|| format!("STOP: no {} copy on {node} or waiting for it", r.copies))?;
+    if d.server()?["server_type"]["name"] == typ {
+        say(&format!("{node} is already {typ}"));
+        return Ok(());
+    }
+    wait_for(600, "every other copy ready before the stop", || {
+        d.pods().is_ok_and(|p| others_ready(&p, node, &copy))
+    })?;
+    say(&format!("{node} ({copy}): cordon, shut down"));
+    d.cordon(true)?;
+    d.hc(&["server", "shutdown", node])?;
+    if wait_for(180, "clean shutdown", || d.off()).is_err() {
+        say("no clean shutdown in 3 min: power off");
+        d.hc(&["server", "poweroff", node])?;
+        wait_for(120, "power off", || d.off())?;
+    }
+    say(&format!("change type to {typ} (disk kept)"));
+    if let Err(e) = d.hc(&["server", "change-type", "--keep-disk", node, typ]) {
+        // e.g. the account's shared vCPU limit (2026-11-09): the server goes back on as it was
+        d.hc(&["server", "poweron", node])?;
+        wait_for(600, "node Ready again", || d.node_ready())?;
+        d.cordon(false)?;
+        return Err(format!(
+            "STOP: the type change was refused ({e}); {node} is back on as before"
+        ));
+    }
+    d.hc(&["server", "poweron", node])?;
+    wait_for(600, "node Ready", || d.node_ready())?;
+    d.cordon(false)?;
+    wait_for(900, "every copy ready and caught up", || d.healthy())?;
+    let mem = capture(d.kube().args([
+        "get",
+        "node",
+        node,
+        "-o",
+        "jsonpath={.status.capacity.memory}",
+    ]))
+    .unwrap_or_default();
+    say(&format!(
+        "done: {node} is {typ}, {} memory; {copy} streaming",
+        mem.trim()
+    ));
+    Ok(())
+}
+
 pub fn run_cli(args: &[String]) -> Result<ExitCode, String> {
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
     if let ["proxy", rest @ ..] = a.as_slice() {
@@ -824,6 +1097,7 @@ pub fn run_cli(args: &[String]) -> Result<ExitCode, String> {
         ["apply", node, ip, "--dry-run"] => ok(apply(&ctx()?, node, ip, true)),
         ["addons"] => ok(addons(&ctx()?)),
         ["manifests"] => ok(manifests(&ctx()?)),
+        ["resize-db", node, typ] => ok(resize_db(&ctx()?, node, typ)),
         ["tool", name] => {
             let c = ctx()?;
             let p = match *name {
@@ -991,6 +1265,35 @@ mod tests {
         );
         assert_eq!(sum_of(&l, "talosctl-linux-amd64").unwrap(), "b".repeat(64));
         assert_eq!(sum_of(&l, "talosctl-darwin-amd64"), None);
+    }
+
+    #[test]
+    fn a_resize_waits_for_the_other_copies_and_for_streaming_standbys() {
+        let j = r#"{"items":[
+          {"metadata":{"name":"pg-1"},"spec":{"nodeName":"db1"},"status":{"containerStatuses":[{"ready":true}]}},
+          {"metadata":{"name":"pg-2"},"spec":{"nodeName":"db2"},"status":{"containerStatuses":[{"ready":false}]}},
+          {"metadata":{"name":"pg-3"},"spec":{},"status":{}}]}"#;
+        let pods = parse_pods(j).unwrap();
+        assert_eq!(
+            pods[2],
+            Pod {
+                name: "pg-3".into(),
+                node: None,
+                ready: false
+            }
+        );
+        assert_eq!(pick_copy(&pods, "db1").as_deref(), Some("pg-1"));
+        // no pod on db3: the unscheduled one is its copy, waiting for the room
+        assert_eq!(pick_copy(&pods, "db3").as_deref(), Some("pg-3"));
+        assert_eq!(pick_copy(&pods[..2], "db3"), None);
+        // pg-2 on db2 not ready: no stop of db1 (or of db3) yet; db2's own copy does not count
+        assert!(!others_ready(&pods, "db1", "pg-1"));
+        assert!(others_ready(&pods[..2], "db2", "pg-2"));
+        assert!(caught_up(3, 3, "1024|2\n", 67108864));
+        assert!(!caught_up(3, 3, "1024|1", 67108864));
+        assert!(!caught_up(3, 2, "0|2", 67108864));
+        assert!(!caught_up(3, 3, "67108864|2", 67108864));
+        assert!(!caught_up(3, 3, "", 67108864));
     }
 
     #[test]

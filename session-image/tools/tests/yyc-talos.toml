@@ -11,6 +11,8 @@
 #   yyc-talos apply NODE IP [--dry-run]   apply it to the running node (mode auto), one node at a time
 #   yyc-talos addons                 install or upgrade the Helm add-ons below
 #   yyc-talos manifests              kubectl apply -k of this folder (kustomization.yaml)
+#   yyc-talos resize-db NODE TYPE    a database node's server type changed in place, no downtime ([resize_db])
+#   yyc-talos tool NAME              the path of a pinned tool below (or talosctl)
 
 cluster = "yyc-talos"
 endpoint = "https://10.0.0.21:6443"
@@ -21,6 +23,7 @@ warp_prefix = "YYC_TALOS_WARP_"       # + the node name after "yyc-talos-", uppe
 ssh_key = "YYC_CLUSTER_SSH_KEY"       # the jump host's root key
 access_id = "YYC_DEPLOY_ACCESS_CLIENT_ID"       # Access service token of jump.yyc-internal.com (tunnel yyc-deploy)
 access_secret = "YYC_DEPLOY_ACCESS_CLIENT_SECRET"
+hetzner = "YYC_HETZNER_API"            # YYC's Hetzner project `yyc` (resize-db; HCLOUD_TOKEN when set)
 
 # The jump host: sshd on yyc-nat2's alias 10.0.0.30 (nat/nat2.yaml), reached through Cloudflare Access only.
 [tunnel]
@@ -92,6 +95,15 @@ charts = [
   { release = "juicefs-csi-driver", chart = "juicefs/juicefs-csi-driver", version = "0.33.0", namespace = "kube-system", values = "juicefs-csi" },
 ]
 
+# resize-db: never on a node holding a primary of `primaries` (db/switchover.py moves it first); the node's own copy of
+# `copies` stops while the server is off, the other two keep serving and acknowledging writes (db/pg.yaml
+# `synchronous: any 1`); done when every copy is ready and each standby streams within max_lag_bytes of the primary.
+[resize_db]
+namespace = "db"
+primaries = ["pg", "magpie-pg"]
+copies = "pg"
+max_lag_bytes = 67108864
+
 # The command-line tools, fetched on first use into ~/.cache/yyc-talos and checked against these sums (talosctl:
 # release.env's version, checked against that release's sha256sum.txt). linux amd64.
 [tools.kubectl]
@@ -104,6 +116,12 @@ version = "v3.22.1"
 url = "https://get.helm.sh/helm-{version}-linux-amd64.tar.gz"
 sha256 = "896cf63684a42a723d61c980369d6e588330927deb13676ca0d85006dd6da0ea"
 member = "linux-amd64/helm"   # the binary inside the archive
+
+[tools.hcloud]
+version = "v1.71.0"
+url = "https://github.com/hetznercloud/cli/releases/download/{version}/hcloud-linux-amd64.tar.gz"
+sha256 = "ab14e964074ea61c9b103df852134833787da9df094ed6967f7bb0b588e7abc9"
+member = "hcloud"
 
 [tools.cloudflared]
 version = "2026.11.2"
